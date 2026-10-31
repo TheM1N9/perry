@@ -167,6 +167,7 @@ export type ChatSummary = {
   jobId?: Id<"jobs">;
   taskId?: Id<"tasks">;
   isAgent?: boolean;
+  engine?: EngineKind;
   agent?: { status: Doc<"tasks">["status"]; startedAt: number; finishedAt?: number };
   /** A reply came after the owner last had the chat open. */
   unseen: boolean;
@@ -216,6 +217,7 @@ export const listChats = query({
         jobId: chat.jobId,
         taskId: chat.taskId,
         isAgent: Boolean(chat.taskId || chat.providerAgent),
+        engine: (chat.taskId ? tasks.get(chat.taskId)?.route?.engine : undefined) ?? chat.engine,
         ...(chat.providerAgent ? { agent: { status: chat.providerAgent.status, startedAt: chat.providerAgent.startedAt, finishedAt: chat.providerAgent.finishedAt } }
           : chat.taskId && tasks.has(chat.taskId) ? { agent: { status: tasks.get(chat.taskId)!.status, startedAt: tasks.get(chat.taskId)!.createdAt,
             ...(["done", "failed", "cancelled"].includes(tasks.get(chat.taskId)!.status) ? { finishedAt: tasks.get(chat.taskId)!.updatedAt } : {}) } } : {}),
@@ -235,7 +237,8 @@ export const listChats = query({
 
 export type ChatAgent = {
   id: string; runId?: Id<"runs">; conversationId?: Id<"conversations">; parentId: Id<"conversations">; title: string;
-  status: Doc<"tasks">["status"]; text?: string; startedAt: number; finishedAt?: number;
+  status: Doc<"tasks">["status"]; engine?: EngineKind; text?: string; startedAt: number; finishedAt?: number;
+  plan?: Doc<"tasks">["plan"];
 };
 
 export const getChatAgents = query({
@@ -247,11 +250,12 @@ export const getChatAgents = query({
     const native = (await ctx.db.query("conversations").withIndex("by_parent", (q) => q.eq("parentConversationId", args.id)).collect())
       .filter((chat) => chat.providerAgent).map((chat): ChatAgent => ({
         id: chat._id, runId: chat.providerAgent!.runId, conversationId: chat._id, parentId: args.id, title: chat.title ?? "Agent", status: chat.providerAgent!.status,
-        text: chat.providerAgent!.text, startedAt: chat.providerAgent!.startedAt, finishedAt: chat.providerAgent!.finishedAt,
+        engine: chat.engine, text: chat.providerAgent!.text, startedAt: chat.providerAgent!.startedAt, finishedAt: chat.providerAgent!.finishedAt,
       }));
     return [...native, ...tasks.map((task) => ({
       id: task._id, conversationId: task.conversationId, parentId: args.id, title: task.title,
-      status: task.status, text: task.result ?? task.question ?? task.error,
+      status: task.status, engine: task.route?.engine ?? task.pick?.engine, text: task.result ?? task.question ?? task.error,
+      plan: task.plan,
       startedAt: task.createdAt,
       ...(["done", "failed", "cancelled"].includes(task.status) ? { finishedAt: task.updatedAt } : {}),
     }))].sort((a, b) => a.startedAt - b.startedAt);
@@ -457,7 +461,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; waiting?: { until: number; why: string }; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean }; context?: { fill: number; window: number } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; waiting?: { until: number; why: string }; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean }; context?: { fill: number; window: number }; taskPlan?: Pick<Doc<"tasks">, "status" | "plan"> }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -479,7 +483,9 @@ export const getChat = query({
       .sort(byQueuePosition)[0]?.waiting;
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
     const taskChoice = conversation.taskId ? await choiceForChat(ctx, conversation) : null;
+    const task = conversation.taskId ? await ctx.db.get(conversation.taskId) : null;
     return {
+      ...(task ? { taskPlan: { status: task.status, plan: task.plan } } : {}),
       channel: conversation.channel,
       // Its own, else the default it follows; unset while there is neither.
       engine: taskChoice?.engine ?? await engineFor(ctx, conversation),
@@ -644,7 +650,7 @@ export const getRunSteps = query({
           id: span._id,
           kind: span.kind,
           name: span.name,
-          ...(span.kind === "commentary" || span.kind === "reasoning" ? { text: span.output } : {}),
+          ...(span.kind === "commentary" || span.kind === "reasoning" || span.kind === "plan" ? { text: span.output } : {}),
           status: span.status,
           startedAt: span.startedAt,
           ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),

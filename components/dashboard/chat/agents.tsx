@@ -11,7 +11,10 @@ import { tickText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ENGINE_LABELS } from "@/convex/lib/engines";
+import { ProviderIcon } from "../provider-icon";
 import { took, type Turn } from "./work";
+import { PlanChecklist } from "./plan";
 
 const STATUS = { queued: "Queued", running: "Working", blocked: "Needs you", done: "Completed", failed: "Failed", cancelled: "Stopped" };
 
@@ -33,7 +36,7 @@ export function AgentRow({ agent }: { agent: ChatAgent }) {
   const active = agent.status === "running" || agent.status === "queued";
   const content = <>
     <span className="relative grid size-8 shrink-0 place-items-center rounded-full border border-border/60">
-      <BotIcon className="size-4 text-muted-foreground" aria-hidden />
+      <ProviderIcon engine={agent.engine} aria-label={agent.engine ? ENGINE_LABELS[agent.engine] : "Agent"} role="img" />
       <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-background", active ? "bg-primary motion-safe:animate-pulse" : agent.status === "done" ? "bg-success" : agent.status === "failed" ? "bg-destructive" : "bg-muted-foreground")} />
     </span>
     <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{agent.title}</span>
@@ -43,9 +46,10 @@ export function AgentRow({ agent }: { agent: ChatAgent }) {
     {agent.conversationId && <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
   </>;
   const className = "flex min-h-16 min-w-0 touch-manipulation items-center gap-3 rounded-lg px-2 py-2 outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring";
-  return agent.conversationId
-    ? <Link href={`/chat/${agent.conversationId}`} className={className} data-agent={agent.id} data-agent-status={agent.status} aria-label={`Open agent: ${agent.title}. ${STATUS[agent.status]}`} aria-describedby={description}>{content}</Link>
+  const row = agent.conversationId
+    ? <Link href={`/chat/${agent.conversationId}`} className={className} data-agent={agent.id} data-agent-status={agent.status} aria-label={`Open ${agent.engine ? `${ENGINE_LABELS[agent.engine]} ` : ""}agent: ${agent.title}. ${STATUS[agent.status]}`} aria-describedby={description}>{content}</Link>
     : <div className={className} data-agent={agent.id} data-agent-status={agent.status}>{content}</div>;
+  return <div>{row}{agent.plan && agent.plan.length > 0 && <PlanChecklist steps={agent.plan} active={active || agent.status === "blocked"} className="ml-11" />}</div>;
 }
 
 export function AgentRows({ agents }: { agents: ChatAgent[] }) {

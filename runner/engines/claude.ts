@@ -219,6 +219,11 @@ function diffOf(tool: string, input: Record<string, unknown>): string | undefine
 /** A tool call as a canonical item: what kind of step it is, and one line naming it. A file change carries its diff. */
 function describe(name: string, input: Record<string, unknown>, perry?: string): { type: ItemType; title: string; input?: string; output?: string } {
   const text = (value: unknown) => typeof value === "string" ? value : undefined;
+  if (name === "TodoWrite" && Array.isArray(input.todos)) {
+    const output = input.todos.filter((todo) => typeof todo?.content === "string")
+      .map((todo) => `- [${todo.status === "completed" ? "x" : todo.status === "in_progress" ? "~" : " "}] ${todo.content}`).join("\n");
+    return { type: "plan", title: "Plan", output };
+  }
   if (COMMAND_TOOLS.has(name)) {
     const command = text(input.command) ?? name;
     return { type: "command_execution", title: command, input: `$ ${command}` };
@@ -775,7 +780,7 @@ export class ClaudeEngine implements Engine {
             const status: ItemStatus = kinds.get(block.tool_use_id) ? "declined" : block.is_error ? "failed" : "completed";
             turn.sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, ...(item.agents ? { agents: item.agents.map((agent) => ({ ...agent,
               status: status === "completed" ? "done" as const : "failed" as const, text: resultText(block.content),
-            })) } : {}), output: item.type === "file_change" && status === "completed" && item.output ? item.output : resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
+            })) } : {}), output: (item.type === "file_change" || item.type === "plan") && status === "completed" && item.output ? item.output : resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
           }
         } else if (event.type === "result") {
           turn.results++;

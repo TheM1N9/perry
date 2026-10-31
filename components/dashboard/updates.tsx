@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon, ChevronRightIcon, RotateCwIcon } from "lucide-react";
+import { ArrowUpIcon, ChevronRightIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -124,22 +124,22 @@ export function Updates() {
   const check = useAction(api.updates.check);
   const now = useNow();
   const busy = !reloadRequired && (view?.state === "downloading" || view?.state === "waiting" || view?.state === "updating");
-  return <Section title="Updates" tip="Updates download while you work. Choose Reload to install when you’re ready.">
-    {view === undefined ? <ListSkeleton rows={1} /> : <div className="space-y-4">
-      <div className="flex flex-wrap items-start gap-3" data-update-state={view.state}>
+  return <Section title="Updates" icon={<DownloadIcon />} tip="Updates download while you work. Choose Reload to install when you’re ready.">
+    {view === undefined ? <ListSkeleton rows={1} /> : <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-3" data-update-state={view.state}>
         <div className="min-w-0 flex-1">
           <h3 className="flex items-center gap-2 text-sm font-medium">{busy && <Spinner className="size-4" />}{headline(view, reloadRequired)}</h3>
-          <p className="mt-1 text-sm text-pretty text-muted-foreground">{detail(view, now, reloadRequired)}</p>
+          <p className="mt-0.5 text-xs text-pretty text-muted-foreground">{detail(view, now, reloadRequired)}</p>
         </div>
         {reloadRequired || updateReady(view)
-          ? <ActionButton size="sm" className="min-h-11" action={async () => toast.success(await update())}>{reloadRequired || view.state === "ready" ? "Reload to install" : "Download update"}</ActionButton>
-          : !busy && <ActionButton variant="outline" size="sm" className="min-h-11" action={() => check({ key })}>Check for updates</ActionButton>}
+          ? <ActionButton size="sm" className="min-h-11 sm:min-h-9" action={async () => toast.success(await update())}><ArrowUpIcon />{reloadRequired || view.state === "ready" ? "Reload to install" : "Download"}</ActionButton>
+          : !busy && <ActionButton variant="outline" size="sm" className="min-h-11 sm:min-h-9" aria-label="Check for updates" action={() => check({ key })}><RotateCwIcon />Check</ActionButton>}
       </div>
-      <label className="flex min-h-11 items-center gap-3 text-sm">
+      <label className="flex min-h-11 items-center justify-between gap-3 border-t pt-3 text-sm">
+        Install overnight
         <Switch checked={view.auto} aria-label="Install updates overnight" onCheckedChange={(on) => void setAuto({ key, on }).catch((cause) => toast.error(errorText(cause)))} />
-        Install updates overnight
       </label>
-      {view.last && <LastUpdate last={view.last} now={now} />}
+      {view.last && !view.last.ok && <LastUpdate last={view.last} now={now} />}
     </div>}
   </Section>;
 }
@@ -154,18 +154,18 @@ function headline(view: UpdateView, reloadRequired: boolean) {
 }
 
 function detail(view: UpdateView, now: number, reloadRequired: boolean): string {
-  if (view.state === "updating") return "Perry will be back shortly. This page will reload when the update is installed.";
-  if (view.state === "waiting") return "The update will install when the current work finishes.";
-  if (view.state === "downloading") return "You can keep using Perry while it downloads.";
-  if (reloadRequired) return "Reload this page to use the updated Perry.";
+  if (view.state === "updating") return "This page reloads when ready.";
+  if (view.state === "waiting") return "Installs when current work finishes.";
+  if (view.state === "downloading") return "You can keep working.";
+  if (reloadRequired) return "Reload to use the new version.";
   if (view.problem) {
     if (/changes.*committed|commit or stash/i.test(view.problem)) return "Save your local changes before updating Perry.";
     if (/commits of its own|following a branch|git checkout|git isn't working/i.test(view.problem)) return "This copy of Perry needs a manual update.";
     return "Perry couldn’t reach the update service. Try again.";
   }
   if (!view.supervised) return "Start Perry in the background to install updates here.";
-  if (view.state === "ready") return "The download is ready. Reload when you want to install it.";
-  if (view.behind > 0) return "Download the latest version, then reload to install.";
+  if (view.state === "ready") return "Downloaded. Reload to install.";
+  if (view.behind > 0) return "Download, then reload to install.";
   return view.checkedAt ? `Checked ${ago(view.checkedAt, now)}.` : "";
 }
 

@@ -41,6 +41,7 @@ export const createTask = internalMutation({
     title: v.string(),
     prompt: v.string(),
     goalId: v.optional(v.id("goals")),
+    origin: v.optional(v.id("conversations")),
   },
   returns: v.id("tasks"),
   handler: async (ctx, args) => {
@@ -50,6 +51,7 @@ export const createTask = internalMutation({
       prompt: args.prompt.slice(0, 12000),
       status: "running",
       goalId: args.goalId,
+      ...(args.origin ? { origin: args.origin } : {}),
       plan: [],
       createdAt: now,
       updatedAt: now,

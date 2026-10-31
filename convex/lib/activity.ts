@@ -142,6 +142,7 @@ export function describeStep(span: Span, { done = false }: { done?: boolean } = 
 
 function presentStep(span: Span): Step {
   switch (span.kind) {
+    case "plan": return { label: "Updating the plan", pose: "thinking" };
     case "command": return { label: `Running ${short(innerCommand(span.name))}`, pose: "running" };
     case "fileChange": {
       const files = span.name.split(", ").filter(Boolean);
@@ -202,7 +203,7 @@ export function summarize(spans: Span[], { sentence = false }: { sentence?: bool
     images && `drew ${count(images, "image")}`,
   ].filter((part): part is string => Boolean(part));
   if (sentence) {
-    const counted = (span: Span) => span.kind === "reasoning" || span.kind === "commentary" || span.kind === "command" || span.kind === "fileChange" || span.kind === "webSearch"
+    const counted = (span: Span) => span.kind === "reasoning" || span.kind === "commentary" || span.kind === "plan" || span.kind === "command" || span.kind === "fileChange" || span.kind === "webSearch"
       || span.kind === "imageGeneration" || (span.kind === "mcpToolCall" && (span.name === "read_page" || span.name === "run_action"));
     const other = spans.filter((span) => !counted(span)).length;
     if (other) parts.push(parts.length ? `took ${count(other, "other step")}` : `took ${count(other, "step")}`);

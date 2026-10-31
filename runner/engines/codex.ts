@@ -597,10 +597,15 @@ export class CodexEngine implements Engine {
     const onTokens = ofTurn((event: TokenUsageEvent) => {
       if (event.tokenUsage?.last) sink.onEvent?.({ type: "usage", state: "complete", usage: usageOf(event.tokenUsage.last), ...(event.tokenUsage.modelContextWindow ? { contextWindow: event.tokenUsage.modelContextWindow } : {}) });
     });
+    const onPlan = ofTurn((event: { threadId?: string; turnId?: string; plan: Array<{ step: string; status: string }> }) => {
+      const output = event.plan.map((step) => `- [${step.status === "completed" ? "x" : step.status === "inProgress" ? "~" : " "}] ${step.step}`).join("\n");
+      sink.onEvent?.({ type: "item", phase: "updated", atMs: Date.now(), item: { id: `${event.turnId}:plan`, type: "plan", title: "Plan", status: "running", output, raw: event } });
+    });
     app.on("item/agentMessage/delta", onDelta);
     app.on("item/started", onItemStarted);
     app.on("item/completed", onItemCompleted);
     app.on("thread/tokenUsage/updated", onTokens);
+    app.on("turn/plan/updated", onPlan);
     const running: { sink: TurnSink; cwd: string; turnId?: string; interrupted?: boolean } = { sink, cwd };
     this.turns.set(id, running);
     try {
@@ -644,6 +649,7 @@ export class CodexEngine implements Engine {
       app.off("item/started", onItemStarted);
       app.off("item/completed", onItemCompleted);
       app.off("thread/tokenUsage/updated", onTokens);
+      app.off("turn/plan/updated", onPlan);
     }
   }
 

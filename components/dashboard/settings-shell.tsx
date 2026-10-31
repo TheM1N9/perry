@@ -3,10 +3,18 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
-import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from "@/lib/settings";
+import { ActivityIcon, BellIcon, ChartNoAxesCombinedIcon, CpuIcon, GlobeIcon, KeyRoundIcon, LockKeyholeIcon, MessageCircleIcon, MonitorIcon, PawPrintIcon, SendIcon, Settings2Icon, ShieldCheckIcon, UsersIcon } from "lucide-react";
+import { SETTINGS_GROUPS, SETTINGS_SECTIONS, type SettingsSection } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Page, PageInPage } from "./common";
+
+const SECTION_ICONS = {
+  general: Settings2Icon, engines: CpuIcon, usage: ChartNoAxesCombinedIcon, computers: MonitorIcon,
+  access: ShieldCheckIcon, notifications: BellIcon, telegram: SendIcon, whatsapp: MessageCircleIcon,
+  "desktop-pet": PawPrintIcon, people: UsersIcon, logins: KeyRoundIcon, security: LockKeyholeIcon,
+  internet: GlobeIcon, activity: ActivityIcon,
+} satisfies Record<SettingsSection, typeof Settings2Icon>;
 
 /**
  * Settings, one page: its sections in groups down the left, and the one open
@@ -15,14 +23,16 @@ import { Page, PageInPage } from "./common";
  */
 export function SettingsShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const current = SETTINGS_SECTIONS.find((section) => pathname === `/settings/${section.slug}`)?.slug;
+  const selected = SETTINGS_SECTIONS.find((section) => pathname === `/settings/${section.slug}`);
+  const current = selected?.slug;
   return (
     <Page title="Settings" wide>
-      <div className="md:grid md:grid-cols-[11rem_minmax(0,1fr)] md:gap-10 lg:gap-14">
+      <div className="md:grid md:grid-cols-[12rem_minmax(0,1fr)] md:gap-8 lg:gap-10">
         <SectionNav current={current} />
         <SectionSwitcher current={current} />
-        <div className="max-w-3xl min-w-0">
-          <PageInPage>{children}</PageInPage>
+        <div className="min-w-0 max-w-2xl text-sm [&_input]:text-base [&_textarea]:text-base md:[&_input]:text-sm md:[&_textarea]:text-sm">
+          <h2 className="mb-6 hidden text-xl font-semibold tracking-tight md:block">{selected?.label}</h2>
+          <PageInPage variant="settings">{children}</PageInPage>
         </div>
       </div>
     </Page>
@@ -46,23 +56,26 @@ function SectionNav({ current }: { current?: string }) {
   };
   return (
     <nav ref={nav} aria-label="Settings" className="max-md:hidden" onKeyDown={move}>
-      <div className="sticky top-16 grid gap-5">
+      <div className="sticky top-16 grid max-h-[calc(100dvh-5rem)] gap-4 overflow-y-auto pb-4">
         {SETTINGS_GROUPS.map((group) => {
-          const named = group.sections.length > 1 || group.sections[0].label !== group.label;
-          const id = `settings-group-${group.label.toLowerCase().replace(/W+/g, "-")}`;
+          const id = `settings-group-${group.label.toLowerCase().replace(/\W+/g, "-")}`;
           return (
             <div key={group.label}>
-              {named && <p id={id} className="mb-1 px-2 text-xs font-medium text-muted-foreground">{group.label}</p>}
-              <ul aria-labelledby={named ? id : undefined} aria-label={named ? undefined : group.label} className="grid gap-0.5">
-                {group.sections.map((section) => (
-                  <li key={section.slug}>
-                    <Link href={`/settings/${section.slug}`} aria-current={section.slug === current ? "page" : undefined}
-                      className={cn("block rounded-md px-2 py-1.5 text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
-                        section.slug === current && "bg-muted font-medium text-foreground")}>
-                      {section.label}
-                    </Link>
-                  </li>
-                ))}
+              <p id={id} className="mb-1 px-2 text-xs font-medium text-muted-foreground">{group.label}</p>
+              <ul aria-labelledby={id} className="grid gap-0.5">
+                {group.sections.map((section) => {
+                  const Icon = SECTION_ICONS[section.slug];
+                  return (
+                    <li key={section.slug}>
+                      <Link href={`/settings/${section.slug}`} aria-current={section.slug === current ? "page" : undefined}
+                        className={cn("flex min-h-10 items-center gap-2.5 rounded-md px-2 text-sm font-medium text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 motion-reduce:transition-none [@media(pointer:coarse)]:min-h-11",
+                          section.slug === current && "bg-muted text-foreground")}>
+                        <Icon aria-hidden className="size-4 shrink-0 stroke-[1.75]" />
+                        {section.label}
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           );
@@ -76,15 +89,18 @@ function SectionNav({ current }: { current?: string }) {
 function SectionSwitcher({ current }: { current?: string }) {
   const router = useRouter();
   return (
-    <div className="mb-8 md:hidden">
+    <div className="mb-6 md:hidden">
       <Select modal={false} items={SETTINGS_SECTIONS.map((section) => ({ value: section.slug, label: section.label }))} value={current ?? null}
         onValueChange={(value) => { if (value && value !== current) router.push(`/settings/${value}`); }}>
-        <SelectTrigger aria-label="Settings section" className="h-10 w-full"><SelectValue placeholder="Choose a section" /></SelectTrigger>
+        <SelectTrigger aria-label="Settings section" className="min-h-11 w-full"><SelectValue placeholder="Choose a section" /></SelectTrigger>
         <SelectContent>
           {SETTINGS_GROUPS.map((group) => (
             <SelectGroup key={group.label}>
               <SelectLabel>{group.label}</SelectLabel>
-              {group.sections.map((section) => <SelectItem key={section.slug} value={section.slug}>{section.label}</SelectItem>)}
+              {group.sections.map((section) => {
+                const Icon = SECTION_ICONS[section.slug];
+                return <SelectItem key={section.slug} value={section.slug} className="min-h-11"><Icon aria-hidden className="size-4" />{section.label}</SelectItem>;
+              })}
             </SelectGroup>
           ))}
         </SelectContent>

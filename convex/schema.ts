@@ -42,7 +42,7 @@ export const vUsage = v.object({
 /** The engine items a run's trace records (runner/trace.ts maps each engine's canonical items to these). See runSpans. */
 export const vSpanKind = v.union(
   v.literal("command"), v.literal("fileChange"), v.literal("mcpToolCall"), v.literal("dynamicToolCall"),
-  v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"), v.literal("commentary"),
+  v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"), v.literal("commentary"), v.literal("plan"),
 );
 export const vSpanStatus = v.union(v.literal("running"), v.literal("ok"), v.literal("error"), v.literal("declined"));
 /** Where a memory came from: the owner, tool output such as a web page or email, or a scheduled job. */
