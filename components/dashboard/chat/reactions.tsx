@@ -1,16 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { SmilePlusIcon } from "lucide-react";
+import { ArrowLeftIcon, PlusIcon, SmilePlusIcon } from "lucide-react";
+import { Toolbar } from "@base-ui/react/toolbar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 
-const SUGGESTIONS = ["👍", "❤️", "😂", "👀", "🤔", "🎉"];
+const QUICK_REACTIONS = [["👍", "Thumbs up"], ["❤️", "Heart"], ["😂", "Laughing"], ["😮", "Surprised"], ["😢", "Sad"], ["🙏", "Thank you"]] as const;
+const REACTIONS = [
+  ...QUICK_REACTIONS,
+  ["😀", "Grinning"], ["😁", "Beaming"], ["😅", "Relieved"], ["😊", "Smiling"], ["🥰", "Loved"], ["😍", "Heart eyes"],
+  ["🤣", "Laughing hard"], ["🥹", "Touched"], ["😎", "Cool"], ["🤩", "Starstruck"], ["🥳", "Celebrating"], ["🤗", "Hug"],
+  ["🤔", "Thinking"], ["🫡", "Salute"], ["🫠", "Melting"], ["😴", "Sleepy"], ["😭", "Crying"], ["😤", "Frustrated"],
+  ["👎", "Thumbs down"], ["👏", "Applause"], ["🙌", "Raised hands"], ["🤝", "Handshake"], ["💪", "Strong"], ["🤞", "Fingers crossed"],
+  ["👀", "Eyes"], ["🔥", "Fire"], ["✨", "Sparkles"], ["🎉", "Party"], ["💯", "One hundred"], ["✅", "Check mark"],
+  ["💔", "Broken heart"], ["💕", "Two hearts"], ["🫶", "Heart hands"], ["🌟", "Star"], ["🚀", "Rocket"], ["💡", "Idea"],
+] as const;
 
 export function ReactionPicker({ current, onChange }: { current?: string; onChange: (emoji: string) => Promise<void> }) {
   const [open, setOpen] = useState(false);
-  const [emoji, setEmoji] = useState("");
+  const [more, setMore] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -21,33 +30,35 @@ export function ReactionPicker({ current, onChange }: { current?: string; onChan
     try {
       await onChange(value === current ? "" : value);
       setOpen(false);
-      setEmoji("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save the reaction. Try again.");
     } finally { setSaving(false); }
   }
 
   return (
-    <Popover open={open} onOpenChange={(value) => { setOpen(value); if (!value) setError(""); }}>
+    <Popover open={open} onOpenChange={setOpen} onOpenChangeComplete={(value) => { if (!value) { setError(""); setMore(false); } }}>
       <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:size-11" aria-label="React to message" title="React" />}>
         <SmilePlusIcon />
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-80 max-w-[calc(100vw-2rem)] motion-reduce:animate-none">
+      <PopoverContent side="top" align="start" sideOffset={8} collisionPadding={2} className={more ? "w-80 max-w-[calc(100vw-1rem)] gap-1 rounded-2xl p-2" : `w-fit max-w-[calc(100vw-0.25rem)] gap-0 p-1 ${error ? "rounded-2xl" : "rounded-full"}`} data-reaction-picker={more ? "more" : "quick"}>
         <PopoverTitle className="sr-only">React to message</PopoverTitle>
-        <div className="flex flex-wrap gap-1" aria-label="Suggested reactions">
-          {SUGGESTIONS.map((value) => <Button key={value} type="button" variant={current === value ? "secondary" : "ghost"} className="size-11 text-xl" aria-label={`React with ${value}`} aria-pressed={current === value} disabled={saving} onClick={() => void choose(value)}>{value}</Button>)}
-        </div>
-        <form onSubmit={(event) => { event.preventDefault(); if (emoji.trim()) void choose(emoji.trim()); }} className="space-y-2">
-          <label className="block space-y-1.5 text-xs text-muted-foreground">
-            Another emoji
-            <Input aria-label="Another emoji" placeholder="Paste any emoji" value={emoji} onChange={(event) => setEmoji(event.target.value)} maxLength={64} disabled={saving} className="mt-1.5 focus-visible:ring-2 focus-visible:ring-ring/50" />
-          </label>
-          <div className="flex items-center justify-between gap-2">
-            {current ? <Button type="button" variant="ghost" size="sm" className="[@media(pointer:coarse)]:min-h-11" disabled={saving} onClick={() => void choose("")}>Remove reaction</Button> : <span />}
-            <Button type="submit" size="sm" className="[@media(pointer:coarse)]:min-h-11" disabled={saving || !emoji.trim()}>{saving ? "Saving…" : "React"}</Button>
+        {more ? <>
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="icon" className="size-11 rounded-full" aria-label="Back to quick reactions" onClick={() => setMore(false)}><ArrowLeftIcon /></Button>
+            <span className="text-sm font-medium">Reactions</span>
           </div>
-          {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
-        </form>
+          <Toolbar.Root aria-label="Choose a reaction" disabled={saving} aria-busy={saving || undefined} className="grid max-h-60 grid-cols-6 overflow-y-auto overscroll-contain">
+            {(current && !REACTIONS.some(([value]) => value === current) ? [[current, "Current reaction"], ...REACTIONS] : REACTIONS).map(([value, label], index) => <Toolbar.Button key={value} autoFocus={index === 0}
+              render={<Button type="button" variant={current === value ? "secondary" : "ghost"} className="size-11 rounded-full p-0 text-2xl" />}
+              aria-label={`${current === value ? "Remove" : "React with"} ${label}`} aria-pressed={current === value} onClick={() => void choose(value)}>{value}</Toolbar.Button>)}
+          </Toolbar.Root>
+        </> : <Toolbar.Root aria-label="Quick reactions" disabled={saving} aria-busy={saving || undefined} className="flex">
+          {QUICK_REACTIONS.map(([value, label], index) => <Toolbar.Button key={value} autoFocus={index === 0}
+            render={<Button type="button" variant={current === value ? "secondary" : "ghost"} className="size-11 rounded-full p-0 text-2xl" />}
+            aria-label={`${current === value ? "Remove" : "React with"} ${label}`} aria-pressed={current === value} onClick={() => void choose(value)}>{value}</Toolbar.Button>)}
+          <Toolbar.Button render={<Button type="button" variant="ghost" className="size-11 rounded-full text-muted-foreground" />} aria-label="More reactions" onClick={() => setMore(true)}><PlusIcon className="size-5" /></Toolbar.Button>
+        </Toolbar.Root>}
+        {error && <p role="alert" className="max-w-72 px-3 pb-2 pt-1 text-xs text-destructive">{error}</p>}
       </PopoverContent>
     </Popover>
   );
