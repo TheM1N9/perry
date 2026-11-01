@@ -17,8 +17,12 @@ Guest conversations and remote pet credentials cannot reach artifacts.
 ## Supported contract
 
 `lib/interactive.ts` owns schema version 1. Native calculator: each row computes
-`fixed + perUnit * declaredNumberInput`. Tables and bar charts use bounded rows
-and columns, null means missing. Cells may reference a declared input, including
+`fixed + perUnit * declaredNumberInput`, displayed as comparison totals. Number
+inputs have linked sliders and numeric fields. Tables and charts use bounded rows
+and columns, null means missing. Charts accept `chartType: "bar" | "line"`
+(default bar), with the first column as labels and the second as numeric values.
+Negative and zero values are supported; missing values stay missing. Show data
+exposes every original value in an accessible table. Cells may reference a declared input, including
 dates for a draft calendar. A declared text input named `filter` filters rows
 locally. Controls support number, select, date, boolean and text. Common forms
 are declared controls with a table. There is no expression evaluator.
@@ -28,7 +32,12 @@ Custom answers supply HTML, CSS and JavaScript defining synchronous
 displayed directly. Generated JavaScript has no DOM; it computes markup in a
 disposable worker inside an opaque-origin iframe. CSS and the resulting markup
 are displayed there. `<input data-perry-input="declared_id">` and selects can
-update declared state; the native controls are always available too.
+update declared state; the native controls are always available too. The iframe
+inherits the dashboard's theme tokens (`--foreground`, `--muted-foreground`,
+`--primary`, `--card`, `--border`, and chart colors) and light/dark color scheme.
+Use these variables and a transparent outer background. Its height follows the
+rendered content, bounded to 80–900px. Generated code cannot control the parent
+layout or invoke tools through resize or input messages.
 
 State is a validated map of declared scalar inputs, never an arbitrary DOM
 snapshot. Definition updates replace the sandbox and preserve only input ids

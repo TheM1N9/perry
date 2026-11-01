@@ -31,8 +31,8 @@ export const definitionSchema = z.object({
   view: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("question") }).strict(),
     z.object({ kind: z.literal("calculator"), items: z.array(z.object({ label: text, fixed: z.number().finite(), perUnit: z.number().finite(), input: key, unit: z.string().max(40) }).strict()).min(1).max(40) }).strict(),
-    z.object({ kind: z.enum(["table", "chart"]), columns: z.array(z.string().min(1).max(100)).min(1).max(12), rows: z.array(z.array(cell).max(12)).max(200) }).strict(),
-    z.object({ kind: z.literal("sandbox"), html: z.string().max(30_000), css: z.string().max(15_000), js: z.string().max(30_000) }).strict(),
+    z.object({ kind: z.enum(["table", "chart"]), columns: z.array(z.string().min(1).max(100)).min(1).max(12), rows: z.array(z.array(cell).max(12)).max(200), chartType: z.enum(["bar", "line"]).optional().describe("Charts use column 1 as labels and column 2 as numeric values. bar compares categories; line shows an ordered trend. Exact data remains accessible.") }).strict(),
+    z.object({ kind: z.literal("sandbox"), html: z.string().max(30_000), css: z.string().max(15_000).describe("Use host theme variables such as --foreground, --muted-foreground, --primary, --card and --border; keep the outer background transparent. Content height is automatic."), js: z.string().max(30_000).describe("Optional synchronous render(inputs) returning HTML or SVG. Runs in a worker with no DOM or network; declare interactive values in inputs. No document/window/event handlers.") }).strict(),
   ]),
 }).strict();
 export type Definition = z.infer<typeof definitionSchema>;

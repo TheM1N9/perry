@@ -577,6 +577,9 @@ export const claimTurn = mutation({
     // The chat's session, when it is on this turn's engine; a chat moved to another engine since starts one.
     const resumeCursor = resumeOf(conversation, engine)?.cursor;
     await ctx.db.patch(job._id, { status: "running", startedAt: now, lastHeartbeatAt: now, unresponsiveAt: undefined, sessionCursor: resumeCursor });
+    if (!job.hidden && !job.reactionEvent && !job.checkpoint && !job.flush && !job.guest && !job.webReaction) {
+      await ctx.runMutation(internal.reactions.reactWeb, { turnId: job._id, emoji: "👀" });
+    }
     return {
       ...job,
       ...(job.resetResumes ? { prompt: `Continue the previous request after the usage reset. Use the recorded progress and do not repeat completed actions.\n\nOriginal owner request:\n${job.prompt}` } : {}),

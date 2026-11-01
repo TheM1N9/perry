@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -18,22 +19,25 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
+import { InteractiveChart } from "./interactive-chart";
 
 const same = (a: Values, b: Values) => JSON.stringify(a) === JSON.stringify(b);
+const THEME_TOKENS = ["background", "foreground", "card", "card-foreground", "muted", "muted-foreground", "primary", "primary-foreground", "secondary", "secondary-foreground", "border", "ring", "success", "warning", "destructive", "chart-1", "chart-2", "chart-3", "chart-4", "chart-5"];
 
 function Control({ scope, input, value, onChange }: { scope: string; input: InputDefinition; value: Values[string]; onChange: (value: Values[string]) => void }) {
   const id = `interactive-${scope}-${input.id}`;
-  return <label className="grid min-w-0 content-start gap-2 text-sm" htmlFor={id}>
-    <span className="font-medium">{input.label}{input.kind === "number" && input.unit ? ` (${input.unit})` : ""}</span>
+  return <div className="grid min-w-0 content-start gap-2 text-sm">
+    <label className="font-medium" htmlFor={id}>{input.label}{input.kind === "number" && input.unit ? ` (${input.unit})` : ""}</label>
     {input.kind === "select" ? <Select value={String(value)} items={input.options.map((option) => ({ value: option, label: option }))} onValueChange={(next) => { if (typeof next === "string") onChange(next); }}>
-      <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
+      <SelectTrigger id={id} className="min-h-11 w-full sm:min-h-9"><SelectValue placeholder="Choose…" /></SelectTrigger>
       <SelectContent>{input.options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
     </Select>
       : input.kind === "boolean" ? <Checkbox id={id} checked={Boolean(value)} onCheckedChange={onChange} />
-      : <Input id={id} type={input.kind === "number" ? "number" : input.kind} value={String(value)}
+      : <Input id={id} className="min-h-11 sm:min-h-9" type={input.kind === "number" ? "number" : input.kind} value={String(value)}
         {...(input.kind === "number" ? { min: input.min, max: input.max, step: input.step } : { maxLength: 2000 })}
         onChange={(e) => { const next = input.kind === "number" ? e.target.valueAsNumber : e.target.value; if (validValue(input, next)) onChange(next); }} />}
-  </label>;
+    {input.kind === "number" && <input type="range" aria-label={`${input.label} slider`} min={input.min} max={input.max} step={input.step} value={Number(value)} onChange={(event) => onChange(event.target.valueAsNumber)} className="min-h-11 w-full cursor-pointer accent-primary sm:min-h-6" />}
+  </div>;
 }
 
 function Sandbox({ artifact, values, onChange }: { artifact: Artifact; values: Values; onChange: (id: string, value: Values[string]) => void }) {
@@ -43,13 +47,19 @@ function Sandbox({ artifact, values, onChange }: { artifact: Artifact; values: V
   const valuesRef = useRef(values);
   valuesRef.current = values;
   const [attempt, setAttempt] = useState(0);
+  const [height, setHeight] = useState(280);
+  const { resolvedTheme } = useTheme();
   const [document, setDocument] = useState("");
   const report = useMutation(api.interactive.report);
   const key = useDashboardKey();
   useEffect(() => {
     if (artifact.definition.view.kind === "sandbox") setDocument(sandboxDocument(artifact.definition.view, identity, window.location.origin));
   }, [artifact.definition.view, identity, attempt]);
-  const send = () => frame.current?.contentWindow?.postMessage({ ...identity, type: "perry:state", values: valuesRef.current }, "*");
+  const send = useCallback(() => {
+    const style = getComputedStyle(window.document.documentElement);
+    const theme = Object.fromEntries(THEME_TOKENS.map((token) => [`--${token}`, style.getPropertyValue(`--${token}`).trim()]));
+    frame.current?.contentWindow?.postMessage({ ...identity, type: "perry:state", values: valuesRef.current, theme, colorScheme: resolvedTheme === "dark" ? "dark" : "light" }, "*");
+  }, [identity, resolvedTheme]);
   useEffect(() => {
     let received = 0;
     let windowAt = Date.now();
@@ -63,6 +73,7 @@ function Sandbox({ artifact, values, onChange }: { artifact: Artifact; values: V
       if (message.type === "perry:mounted") send();
       else if (message.type === "perry:ready") { clearTimeout(timeout); setStatus("Ready"); void report({ key, id: artifact.id, conversationId: artifact.conversationId, event: "ready" }).catch(() => {}); }
       else if (message.type === "perry:error") { clearTimeout(timeout); setStatus("Rendering failed"); void report({ key, id: artifact.id, conversationId: artifact.conversationId, event: "error" }).catch(() => {}); }
+      else if (message.type === "perry:resize" && "height" in message && typeof message.height === "number" && Number.isFinite(message.height)) setHeight(Math.max(80, Math.min(900, Math.ceil(message.height))));
       else {
         const parsed = bridgeSchema.safeParse(message);
         if (!parsed.success) return;
@@ -72,11 +83,11 @@ function Sandbox({ artifact, values, onChange }: { artifact: Artifact; values: V
     };
     window.addEventListener("message", listener);
     return () => { clearTimeout(timeout); window.removeEventListener("message", listener); };
-  }, [identity, artifact, onChange, attempt, key, report]);
-  useEffect(() => { const timer = setTimeout(send, 150); return () => clearTimeout(timer); }, [values]);
+  }, [identity, artifact, onChange, attempt, key, report, send]);
+  useEffect(() => { const timer = setTimeout(send, 150); return () => clearTimeout(timer); }, [values, send]);
   return <div className="space-y-2">
-    <p className="text-xs text-muted-foreground" role="status">{status}</p>
-    {document && status !== "Rendering failed" && <iframe key={attempt} ref={frame} title={artifact.definition.title} srcDoc={document} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'" className="h-96 w-full rounded-md border bg-white" />}
+    {status !== "Ready" && <p className="text-xs text-muted-foreground" role="status">{status === "Rendering" ? "Loading…" : status}</p>}
+    {document && status !== "Rendering failed" && <iframe key={attempt} ref={frame} title={artifact.definition.title} srcDoc={document} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'" className="w-full rounded-md bg-transparent" style={{ height }} />}
     {status === "Rendering failed" && <Button type="button" variant="outline" size="sm" onClick={() => { setStatus("Rendering"); setAttempt((n) => n + 1); }}>Retry rendering</Button>}
   </div>;
 }
@@ -86,12 +97,12 @@ function NativeView({ definition, values }: { definition: Definition; values: Va
   const columns = definition.view.kind === "calculator" ? ["Option", "Total", "Unit"] : definition.view.kind === "sandbox" || definition.view.kind === "question" ? [] : definition.view.columns;
   const filter = typeof values.filter === "string" ? values.filter.toLocaleLowerCase() : "";
   const shown = filter ? rows.filter((row) => row.some((cell) => String(cell ?? "").toLocaleLowerCase().includes(filter))) : rows;
-  const max = Math.max(1, ...shown.map((row) => typeof row[1] === "number" ? Math.abs(row[1]) : 0));
+  if (definition.view.kind === "chart") return <InteractiveChart columns={columns} rows={shown} type={definition.view.chartType ?? "bar"} title={definition.title} />;
+  if (definition.view.kind === "calculator") return <dl className="grid gap-3 sm:grid-cols-2" aria-label="Calculated results">{shown.map((row, index) => <div key={index} className="rounded-lg bg-muted/50 p-4"><dt className="text-sm text-muted-foreground">{String(row[0])}</dt><dd className="mt-1 text-2xl font-semibold tabular-nums [overflow-wrap:anywhere]">{typeof row[1] === "number" ? row[1].toLocaleString(undefined, { maximumFractionDigits: 4 }) : String(row[1])}<span className="ml-1.5 text-sm font-normal text-muted-foreground">{String(row[2])}</span></dd></div>)}</dl>;
   return <div className="overflow-x-auto">
     <Table><TableCaption className="sr-only">{definition.title}</TableCaption>
       <TableHeader><TableRow>{columns.map((column, i) => <TableHead className="text-xs text-muted-foreground" key={i} scope="col">{column}</TableHead>)}</TableRow></TableHeader>
       <TableBody>{shown.map((row, i) => <TableRow key={i}>{row.map((cell, j) => <TableCell className="py-2.5 tabular-nums" key={j}>{cell === null ? "Missing" : typeof cell === "number" ? cell.toLocaleString(undefined, { maximumFractionDigits: 4 }) : String(cell)}
-        {definition.view.kind === "chart" && j === 1 && typeof cell === "number" && <span aria-hidden className="mt-1 block h-2 rounded bg-primary/60" style={{ width: `${Math.abs(cell) / max * 100}%` }} />}
       </TableCell>)}</TableRow>)}</TableBody>
     </Table>
     {!shown.length && <p className="py-3 text-sm text-muted-foreground">No data matches. Missing data has not been estimated.</p>}
@@ -192,7 +203,7 @@ function Answer({ artifact }: { artifact: Artifact }) {
     <div className="grid gap-3 sm:grid-cols-2">{def.inputs.map((input) => <Control key={input.id} scope={artifact.id} input={input} value={values[input.id]} onChange={(value) => change(input.id, value)} />)}</div>
     {def.view.kind === "sandbox" ? <Sandbox key={`${base.revision}`} artifact={base} values={values} onChange={change} /> : <NativeView definition={def} values={values} />}
     <div className="space-y-2 text-xs text-muted-foreground" data-provenance>
-      <p>{def.provenance.kind === "illustrative" ? "Illustrative example" : def.provenance.kind === "owner" ? "Owner-provided inputs" : "Retrieved data snapshot"} · {def.provenance.period || "Period not specified"} · {def.provenance.units || "Units not specified"}</p>
+      <p>{[def.provenance.kind === "illustrative" ? "Sample data" : def.provenance.kind === "owner" ? "Your inputs" : "Data snapshot", def.provenance.period, def.provenance.units].filter(Boolean).join(" · ")}</p>
       {def.provenance.missing.map((line, i) => <p key={`m${i}`} className="text-foreground">Missing: {line}</p>)}
       <Collapsible>
         <CollapsibleTrigger render={<Button size="xs" variant="ghost" className="group -ml-2 text-muted-foreground" />}>

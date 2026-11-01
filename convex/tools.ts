@@ -330,7 +330,7 @@ const send_to_owner = createTool({
 const react_to_message = createTool({
   description:
     "Add, replace or remove your reaction on a message in the owner's current web, WhatsApp or Telegram chat. " +
-    "Use reactions naturally for acknowledgement, feelings or work progress, without needing a text reply every time. " +
+    "Required in active owner chats: acknowledge the current message before working or replying, then update the same reaction as progress and the actual outcome change. Match the message's tone; never signal success before work succeeds. " +
     "Choose any emoji the app supports; these are not fixed status categories. Reuse the same message id to change progress. " +
     "If a successful reaction is the whole response, finish with exactly NO_REPLY. A failed reaction still needs a useful reply.",
   inputSchema: z.object({

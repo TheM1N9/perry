@@ -129,7 +129,7 @@ try {
   await card.waitFor();
   const usage = card.getByLabel("Monthly usage (units)");
   await usage.fill("25");
-  await until(async () => (await card.locator("tbody").innerText()).includes("70"), "local calculation");
+  await until(async () => (await card.getByRole("definition").allTextContents()).some((text) => text.includes("70")), "local calculation");
   check("calculator recalculates locally without a model turn", (await call("codex:queuedTurns", { token })).filter((t) => t.conversationId === chat).length === 0);
   await until(async () => (await list())[0].values.usage === 25, "debounced durable save");
   await page.reload();
