@@ -87,27 +87,29 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
         )}
         {/* Waiting in the queue it is under Up next (up-next.tsx); here only while it waits behind nothing (dashboard.QueuedTurn, now). */}
         {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
-        <ReactionBadges {...message.reactions} assistant={assistant} onChange={saved && onReact ? (emoji) => onReact(message, emoji) : undefined} />
-        <MessageFooter className={cn(
-          "gap-0.5 px-0 font-normal transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
-          !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
-        )}>
-          {mine && (
-            <time className="nums mr-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
-              {timeOf(message.createdAt)}
-            </time>
-          )}
-          <CopyAction text={message.text} />
-          {saved && onReact && <ReactionPicker current={message.reactions?.owner} onChange={(emoji) => onReact(message, emoji)} />}
-          {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => onEdit(message)}><PencilIcon /></Action>}
-          {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={() => onRegenerate(message)}><RefreshCwIcon /></Action>}
-          {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={() => onBranch(message)}><GitBranchIcon /></Action>}
-          {!mine && saved && onSaveNote && <Action label="Save as note" onClick={() => onSaveNote?.(message)}><FilePlusIcon /></Action>}
-          {!mine && (
-            <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
-              {timeOf(message.createdAt)}
-            </time>
-          )}
+        <MessageFooter className="flex-wrap gap-x-2 gap-y-1 px-0 font-normal">
+          <ReactionBadges {...message.reactions} assistant={assistant} onChange={saved && onReact ? (emoji) => onReact(message, emoji) : undefined} />
+          <div className={cn(
+            "flex items-center gap-0.5 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
+            !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
+          )}>
+            {mine && (
+              <time className="nums mr-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
+                {timeOf(message.createdAt)}
+              </time>
+            )}
+            <CopyAction text={message.text} />
+            {saved && onReact && <ReactionPicker current={message.reactions?.owner} onChange={(emoji) => onReact(message, emoji)} />}
+            {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => onEdit(message)}><PencilIcon /></Action>}
+            {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={() => onRegenerate(message)}><RefreshCwIcon /></Action>}
+            {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={() => onBranch(message)}><GitBranchIcon /></Action>}
+            {!mine && saved && onSaveNote && <Action label="Save as note" onClick={() => onSaveNote?.(message)}><FilePlusIcon /></Action>}
+            {!mine && (
+              <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
+                {timeOf(message.createdAt)}
+              </time>
+            )}
+          </div>
         </MessageFooter>
       </MessageContent>
     </Message>
