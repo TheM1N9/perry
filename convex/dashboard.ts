@@ -165,6 +165,7 @@ export type ChatSummary = {
   pinned: boolean;
   /** Set on the chat where a scheduled job's results collect. */
   jobId?: Id<"jobs">;
+  systemJob?: boolean;
   taskId?: Id<"tasks">;
   isAgent?: boolean;
   engine?: EngineKind;
@@ -215,6 +216,7 @@ export const listChats = query({
         replyCompleted: chat.providerAgent ? chat.providerAgent.status === "done" : latestRun?.status === "ok",
         pinned: chat.pinnedAt !== undefined,
         jobId: chat.jobId,
+        systemJob: Boolean(chat.jobId && jobs.get(chat.jobId)?.builtin),
         taskId: chat.taskId,
         isAgent: Boolean(chat.taskId || chat.providerAgent),
         engine: (chat.taskId ? tasks.get(chat.taskId)?.route?.engine : undefined) ?? chat.engine,
