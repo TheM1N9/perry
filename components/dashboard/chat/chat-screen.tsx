@@ -802,10 +802,10 @@ export function ChatScreen() {
             </div>
           ) : (
             <ChatFiles.Provider value={chatFiles ?? NO_FILES}>
-            <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
+            <div className="flex flex-col gap-4 pt-6 pb-10" aria-busy={loading || undefined}>
               {parent && summary?.isAgent && <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border/50" /><Link className="flex min-h-11 min-w-0 touch-manipulation items-center gap-2 rounded-full border border-border/50 px-3 py-1.5 hover:text-foreground" href={`/chat/${parent.id}`}><BotIcon className="size-3.5 shrink-0" /><span className="truncate">Subagent of {"\u00b7"} {parent.title}</span></Link><span className="h-px flex-1 bg-border/50" /></div>}
               {loading && (
-                <div className="space-y-8" role="status" aria-label="Loading the conversation">
+                <div className="flex flex-col gap-4" role="status" aria-label="Loading the conversation">
                   <Skeleton className="ml-auto h-10 w-1/2 rounded-3xl" />
                   <div className="space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-11/12" /><Skeleton className="h-4 w-2/3" /></div>
                 </div>
