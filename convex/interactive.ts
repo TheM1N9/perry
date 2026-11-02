@@ -7,7 +7,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
 import { INTERACTIVE_ANSWER, INTERACTIVE_DRAFT, migrateValues, parseDefinition, parseValues, type Definition, type Values } from "../lib/interactive";
 
-export type Artifact = { id: Id<"interactiveAnswers">; conversationId: Id<"conversations">; lifecycle: "draft" | "answered"; link: string; revision: number; definition: Definition; values: Values; updatedAt: number; createdAt: number; canUndo: boolean };
+export type Artifact = { id: Id<"interactiveAnswers">; conversationId: Id<"conversations">; runId: Id<"runs">; lifecycle: "draft" | "answered"; link: string; revision: number; definition: Definition; values: Values; updatedAt: number; createdAt: number; canUndo: boolean };
 export const enabled = () => process.env.PERRY_INTERACTIVE_ANSWERS !== "0";
 const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function requestId(id: string) { if (!/^[\w-]{1,80}$/.test(id)) throw new Error("Use a stable request id of at most 80 characters."); }
@@ -45,7 +45,7 @@ async function scope(ctx: QueryCtx, id: Id<"conversations">) {
 
 function view(row: Doc<"interactiveAnswers">): Artifact {
   const definition = parseDefinition(JSON.parse(row.definition));
-  return { id: row._id, conversationId: row.conversationId, lifecycle: row.answeredAt ? "answered" : "draft", link: `/chat/${row.conversationId}#interactive-${row._id}`, revision: row.revision, definition, values: parseValues(definition, JSON.parse(row.values)), updatedAt: row.updatedAt, createdAt: row.createdAt, canUndo: Boolean(row.previous) };
+  return { id: row._id, conversationId: row.conversationId, runId: row.generationRunId, lifecycle: row.answeredAt ? "answered" : "draft", link: `/chat/${row.conversationId}#interactive-${row._id}`, revision: row.revision, definition, values: parseValues(definition, JSON.parse(row.values)), updatedAt: row.updatedAt, createdAt: row.createdAt, canUndo: Boolean(row.previous) };
 }
 
 async function artifact(ctx: QueryCtx, conversationId: Id<"conversations">, id: Id<"interactiveAnswers">) {
