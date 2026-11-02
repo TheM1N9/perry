@@ -145,7 +145,7 @@ export function AppSidebar() {
 function ChatGroups() {
   const { dashboardKey } = useSession();
   const listed = useQuery(api.dashboard.listChats, { key: dashboardKey });
-  const all = useMemo(() => listed?.filter((chat) => !chat.jobId && !chat.isAgent), [listed]);
+  const all = useMemo(() => listed?.filter((chat) => !chat.systemJob && !chat.isAgent), [listed]);
   const [showAll, setShowAll] = useState(false);
   const [renaming, setRenaming] = useState<ChatSummary | null>(null);
   const [removing, setRemoving] = useState<ChatSummary | null>(null);
