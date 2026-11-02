@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
-import { useMutation, useQuery } from "@/client/react";
+import { useMutation } from "@/client/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 import type { Artifact } from "@/convex/interactive";
 import { bridgeSchema, migrateValues, tableRows, validValue, type Definition, type Input as InputDefinition, type Values } from "@/lib/interactive";
 import { sandboxDocument } from "@/lib/interactive-sandbox";
@@ -122,7 +121,7 @@ function download(artifact: Artifact, values: Values, format: "json" | "csv") {
   const link = window.document.createElement("a"); link.href = url; link.download = `interactive-${artifact.id}.${format}`; link.click(); URL.revokeObjectURL(url);
 }
 
-function Answer({ artifact }: { artifact: Artifact }) {
+export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
   const key = useDashboardKey();
   const save = useMutation(api.interactive.save);
   const followup = useMutation(api.interactive.followup);
@@ -245,10 +244,4 @@ function Answer({ artifact }: { artifact: Artifact }) {
       <Button type="submit" size="icon" aria-label="Ask Perry" disabled={dirty || conflict || saveBusy || sending || !question.trim()}><ArrowUp /></Button>
     </form>
   </article>;
-}
-
-export function InteractiveAnswers({ conversationId }: { conversationId: Id<"conversations"> }) {
-  const key = useDashboardKey();
-  const artifacts = useQuery(api.interactive.list, { key, conversationId });
-  return artifacts?.length ? <section aria-label="Interactive answers" className="space-y-4">{artifacts.map((artifact) => <Answer key={artifact.id} artifact={artifact} />)}</section> : null;
 }

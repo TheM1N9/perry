@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { Artifact } from "@/convex/interactive";
 import {
   ACCESS_HINTS, ACCESS_LABELS, ACCESSES, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
@@ -43,7 +44,7 @@ import { PlanChecklist } from "./plan";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { ComposerDraft, type ComposerHandle, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
-import { InteractiveAnswers } from "./interactive-answer";
+import { InteractiveAnswer } from "./interactive-answer";
 import { ChatFiles } from "./markdown";
 import { MessageEditor, type MessageEdit } from "./message-editor";
 import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
@@ -139,6 +140,7 @@ export function ChatScreen() {
   const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
   // The chat's runs without their steps: a fold reads its steps when it is open, the reply running its newest one.
   const workQuery = useQuery(api.dashboard.getChatRuns, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const artifacts = useQuery(api.interactive.list, selectedId && chat !== null ? { key: dashboardKey, conversationId: selectedId } : "skip");
   const deadlineRevision = useChatDeadline([
     ...(approvals ?? []).filter((item) => item.chat?.id === selectedId).map((item) => item.expiresAt),
     ...(workQuery ?? []).filter((run) => run.status === "ok" && run.finishedAt !== undefined).map((run) => run.finishedAt! + LANDING_MS),
@@ -357,6 +359,30 @@ export function ChatScreen() {
   const historicalWork = useStableRecords(useMemo(() => [...workOf.values()], [workOf]), workKey);
   const stableWorkOf = useMemo(() => new Map(historicalWork.map((item) => [item.runId, item])), [historicalWork]);
   const rowWork = useMemo(() => new Map([...workOf].map(([id, item]) => [id, stableWorkOf.get(item.runId)])), [workOf, stableWorkOf]);
+  const timeline = useMemo(() => {
+    const anchors = new Map<string, string>();
+    for (const message of conversation) {
+      if (message.runId) anchors.set(message.runId, message.id);
+      for (const runId of rowWork.get(message.id)?.runIds ?? []) anchors.set(runId, message.id);
+    }
+    const byMessage = new Map<string, Artifact[]>();
+    const live = new Set([...(liveWork?.runIds ?? []), ...(failedWork?.runIds ?? [])]);
+    const current: Artifact[] = [];
+    for (const artifact of artifacts ?? []) {
+      const anchor = anchors.get(artifact.runId);
+      if (anchor) byMessage.set(anchor, [...(byMessage.get(anchor) ?? []), artifact]);
+      else if (live.has(artifact.runId)) current.push(artifact);
+    }
+    // Cards keep the same sibling key as a live run becomes a saved reply, preserving unsaved inputs.
+    const entries: Array<{ key: string; message: typeof conversation[number] } | { key: string; pending: Pending } | { key: string; artifact: Artifact }> = [];
+    for (const message of conversation) {
+      entries.push({ key: message.id, message });
+      for (const artifact of byMessage.get(message.id) ?? []) entries.push({ key: `interactive:${artifact.id}`, artifact });
+    }
+    shownPending.forEach((pending, index) => { if (!pending.queued) entries.push({ key: `pending:${index}`, pending }); });
+    for (const artifact of current) entries.push({ key: `interactive:${artifact.id}`, artifact });
+    return entries;
+  }, [conversation, rowWork, artifacts, shownPending, liveWork, failedWork]);
 
   const { scroller, atBottom, onScroll, followLiveReply, jumpToLatest, release: releaseScroll, readerRevision, beginPagination, restorePagination } = useChatScroll(selectedId);
   // Text commits stay in the live leaf; structural changes only follow while
@@ -364,7 +390,7 @@ export function ChatScreen() {
   useLayoutEffect(() => {
     if (messageStatus !== "LoadingMore") restorePagination();
     followLiveReply();
-  }, [selectedId, messages.length, shownPending.length, waiting, liveWork?.stepCount, here.length, upNext.length, messageStatus, restorePagination, followLiveReply]);
+  }, [selectedId, messages.length, artifacts?.length, shownPending.length, waiting, liveWork?.stepCount, here.length, upNext.length, messageStatus, restorePagination, followLiveReply]);
   const locatedMessage = useRef("");
   const sourceScrollIntent = useRef<{ source: string; revision: number } | null>(null);
   const sourceMessage = search.get("message");
@@ -823,8 +849,11 @@ export function ChatScreen() {
                 </div>
               )}
               {messageStatus === "LoadingMore" && <p className="text-center text-sm text-muted-foreground" role="status">Loading earlier messages…</p>}
-              {conversation.map((message) => (
-                <Fragment key={message.id}>
+              {timeline.map((entry) => {
+                if ("artifact" in entry) return <InteractiveAnswer key={entry.key} artifact={entry.artifact} />;
+                if ("pending" in entry) return <PendingRow key={entry.key} text={entry.pending.text} attachments={entry.pending.attachments} sent={entry.pending.sent} skills={skillNames} />;
+                const { message } = entry;
+                return <Fragment key={entry.key}>
                 <MessageRow
                   key={message.id}
                   message={message}
@@ -852,9 +881,7 @@ export function ChatScreen() {
                     : undefined}
                 />}
                 </Fragment>
-              ))}
-              {shownPending.map((item, index) => !item.queued && <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
-              {!missing && <InteractiveAnswers conversationId={selectedId} />}
+              })}
               {chat?.taskPlan && chat.taskPlan.plan.length > 0 && <PlanChecklist steps={chat.taskPlan.plan} active={["queued", "running", "blocked"].includes(chat.taskPlan.status)} />}
               {replying && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
                 work={liveWork} agents={agentsForWork(agents, liveWork)} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
