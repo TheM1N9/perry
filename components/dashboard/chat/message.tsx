@@ -88,7 +88,6 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
         {/* Waiting in the queue it is under Up next (up-next.tsx); here only while it waits behind nothing (dashboard.QueuedTurn, now). */}
         {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
         <MessageFooter className="flex-wrap gap-x-2 gap-y-1 px-0 font-normal">
-          <ReactionBadges {...message.reactions} assistant={assistant} onChange={saved && onReact ? (emoji) => onReact(message, emoji) : undefined} />
           <div className={cn(
             "flex items-center gap-0.5 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
             !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
@@ -110,6 +109,7 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
               </time>
             )}
           </div>
+          <ReactionBadges {...message.reactions} assistant={assistant} onChange={saved && onReact ? (emoji) => onReact(message, emoji) : undefined} />
         </MessageFooter>
       </MessageContent>
     </Message>
