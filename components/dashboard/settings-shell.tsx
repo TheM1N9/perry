@@ -56,7 +56,7 @@ function SectionNav({ current }: { current?: string }) {
   };
   return (
     <nav ref={nav} aria-label="Settings" className="max-md:hidden" onKeyDown={move}>
-      <div className="sticky top-16 grid max-h-[calc(100dvh-5rem)] gap-4 overflow-y-auto pb-4">
+      <div className="grid gap-4">
         {SETTINGS_GROUPS.map((group) => {
           const id = `settings-group-${group.label.toLowerCase().replace(/\W+/g, "-")}`;
           return (
