@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, session, systemPreferences } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +21,7 @@ async function finish(error) {
   if (finishing) return;
   finishing = true;
   clearTimeout(deadline);
-  if (error) report.error = String(error.stack ?? error);
+  if (error) { report.error = String(error.stack ?? error); save(); }
   ears?.dispose();
   if (fixturePreload) session.fromPartition("perry-listening").unregisterPreloadScript(fixturePreload);
   ipcMain.removeAllListeners("ci:microphone-fixture");
@@ -39,6 +39,7 @@ save();
 
 app.whenReady().then(async () => {
   try {
+    if (process.platform === "darwin") report.screenAccess = systemPreferences.getMediaAccessStatus("screen");
     // A per-session microphone fixture leaves Chromium's real OS loopback untouched.
     const hearing = session.fromPartition("perry-listening");
     ipcMain.on("ci:microphone-fixture", (event) => {
@@ -59,10 +60,12 @@ app.whenReady().then(async () => {
     };
     ears = listener({ here: join(root, "pet"), models: process.env.PERRY_MODELS_DIR, call, tell: (state) => {
       report.state = state;
-      report.states.push(state);
+      report.states.push({ at: Date.now(), ...state });
       if (report.states.length > 30) report.states.shift();
       save();
     } });
+    report.phase = "opening-capture";
+    save();
     const state = await ears.start({ title: "CI synthetic meeting" });
     report.initial = state;
     if (state.phase !== "listening" || state.mic !== "live") throw new Error(`Microphone capture did not start: ${JSON.stringify(state)}`);

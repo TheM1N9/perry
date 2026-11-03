@@ -140,9 +140,9 @@ try {
       if (launchError || (child.exitCode !== null && (!bundle || child.exitCode !== 0))) throw new Error(`Electron exited before completing the capture: ${launchError ?? child.exitCode}`);
       await sleep(250);
     }
+    report.native = probe;
     check("native Electron completed", probe?.phase === "done");
     report.loopbackCoverage = probe.loopbackCoverage ?? "failed";
-    report.native = probe;
     check("native capture and cleanup passed", probe.passed);
     if (process.platform === "win32") check("real WASAPI loopback transcribed", report.loopbackCoverage === "verified");
     check("failed HTTP delivery retried successfully", rejectedDelivery && retrySucceeded);

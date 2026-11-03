@@ -21,7 +21,7 @@
  * told that too rather than getting half a transcript.
  */
 
-import { BrowserWindow, desktopCapturer, ipcMain, session as sessions, utilityProcess } from "electron";
+import { BrowserWindow, desktopCapturer, ipcMain, session as sessions, systemPreferences, utilityProcess } from "electron";
 import { join } from "node:path";
 
 /** More sound than this waiting to be written down (a slow computer), and the oldest goes, and the owner is told. */
@@ -212,11 +212,13 @@ export function listener({ here, models, call, tell }) {
   async function openWindow(session) {
     const partition = "perry-listening";
     const hearing = sessions.fromPartition(partition);
+    const screenAccess = process.platform === "darwin" ? systemPreferences.getMediaAccessStatus("screen") : undefined;
     // The picture Chromium asks for with the sound: the hidden page's own, so the screen is never touched. On a Mac,
     // as Electron's documentation has it, a real screen's source, which is what macOS allows audio capture from.
     hearing.setDisplayMediaRequestHandler(async (request, callback) => {
       if (request.frame !== session.window?.webContents.mainFrame) return callback({});
       if (process.platform !== "darwin") return callback({ video: request.frame, audio: "loopback" });
+      if (screenAccess !== "granted") return callback({});
       const [source] = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
       callback({ video: source ?? request.frame, audio: "loopback" });
     });
@@ -226,7 +228,7 @@ export function listener({ here, models, call, tell }) {
         preload: join(here, "meeting-preload.cjs"), sandbox: true, contextIsolation: true, partition,
         // Hidden, and heard all the same.
         backgroundThrottling: false, autoplayPolicy: "no-user-gesture-required",
-        additionalArguments: [`--perry-loopback=${process.platform === "linux" ? "0" : "1"}`],
+        additionalArguments: [`--perry-loopback=${process.platform === "linux" ? "0" : "1"}`, ...(screenAccess ? [`--perry-screen-access=${screenAccess}`] : [])],
       },
     });
     session.window = win;

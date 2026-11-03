@@ -597,7 +597,7 @@ function Pet() {
   let replyUp: { key: string; ms: number } | null = null;
   if (meeting.state.phase !== "off") {
     const listening = meeting.state.phase === "listening";
-    const warning = meeting.state.droppedMs ? "Some audio could not be transcribed." : meeting.state.system !== "live" ? "Microphone only. I can't hear the other side yet." : meeting.state.mic !== "live" ? "Computer sound only. I can't hear your microphone." : "Hearing you and the call. Only text is saved.";
+    const warning = meeting.state.droppedMs ? "Some audio could not be transcribed." : meeting.state.system !== "live" ? /permission/i.test(meeting.state.system ?? "") ? meeting.state.system : "Microphone only. I can't hear the other side yet." : meeting.state.mic !== "live" ? "Computer sound only. I can't hear your microphone." : "Hearing you and the call. Only text is saved.";
     bubble = <Bubble id="meeting" title={listening ? `Listening · ${clockOf(now - (meeting.state.startedAt ?? now))}` : meeting.state.phase === "starting" ? "Opening my ears…" : "Finishing the transcript…"}
       detail={meeting.state.progress !== undefined ? `Downloading speech model: ${Math.round(meeting.state.progress * 100)}%` : warning}>
       {listening && <BubbleButton primary onClick={meeting.stop}>Stop listening</BubbleButton>}

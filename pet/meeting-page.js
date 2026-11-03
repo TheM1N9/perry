@@ -162,7 +162,9 @@
       try {
         connect(await openMic(), 0, "mic");
       } catch (error) { status.mic = says(error); }
-      if (bridge.loopback) {
+      if (bridge.loopback && bridge.screenAccess && bridge.screenAccess !== "granted") {
+        status.system = "System audio needs permission. Allow Electron in System Settings → Privacy & Security → Screen & System Audio Recording, then restart the pet. If it isn't listed, use Show Perry the screen once.";
+      } else if (bridge.loopback) {
         try { connect(await openSystem(), 1, "system"); } catch (error) { status.system = says(error); }
       } else status.system = "unsupported";
       if (context.state === "suspended") await context.resume();

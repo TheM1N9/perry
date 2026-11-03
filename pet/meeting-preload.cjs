@@ -6,6 +6,7 @@ const flag = (name) => process.argv.find((arg) => arg.startsWith(`--perry-${name
 contextBridge.exposeInMainWorld("perryMeeting", {
   /** Whether this computer can hear what it plays (Windows and a Mac; on Linux Electron cannot). */
   loopback: flag("loopback") === "1",
+  screenAccess: flag("screen-access"),
   chunk: (chunk) => ipcRenderer.send("meeting:chunk", chunk),
   status: (status) => ipcRenderer.send("meeting:status", status),
 });
