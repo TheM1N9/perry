@@ -9,6 +9,8 @@ const home = process.env.PERRY_HOME;
 const output = process.env.PERRY_MEETING_PROBE_OUT;
 app.setPath("userData", join(home, "electron-profile"));
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+// Like the tray pet, keep saving after the last capture window has closed.
+app.on("window-all-closed", () => {});
 const report = { phase: "boot", pid: process.pid, electron: process.versions.electron, platform: process.platform, states: [], segments: [], nativeOperations: [], checks: {} };
 const save = () => writeFileSync(output, JSON.stringify(report, null, 2));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -117,6 +119,7 @@ app.whenReady().then(async () => {
       await player.webContents.executeJavaScript(`window.audio = new Audio(${JSON.stringify(audio)}); window.audio.play()`);
       await sleep(12_000);
     }
+    if (player) { player.destroy(); player = null; }
     // Stop must flush a final partial chunk, wait for Whisper, and retry a failed delivery.
     await ears.stop();
     for (let at = 0; at < 240 && ears.state().phase !== "off"; at++) await sleep(500);

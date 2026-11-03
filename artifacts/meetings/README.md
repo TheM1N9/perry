@@ -18,6 +18,7 @@ The macOS job runs the same Electron pipeline. A system-audio permission refusal
 - Server delivery fails once and loses or duplicates segments; Stop drops the last phrase or finishes before the queue is drained.
 - Write-up claims can be taken twice, stale results overwrite notes, typed notes disappear, generated lines lose outside-content provenance, or an action item creates duplicate to-dos.
 - Stop/dispose leaves a worker, window, IPC listener, timer or database behind. A timeout leaves child processes running or suppresses failure artifacts.
+- Closing the last capture window quits the probe before its transcript is saved. Like the real tray pet, the probe must stay alive until the queue drains; the playback window is closed before Stop so this is exercised on Windows too.
 - CI accidentally uses the owner's home, credentials or installed pet; audio-driver setup runs on a persistent machine; a downloaded driver archive differs from the pinned checksum.
 
 CI uploads reports even after failure and writes coverage to the job summary. Generated audio, databases and profiles are not committed or uploaded. The source harness is permanent CI coverage requested for this feature.
