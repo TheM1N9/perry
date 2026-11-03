@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { calendarConnector, calendarFlow } from "./calendar-flow.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const output = process.argv[2] && resolve(process.argv[2]);
@@ -75,12 +76,13 @@ try {
   ]);
   database = new DatabaseSync(join(scratch, "perry.sqlite"));
   initializeCredentialEncryption(database, scratch);
-  runtime = new Runtime(database, schema, modules, { storageDir: join(scratch, "storage") });
+  runtime = new Runtime(database, schema, { ...modules, composio: { ...modules.composio, ...calendarConnector } }, { storageDir: join(scratch, "storage") });
   await runtime.stop();
   globalThis.__perry = { runtime, started: true };
   const call = async (path, args = {}) => (await runtime.call(path, args, { internal: true })).value;
   await runtime.exclusive(() => runtime.store.insert("installation", { defaultEngine: "codex", onboarding: "skipped", createdAt: Date.now() }));
   await call("runner:createToken", { name: "CI notes writer", token });
+  await calendarFlow(call, key, check);
   const { runCall } = await import("../../server/api.ts");
   let rejectedDelivery = false;
   let retrySucceeded = false;

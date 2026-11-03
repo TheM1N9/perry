@@ -278,6 +278,7 @@ export default defineSchema({
     meetingHeadsUp: v.optional(v.boolean()),
     /** False once the owner turned off the pet asking when an app starts using the microphone (pet/listen.js). */
     meetingNotice: v.optional(v.boolean()),
+    meetingCalendar: v.optional(v.object({ at: v.number(), sources: v.array(v.string()), error: v.optional(v.string()) })),
     /** When the owner last wrote to Perry anywhere, so what goes unanswered can be told apart. */
     ownerWroteAt: v.optional(v.number()),
     /** False stops Perry updating himself at night (updates.ts). Unset means on. */

@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("perryPet", {
   },
   setLookHotkey: (accelerator) => ipcRenderer.invoke("pet:set-look-hotkey", String(accelerator)),
   meetingState: () => ipcRenderer.invoke("pet:meeting-state"),
+  setMeetingSuggestions: (config) => ipcRenderer.send("pet:meeting-suggestions", config),
   startMeeting: (ask) => ipcRenderer.invoke("pet:meeting-start", ask),
   stopMeeting: () => ipcRenderer.invoke("pet:meeting-stop"),
   show: () => ipcRenderer.send("pet:show"),

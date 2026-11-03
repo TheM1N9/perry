@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listener } from "../../../pet/listen.js";
+import { noticeFlow } from "./notice-flow.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const home = process.env.PERRY_HOME;
@@ -100,7 +101,7 @@ app.whenReady().then(async () => {
     } });
     report.phase = "opening-capture";
     save();
-    const state = await ears.start({ title: "CI synthetic meeting" });
+    const state = await noticeFlow({ root, output, call, ears, report, save });
     report.initial = state;
     if (state.phase !== "listening" || state.mic !== "live") throw new Error(`Microphone capture did not start: ${JSON.stringify(state)}`);
     if (process.platform === "win32" && state.system !== "live") throw new Error(`WASAPI loopback did not start: ${state.system}`);

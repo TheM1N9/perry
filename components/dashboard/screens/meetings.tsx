@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { HeadphonesIcon, SquareIcon, Trash2Icon, MessageSquareIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useMutation, useQuery } from "@/client/react";
+import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { MEETING_TEMPLATES, clockOf } from "@/convex/lib/meetings";
 import type { MeetingSummary, MeetingView } from "@/convex/meetings";
@@ -43,6 +43,7 @@ export function Meetings() {
       if ("error" in result) throw new Error(result.error);
       router.push(`/meetings/${result.id}`);
     }}><HeadphonesIcon />Listen to a call</ActionButton>}>
+    <UpcomingMeetings />
     {meetings === undefined ? <ListSkeleton rows={4} /> : meetings.length === 0 ? <EmptyState mascot title="Your next call, written down">
       Start listening when your call begins. Perry hears your microphone and the computer’s sound, then writes up the decisions and next steps. Only text is saved.
     </EmptyState> : <List label="Meetings">{meetings.map((meeting) => <li key={meeting.id} className="flex items-start gap-3 py-4">
@@ -53,6 +54,41 @@ export function Meetings() {
       </div><RelativeTime at={meeting.startedAt} />
     </li>)}</List>}
   </Page>;
+}
+
+function UpcomingMeetings() {
+  const { dashboardKey: key } = useSession();
+  const data = useQuery(api.meetings.recommendations, { key });
+  const refresh = useAction(api.meetings.refreshCalendar);
+  const ask = useMutation(api.meetings.ask);
+  const router = useRouter();
+  const now = useNow(30_000);
+  return <section aria-label="Upcoming meetings" className="mb-8 rounded-xl border p-4">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 className="font-medium">Upcoming</h2>
+      <div className="flex items-center gap-2">
+        {!data?.calendar?.sources.length && <Button size="sm" variant="ghost" render={<Link href="/apps/connectors" />}>Connect calendars</Button>}
+        <ActionButton size="sm" variant="outline" action={() => refresh({ key })}>Refresh calendars</ActionButton>
+      </div>
+    </div>
+    {!data ? <p className="mt-3 text-sm text-muted-foreground">Loading calendar meetings…</p> : <>
+      {data.calendar?.error && <p role="status" className="mt-3 text-sm text-destructive">{data.calendar.error}</p>}
+      <p className="mt-2 text-sm text-muted-foreground">{data.calendar?.sources.length ? `From ${data.calendar.sources.map((source) => source === "googlecalendar" ? "Google Calendar" : "Outlook").join(" and ")}.` : "Connect Google Calendar or Outlook in Apps & skills, then refresh."}
+        {data.calendar && <> Last checked <RelativeTime at={data.calendar.at} />.</>} {data.enabled ? "Perry suggests taking notes as meetings begin." : "Desktop calendar heads-ups are off in Settings."}</p>
+      {Boolean(data.calendar?.sources.length) && !data.events.filter((event) => event.endsAt > now).length && <p className="mt-4 text-sm">No meetings in the next 24 hours.</p>}
+      <ul className="divide-y">{data.events.filter((event) => event.endsAt > now).map((event) => <li key={event.eventId} className="flex flex-wrap items-center gap-3 py-4 last:pb-0">
+        <div className="min-w-0 flex-1"><p className="truncate font-medium">{event.title}</p>
+          <p className="mt-1 text-xs text-muted-foreground"><time dateTime={new Date(event.startsAt).toISOString()}>{new Date(event.startsAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}</time>{event.startsAt <= now && " · In progress"}{event.attendees?.length ? ` · ${event.attendees.slice(0, 3).join(", ")}` : ""}</p>
+        </div>
+        {event.joinUrl && <Button size="sm" variant="ghost" render={<a href={event.joinUrl} target="_blank" rel="noopener noreferrer" />}>Join</Button>}
+        <ActionButton size="sm" variant="outline" action={async () => {
+          const result = await ask({ key, eventId: event.eventId });
+          if ("error" in result) throw new Error(result.error);
+          router.push(`/meetings/${result.id}`);
+        }}>Start Notetaker</ActionButton>
+      </li>)}</ul>
+    </>}
+  </section>;
 }
 
 export function MeetingScreen() {
@@ -183,7 +219,7 @@ export function MeetingSettings() {
   const settings = useQuery(api.meetings.settings, { key });
   const save = useMutation(api.meetings.setSettings);
   return <div className="mt-5 space-y-4">{([
-    ["headsUp", "Meeting heads-ups", "Show a heads-up for upcoming Google Calendar meetings. You choose when to listen."],
+    ["headsUp", "Meeting heads-ups", "Suggest taking notes for upcoming Google Calendar and Outlook meetings connected through Composio. You choose when to listen."],
     ["notice", "Notice calls", "Ask to listen when another app uses the microphone. Listening always needs your click."],
   ] as const).map(([field, label, detail]) => <div key={field} className="flex items-start gap-3">
     <Switch id={`meeting-${field}`} checked={settings?.[field] ?? true} disabled={!settings} className="mt-0.5" onCheckedChange={(value) => void save({ key, [field]: value }).catch((error) => toast.error(errorText(error)))} />
