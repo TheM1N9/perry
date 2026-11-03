@@ -1,5 +1,7 @@
 "use client";
 
+import { randomUUID } from "@/lib/uuid";
+
 import { AgentRows, AgentStatus, agentsForWork } from "./agents";
 import { TurnError } from "./turn-error";
 
@@ -574,28 +576,20 @@ export function ChatScreen() {
     submitting.current = submission;
     const fresh = !selectedId;
     let id = selectedId;
-    if (!id) {
-      setBusy(true);
-      try {
+    const sending = files;
+    let cleared = false;
+    let sent: Pending | undefined;
+    const uploaded: PendingAttachment[] = [];
+    setBusy(true);
+    try {
+      const messageKey = sending.length ? randomUUID() : undefined;
+      if (!id) {
         id = await createChat({ key: dashboardKey, ...(newIn ? { projectId: newIn.id } : {}) });
         submission.id = id;
         setCreatedId(id);
-        // The chat has its own address from now, so a reload while it sends comes back to it.
-        router.replace(`/chat/${id}`);
-      } catch (cause) {
-        fail(cause);
-        submitting.current = null;
-        setBusy(false);
-        return;
       }
-    }
-    setBusy(true);
-    const sending = files;
-    const messageKey = sending.length ? crypto.randomUUID() : undefined;
-    setDraft(""); setFiles([]); setError(""); setNotice("");
-    let sent: Pending | undefined;
-    const uploaded: PendingAttachment[] = [];
-    try {
+      setDraft(""); setFiles([]); setError(""); setNotice("");
+      cleared = true;
       for (const [index, file] of sending.entries()) {
         setUploading({ index: index + 1, total: sending.length });
         const contentType = file.type || "application/octet-stream";
@@ -616,6 +610,8 @@ export function ChatScreen() {
         key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, mode,
         ...(fresh ? { model, engine, effort: pickedEffort ?? "", access: draftAccess } : {}),
       });
+      // Changing the draft's storage key before a failed upload restores it would erase it.
+      if (!paramId && window.location.pathname === "/chat") router.replace(`/chat/${id}`);
       // A send already crossing the network must acknowledge before Stop can cover it.
       if (submission.controller.signal.reason === "stop") await stopChat({ key: dashboardKey, id }).catch(fail);
       setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
@@ -625,10 +621,13 @@ export function ChatScreen() {
       setUploading(null);
       setPending((items) => items.filter((item) => item !== sent));
       for (const attachment of uploaded) URL.revokeObjectURL(attachment.url);
-      const newer = draftControl.current?.read() ?? "";
-      setDraft([message, newer].filter(Boolean).join("\n\n")); setFiles(items => [...sending, ...items]);
+      if (cleared) {
+        const newer = draftControl.current?.read() ?? "";
+        setDraft([message, newer].filter(Boolean).join("\n\n")); setFiles(items => [...sending, ...items]);
+      }
       setError(submission.controller.signal.aborted ? "Sending cancelled. Your message is back in the composer." : `Your message wasn't sent: ${errorText(cause)}`);
     } finally {
+      setUploading(null);
       submitting.current = null;
       setBusy(false);
     }
