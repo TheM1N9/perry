@@ -44,6 +44,7 @@ import * as lib_errors from "../convex/lib/errors";
 import * as lib_graph from "../convex/lib/graph";
 import * as lib_internet from "../convex/lib/internet";
 import * as lib_library from "../convex/lib/library";
+import * as lib_meetings from "../convex/lib/meetings";
 import * as lib_notes from "../convex/lib/notes";
 import * as lib_pages from "../convex/lib/pages";
 import * as lib_price from "../convex/lib/price";
@@ -68,6 +69,7 @@ import * as lib_workspace from "../convex/lib/workspace";
 import * as library from "../convex/library";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
+import * as meetings from "../convex/meetings";
 import * as memories from "../convex/memories";
 import * as models from "../convex/models";
 import * as notes from "../convex/notes";
@@ -143,6 +145,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/graph": lib_graph,
   "lib/internet": lib_internet,
   "lib/library": lib_library,
+  "lib/meetings": lib_meetings,
   "lib/notes": lib_notes,
   "lib/pages": lib_pages,
   "lib/price": lib_price,
@@ -167,6 +170,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "library": library,
   "mcp": mcp,
   "media": media,
+  "meetings": meetings,
   "memories": memories,
   "models": models,
   "notes": notes,

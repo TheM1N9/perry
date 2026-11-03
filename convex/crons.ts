@@ -44,4 +44,8 @@ crons.interval("keep Perry up to date", { minutes: 1 }, internal.updates.tick, {
 // The Library: files Perry wrote in his files folder, and letting go of files no longer here (library.ts).
 crons.interval("keep the Library up to date", { minutes: 10 }, internal.library.sync, {});
 
+// Meetings: one a pet stopped listening to, an ask nobody took, and the calendar for the pet's heads-up (meetings.ts).
+crons.interval("look after meetings", { minutes: 1 }, internal.meetings.sweep, {});
+crons.interval("read the calendar for meetings", { minutes: 5 }, internal.meetings.syncCalendar, {});
+
 export default crons;

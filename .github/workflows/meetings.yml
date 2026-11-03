@@ -1,0 +1,99 @@
+name: Meeting capture
+
+on:
+  pull_request:
+    paths:
+      - 'pet/**'
+      - 'convex/meetings.ts'
+      - 'convex/lib/meetings.ts'
+      - 'convex/schema.ts'
+      - 'runner/meeting-notes.ts'
+      - 'artifacts/meetings/**'
+      - '.github/workflows/meetings.yml'
+      - 'pnpm-lock.yaml'
+  push:
+    branches: [main]
+    paths:
+      - 'pet/**'
+      - 'convex/meetings.ts'
+      - 'convex/lib/meetings.ts'
+      - 'convex/schema.ts'
+      - 'runner/meeting-notes.ts'
+      - 'artifacts/meetings/**'
+      - '.github/workflows/meetings.yml'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meeting-capture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Meeting persistence and write-up
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/run.mjs "${{ runner.temp }}/meeting-backend" --backend-only
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-backend
+          path: ${{ runner.temp }}/meeting-backend
+          if-no-files-found: warn
+          retention-days: 7
+
+  capture:
+    name: Native audio (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            pet/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --dir pet --frozen-lockfile
+      - run: pnpm --dir pet exec node node_modules/electron/install.js
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/meeting-models
+          key: meeting-whisper-base-q8-${{ runner.os }}-v1
+      - name: Install a WASAPI rendering endpoint on the disposable VM
+        if: runner.os == 'Windows'
+        shell: powershell
+        timeout-minutes: 3
+        run: |
+          New-Item -ItemType Directory -Path "${{ runner.temp }}/meeting-capture" -Force | Out-Null
+          .\artifacts\meetings\setup-windows-audio.ps1 *>&1 | Tee-Object -FilePath "${{ runner.temp }}/meeting-capture/audio-setup.log"
+      - name: Capture, transcribe and save a synthetic meeting
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/run.mjs "${{ runner.temp }}/meeting-capture"
+        env:
+          PERRY_MODELS_DIR: ${{ runner.temp }}/meeting-models
+      - name: Upload capture reports, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-capture-${{ runner.os }}
+          path: ${{ runner.temp }}/meeting-capture
+          if-no-files-found: warn
+          retention-days: 7

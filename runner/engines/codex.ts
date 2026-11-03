@@ -43,6 +43,7 @@ type ModelChoice = { model?: string; effort?: string };
 const PINNED: Record<QuickTurn["purpose"], () => string | undefined> = {
   review: () => process.env.PERRY_REVIEW_MODEL,
   title: () => process.env.PERRY_TITLE_MODEL,
+  meeting: () => process.env.PERRY_MEETING_MODEL,
 };
 
 /** Codex's item statuses: CommandExecutionStatus, PatchApplyStatus, McpToolCallStatus. */
