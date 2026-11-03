@@ -73,14 +73,14 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
         {mine ? (
           <Bubble align="end" variant="muted" className="max-w-[85%]">
             <BubbleContent className="rounded-3xl px-4 py-2.5 text-md [overflow-wrap:anywhere]">
-              <Markdown text={message.text} skills={skills} />
+              <div data-cite-text><Markdown text={message.text} skills={skills} /></div>
               <AttachmentList attachments={message.attachments} align="end" />
             </BubbleContent>
           </Bubble>
         ) : (
           <div className="w-full min-w-0">
             {work && <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} omitText={message.text}><AgentRows agents={agents ?? []} /></WorkSummary>}
-            <Markdown text={message.text} />
+            <div data-cite-text><Markdown text={message.text} /></div>
             <AttachmentList attachments={message.attachments} />
             {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
           </div>
@@ -164,18 +164,18 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
  * then what has streamed of the words, or "Thinking" before the turn's run
  * is in.
  */
-export function ReplyInProgress({ streaming, work, agents = [], approving = false, unresponsive = false }: { streaming?: string; work?: Turn; agents?: ChatAgent[]; approving?: boolean; unresponsive?: boolean }) {
+export function ReplyInProgress({ streaming, fullText = streaming, work, agents = [], approving = false, unresponsive = false }: { streaming?: string; fullText?: string; work?: Turn; agents?: ChatAgent[]; approving?: boolean; unresponsive?: boolean }) {
   // Over (its reply on its way to the page), held for the owner's approval, or with its computer gone: not writing.
   const over = work?.finishedAt !== undefined;
   const busy = unresponsive || over || approving;
   return (
     <div className="min-w-0 space-y-2" data-role="assistant" {...(unresponsive ? { "data-unresponsive": true } : streaming !== undefined ? { "data-streaming": true } : { "data-thinking": true })}>
       {work && (over
-        ? <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} omitText={streaming}><AgentRows agents={agents} /></WorkSummary>
-        : <LiveWork work={work} state={unresponsive ? "unresponsive" : approving ? "waiting" : "working"} omitText={streaming}><AgentRows agents={agents} /></LiveWork>)}
+        ? <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} omitText={fullText}><AgentRows agents={agents} /></WorkSummary>
+        : <LiveWork work={work} state={unresponsive ? "unresponsive" : approving ? "waiting" : "working"} omitText={fullText}><AgentRows agents={agents} /></LiveWork>)}
       {streaming !== undefined ? (
         <div>
-          <Markdown text={streaming} streaming />
+          <div data-cite-text><Markdown text={streaming} streaming /></div>
           {!busy && <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}
         </div>
       ) : !work && (

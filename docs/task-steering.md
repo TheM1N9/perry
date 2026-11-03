@@ -4,11 +4,15 @@ On Work → Plans, a running background task has an **Update instructions** form
 
 The instruction appears beside the task plan, separately from the agent's checklist. Replacing the checklist with `set_plan` does not remove owner updates. `status_report` also includes accepted update text, and later task/recovery turns receive those updates in order.
 
+When the owner asks to continue a failed background task, `resume_task` requeues that same task and chat. Its completed checklist, original brief, model selection, accepted updates and native session remain in place. An explicit retry gets a fresh turn budget and clears the old failure state. The failed turn must finish finalizing first; running, queued, done and cancelled tasks cannot be resumed, and a deleted task chat is not recreated. Blocked tasks use the same tool for the owner's answer and keep their existing turn count.
+
 ## Delivery
 
 `tasks.steerFromDashboard` requires the dashboard key. `tasks.steer` is internal and requires the source conversation. A guest, task, job, missing chat, or a different origin chat cannot steer a scoped task. `steer_task` is excluded from guest tools and is an outward action under the existing outside-content approval rules.
 
-The mutation validates a live background task and its own chat, creates a normal run, and calls the existing `codex.enqueueTurn` with `policy: "steer"`, the working turn's engine/model/instructions and the chat's current access. It does not cancel a turn, change task status/turn counts, or replace the task prompt/plan. Between working turns, or during stop/compaction/checkpoint, it refuses retryably instead of creating an orphan run. Paused Perry refuses new instructions.
+`resume_task` likewise requires a fresh owner instruction from the task's origin chat. Jobs, child tasks, guest chats and turns that have read outside content cannot resume it. The authenticated Work page's answer endpoint uses the same continuation mutation.
+
+The steering mutation validates a live background task and its own chat, creates a normal run, and calls the existing `codex.enqueueTurn` with `policy: "steer"`, the working turn's engine/model/instructions and the chat's current access. It does not cancel a turn, change task status/turn counts, or replace the task prompt/plan. Between working turns, or during stop/compaction/checkpoint, it refuses retryably instead of creating an orphan run. Paused Perry refuses new instructions.
 
 When a working turn can be steered, the existing `codexSteers` row is delivered by the runner's `pendingSteers` subscription. Native or concurrent-prompt engines receive it through `engine.steer`; the runner acknowledges it with `ackSteer`. Other engines, refusals and finish-before-delivery use the existing `queueSteer` follow-up. An instruction accepted while the first task turn is still queued becomes a normal queued turn. Follow-ups contain the original brief, current checklist and owner update so a fresh engine session can continue the work.
 

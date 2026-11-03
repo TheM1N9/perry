@@ -71,7 +71,6 @@ export function AppSidebar() {
               <PerryMark className="size-8" />
               <span className="truncate text-md font-semibold tracking-[-0.01em]" translate="no">{assistant}</span>
             </SidebarMenuButton>
-            <UpdateControl />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
@@ -435,13 +434,14 @@ function AccountMenu() {
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem className="flex min-h-12 items-center gap-2 px-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:px-0" data-account-row>
+      <SidebarMenuItem className="flex min-h-12 items-center gap-3 px-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:px-0" data-account-row>
         <div className="flex min-w-0 flex-1 items-center gap-2 group-data-[collapsible=icon]:flex-none">
           <Avatar size="sm" aria-hidden className="size-7 after:hidden"><AvatarFallback className="bg-muted text-xs font-medium text-foreground">{name.charAt(0).toUpperCase()}</AvatarFallback></Avatar>
           <span className="truncate text-sm font-medium group-data-[collapsible=icon]:hidden">{name}</span>
         </div>
+        <UpdateControl />
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Account options" className="relative size-9 shrink-0 touch-manipulation rounded-full border border-border/60 text-muted-foreground before:absolute before:-inset-1" />}>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Account options" className="relative shrink-0 touch-manipulation text-muted-foreground before:absolute before:-inset-1.5" />}>
             <MoreHorizontalIcon className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-60">
@@ -472,7 +472,7 @@ function AccountMenu() {
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="icon" nativeButton={false} render={<Link href="/inbox" />} aria-current={pathname === "/inbox" ? "page" : undefined}
             aria-label={count > 0 ? `Notifications: ${count} need your attention` : "Notifications"}
-            className="relative size-9 shrink-0 touch-manipulation rounded-full border border-border/60 text-muted-foreground before:absolute before:-inset-1 aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground" />}>
+            className="relative shrink-0 touch-manipulation text-muted-foreground before:absolute before:-inset-1.5 aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground" />}>
             <BellIcon className="size-4" />
             {count > 0 && <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-destructive ring-2 ring-sidebar" aria-hidden />}
           </TooltipTrigger>

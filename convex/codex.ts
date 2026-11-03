@@ -28,6 +28,7 @@ import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, res
 import { vAccess, vCodexModel, vEngine, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage, vTurnErrorCode } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isInteractiveInput } from "../lib/interactive";
+import { citedMemories } from "../lib/reply-text";
 
 // --- For runners from before engines ------------------------------------------
 // A computer connected with `pnpm run connect` may run an older runner than
@@ -1292,6 +1293,10 @@ export const markFinalized = internalMutation({
       lastMessageAt: Date.now(),
       pendingTurns: conversation.channel === "web" ? Math.max(0, (conversation.pendingTurns ?? 0) - 1 - steers.length) : conversation.pendingTurns,
     });
+    // Finish the task in the same transaction: a retry cannot slip between finalization and its task callback.
+    if (conversation?.taskId && !job.flush && !job.reactionOnly) {
+      await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, ...(job.error ? { error: job.error } : {}) });
+    }
     return null;
   },
 });
@@ -1337,15 +1342,6 @@ async function tell(ctx: ActionCtx, conversation: { channel: "web" | "telegram" 
 
 /** What a turn that finished with no text and no files is shown as. */
 const EMPTY_REPLY = "The engine finished without writing a reply. Send the message again, or ask what it got done.";
-
-/** A reply's last line naming memories ("memories: a1b2, c3d4"), taken off; the ids it named. */
-const CITED = /\n?[ \t]*memories:[ \t]*([a-z0-9][a-z0-9, \t]*)\s*$/i;
-function citedMemories(response?: string): { text?: string; ids: string[] } {
-  if (response === undefined) return { ids: [] };
-  const match = CITED.exec(response);
-  if (!match) return { text: response, ids: [] };
-  return { text: response.slice(0, match.index).trimEnd(), ids: match[1].split(/[\s,]+/).filter(Boolean) };
-}
 
 export const finalizeTurn = internalAction({
   args: { id: v.id("codexTurns") },
@@ -1487,8 +1483,6 @@ export const finalizeTurn = internalAction({
       await done("deliveredAt");
     }
     await ctx.runMutation(internal.codex.markFinalized, args);
-    // A background task carries on, or says how it ended (tasks.ts).
-    if (conversation.taskId && !job.checkpoint) await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, ...(job.error ? { error: job.error } : {}) });
     return null;
   }),
 });

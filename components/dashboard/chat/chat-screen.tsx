@@ -58,6 +58,7 @@ import { useChatScroll } from "./use-chat-scroll";
 
 import { ChatPanel, ChatPanelToggle, useChatPanel } from "./panel/chat-panel";
 import { ChatAnnouncer } from "../chat-announcer";
+import { citedMessage, SelectionCite } from "./citations";
 
 const messageKey = (message: ChatMessage) => message.id;
 const workKey = (work: Turn) => work.runId;
@@ -566,8 +567,9 @@ export function ChatScreen() {
   async function submit(text = draftControl.current?.read() ?? "", mode: "auto" | "queue" = "auto") {
     // Keep typing/focus available while cached history waits for fresh access metadata.
     if (selectedId && (!chat || chat.contact)) return;
-    const message = text.trim();
-    if (message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
+    const citations = draftControl.current?.citations() ?? [];
+    const message = citedMessage(citations, text);
+    if (!citations.length && message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
     if ((!message && files.length === 0) || busy || uploading || submitting.current) return;
     const submission = { id: selectedId, controller: new AbortController() };
@@ -592,7 +594,7 @@ export function ChatScreen() {
     setBusy(true);
     const sending = files;
     const messageKey = sending.length ? crypto.randomUUID() : undefined;
-    setDraft(""); setFiles([]); setError(""); setNotice("");
+    setDraft(""); draftControl.current?.writeCitations([]); setFiles([]); setError(""); setNotice("");
     let sent: Pending | undefined;
     const uploaded: PendingAttachment[] = [];
     try {
@@ -626,7 +628,8 @@ export function ChatScreen() {
       setPending((items) => items.filter((item) => item !== sent));
       for (const attachment of uploaded) URL.revokeObjectURL(attachment.url);
       const newer = draftControl.current?.read() ?? "";
-      setDraft([message, newer].filter(Boolean).join("\n\n")); setFiles(items => [...sending, ...items]);
+      setDraft([text, newer].filter(Boolean).join("\n\n")); setFiles(items => [...sending, ...items]);
+      draftControl.current?.writeCitations([...citations, ...(draftControl.current?.citations() ?? [])]);
       setError(submission.controller.signal.aborted ? "Sending cancelled. Your message is back in the composer." : `Your message wasn't sent: ${errorText(cause)}`);
     } finally {
       submitting.current = null;
@@ -752,6 +755,7 @@ export function ChatScreen() {
 
   return (
     <div className="relative flex h-dvh min-h-0">
+    {!summary?.isAgent && !chat?.contact && !queueEdit && <SelectionCite key={selectedId ?? "new"} container={scroller} onCite={(text) => { draftControl.current?.cite(text); composer.current?.focus(); }} />}
     <div className="flex min-w-0 flex-1 flex-col">
       {editing && selectedId && <MessageEditor key={editing.id} message={editing} assistant={assistant} waiting={waiting}
         onClose={() => setEditing(null)} onSave={(edit) => rewind(editing.id, edit)}
@@ -916,7 +920,7 @@ export function ChatScreen() {
             <BotIcon className="size-4 text-muted-foreground" /><span className="font-medium">{model || ENGINE_LABELS[engine ?? "codex"]}</span><span className="text-muted-foreground">{effort}</span>
             <span className="flex-1 text-muted-foreground"><AgentStatus agent={summary.agent} /></span><span className="text-xs text-muted-foreground">Runs on its own</span>
             <Link href={`/chat/${parent.id}`} className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-md px-2 font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"><ArrowUpLeftIcon className="size-4" />Open parent</Link>
-          </div> : <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, before, setBefore }) => {
+          </div> : <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, citations, setCitations, before, setBefore }) => {
             // Slash commands: past a command's name, the suggestions are its choices.
             const typedModel = parseModelCommand(draft);
             const typedThink = parseThinkCommand(draft);
@@ -983,6 +987,8 @@ export function ChatScreen() {
             ref={composer}
             assistant={assistant}
             draft={draft}
+            citations={queueEdit ? [] : citations}
+            onCitationsChange={setCitations}
             onDraftChange={setDraft}
             onCaret={setBefore}
             onSubmit={() => void (queueEdit ? saveQueueEdit(draft) : submit(draft))}
@@ -995,7 +1001,7 @@ export function ChatScreen() {
             files={files}
             onAddFiles={addFiles}
             onRemoveFile={(file) => setFiles((items) => items.filter((item) => item !== file))}
-            suggestions={suggestions}
+            suggestions={citations.length && !queueEdit ? [] : suggestions}
             suggesting={mention ? "Skills" : "Commands"}
             completing={completing}
             pickers={{
@@ -1096,7 +1102,7 @@ function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameter
   // The page follows the reply as it is revealed, not as it lands: that is what the reader is reading.
   useLayoutEffect(() => { onContentChange(); }, [streaming, onContentChange]);
   return <div data-live-reply={conversationId}>
-    <ReplyInProgress {...props} streaming={stream == null ? undefined : streaming} />
+    <ReplyInProgress {...props} streaming={stream == null ? undefined : streaming} fullText={stream ?? undefined} />
   </div>;
 }
 
