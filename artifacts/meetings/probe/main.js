@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, systemPreferences } from "electron";
+import { app, BrowserWindow, ipcMain, session, systemPreferences, utilityProcess } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +9,7 @@ const home = process.env.PERRY_HOME;
 const output = process.env.PERRY_MEETING_PROBE_OUT;
 app.setPath("userData", join(home, "electron-profile"));
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
-const report = { phase: "boot", pid: process.pid, electron: process.versions.electron, platform: process.platform, states: [], segments: [], checks: {} };
+const report = { phase: "boot", pid: process.pid, electron: process.versions.electron, platform: process.platform, states: [], segments: [], nativeOperations: [], checks: {} };
 const save = () => writeFileSync(output, JSON.stringify(report, null, 2));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let ears;
@@ -39,6 +39,38 @@ save();
 
 app.whenReady().then(async () => {
   try {
+    // Journal entry and return around native teardown calls: a blocked main thread
+    // cannot run a timeout, but the parent can still upload the last saved operation.
+    const destroying = BrowserWindow.prototype.destroy;
+    BrowserWindow.prototype.destroy = function (...args) {
+      const operation = { type: "window.destroy", title: this.getTitle(), enteredAt: Date.now() };
+      report.nativeOperations.push(operation);
+      save();
+      const result = destroying.apply(this, args);
+      operation.returnedAt = Date.now();
+      save();
+      return result;
+    };
+    const fork = utilityProcess.fork.bind(utilityProcess);
+    utilityProcess.fork = (module, args, options) => {
+      const worker = fork(module, args, { ...options, stdio: "pipe" });
+      let log = "";
+      const append = (data) => { log = (log + data).slice(-64_000); writeFileSync(join(dirname(output), "worker.log"), log); };
+      worker.stdout?.on("data", append);
+      worker.stderr?.on("data", append);
+      worker.once("exit", (code) => { report.workerExit = { code, at: Date.now() }; save(); });
+      const kill = worker.kill.bind(worker);
+      worker.kill = () => {
+        const operation = { type: "worker.kill", enteredAt: Date.now() };
+        report.nativeOperations.push(operation);
+        save();
+        const result = kill();
+        operation.returnedAt = Date.now();
+        save();
+        return result;
+      };
+      return worker;
+    };
     if (process.platform === "darwin") report.screenAccess = systemPreferences.getMediaAccessStatus("screen");
     // A per-session microphone fixture leaves Chromium's real OS loopback untouched.
     const hearing = session.fromPartition("perry-listening");
