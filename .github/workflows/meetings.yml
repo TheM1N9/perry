@@ -44,6 +44,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run codegen
+      - run: git diff --exit-code -- convex/_generated/api.d.ts server/modules.ts
+      - run: pnpm run build
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/run.mjs "${{ runner.temp }}/meeting-backend" --backend-only
       - if: always()
         uses: actions/upload-artifact@v4
