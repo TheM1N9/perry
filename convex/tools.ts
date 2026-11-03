@@ -1442,12 +1442,14 @@ const queue_task = createTool({
 
 const resume_task = createTool({
   description:
-    "Give a background task stuck on a question (status blocked) the owner's answer, and put it back in the " +
-    "queue to carry on. Use it when the owner answers a task's question here. Task ids come from status_report.",
-  inputSchema: z.object({ taskId: z.string(), answer: z.string().min(1).max(4000).describe("The owner's answer, in their words.") }),
+    "Continue the same background task when the owner answers its question (status blocked) or asks to retry it " +
+    "after failure (status failed). Requeues its existing task and chat, preserving its plan and model selection. " +
+    "Use this instead of creating a replacement or changing models. Task ids come from status_report.",
+  inputSchema: z.object({ taskId: z.string(), answer: z.string().min(1).max(4000).describe("The owner's answer or instruction to continue, in their words.") }),
   execute: async (ctx, input): Promise<{ resumed: boolean; note?: string; error?: string }> => {
-    const resumed: boolean = await ctx.runMutation(internal.tasks.resume, { id: input.taskId, answer: input.answer });
-    return resumed ? { resumed, note: NO_WAIT } : { resumed, error: "That task is not waiting for an answer; status_report shows each task's status." };
+    if (!ctx.conversationId || ctx.fromJob || ctx.outside) return { resumed: false, error: "Only a fresh owner instruction can resume a background task." };
+    const resumed: boolean = await ctx.runMutation(internal.tasks.resume, { id: input.taskId, answer: input.answer, conversationId: ctx.conversationId });
+    return resumed ? { resumed, note: NO_WAIT } : { resumed, error: "That task cannot be resumed. It must be blocked or failed, with its chat available and its previous turn finished. Use its original owner chat; status_report shows its status." };
   },
 });
 
