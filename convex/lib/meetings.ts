@@ -25,7 +25,7 @@ export const MEETING_TEMPLATES = {
 
 export type MeetingTemplate = keyof typeof MEETING_TEMPLATES;
 export const DEFAULT_TEMPLATE: MeetingTemplate = "general";
-export const templateOf = (id?: string): MeetingTemplate => (id && Object.hasOwn(MEETING_TEMPLATES, id) ? (id as MeetingTemplate) : DEFAULT_TEMPLATE);
+export const templateOf = (id?: string): MeetingTemplate => (id && Object.prototype.hasOwnProperty.call(MEETING_TEMPLATES, id) ? (id as MeetingTemplate) : DEFAULT_TEMPLATE);
 
 /** The heading the owner's own typing goes under, kept word for word below what Perry writes. */
 export const TYPED_HEADING = "Your notes";
