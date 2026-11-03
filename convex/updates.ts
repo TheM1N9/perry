@@ -73,6 +73,8 @@ async function busyWith(ctx: QueryCtx): Promise<string | undefined> {
   }
   const pet = await ctx.db.query("petSetup").first();
   if (pet?.state === "working" && Date.now() - pet.startedAt < HOUR_MS) return "setting up the desktop pet";
+  // An update restarts the pet too, and a call in progress would lose the rest of its words.
+  if (await ctx.db.query("meetings").withIndex("by_status", (q) => q.eq("status", "listening")).first()) return "listening to a call";
   return undefined;
 }
 

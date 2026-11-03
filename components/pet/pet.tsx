@@ -30,6 +30,8 @@ import { Empty } from "./empty";
 import { PetNeedsYou } from "./needs-you";
 import { PetTip } from "./tip";
 import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
+import { useMeetings, type MeetingBridge } from "./meetings";
+import { clockOf } from "@/convex/lib/meetings";
 
 /**
  * Perry on the desktop: the platypus, standing in a corner of the screen on
@@ -51,7 +53,7 @@ import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
  */
 
 /** What the pet's window (pet/preload.cjs) lets this page do. */
-type Bridge = VoiceBridge & {
+type Bridge = VoiceBridge & MeetingBridge & {
   /** Whether the pointer is over something to click; elsewhere clicks pass through. */
   solid: (on: boolean) => void;
   /** Where he goes: his spot, the window's top-left corner with him in its bottom-right one, in screen points. */
@@ -220,6 +222,9 @@ function Pet() {
   const pausedAt = pauseView?.paused?.at;
   const [pauseHidden, setPauseHidden] = useState<number | null>(null);
   const now = useNow(1000);
+  const meeting = useMeetings(key, now, Boolean(pausedAt));
+  const listenKeyNow = useRef(meeting.hotkey);
+  listenKeyNow.current = meeting.hotkey;
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("chat");
   const [selectedChatId, setChatIdState] = useState<PetChatId>(null);
@@ -375,7 +380,7 @@ function Pet() {
           hotkeyNow.current = { ...hotkeyNow.current, hold: talk.hold };
           setHotkey(hotkeyNow.current);
         }
-        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch((error: unknown) => {
+        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current, listenKeyNow.current) }).catch((error: unknown) => {
           if (/dashboard key|removed from Perry/i.test(errorText(error))) setRefused(errorText(error));
         });
       }
@@ -493,7 +498,7 @@ function Pet() {
       // At once, not at the next render: the Look keys' report carries these too.
       hotkeyNow.current = result;
       setHotkey(result);
-      void presence({ key, idleSeconds: idleNow.current, ...reported(result, lookKeyNow.current) }).catch(() => {});
+      void presence({ key, idleSeconds: idleNow.current, ...reported(result, lookKeyNow.current, listenKeyNow.current) }).catch(() => {});
     }, () => {});
   }, [talkKeys, key, presence]);
   // The same for the Look keys. A pet window from before Look has none, and says it needs a restart.
@@ -504,9 +509,13 @@ function Pet() {
     void taking.then((result) => {
       lookKeyNow.current = result;
       setLookKey(result);
-      void presence({ key, idleSeconds: idleNow.current, ...reported(hotkeyNow.current, result) }).catch(() => {});
+      void presence({ key, idleSeconds: idleNow.current, ...reported(hotkeyNow.current, result, listenKeyNow.current) }).catch(() => {});
     }, () => {});
   }, [lookKeys, key, presence]);
+  useEffect(() => {
+    if (!meeting.hotkey.hotkey && !meeting.hotkey.error) return;
+    void presence({ key, idleSeconds: idleNow.current, ...reported(hotkeyNow.current, lookKeyNow.current, meeting.hotkey) }).catch(() => {});
+  }, [key, presence, meeting.hotkey]);
 
   // A picture of the screen: his chat opens with it in the box, ready for the question.
   const showShot = useCallback((taken: TakenShot) => {
@@ -586,7 +595,25 @@ function Pet() {
   let urgent = false;
   /** The reply's bubble, when that is what he is holding up, and for how long it stays. */
   let replyUp: { key: string; ms: number } | null = null;
-  if (said && said.until > now) {
+  if (meeting.state.phase !== "off") {
+    const listening = meeting.state.phase === "listening";
+    const warning = meeting.state.droppedMs ? "Some audio could not be transcribed." : meeting.state.system !== "live" ? /permission/i.test(meeting.state.system ?? "") ? meeting.state.system : "Microphone only. I can't hear the other side yet." : meeting.state.mic !== "live" ? "Computer sound only. I can't hear your microphone." : "Hearing you and the call. Only text is saved.";
+    bubble = <Bubble id="meeting" title={listening ? `Listening · ${clockOf(now - (meeting.state.startedAt ?? now))}` : meeting.state.phase === "starting" ? "Opening my ears…" : "Finishing the transcript…"}
+      detail={meeting.state.progress !== undefined ? `Downloading speech model: ${Math.round(meeting.state.progress * 100)}%` : warning}>
+      {listening && <BubbleButton primary onClick={meeting.stop}>Stop listening</BubbleButton>}
+      {meeting.state.phase === "starting" && <BubbleButton onClick={meeting.stop}>Cancel</BubbleButton>}
+      {meeting.state.id && <BubbleButton onClick={() => openPath(`/meetings/${meeting.state.id}`)}>Notes</BubbleButton>}
+    </Bubble>;
+  } else if (meeting.state.error) {
+    bubble = <Bubble title="I couldn't listen" detail={meeting.state.error} onClose={meeting.clearError} />;
+  } else if (meeting.upcoming || meeting.notice) {
+    const event = meeting.upcoming;
+    bubble = <Bubble id="meeting-upcoming" title={event ? `Time for your meet: ${event.title}` : "On a call?"} detail="I can listen and write your notes." onClose={meeting.dismiss}>
+      {event?.joinUrl && <BubbleButton primary onClick={() => void meeting.start({ title: event.title, eventId: event.eventId, joinUrl: event.joinUrl })}>Join &amp; listen</BubbleButton>}
+      <BubbleButton primary={!event?.joinUrl} onClick={() => void meeting.start(event ? { title: event.title, eventId: event.eventId } : {})}>Just listen</BubbleButton>
+      <BubbleButton onClick={meeting.dismiss}>Not now</BubbleButton>
+    </Bubble>;
+  } else if (said && said.until > now) {
     const onOpen = said.onOpen;
     bubble = <Bubble title={said.title} detail={said.detail} onClose={() => setSaid(null)} onOpen={onOpen && (() => { setSaid(null); onOpen(); })} />;
   } else if (pausedAt && pauseHidden !== pausedAt) {
@@ -682,7 +709,7 @@ function Pet() {
     cheerSeen.current = cheer;
   }
   // Paused, he is off duty whatever else goes on, unless something needs the owner now.
-  const asleep = pausedAt ? !urgent && !open : !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
+  const asleep = meeting.state.phase !== "off" ? false : pausedAt ? !urgent && !open : !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
   // Under his name: what he is doing, what waits on you, or a new version of him, a click away.
   const status: ReactNode = pausedAt ? (
     <>Paused ·{" "}
@@ -705,7 +732,8 @@ function Pet() {
           ) : "Here when you need him";
   const panel = (
     <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)} onOpenApp={() => openPath("/")}
-      status={status} busy={Boolean(petChat?.isRunning)}>
+      status={meeting.state.phase === "listening" ? <Button variant="link" className="h-auto p-0 text-xs" onClick={meeting.stop}>Listening · {clockOf(now - (meeting.state.startedAt ?? now))} · Stop</Button> : status} busy={Boolean(petChat?.isRunning)}>
+      {window.perryPet?.startMeeting && meeting.state.phase === "off" && <div className="flex justify-end px-3 pt-2"><Button variant="ghost" size="sm" onClick={() => void meeting.start()}>Listen to a call</Button></div>}
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
           voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} hold={hotkey.hold ?? null} byHotkey={talkSends.current} sendSignal={sendSignal}
@@ -718,7 +746,7 @@ function Pet() {
   );
   return (
     <Stage bubble={open ? panel : bubble}>
-      <Body mood={voice.state === "listening" ? "listening" : urgent ? "urgent" : petChat?.isRunning || voice.state === "transcribing" ? "thinking" : "idle"}
+      <Body mood={meeting.state.phase === "listening" || voice.state === "listening" ? "listening" : urgent ? "urgent" : petChat?.isRunning || voice.state === "transcribing" ? "thinking" : "idle"}
         asleep={asleep} cheer={cheer} badge={open ? 0 : needs} onTouch={wake}
         pose={voice.state === "idle" ? (step ?? awayStep)?.pose : undefined}
         onClick={() => setOpen((value) => !value)} />
@@ -728,9 +756,9 @@ function Pet() {
 
 /** The hotkeys' standing, as presence reports it: the keys held, why not the ones asked for, and why the Talk keys can only be tapped. */
 const standing = (state: HotkeyState) => ({ ...(state.hotkey ? { hotkey: state.hotkey } : {}), ...(state.error ? { error: state.error } : {}) });
-const reported = (talk: HotkeyState, look: HotkeyState) => {
+const reported = (talk: HotkeyState, look: HotkeyState, listen: HotkeyState) => {
   const { hotkey, error } = standing(talk);
-  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), ...(talk.hold ? { hotkeyHold: talk.hold } : {}), keys: { look: standing(look) } };
+  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), ...(talk.hold ? { hotkeyHold: talk.hold } : {}), keys: { look: standing(look), listen: standing(listen) } };
 };
 
 /** A line or two of a reply, for a bubble: its start, or while it is being written, its end. */

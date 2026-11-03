@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, BrainIcon, LibraryIcon, CableIcon, CheckCircle2Icon, CpuIcon, FilePlusIcon, FileTextIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon,
+  ActivityIcon, BookUserIcon, BrainIcon, LibraryIcon, CableIcon, CheckCircle2Icon, CpuIcon, FilePlusIcon, FileTextIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, HeadphonesIcon,
   MessageSquareIcon, MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, ShieldCheckIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -23,6 +23,7 @@ export const PaletteContext = createContext<{ open: () => void }>({ open: () => 
 export const usePalette = () => useContext(PaletteContext);
 
 const PAGES = [
+  { href: "/meetings", label: "Meetings", icon: HeadphonesIcon },
   { href: "/inbox", label: "Needs you", icon: InboxIcon },
   { href: "/todos", label: "To-dos", icon: CheckCircle2Icon },
   { href: "/brain", label: "Brain", icon: BrainIcon },

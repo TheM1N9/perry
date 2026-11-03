@@ -874,7 +874,7 @@ export class ClaudeEngine implements Engine {
    */
   async quickTurn(turn: QuickTurn): Promise<{ text: string; model?: string }> {
     // The owner's pin for its purpose, else the quick tier's (the runner picks it: convex/lib/routing.ts), else Claude Code's own default.
-    const pinned = turn.purpose === "review" ? process.env.PERRY_CLAUDE_REVIEW_MODEL : process.env.PERRY_CLAUDE_TITLE_MODEL;
+    const pinned = turn.purpose === "review" ? process.env.PERRY_CLAUDE_REVIEW_MODEL : turn.purpose === "meeting" ? process.env.PERRY_CLAUDE_MEETING_MODEL : process.env.PERRY_CLAUDE_TITLE_MODEL;
     const model = pinned || turn.model;
     const effort = pinned ? undefined : turn.effort;
     const abort = new AbortController();

@@ -347,7 +347,7 @@ export type TurnResult = {
 
 /** A quick side turn: no tools, no approvals, only an answer. */
 export type QuickTurn = {
-  purpose: "review" | "title";
+  purpose: "review" | "title" | "meeting";
   instructions: string;
   text: string;
   /** JSON Schema the answer must match. */
