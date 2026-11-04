@@ -3,11 +3,13 @@ import { execFile } from "node:child_process";
 // String.raw preserves the registry separators when JavaScript constructs the command.
 const WINDOWS = String.raw`$root = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone'; $active = @(Get-ChildItem -LiteralPath $root -Recurse -ErrorAction SilentlyContinue | Get-ItemProperty -ErrorAction SilentlyContinue | Where-Object { $_.LastUsedTimeStart -gt 0 -and $_.LastUsedTimeStop -eq 0 -and $_.PSChildName -notmatch 'electron|perry' }); $names = @($active | ForEach-Object { $_.PSChildName }); $titles = @(); if ($names.Count) { $titles = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match 'Google Meet|Meet - |Zoom Meeting|Microsoft Teams|Webex' } | ForEach-Object { $_.MainWindowTitle }) }; @{ active = ($names.Count -gt 0); names = @($names + $titles) } | ConvertTo-Json -Compress`;
 const MAC = `function run() {
+  ObjC.import('Foundation');
   ObjC.import('AVFoundation');
   ObjC.import('AppKit');
-  const permission = $.AVCaptureDevice.authorizationStatusForMediaType($.AVMediaTypeAudio);
+  const captureDevice = $.NSClassFromString('AVCaptureDevice');
+  const permission = captureDevice.authorizationStatusForMediaType('soun');
   if (permission !== 3) return JSON.stringify({ active: false, unavailable: 'microphone-permission' });
-  const devices = $.AVCaptureDevice.devicesWithMediaType($.AVMediaTypeAudio);
+  const devices = captureDevice.devicesWithMediaType('soun');
   let active = false;
   for (let i = 0; i < devices.count; i++) {
     if (devices.objectAtIndex(i).isInUseByAnotherApplication) active = true;

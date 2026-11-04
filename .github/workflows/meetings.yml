@@ -17,6 +17,7 @@ on:
       - 'convex/schema.ts'
       - 'runner/meeting-notes.ts'
       - 'artifacts/meetings/**'
+      - 'artifacts/browser.ts'
       - '.github/workflows/meetings.yml'
       - 'pnpm-lock.yaml'
   push:
@@ -36,6 +37,7 @@ on:
       - 'convex/schema.ts'
       - 'runner/meeting-notes.ts'
       - 'artifacts/meetings/**'
+      - 'artifacts/browser.ts'
       - '.github/workflows/meetings.yml'
       - 'pnpm-lock.yaml'
   workflow_dispatch:

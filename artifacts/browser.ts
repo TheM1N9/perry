@@ -50,9 +50,14 @@ export async function openChat(base: string, dashboardKey: string) {
   const port = await freePort();
   const profile = mkdtempSync(join(tmpdir(), "perry-e2e-profile-"));
   const chrome = spawn(process.env.PERRY_E2E_BROWSER ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", [
+    ...(process.platform === "linux" && process.env.GITHUB_ACTIONS === "true" ? ["--no-sandbox", "--disable-dev-shm-usage"] : []),
     "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     "--window-size=1280,800", "--autoplay-policy=no-user-gesture-required", "about:blank",
-  ], { stdio: "ignore" });
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+  let launchError: Error | undefined;
+  let launchLog = "";
+  chrome.once("error", (error) => { launchError = error; });
+  chrome.stderr.on("data", (chunk) => { launchLog = (launchLog + chunk).slice(-8_000); });
   let closed = false;
   let socket: WebSocket | undefined;
   const waiting = new Map<number, { settle: (message: CdpMessage) => void; fail: (error: Error) => void }>();
@@ -70,11 +75,16 @@ export async function openChat(base: string, dashboardKey: string) {
 
   let targets: Array<{ type: string; webSocketDebuggerUrl: string }> = [];
   for (let i = 0; i < 50 && !targets.some((target) => target.type === "page"); i++) {
+    if (launchError || chrome.exitCode !== null || chrome.signalCode !== null) break;
     try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1000) })).json() as typeof targets; } catch {}
     await sleep(200);
   }
   const page = targets.find((target) => target.type === "page");
-  if (!page) { close(); throw new Error("Chrome did not open a page."); }
+  if (!page) {
+    const failure = launchError?.message ?? `exit=${chrome.exitCode}, signal=${chrome.signalCode}`;
+    close();
+    throw new Error(`Chrome did not open a page (${failure}). ${launchLog}`);
+  }
   const ws = socket = new WebSocket(page.webSocketDebuggerUrl);
   try {
     await new Promise<void>((resolve, reject) => {
