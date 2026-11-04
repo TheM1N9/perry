@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { calendarConnector, calendarFlow } from "./calendar-flow.mjs";
+import { speechFlow } from "./speech-flow.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const output = process.argv[2] && resolve(process.argv[2]);
@@ -19,7 +21,7 @@ const token = "synthetic-meeting-ci-runner";
 process.env.PERRY_HOME = scratch;
 process.env.DASHBOARD_KEY = key;
 process.env.PERRY_CREDENTIAL_KEY = "ab".repeat(32);
-const report = { platform: process.platform, node: process.version, checks: {}, loopbackCoverage: "not-run" };
+const report = { platform: process.platform, node: process.version, checks: {}, loopbackCoverage: "not-run", cloudTransportCoverage: "not-run" };
 const save = () => writeFileSync(join(output, "result.json"), JSON.stringify(report, null, 2));
 const check = (name, condition) => { report.checks[name] = Boolean(condition); save(); assert.ok(condition, name); console.log(`PASS ${name}`); };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -68,6 +70,9 @@ let database;
 let server;
 let child;
 let probe;
+const nativeFetch = globalThis.fetch;
+let cloudSource = null;
+const cloudFixture = process.argv.includes("--cloud");
 save();
 try {
   const [{ Runtime }, { default: schema }, { modules }, { initializeCredentialEncryption }] = await Promise.all([
@@ -75,12 +80,26 @@ try {
   ]);
   database = new DatabaseSync(join(scratch, "perry.sqlite"));
   initializeCredentialEncryption(database, scratch);
-  runtime = new Runtime(database, schema, modules, { storageDir: join(scratch, "storage") });
+  runtime = new Runtime(database, schema, { ...modules, composio: { ...modules.composio, ...calendarConnector } }, { storageDir: join(scratch, "storage") });
   await runtime.stop();
   globalThis.__perry = { runtime, started: true };
   const call = async (path, args = {}) => (await runtime.call(path, args, { internal: true })).value;
   await runtime.exclusive(() => runtime.store.insert("installation", { defaultEngine: "codex", onboarding: "skipped", createdAt: Date.now() }));
   await call("runner:createToken", { name: "CI notes writer", token });
+  await calendarFlow(call, key, check);
+  await speechFlow(call, key, check);
+  if (cloudFixture) {
+    report.scope = "cloud transport fixture: no paid ASR request";
+    await call("meetings:setSettings", { key, speech: { provider: "groq", model: "small", language: "auto", vocabulary: "" } });
+    globalThis.fetch = async (url, options) => {
+      if (String(url) !== "https://api.groq.com/openai/v1/audio/transcriptions") return nativeFetch(url, options);
+      assert.ok(cloudSource === "you" || cloudSource === "them");
+      const wave = Buffer.from(await options.body.get("file").arrayBuffer());
+      check(`cloud ${cloudSource} WAV contains captured audio`, wave.length > 32000 && wave.subarray(44).some((byte) => byte !== 0));
+      return Response.json({ text: cloudSource === "you" ? "I will send the revised proposal on Friday. Please confirm the proposal delivery date." : "The approved budget is five thousand dollars. We agreed to keep the budget at five thousand dollars." });
+    };
+  }
+  if (process.argv.includes("--large")) await call("meetings:setSettings", { key, speech: { provider: "local", model: "large-v3-turbo", language: "en", vocabulary: "" } });
   const { runCall } = await import("../../server/api.ts");
   let rejectedDelivery = false;
   let retrySucceeded = false;
@@ -90,6 +109,7 @@ try {
       for await (const chunk of incoming) chunks.push(chunk);
       const body = Buffer.concat(chunks).toString("utf8");
       const payload = JSON.parse(body);
+      if (payload.path === "speech:transcribe") cloudSource = payload.args.source;
       if (payload.path === "meetings:appendSegments" && !rejectedDelivery) {
         rejectedDelivery = true;
         outgoing.writeHead(503, { "content-type": "application/json" });
@@ -118,7 +138,7 @@ try {
   } else {
     fixtures();
     const executable = createRequire(join(root, "pet/package.json"))("electron");
-    const env = { ...process.env, PERRY_URL: `http://127.0.0.1:${server.address().port}`, PERRY_MEETING_PROBE_OUT: join(output, "electron.json"), PERRY_MODELS_DIR: process.env.PERRY_MODELS_DIR ?? join(scratch, "models") };
+    const env = { ...process.env, PERRY_URL: `http://127.0.0.1:${server.address().port}`, PERRY_MEETING_PROBE_OUT: join(output, "electron.json"), PERRY_MODELS_DIR: process.env.PERRY_MODELS_DIR ?? join(scratch, "models"), PERRY_MEETING_LARGE_PROBE: process.argv.includes("--large") ? "1" : "0", PERRY_MEETING_CLOUD_PROBE: cloudFixture ? "1" : "0" };
     delete env.ELECTRON_RUN_AS_NODE;
     const app = join(root, "artifacts/meetings/probe");
     const bundle = executable.match(/^(.*\.app)\/Contents\/MacOS\//)?.[1];
@@ -131,7 +151,7 @@ try {
     child.stderr.on("data", (data) => { log = (log + data).slice(-64_000); writeFileSync(join(output, "electron.log"), log); });
     let launchError;
     child.on("error", (error) => { launchError = error; });
-    const deadline = Date.now() + 210_000;
+    const deadline = Date.now() + (process.argv.includes("--large") ? 390_000 : 210_000);
     while (Date.now() < deadline) {
       if (existsSync(env.PERRY_MEETING_PROBE_OUT)) {
         try { probe = JSON.parse(readFileSync(env.PERRY_MEETING_PROBE_OUT, "utf8")); } catch {}
@@ -143,13 +163,14 @@ try {
     report.native = probe;
     check("native Electron completed", probe?.phase === "done");
     report.loopbackCoverage = probe.loopbackCoverage ?? "failed";
+    if (cloudFixture) report.cloudTransportCoverage = "cloud transport fixture";
     check("native capture and cleanup passed", probe.passed);
-    if (process.platform === "win32") check("real WASAPI loopback transcribed", report.loopbackCoverage === "verified");
+    if (process.platform === "win32") check(cloudFixture ? "real WASAPI loopback reached cloud transport" : "real WASAPI loopback transcribed", probe.loopbackCoverage === "verified");
     check("failed HTTP delivery retried successfully", rejectedDelivery && retrySucceeded);
     id = probe.meetingId;
   }
   const transcript = await call("meetings:transcript", { key, id });
-  check("both transcript sources persisted", transcript.some((part) => part.source === "you") && (report.loopbackCoverage === "permission-blocked" || transcript.some((part) => part.source === "them")));
+  check("both transcript sources persisted", transcript.some((part) => part.source === "you") && (report.loopbackCoverage === "permission-blocked" || probe?.loopbackCoverage === "permission-blocked" || transcript.some((part) => part.source === "them")));
   check("segments are idempotent", new Set(transcript.map((part) => part.seq)).size === transcript.length);
   const meeting = await call("meetings:get", { key, id });
   const own = await call("notes:get", { key, id: meeting.noteId });
@@ -167,7 +188,12 @@ try {
   await call("meetings:finishNotes", { token, id, claim: claim.claim, title: written.title, markdown: written.markdown, actions: written.actions });
   const note = await call("notes:get", { key, id: meeting.noteId });
   check("typed notes survive the write-up", note.content.includes("Check the proposal deadline.") && note.content.includes("## Your notes"));
+  const separated = await call("meetings:get", { key, id });
+  check("meeting summary excludes personal notes", separated.summary.includes("Send the proposal on Friday.") && !separated.summary.includes("Check the proposal deadline.") && separated.thoughts === "Check the proposal deadline.");
   check("generated notes have outside-content provenance", (await runtime.store.query("memories").withIndex("by_page", (q) => q.eq("pageId", meeting.noteId)).collect()).some((line) => line.origin === "tool"));
+  await call("notes:save", { key, id: meeting.noteId, content: note.content.replace("Send the proposal on Friday.", "Edited in Brain.").replace("Check the proposal deadline.", "Edited personal thoughts."), expectedRevision: note.revision });
+  const edited = await call("meetings:get", { key, id });
+  check("Brain edits preserve separate meeting content", edited.summary.includes("Edited in Brain.") && !edited.summary.includes("Edited personal thoughts.") && edited.thoughts === "Edited personal thoughts.");
   await call("meetings:addAction", { key, id, index: 0 });
   await call("meetings:addAction", { key, id, index: 0 });
   check("action items do not duplicate to-dos", (await runtime.store.query("todos").collect()).filter((todo) => todo.title === "Send the proposal on Friday").length === 1);
@@ -178,6 +204,7 @@ try {
   console.error(report.error);
   process.exitCode = 1;
 } finally {
+  globalThis.fetch = nativeFetch;
   if (child?.pid && child.exitCode === null) {
     if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
     else child.kill();
@@ -192,7 +219,7 @@ try {
   report.passed = !report.error && report.scratchRemoved && Object.values(report.checks).every(Boolean);
   save();
   if (process.env.GITHUB_STEP_SUMMARY) {
-    writeFileSync(process.env.GITHUB_STEP_SUMMARY, `## Meeting capture (${process.platform})\n\n- Result: ${report.passed ? "passed" : "failed"}\n- System audio coverage: ${report.loopbackCoverage}\n- Checks: ${Object.keys(report.checks).length}\n- Disposable data removed: ${report.scratchRemoved}\n`, { flag: "a" });
+    writeFileSync(process.env.GITHUB_STEP_SUMMARY, `## Meeting capture (${process.platform})\n\n- Result: ${report.passed ? "passed" : "failed"}\n- System audio coverage: ${report.loopbackCoverage}\n- Cloud transport coverage: ${report.cloudTransportCoverage}\n- Checks: ${Object.keys(report.checks).length}\n- Disposable data removed: ${report.scratchRemoved}\n`, { flag: "a" });
   }
   console.log(JSON.stringify({ passed: report.passed, loopbackCoverage: report.loopbackCoverage, scratchRemoved: report.scratchRemoved }));
 }

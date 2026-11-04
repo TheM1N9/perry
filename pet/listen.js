@@ -50,13 +50,13 @@ export function listener({ here, models, call, tell }) {
   let lastError = null;
 
   const view = () => current
-    ? { phase: current.phase, id: current.id, title: current.title, startedAt: current.startedAt, mic: current.mic, system: current.system, behindMs: behind(current), droppedMs: current.droppedMs, callActive: otherCall, ...(current.progress ? { progress: current.progress } : {}) }
+    ? { phase: current.phase, id: current.id, title: current.title, startedAt: current.startedAt, mic: current.mic, system: current.system, behindMs: behind(current), droppedMs: current.droppedMs, callActive: otherCall, speech: current.speech?.provider === "groq" ? "Whisper Large v3 · Cloud" : current.speech?.model === "large-v3-turbo" ? "Whisper Large v3 Turbo · Local" : "Whisper Small · Local", ...(current.speechError ? { error: current.speechError } : {}), ...(current.progress ? { progress: current.progress } : {}) }
     : { phase: "off", callActive: otherCall, ...(lastError ? { error: lastError } : {}) };
   const report = () => tell(view());
   const behind = (session) => session.queue.reduce((sum, chunk) => sum + chunk.endMs - chunk.startMs, 0);
 
   function forkWorker(session) {
-    const worker = utilityProcess.fork(join(here, "listen-worker.js"), [models], {
+    const worker = utilityProcess.fork(join(here, "listen-worker.js"), [models, session.speech?.language ?? "en", session.speech?.model ?? "small"], {
       serviceName: "Perry listening", stdio: "ignore",
       // Electron's own .app on a Mac is signed ad hoc, and ONNX Runtime's library is not signed at all.
       allowLoadingUnsignedLibraries: true,
@@ -93,6 +93,7 @@ export function listener({ here, models, call, tell }) {
     const chunk = session.writing;
     session.writing = null;
     if (message.type === "failed") {
+      session.speechError = message.error;
       // Not this chunk's fault if it never got a model: then none will work, and it should say so.
       session.failures += 1;
       if (chunk) session.droppedMs += chunk.endMs - chunk.startMs;
@@ -106,6 +107,7 @@ export function listener({ here, models, call, tell }) {
         return;
       }
     } else {
+      session.speechError = null;
       session.wrote = true;
       session.spentMs += message.ms;
       session.heardMs += chunk ? chunk.endMs - chunk.startMs : 0;
@@ -121,7 +123,45 @@ export function listener({ here, models, call, tell }) {
 
   /** The next chunk to the worker, when it has none. */
   function pump(session) {
-    if (session.released || session.writing || !session.worker || !session.queue.length) return;
+    if (session.released || session.writing || session.speechRetry || !session.queue.length) return;
+    if (session.speech?.provider === "groq") {
+      const chunk = session.writing = session.queue.shift();
+      const audio = Buffer.alloc(chunk.samples.length * 2);
+      for (let i = 0; i < chunk.samples.length; i++) audio.writeInt16LE(Math.round(Math.max(-1, Math.min(1, chunk.samples[i])) * 32767), i * 2);
+      const started = Date.now();
+      void call("speech:transcribe", { id: session.id, seq: chunk.seq, source: chunk.source, startMs: chunk.startMs, endMs: chunk.endMs, audio: audio.toString("base64") }).then(({ text }) => {
+        session.speechError = null;
+        onWorker(session, { type: "done", text, ms: Date.now() - started });
+      }, (error) => {
+        if (session.released || current !== session) return;
+        session.writing = null;
+        const message = String(error?.message ?? error);
+        if (/Add a Groq speech key|rejected the speech key|Cloud transcription is off|isn't recording that meeting|Groq transcription failed \(4(?!29)\d{2}\)/.test(message)) {
+          session.speechBlocked = true;
+          session.speechError = session.endError = message;
+          session.droppedMs += behind(session) + chunk.endMs - chunk.startMs;
+          session.queue.length = 0;
+          void end(session, message);
+          settle(session);
+          return;
+        }
+        if (/Invalid speech chunk|16 kHz mono/.test(message)) {
+          session.droppedMs += chunk.endMs - chunk.startMs;
+          session.speechError = message;
+          report();
+          pump(session);
+          settle(session);
+          return;
+        }
+        session.queue.unshift(chunk);
+        session.speechError = message;
+        session.speechRetry = setTimeout(() => { session.speechRetry = null; pump(session); }, RETRY_MS);
+        report();
+        settle(session);
+      });
+      return;
+    }
+    if (!session.worker) return;
     session.writing = session.queue.shift();
     session.worker.postMessage(session.writing);
   }
@@ -188,6 +228,7 @@ export function listener({ here, models, call, tell }) {
     session.released = true;
     clearInterval(session.alive);
     clearTimeout(session.retry);
+    clearTimeout(session.speechRetry);
     clearTimeout(session.finishWait);
     clearTimeout(session.stopDeadline);
     clearTimeout(session.lastWords);
@@ -244,6 +285,10 @@ export function listener({ here, models, call, tell }) {
   const receiveChunk = (event, chunk) => {
     const session = current;
     if (!session || session.released || event.sender !== session.window?.webContents) return;
+    if (session.speechBlocked) {
+      session.droppedMs += chunk.endMs - chunk.startMs;
+      return;
+    }
     session.queue.push(chunk);
     while (behind(session) > MOST_BEHIND_MS) {
       const dropped = session.queue.shift();
@@ -291,7 +336,7 @@ export function listener({ here, models, call, tell }) {
     if (session.released) return;
     session.pageStopped = true;
     closeWindow(session);
-    if (session.worker) pump(session);
+    if (session.worker || session.speech?.provider === "groq") pump(session);
     else session.queue.length = 0;
     if (session.crashes > MOST_CRASHES) { session.queue.length = 0; session.writing = null; }
     settle(session);
@@ -319,7 +364,8 @@ export function listener({ here, models, call, tell }) {
         session.id = meeting.id;
         session.title = meeting.title;
         session.startedAt = meeting.startedAt;
-        forkWorker(session);
+        session.speech = meeting.speech;
+        if (session.speech?.provider !== "groq") forkWorker(session);
         const status = await openWindow(session);
         if (current !== session || session.released) return view();
         session.mic = status.mic;

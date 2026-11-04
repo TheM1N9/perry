@@ -20,6 +20,7 @@ export const SECRET_NAMES = [
   "TELEGRAM_BOT_TOKEN",
   "COMPOSIO_API_KEY",
   "GEMINI_API_KEY",
+  "GROQ_API_KEY",
 ] as const;
 
 export type SecretName = (typeof SECRET_NAMES)[number];
@@ -29,6 +30,7 @@ export function isSecretName(value: string): value is SecretName {
 }
 
 export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> = {
+  GROQ_API_KEY: { label: "Groq speech key", hint: "From console.groq.com/keys. Used for cloud meeting transcription when you select Groq." },
   TELEGRAM_BOT_TOKEN: {
     label: "Telegram bot token",
     hint: "From @BotFather.",

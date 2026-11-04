@@ -27,6 +27,7 @@ import { SCREEN_RECORDING_SETTINGS, capture, lookKey } from "./look.js";
 import { DEFAULT_HOTKEY, hotkeys, transcribe, warmUp } from "./voice.js";
 import { listener } from "./listen.js";
 import { noticeCalls } from "./notice-calls.js";
+import { meetingNotice } from "./meeting-notice.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..");
@@ -259,6 +260,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
   let meetings = null;
   let listenKeys = null;
   let stopNoticing = null;
+  let meetingPrompt = null;
   const callMeeting = async (path, args) => {
     const response = await net.fetch(`${BASE}/api/backend/call`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -606,8 +608,12 @@ if (!app.requestSingleInstanceLock({ argv })) {
     ipcMain.on("pet:open", (_event, path) => openDashboard(path));
     meetings = listener({ here: HERE, models: MODELS, call: callMeeting, tell: (state) => {
       win?.webContents.send("pet:meeting", state);
+      meetingPrompt?.listening(state);
       refreshMenu();
     } });
+    meetingPrompt = meetingNotice({ here: HERE, start: listenNow,
+      stop: () => meetings.stop(),
+      dismiss: (eventId) => callMeeting("meetings:dismissUpcoming", { eventId }), open: openDashboard });
     listenKeys = lookKey(() => {
       if (meetings.state().phase === "off") void listenNow();
       else void meetings.stop();
@@ -618,17 +624,19 @@ if (!app.requestSingleInstanceLock({ argv })) {
     ipcMain.handle("pet:meeting-start", (event, ask) => ownPage(event) ? listenNow(ask ?? {}) : null);
     ipcMain.handle("pet:meeting-stop", (event) => ownPage(event) ? meetings.stop() : null);
     ipcMain.on("pet:show", (event) => { if (ownPage(event)) show(); });
+    ipcMain.on("pet:meeting-suggestions", (event, config) => { if (ownPage(event)) meetingPrompt.configure(config); });
     ipcMain.handle("pet:set-listen-hotkey", (event, accelerator) => {
       if (!ownPage(event) || typeof accelerator !== "string") return { hotkey: null, error: "invalid" };
       const result = listenKeys.change(accelerator);
       if (result.hotkey) saveState({ listenHotkey: result.hotkey });
       return { hotkey: listenKeys.current(), error: result.error ?? null };
     });
-    stopNoticing = noticeCalls((active) => {
-      meetings.callActive(active);
-      win?.webContents.send("pet:call-active", active);
+    stopNoticing = noticeCalls((call) => {
+      meetingPrompt.call(call);
+      meetings.callActive(call.active);
+      win?.webContents.send("pet:call-active", call.active);
     });
-    app.once("will-quit", () => { stopNoticing?.(); meetings.dispose(); });
+    app.once("will-quit", () => { stopNoticing?.(); meetingPrompt.dispose(); meetings.dispose(); });
     // Looking at the screen: his chat's button and Perry's look_at_screen ask for the picture; the Look hotkey sends it to the page.
     ipcMain.handle("pet:look", async (_event, byOwner) => await shoot(byOwner === true));
     look = lookKey(() => void lookNow());

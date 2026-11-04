@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listener } from "../../../pet/listen.js";
+import { noticeFlow } from "./notice-flow.js";
+import { cloudErrors } from "./cloud-errors.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const home = process.env.PERRY_HOME;
@@ -18,7 +20,7 @@ let ears;
 let player;
 let finishing = false;
 let fixturePreload;
-const deadline = setTimeout(() => { void finish(new Error("Native capture exceeded its three-minute deadline.")); }, 180_000);
+const deadline = setTimeout(() => { void finish(new Error("Native capture exceeded its deadline.")); }, process.env.PERRY_MEETING_LARGE_PROBE === "1" ? 360_000 : 180_000);
 async function finish(error) {
   if (finishing) return;
   finishing = true;
@@ -56,6 +58,9 @@ app.whenReady().then(async () => {
     const fork = utilityProcess.fork.bind(utilityProcess);
     utilityProcess.fork = (module, args, options) => {
       const worker = fork(module, args, { ...options, stdio: "pipe" });
+      worker.on("message", (message) => {
+        if (message.type === "done") { report.inference ??= []; report.inference.push({ seq: message.seq, ms: message.ms }); save(); }
+      });
       let log = "";
       const append = (data) => { log = (log + data).slice(-64_000); writeFileSync(join(dirname(output), "worker.log"), log); };
       worker.stdout?.on("data", append);
@@ -81,7 +86,15 @@ app.whenReady().then(async () => {
       else event.returnValue = null;
     });
     fixturePreload = hearing.registerPreloadScript({ type: "frame", filePath: join(root, "artifacts/meetings/probe/microphone.cjs") });
+    const fault = { kind: null, attempts: 0 };
     const call = async (path, args) => {
+      if (path === "speech:transcribe" && fault.kind) {
+        fault.attempts++;
+        if (fault.kind === "missing") throw new Error("Add a Groq speech key in Settings, or select the local model.");
+        if (fault.kind === "stopping") { await new Promise((resolve) => setTimeout(resolve, 250)); throw new Error("Groq rejected the speech key. Update it in Settings."); }
+        if (fault.kind === "rejected") throw new Error("Groq rejected the speech key. Update it in Settings.");
+        if (fault.attempts === 1) throw new Error(fault.kind === "invalid" ? "Invalid speech chunk." : "Groq's speech limit was reached. The audio chunk will be retried.");
+      }
       const response = await fetch(`${process.env.PERRY_URL}/api/backend/call`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ path, args: { ...args, key: process.env.DASHBOARD_KEY } }), signal: AbortSignal.timeout(15_000),
@@ -100,7 +113,7 @@ app.whenReady().then(async () => {
     } });
     report.phase = "opening-capture";
     save();
-    const state = await ears.start({ title: "CI synthetic meeting" });
+    const state = await noticeFlow({ root, output, call, ears, report, save });
     report.initial = state;
     if (state.phase !== "listening" || state.mic !== "live") throw new Error(`Microphone capture did not start: ${JSON.stringify(state)}`);
     if (process.platform === "win32" && state.system !== "live") throw new Error(`WASAPI loopback did not start: ${state.system}`);
@@ -111,14 +124,15 @@ app.whenReady().then(async () => {
     report.checks.survivesPetReload = ears.state().phase === "listening";
     report.phase = "capturing";
     save();
-    await sleep(12_000);
+    // Remote audio starts while the synthetic microphone is still speaking.
+    await sleep(2_000);
     if (state.system === "live") {
       player = new BrowserWindow({ show: false, webPreferences: { backgroundThrottling: false, autoplayPolicy: "no-user-gesture-required" } });
       await player.loadURL("data:text/html,<title>Remote speech through the OS output</title>");
       const audio = `data:audio/wav;base64,${readFileSync(join(home, "them.wav")).toString("base64")}`;
       await player.webContents.executeJavaScript(`window.audio = new Audio(${JSON.stringify(audio)}); window.audio.play()`);
-      await sleep(12_000);
     }
+    await sleep(12_000);
     if (player) { player.destroy(); player = null; }
     // Stop must flush a final partial chunk, wait for Whisper, and retry a failed delivery.
     await ears.stop();
@@ -126,14 +140,35 @@ app.whenReady().then(async () => {
     if (ears.state().phase !== "off") throw new Error("The transcript queue did not drain after Stop.");
     const you = report.segments.filter((part) => part.source === "you").map((part) => part.text).join(" ");
     const them = report.segments.filter((part) => part.source === "them").map((part) => part.text).join(" ");
+    const words = (text) => text.toLowerCase().replace(/\$5,?000/g, "five thousand dollars").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+    const wer = (actual, reference) => {
+      const target = words(reference);
+      let row = Array.from({ length: target.length + 1 }, (_, index) => index);
+      for (const [index, word] of words(actual).entries()) {
+        const next = [index + 1];
+        for (let at = 0; at < target.length; at++) next.push(Math.min(next[at] + 1, row[at + 1] + 1, row[at] + Number(word !== target[at])));
+        row = next;
+      }
+      return row[target.length] / target.length;
+    };
+    report.wordErrorRate = { you: wer(you, "I will send the revised proposal on Friday. Please confirm the proposal delivery date."), them: wer(them, "The approved budget is five thousand dollars. We agreed to keep the budget at five thousand dollars.") };
     report.checks.microphoneTranscribed = /proposal|friday/i.test(you);
+    report.checks.microphonePhraseAccuracy = report.wordErrorRate.you <= 0.2;
     if (state.system === "live") {
       report.checks.loopbackTranscribed = /budget|thousand|5[,.]?000/i.test(them);
+      report.checks.loopbackPhraseAccuracy = report.wordErrorRate.them <= 0.2;
       report.checks.sourcesDistinct = !/proposal|friday/i.test(them) && !/budget|thousand|5[,.]?000/i.test(you);
       report.loopbackCoverage = report.checks.loopbackTranscribed ? "verified" : "failed";
     } else {
       report.loopbackCoverage = "permission-blocked";
       report.checks.partialCaptureExplained = process.platform === "darwin" && /notallowed|permission|denied|no audio|ended/i.test(state.system);
+    }
+    if (process.env.PERRY_MEETING_CLOUD_PROBE === "1") {
+      const meetingId = report.meetingId;
+      const segments = report.segments.slice();
+      await cloudErrors({ ears, fault, call, report, save });
+      report.meetingId = meetingId;
+      report.segments = segments;
     }
     await finish();
   } catch (error) { await finish(error); }

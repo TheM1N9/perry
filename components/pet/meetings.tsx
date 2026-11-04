@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@/client/react";
+import { useConnection, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { errorText } from "@/lib/format";
 import type { HotkeyState } from "./voice";
@@ -11,9 +11,11 @@ export type ListeningState = {
   id?: string; title?: string; startedAt?: number; mic?: string; system?: string;
   behindMs?: number; droppedMs?: number; progress?: number; error?: string;
   callActive?: boolean | null;
+  speech?: string;
 };
 type ListenAsk = { title?: string; eventId?: string; joinUrl?: string; askedId?: string };
 export type MeetingBridge = {
+  meetingControls?: boolean;
   meetingState?: () => Promise<ListeningState>;
   onMeeting?: (listener: (state: ListeningState) => void) => () => void;
   startMeeting?: (ask?: ListenAsk) => Promise<ListeningState>;
@@ -21,10 +23,12 @@ export type MeetingBridge = {
   onCallActive?: (listener: (active: boolean) => void) => () => void;
   setListenHotkey?: (accelerator: string) => Promise<HotkeyState>;
   show?: () => void;
+  setMeetingSuggestions?: (config: { paused: boolean; headsUp: boolean; notice: boolean; upcoming: Array<{ eventId: string; title: string; startsAt: number; endsAt: number; joinUrl?: string }> }) => void;
 };
 
 export function useMeetings(key: string, now: number, paused: boolean) {
   const bridge = typeof window === "undefined" ? undefined : window.perryPet;
+  const connection = useConnection();
   const data = useQuery(api.meetings.pet, bridge?.meetingState ? { key } : "skip");
   const shortcuts = useQuery(api.dashboard.getShortcuts, bridge?.meetingState ? { key } : "skip");
   const dismiss = useMutation(api.meetings.dismissUpcoming);
@@ -76,10 +80,21 @@ export function useMeetings(key: string, now: number, paused: boolean) {
     return () => { mounted = false; };
   }, [bridge, shortcuts?.shortcuts.listen]);
 
-  const upcoming = !paused && data?.headsUp && state.phase === "off"
+  useEffect(() => {
+    if (!bridge?.setMeetingSuggestions || !data) return;
+    const send = () => bridge.setMeetingSuggestions?.({ paused: paused || connection !== "connected", headsUp: data.headsUp, notice: data.notice, upcoming: data.upcoming });
+    send();
+    const timer = setInterval(send, 30_000);
+    return () => clearInterval(timer);
+  }, [bridge, data, paused, connection]);
+  useEffect(() => () => {
+    bridge?.setMeetingSuggestions?.({ paused: true, headsUp: false, notice: false, upcoming: [] });
+  }, [bridge]);
+
+  const upcoming = !bridge?.setMeetingSuggestions && !paused && data?.headsUp && state.phase === "off"
     ? data.upcoming.find((event) => now >= event.startsAt - 2 * 60_000 && now <= event.startsAt + 10 * 60_000 && now < event.endsAt)
     : undefined;
-  const notice = !paused && state.phase === "off" && data?.notice && call && !callHidden;
+  const notice = !bridge?.setMeetingSuggestions && !paused && state.phase === "off" && data?.notice && call && !callHidden;
   const prompt = upcoming?.eventId ?? (notice ? "call" : null);
   useEffect(() => {
     if (prompt && prompt !== shown.current) bridge?.show?.();
@@ -87,7 +102,7 @@ export function useMeetings(key: string, now: number, paused: boolean) {
   }, [bridge, prompt]);
 
   return {
-    state, upcoming, notice, start, stop, hotkey,
+    state, upcoming, notice, start, stop, hotkey, nativeControls: bridge?.meetingControls === true,
     dismiss: () => {
       if (upcoming) void dismiss({ key, eventId: upcoming.eventId }).catch((error) => setState({ phase: "off", error: errorText(error) }));
       else setCallHidden(true);

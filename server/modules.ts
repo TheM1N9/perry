@@ -88,6 +88,7 @@ import * as runs from "../convex/runs";
 import * as screen from "../convex/screen";
 import * as secrets from "../convex/secrets";
 import * as skills from "../convex/skills";
+import * as speech from "../convex/speech";
 import * as tasks from "../convex/tasks";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
@@ -189,6 +190,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "screen": screen,
   "secrets": secrets,
   "skills": skills,
+  "speech": speech,
   "tasks": tasks,
   "titles": titles,
   "todos": todos,

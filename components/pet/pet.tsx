@@ -595,7 +595,7 @@ function Pet() {
   let urgent = false;
   /** The reply's bubble, when that is what he is holding up, and for how long it stays. */
   let replyUp: { key: string; ms: number } | null = null;
-  if (meeting.state.phase !== "off") {
+  if (meeting.state.phase !== "off" && !meeting.nativeControls) {
     const listening = meeting.state.phase === "listening";
     const warning = meeting.state.droppedMs ? "Some audio could not be transcribed." : meeting.state.system !== "live" ? /permission/i.test(meeting.state.system ?? "") ? meeting.state.system : "Microphone only. I can't hear the other side yet." : meeting.state.mic !== "live" ? "Computer sound only. I can't hear your microphone." : "Hearing you and the call. Only text is saved.";
     bubble = <Bubble id="meeting" title={listening ? `Listening · ${clockOf(now - (meeting.state.startedAt ?? now))}` : meeting.state.phase === "starting" ? "Opening my ears…" : "Finishing the transcript…"}
@@ -604,7 +604,7 @@ function Pet() {
       {meeting.state.phase === "starting" && <BubbleButton onClick={meeting.stop}>Cancel</BubbleButton>}
       {meeting.state.id && <BubbleButton onClick={() => openPath(`/meetings/${meeting.state.id}`)}>Notes</BubbleButton>}
     </Bubble>;
-  } else if (meeting.state.error) {
+  } else if (meeting.state.phase === "off" && meeting.state.error) {
     bubble = <Bubble title="I couldn't listen" detail={meeting.state.error} onClose={meeting.clearError} />;
   } else if (meeting.upcoming || meeting.notice) {
     const event = meeting.upcoming;

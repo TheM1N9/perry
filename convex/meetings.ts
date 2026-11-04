@@ -1,9 +1,9 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
-import { joinable, meetingsIn, templateOf, transcriptText, writtenUp, type MeetingTemplate } from "./lib/meetings";
+import { calendarItems, calendarPage, joinable, meetingsIn, templateOf, transcriptText, writtenUp, TYPED_HEADING, type MeetingTemplate, type Upcoming } from "./lib/meetings";
 import { noteHref } from "./lib/notes";
 import { timezoneOf } from "./jobs";
 import { insertPage, removePage, scrubbed, writePage } from "./pages";
@@ -38,7 +38,7 @@ const MOST_ATTEMPTS = 3;
 /** A meeting no runner could write up by then says so, rather than saying "writing" for ever. */
 const WRITING_TTL_MS = 24 * 60 * 60_000;
 /** The calendar is read this far ahead. */
-const LOOK_AHEAD_MS = 2 * 60 * 60_000;
+const LOOK_AHEAD_MS = 24 * 60 * 60_000;
 
 const vKey = v.string();
 const vDevice = v.optional(v.id("petDevices"));
@@ -47,6 +47,7 @@ export type MeetingSummary = {
   id: Id<"meetings">; title: string; status: Doc<"meetings">["status"]; startedAt: number; endedAt?: number; segments: number; error?: string; noteId?: Id<"notes">; preview?: string;
 };
 export type MeetingView = MeetingSummary & {
+  summary: string; thoughts: string;
   joinUrl?: string; attendees?: string[]; template: MeetingTemplate; heard?: { mic: boolean; system: boolean }; droppedMs?: number; stopAsked: boolean;
   actions: Array<{ text: string; owner?: string; added: boolean }>;
   /** The owner changed the page since the last write-up, so writing it again would replace that. */
@@ -107,19 +108,22 @@ export const start = mutation({
   args: {
     key: vKey, device: vDevice, title: v.optional(v.string()), eventId: v.optional(v.string()), joinUrl: v.optional(v.string()), askedId: v.optional(v.id("meetings")),
   },
-  handler: async (ctx, args): Promise<{ id: Id<"meetings">; title: string; startedAt: number }> => {
+  handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const now = Date.now();
+    const speech = (await ctx.db.query("installation").first())?.meetingSpeech ?? { provider: "local" as const, model: "small" as const, language: "en", vocabulary: "" };
     for (const open of await ctx.db.query("meetings").withIndex("by_status", (q) => q.eq("status", "listening")).collect()) {
       if (open.device === args.device) await closeOut(ctx, open, "Perry was cut off before this call ended, so this is what he heard until then.");
     }
-    const event = args.eventId ? await ctx.db.query("upcomingMeetings").withIndex("by_event", (q) => q.eq("eventId", args.eventId!)).first() : null;
-    if (event) await ctx.db.patch(event._id, { dismissedAt: now });
     const asked = args.askedId ? await ctx.db.get(args.askedId) : null;
     if (args.askedId && (asked?.status !== "asked" || asked.device !== args.device)) throw new Error("This listening request has expired.");
+    const eventId = args.eventId ?? asked?.eventId;
+    const event = eventId ? await ctx.db.query("upcomingMeetings").withIndex("by_event", (q) => q.eq("eventId", eventId)).first() : null;
+    if (event) await ctx.db.patch(event._id, { dismissedAt: now });
     const given = (args.title ?? event?.title)?.trim().slice(0, 160);
     const title = given || asked?.title || await defaultTitle(ctx, now);
     const fields = {
+      speech,
       status: "listening" as const, device: args.device, startedAt: now, aliveAt: now, segments: 0,
       noteId: asked?.noteId ?? await insertPage(ctx, { title, content: "", author: { by: "owner" } }),
       ...(given || asked?.named ? { named: true } : {}),
@@ -129,10 +133,10 @@ export const start = mutation({
     const joinUrl = joinable(args.joinUrl ?? event?.joinUrl);
     if (asked?.status === "asked") {
       await ctx.db.patch(asked._id, { ...fields, ...(joinUrl ? { joinUrl } : {}) });
-      return { id: asked._id, title, startedAt: now };
+      return { id: asked._id, title, startedAt: now, speech };
     }
     const id = await ctx.db.insert("meetings", { title, ...fields, ...(joinUrl ? { joinUrl } : {}) });
-    return { id, title, startedAt: now };
+    return { id, title, startedAt: now, speech };
   },
 });
 
@@ -268,8 +272,15 @@ export const get = query({
     const meeting = id ? await ctx.db.get(id) : null;
     if (!meeting) return null;
     const note = meeting.noteId ? await ctx.db.get(meeting.noteId) : null;
+    const content = note?.content ?? "";
+    const written = meeting.writtenRevision !== undefined;
+    const divider = `\n\n## ${TYPED_HEADING}\n\n`;
+    const exact = meeting.typed?.trim() ? content.indexOf(`${divider}${meeting.typed.trim()}`) : -1;
+    const boundary = exact >= 0 ? exact : meeting.typed?.trim() ? content.indexOf(divider) : -1;
     return {
       ...summaryOf(meeting),
+      summary: written ? (boundary >= 0 ? content.slice(0, boundary) : content) : "",
+      thoughts: written ? (boundary >= 0 ? content.slice(boundary + divider.length).trim() : meeting.typed ?? "") : content,
       ...(!note ? { noteId: undefined } : {}),
       ...(meeting.joinUrl ? { joinUrl: meeting.joinUrl } : {}),
       ...(meeting.attendees ? { attendees: meeting.attendees } : {}),
@@ -297,7 +308,7 @@ export const transcript = query({
 
 /** The dashboard's Listen: the pet the owner touched last takes it, as with a look at the screen (screen.ts). */
 export const ask = mutation({
-  args: { key: vKey, title: v.optional(v.string()) },
+  args: { key: vKey, title: v.optional(v.string()), eventId: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ id: Id<"meetings"> } | { error: string }> => {
     assertDashboardKey(args.key);
     const active = await ctx.db.query("meetings").withIndex("by_status", (q) => q.eq("status", "listening")).first();
@@ -307,8 +318,10 @@ export const ask = mutation({
     const [pet] = await runningPets(ctx);
     if (!pet) return { error: "The desktop pet does the listening, and it isn't running. Turn it on in Settings → Desktop pet." };
     const now = Date.now();
-    const title = args.title?.trim() || await defaultTitle(ctx, now);
-    const id = await ctx.db.insert("meetings", { title, status: "asked", device: pet.device, startedAt: now, aliveAt: now, segments: 0, ...(args.title?.trim() ? { named: true } : {}) });
+    const event = args.eventId ? await ctx.db.query("upcomingMeetings").withIndex("by_event", (q) => q.eq("eventId", args.eventId!)).first() : null;
+    if (args.eventId && (!event || event.endsAt <= now)) return { error: "This calendar meeting has ended or is no longer available. Refresh your calendar." };
+    const title = (args.title ?? event?.title)?.trim().slice(0, 160) || await defaultTitle(ctx, now);
+    const id = await ctx.db.insert("meetings", { title, status: "asked", device: pet.device, startedAt: now, aliveAt: now, segments: 0, ...(args.title?.trim() || event ? { named: true } : {}), ...(event ? { eventId: event.eventId, attendees: event.attendees, joinUrl: event.joinUrl } : {}) });
     return { id };
   },
 });
@@ -390,21 +403,23 @@ export const remove = mutation({
 
 export const settings = query({
   args: { key: vKey },
-  handler: async (ctx, args): Promise<{ headsUp: boolean; notice: boolean }> => {
+  handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const install = await ctx.db.query("installation").first();
-    return { headsUp: install?.meetingHeadsUp !== false, notice: install?.meetingNotice !== false };
+    return { headsUp: install?.meetingHeadsUp !== false, notice: install?.meetingNotice !== false, speech: install?.meetingSpeech ?? { provider: "local" as const, model: "small" as const, language: "en", vocabulary: "" } };
   },
 });
 
 export const setSettings = mutation({
-  args: { key: vKey, headsUp: v.optional(v.boolean()), notice: v.optional(v.boolean()) },
+  args: { key: vKey, headsUp: v.optional(v.boolean()), notice: v.optional(v.boolean()), speech: v.optional(v.object({ provider: v.union(v.literal("local"), v.literal("groq")), model: v.union(v.literal("small"), v.literal("large-v3-turbo")), language: v.string(), vocabulary: v.string() })) },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const install = await ctx.db.query("installation").first();
     if (!install) throw new Error("Run pnpm run setup first.");
-    await ctx.db.patch(install._id, { ...(args.headsUp === undefined ? {} : { meetingHeadsUp: args.headsUp }), ...(args.notice === undefined ? {} : { meetingNotice: args.notice }) });
+    if (args.speech && (!/^(auto|[a-z]{2})$/.test(args.speech.language) || args.speech.vocabulary.length > 800)) throw new Error("Choose a speech language and keep vocabulary under 800 characters.");
+    if (args.speech?.provider === "local" && args.speech.language === "auto") throw new Error("Choose a language for the local speech model.");
+    await ctx.db.patch(install._id, { ...(args.headsUp === undefined ? {} : { meetingHeadsUp: args.headsUp }), ...(args.notice === undefined ? {} : { meetingNotice: args.notice }), ...(args.speech ? { meetingSpeech: args.speech } : {}) });
     return null;
   },
 });
@@ -564,13 +579,12 @@ export const sweep = internalMutation({
   },
 });
 
-/** Whether to bother reading the calendar: heads-ups are on, Perry isn't paused, and a pet is there to give them. */
+/** Calendar recommendations stay available in the dashboard even when the pet is offline. */
 export const worthReading = internalQuery({
   args: {},
   returns: v.boolean(),
   handler: async (ctx) => {
-    const install = await ctx.db.query("installation").first();
-    return install?.meetingHeadsUp !== false && !await pausedAt(ctx) && (await runningPets(ctx)).length > 0;
+    return !await pausedAt(ctx);
   },
 });
 
@@ -578,49 +592,108 @@ export const worthReading = internalQuery({
 export const replaceUpcoming = internalMutation({
   args: {
     events: v.array(v.object({ eventId: v.string(), title: v.string(), startsAt: v.number(), endsAt: v.number(), joinUrl: v.optional(v.string()), attendees: v.optional(v.array(v.string())) })),
+    calendar: v.optional(v.object({ at: v.number(), sources: v.array(v.string()) })),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const install = await ctx.db.query("installation").first();
+    if (args.calendar && (install?.meetingCalendar?.at ?? 0) > args.calendar.at) return null;
     const rows = await ctx.db.query("upcomingMeetings").collect();
     const seen = new Set(args.events.map((event) => event.eventId));
+    const byEvent = new Map(rows.map((row) => [row.eventId, row]));
     for (const row of rows) if (!seen.has(row.eventId)) await ctx.db.delete(row._id);
     for (const event of args.events) {
-      const row = rows.find((candidate) => candidate.eventId === event.eventId);
+      const row = byEvent.get(event.eventId);
       if (!row) await ctx.db.insert("upcomingMeetings", event);
       // Moved to another time, it is a new heads-up.
       else await ctx.db.patch(row._id, { ...event, ...(row.startsAt !== event.startsAt ? { dismissedAt: undefined } : {}) });
     }
+    if (install && args.calendar) await ctx.db.patch(install._id, { meetingCalendar: args.calendar });
     return null;
   },
 });
 
-/** Whether a calendar is connected, known for a while: finding out walks every connector the owner has. */
-let calendarKnown: { at: number; connected: boolean } | null = null;
-const CALENDAR_RECHECK_MS = 30 * 60_000;
-
-/** Read Google Calendar for the next two hours, with no model involved, and keep the meetings in it for the pet. */
-export const syncCalendar = internalAction({
-  args: {},
-  returns: v.null(),
-  handler: async (ctx) => {
-    if (!await ctx.runQuery(internal.meetings.worthReading, {})) return null;
+export const recommendations = query({
+  args: { key: vKey },
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const install = await ctx.db.query("installation").first();
     const now = Date.now();
-    if (!calendarKnown || now - calendarKnown.at > CALENDAR_RECHECK_MS) {
-      const { connectors } = await ctx.runAction(internal.composio.connectors, {});
-      calendarKnown = { at: now, connected: connectors.some((connector) => connector.slug === "googlecalendar") };
+    const events = (await ctx.db.query("upcomingMeetings").collect())
+      .filter((event) => event.endsAt > now).sort((a, b) => a.startsAt - b.startsAt).slice(0, 20);
+    return { events, calendar: install?.meetingCalendar ?? null, enabled: install?.meetingHeadsUp !== false };
+  },
+});
+
+export const calendarStatus = internalMutation({
+  args: { at: v.number(), sources: v.array(v.string()), error: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const install = await ctx.db.query("installation").first();
+    if (install && (install.meetingCalendar?.at ?? 0) <= args.at) await ctx.db.patch(install._id, { meetingCalendar: args });
+  },
+});
+
+export const refreshCalendar = action({
+  args: { key: vKey },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    await ctx.runAction(internal.meetings.syncCalendar, { force: true });
+    return null;
+  },
+});
+
+/** Composio uses the account selected for each toolkit, as it does for other connected tools. */
+export const syncCalendar = internalAction({
+  args: { force: v.optional(v.boolean()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (!args.force && !await ctx.runQuery(internal.meetings.worthReading, {})) return null;
+    const now = Date.now();
+    const connected = await ctx.runAction(internal.composio.connectors, {});
+    const sources = connected.connectors.filter((item) => item.slug === "googlecalendar" || item.slug === "outlook").map((item) => item.slug);
+    try {
+      if (connected.configured && connected.error) throw new Error("Calendar connections could not be read. Check Composio in Apps & skills and refresh.");
+      const events: Upcoming[] = [];
+      const pages = async (slug: string, input: Record<string, unknown>, tokenName: string) => {
+        const items: Record<string, unknown>[] = [];
+        let token: string | undefined;
+        // A broken continuation must never loop forever or silently replace a complete snapshot.
+        for (let page = 0; page < 10; page++) {
+          const answer = await ctx.runAction(internal.composio.execute, { slug, args: { ...input, ...(token ? { [tokenName]: token } : {}) } });
+          if (!answer.ok) throw new Error("A calendar could not be read. Check its connection and permissions in Apps & skills, then refresh. Previous recommendations are kept until they end.");
+          const body = calendarPage(answer.data);
+          items.push(...calendarItems(body) as Record<string, unknown>[]);
+          const next = body.next_page_token ?? body.nextPageToken;
+          if (next === undefined || next === null || next === "") {
+            if (body["@odata.nextLink"]) throw new Error("The calendar returned an unsupported continuation. Refresh after updating its Composio toolkit.");
+            return items;
+          }
+          if (typeof next !== "string" || next === token) break;
+          token = next;
+        }
+        throw new Error("This calendar has too many pages to refresh at once. Previous recommendations are kept.");
+      };
+      for (const source of sources) {
+        const google = source === "googlecalendar";
+        const calendars = await pages(google ? "GOOGLECALENDAR_LIST_CALENDARS" : "OUTLOOK_LIST_CALENDARS", google ? { max_results: 250, min_access_role: "reader" } : { user_id: "me", top: 100 }, "page_token");
+        const selected = calendars.filter((calendar) => typeof calendar.id === "string" && !calendar.deleted && (!google || calendar.selected !== false));
+        if (selected.length > 30) throw new Error("More than 30 calendars are selected. Reduce the visible calendars and refresh.");
+        for (const calendar of selected) {
+          const start = new Date(now - 60 * 60_000).toISOString();
+          const end = new Date(now + LOOK_AHEAD_MS).toISOString();
+          const rows = await pages(google ? "GOOGLECALENDAR_EVENTS_LIST" : "OUTLOOK_LIST_USER_CALENDAR_VIEW", google
+            ? { calendarId: calendar.id, timeMin: start, timeMax: end, singleEvents: true, orderBy: "startTime", maxResults: 250 }
+            : { user_id: "me", calendar_id: calendar.id, startDateTime: start, endDateTime: end, top: 100, select: ["id", "subject", "start", "end", "attendees", "isCancelled", "isAllDay", "responseStatus", "onlineMeeting", "onlineMeetingUrl", "bodyPreview"] }, google ? "pageToken" : "page_token");
+          for (const event of meetingsIn(rows).filter((event) => event.endsAt > now && event.startsAt < now + LOOK_AHEAD_MS)) {
+            events.push({ ...event, eventId: JSON.stringify([source, calendar.id, event.eventId]) });
+          }
+        }
+      }
+      await ctx.runMutation(internal.meetings.replaceUpcoming, { events, calendar: { at: now, sources } });
+    } catch (error) {
+      await ctx.runMutation(internal.meetings.calendarStatus, { at: now, sources, error: error instanceof Error ? error.message : "Calendar refresh failed. Try again." });
     }
-    if (!calendarKnown.connected) return null;
-    const answer = await ctx.runAction(internal.composio.execute, {
-      slug: "GOOGLECALENDAR_EVENTS_LIST",
-      // From an hour ago: a meeting that started a few minutes back is still one to join.
-      args: { calendarId: "primary", timeMin: new Date(now - 60 * 60_000).toISOString(), timeMax: new Date(now + LOOK_AHEAD_MS).toISOString(), singleEvents: true, orderBy: "startTime", maxResults: 25 },
-    });
-    if (!answer.ok) {
-      // A calendar disconnected since: find out sooner than the next recheck.
-      calendarKnown = null;
-      return null;
-    }
-    await ctx.runMutation(internal.meetings.replaceUpcoming, { events: meetingsIn(answer.data).filter((event) => event.endsAt > now) });
     return null;
   },
 });

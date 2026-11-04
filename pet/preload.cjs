@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("perryPet", {
+  meetingControls: true,
   solid: (on) => ipcRenderer.send("pet:solid", Boolean(on)),
   moveTo: (x, y) => ipcRenderer.send("pet:move", Number(x), Number(y)),
   // A drag of him: where his body is in the window as it starts, and its end; whether he is over the circle that hides him.
@@ -45,6 +46,7 @@ contextBridge.exposeInMainWorld("perryPet", {
   },
   setLookHotkey: (accelerator) => ipcRenderer.invoke("pet:set-look-hotkey", String(accelerator)),
   meetingState: () => ipcRenderer.invoke("pet:meeting-state"),
+  setMeetingSuggestions: (config) => ipcRenderer.send("pet:meeting-suggestions", config),
   startMeeting: (ask) => ipcRenderer.invoke("pet:meeting-start", ask),
   stopMeeting: () => ipcRenderer.invoke("pet:meeting-stop"),
   show: () => ipcRenderer.send("pet:show"),

@@ -89,48 +89,65 @@ const LINK = /https:\/\/[^\s"'<>)\]]+/g;
 
 export type Upcoming = { eventId: string; title: string; startsAt: number; endsAt: number; joinUrl?: string; attendees?: string[] };
 
-type GoogleEvent = {
+type CalendarEvent = {
   id?: unknown; summary?: unknown; status?: unknown; eventType?: unknown; location?: unknown; description?: unknown; hangoutLink?: unknown;
-  start?: { dateTime?: unknown }; end?: { dateTime?: unknown };
+  subject?: unknown; isCancelled?: unknown; isAllDay?: unknown; responseStatus?: { response?: unknown };
+  onlineMeeting?: { joinUrl?: unknown }; onlineMeetingUrl?: unknown; bodyPreview?: unknown;
+  start?: { dateTime?: unknown; timeZone?: unknown }; end?: { dateTime?: unknown; timeZone?: unknown };
   conferenceData?: { entryPoints?: Array<{ entryPointType?: unknown; uri?: unknown }> };
-  attendees?: Array<{ email?: unknown; displayName?: unknown; self?: unknown; responseStatus?: unknown }>;
+  attendees?: Array<{ email?: unknown; displayName?: unknown; self?: unknown; responseStatus?: unknown; emailAddress?: { name?: unknown; address?: unknown } }>;
 };
 
 /** The event list, wherever the connector put it. */
-function eventsIn(data: unknown): GoogleEvent[] {
-  if (Array.isArray(data)) return data as GoogleEvent[];
-  if (!data || typeof data !== "object") return [];
+export function calendarPage(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("The calendar returned an invalid page.");
   const body = data as Record<string, unknown>;
-  for (const key of ["items", "events"]) if (Array.isArray(body[key])) return body[key] as GoogleEvent[];
-  for (const key of ["response_data", "data"]) if (body[key]) return eventsIn(body[key]);
+  if (["items", "events", "value", "calendars"].some((key) => Array.isArray(body[key]))) return body;
+  for (const key of ["response_data", "data"]) if (body[key]) return { ...body, ...calendarPage(body[key]) };
+  throw new Error("The calendar returned no event or calendar list.");
+}
+
+export function calendarItems(data: unknown): CalendarEvent[] {
+  if (Array.isArray(data)) return data as CalendarEvent[];
+  if (!data || typeof data !== "object") return [];
+  const body = calendarPage(data);
+  for (const key of ["items", "events", "value", "calendars"]) if (Array.isArray(body[key])) return body[key] as CalendarEvent[];
   return [];
 }
 
+function eventTime(value: CalendarEvent["start"]): number {
+  if (typeof value?.dateTime !== "string") return NaN;
+  // Graph returns UTC dateTime values without an offset. Never interpret those in the server's local zone.
+  const text = value.dateTime;
+  if (/(Z|[+-]\d\d:\d\d)$/i.test(text)) return Date.parse(text);
+  return value.timeZone === "UTC" || value.timeZone === "Etc/UTC" ? Date.parse(`${text}Z`) : NaN;
+}
+
 /**
- * Meetings out of a Google Calendar answer. An event is one when there is a
+ * Meetings out of a Google Calendar or Outlook answer. An event is one when there is a
  * link to join or someone else on it; "Gym" with neither is not. All-day events,
  * focus time, and ones the owner said no to are not.
  */
 export function meetingsIn(data: unknown): Upcoming[] {
   const found: Upcoming[] = [];
-  for (const event of eventsIn(data)) {
-    const startsAt = Date.parse(String(event.start?.dateTime ?? ""));
-    const endsAt = Date.parse(String(event.end?.dateTime ?? ""));
-    if (typeof event.id !== "string" || !Number.isFinite(startsAt) || !Number.isFinite(endsAt)) continue;
-    if (event.status === "cancelled" || (typeof event.eventType === "string" && event.eventType !== "default")) continue;
+  for (const event of calendarItems(data)) {
+    const startsAt = eventTime(event.start);
+    const endsAt = eventTime(event.end);
+    if (typeof event.id !== "string" || !Number.isFinite(startsAt) || !Number.isFinite(endsAt) || endsAt <= startsAt) continue;
+    if (event.status === "cancelled" || event.isCancelled || event.isAllDay || event.responseStatus?.response === "declined" || (typeof event.eventType === "string" && event.eventType !== "default")) continue;
     const people = event.attendees ?? [];
     if (people.some((person) => person.self === true && person.responseStatus === "declined")) continue;
     const others = people.filter((person) => person.self !== true);
-    const text = [event.location, event.description].filter((part) => typeof part === "string").join(" ");
-    const joinUrl = [event.hangoutLink, ...(event.conferenceData?.entryPoints ?? []).filter((point) => point.entryPointType === "video").map((point) => point.uri), ...(text.match(LINK) ?? [])]
+    const text = [event.location, event.description, event.bodyPreview].filter((part) => typeof part === "string").join(" ");
+    const joinUrl = [event.hangoutLink, event.onlineMeeting?.joinUrl, event.onlineMeetingUrl, ...(event.conferenceData?.entryPoints ?? []).filter((point) => point.entryPointType === "video").map((point) => point.uri), ...(text.match(LINK) ?? [])]
       .map(joinable).find(Boolean);
     if (!joinUrl && !others.length) continue;
     found.push({
       eventId: event.id,
-      title: (typeof event.summary === "string" && event.summary.trim().slice(0, 160)) || "Meeting",
+      title: (typeof event.summary === "string" && event.summary.trim().slice(0, 160)) || (typeof event.subject === "string" && event.subject.trim().slice(0, 160)) || "Meeting",
       startsAt, endsAt,
       ...(joinUrl ? { joinUrl } : {}),
-      ...(others.length ? { attendees: others.map((person) => String(person.displayName ?? person.email ?? "")).filter(Boolean).slice(0, 30) } : {}),
+      ...(others.length ? { attendees: others.map((person) => String(person.displayName ?? person.email ?? person.emailAddress?.name ?? person.emailAddress?.address ?? "")).filter(Boolean).slice(0, 30) } : {}),
     });
   }
   return found;

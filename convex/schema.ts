@@ -278,6 +278,8 @@ export default defineSchema({
     meetingHeadsUp: v.optional(v.boolean()),
     /** False once the owner turned off the pet asking when an app starts using the microphone (pet/listen.js). */
     meetingNotice: v.optional(v.boolean()),
+    meetingSpeech: v.optional(v.object({ provider: v.union(v.literal("local"), v.literal("groq")), model: v.union(v.literal("small"), v.literal("large-v3-turbo")), language: v.string(), vocabulary: v.string() })),
+    meetingCalendar: v.optional(v.object({ at: v.number(), sources: v.array(v.string()), error: v.optional(v.string()) })),
     /** When the owner last wrote to Perry anywhere, so what goes unanswered can be told apart. */
     ownerWroteAt: v.optional(v.number()),
     /** False stops Perry updating himself at night (updates.ts). Unset means on. */
@@ -858,6 +860,7 @@ export default defineSchema({
    * has got. Asked for from the dashboard, then listening on one pet, then being written up by a runner, then done.
    */
   meetings: defineTable({
+    speech: v.optional(v.object({ provider: v.union(v.literal("local"), v.literal("groq")), model: v.union(v.literal("small"), v.literal("large-v3-turbo")), language: v.string(), vocabulary: v.string() })),
     title: v.string(),
     status: v.union(v.literal("asked"), v.literal("listening"), v.literal("writing"), v.literal("done"), v.literal("failed")),
     /** The pet listening: one on another computer, or none for the one on Perry's own. */
