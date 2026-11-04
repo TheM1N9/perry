@@ -756,7 +756,7 @@ export function ChatScreen() {
   return (
     <div className="relative flex h-dvh min-h-0 overflow-hidden">
     {!summary?.isAgent && !chat?.contact && !queueEdit && <SelectionCite key={selectedId ?? "new"} container={scroller} onCite={(text) => { draftControl.current?.cite(text); composer.current?.focus(); }} />}
-    <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       {editing && selectedId && <MessageEditor key={editing.id} message={editing} assistant={assistant} waiting={waiting}
         onClose={() => setEditing(null)} onSave={(edit) => rewind(editing.id, edit)}
         onStop={() => stopChat({ key: dashboardKey, id: selectedId })}

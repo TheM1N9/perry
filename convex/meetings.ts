@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
-import { calendarItems, calendarPage, joinable, meetingsIn, templateOf, transcriptText, writtenUp, type MeetingTemplate, type Upcoming } from "./lib/meetings";
+import { calendarItems, calendarPage, joinable, meetingsIn, templateOf, transcriptText, writtenUp, TYPED_HEADING, type MeetingTemplate, type Upcoming } from "./lib/meetings";
 import { noteHref } from "./lib/notes";
 import { timezoneOf } from "./jobs";
 import { insertPage, removePage, scrubbed, writePage } from "./pages";
@@ -47,7 +47,7 @@ export type MeetingSummary = {
   id: Id<"meetings">; title: string; status: Doc<"meetings">["status"]; startedAt: number; endedAt?: number; segments: number; error?: string; noteId?: Id<"notes">; preview?: string;
 };
 export type MeetingView = MeetingSummary & {
-  thoughts?: string;
+  summary: string; thoughts: string;
   joinUrl?: string; attendees?: string[]; template: MeetingTemplate; heard?: { mic: boolean; system: boolean }; droppedMs?: number; stopAsked: boolean;
   actions: Array<{ text: string; owner?: string; added: boolean }>;
   /** The owner changed the page since the last write-up, so writing it again would replace that. */
@@ -272,9 +272,15 @@ export const get = query({
     const meeting = id ? await ctx.db.get(id) : null;
     if (!meeting) return null;
     const note = meeting.noteId ? await ctx.db.get(meeting.noteId) : null;
+    const content = note?.content ?? "";
+    const written = meeting.writtenRevision !== undefined;
+    const divider = `\n\n## ${TYPED_HEADING}\n\n`;
+    const exact = meeting.typed?.trim() ? content.indexOf(`${divider}${meeting.typed.trim()}`) : -1;
+    const boundary = exact >= 0 ? exact : meeting.typed?.trim() ? content.indexOf(divider) : -1;
     return {
       ...summaryOf(meeting),
-      ...(meeting.typed ? { thoughts: meeting.typed } : {}),
+      summary: written ? (boundary >= 0 ? content.slice(0, boundary) : content) : "",
+      thoughts: written ? (boundary >= 0 ? content.slice(boundary + divider.length).trim() : meeting.typed ?? "") : content,
       ...(!note ? { noteId: undefined } : {}),
       ...(meeting.joinUrl ? { joinUrl: meeting.joinUrl } : {}),
       ...(meeting.attendees ? { attendees: meeting.attendees } : {}),
@@ -578,8 +584,7 @@ export const worthReading = internalQuery({
   args: {},
   returns: v.boolean(),
   handler: async (ctx) => {
-    const install = await ctx.db.query("installation").first();
-    return install?.meetingHeadsUp !== false && !await pausedAt(ctx);
+    return !await pausedAt(ctx);
   },
 });
 

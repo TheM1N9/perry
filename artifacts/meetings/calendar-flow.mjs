@@ -61,4 +61,14 @@ export async function calendarFlow(call, key, check) {
   disconnected = false;
   moved = false;
   await call("meetings:refreshCalendar", { key });
+  await call("meetings:setSettings", { key, headsUp: false });
+  const before = calendarCalls.length;
+  await call("meetings:syncCalendar", {});
+  check("scheduled calendar refresh continues without desktop heads-ups", calendarCalls.length > before && (await call("meetings:recommendations", { key })).events.length === 4 && !(await call("meetings:pet", { key })).headsUp);
+  await call("pause:set", { key, paused: true });
+  const paused = calendarCalls.length;
+  await call("meetings:syncCalendar", {});
+  check("scheduled calendar refresh respects pause", calendarCalls.length === paused);
+  await call("pause:set", { key, paused: false });
+  await call("meetings:setSettings", { key, headsUp: true });
 }

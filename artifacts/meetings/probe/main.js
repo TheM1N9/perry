@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listener } from "../../../pet/listen.js";
 import { noticeFlow } from "./notice-flow.js";
+import { cloudErrors } from "./cloud-errors.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const home = process.env.PERRY_HOME;
@@ -85,7 +86,15 @@ app.whenReady().then(async () => {
       else event.returnValue = null;
     });
     fixturePreload = hearing.registerPreloadScript({ type: "frame", filePath: join(root, "artifacts/meetings/probe/microphone.cjs") });
+    const fault = { kind: null, attempts: 0 };
     const call = async (path, args) => {
+      if (path === "speech:transcribe" && fault.kind) {
+        fault.attempts++;
+        if (fault.kind === "missing") throw new Error("Add a Groq speech key in Settings, or select the local model.");
+        if (fault.kind === "stopping") { await new Promise((resolve) => setTimeout(resolve, 250)); throw new Error("Groq rejected the speech key. Update it in Settings."); }
+        if (fault.kind === "rejected") throw new Error("Groq rejected the speech key. Update it in Settings.");
+        if (fault.attempts === 1) throw new Error(fault.kind === "invalid" ? "Invalid speech chunk." : "Groq's speech limit was reached. The audio chunk will be retried.");
+      }
       const response = await fetch(`${process.env.PERRY_URL}/api/backend/call`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ path, args: { ...args, key: process.env.DASHBOARD_KEY } }), signal: AbortSignal.timeout(15_000),
@@ -153,6 +162,13 @@ app.whenReady().then(async () => {
     } else {
       report.loopbackCoverage = "permission-blocked";
       report.checks.partialCaptureExplained = process.platform === "darwin" && /notallowed|permission|denied|no audio|ended/i.test(state.system);
+    }
+    if (process.env.PERRY_MEETING_CLOUD_PROBE === "1") {
+      const meetingId = report.meetingId;
+      const segments = report.segments.slice();
+      await cloudErrors({ ears, fault, call, report, save });
+      report.meetingId = meetingId;
+      report.segments = segments;
     }
     await finish();
   } catch (error) { await finish(error); }

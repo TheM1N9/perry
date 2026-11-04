@@ -10,12 +10,19 @@ Native capture defaults to local Whisper Small. Add `--large` to exercise local 
 
 Cloud checks substitute Groq's external response and exercise the real authorization, WAV encoding, frozen session settings, error handling, and persistent transcript cache, including empty results. No paid requests run in CI. The UI E2E (`artifacts/meetings/ui.mjs <output-directory>`, after a production build) starts an isolated Perry and headless Chrome, checks the four meeting tabs and transcript search, and saves desktop/mobile screenshots plus `ui.json`. CI uploads these alongside the backend report.
 
+Native cloud runs also inject key, validation, and transient failures at the pet's HTTP boundary to check capture shutdown and queue recovery, including a key failure during Stop. Reports keep native loopback coverage separate from cloud transport coverage. The UI run saves a short-window composer screenshot with a long draft and expanded queue, and checks that a failed write-up keeps personal notes accessible.
+
 The Windows job installs Scream 4.0 on the disposable GitHub-hosted VM to supply a real WASAPI rendering endpoint. A test preload supplies only `getUserMedia` with a synthetic microphone stream from Web Audio. A different recording plays through the Windows output device. Whisper must transcribe both independently through the production capture window, worklet, utility process and backend. `getDisplayMedia`, loopback capture, chunking, IPC and transcription are unchanged. Chromium's global fake-device flags are deliberately avoided because they also replace loopback input.
 
 The macOS job runs the same Electron pipeline. A system-audio permission refusal must be reported clearly while microphone transcription continues. This is recorded as `permission-blocked`, not successful loopback coverage. A live system-audio track that transcribes nothing fails the job. Passing a hosted job cannot establish physical microphone quality, echo cancellation, or macOS permission behavior on every user's machine.
 
 ## Failure inventory, before implementing the checks
 
+- A short viewport plus an expanded queue and long draft clips the composer controls, or creates a second page scrollbar. The footer must scroll independently while Send and the permission notice remain reachable.
+- Successful write-ups repeat personal notes in Summary; a failed write-up hides personal notes; editing the combined Brain page or regenerating loses the separation.
+- Disabling desktop heads-ups stops scheduled calendar refreshes, or refreshing while Perry is paused bypasses the pause.
+- Missing/rejected cloud credentials or a closed meeting retry forever; malformed audio blocks later valid chunks; transient failures lose audio instead of retrying. A terminal error must stop capture and retries, retain saved text, and count discarded audio, including the final chunk emitted during Stop.
+- A cloud fixture replaces native loopback coverage in the report, hiding permission-blocked coverage or implying a real cloud accuracy check.
 - Louder remote speech deletes independent microphone speech; quiet speech or the ends of phrases are cut off; language/model settings are ignored; an accuracy regression passes a keyword-only check.
 - Cloud transcription leaks a key to the pet page, runs without opting in, retries a completed paid chunk, accepts another device's meeting, or schedules more requests after disposal. Stop loses queued phrases, or failed requests silently drop speech or silently switch models.
 - Switching tabs loses typed notes, hides recording controls, or renders a large transcript while its tab is offscreen. Search/copy actions do not reflect the actual transcript.

@@ -135,8 +135,26 @@ export function listener({ here, models, call, tell }) {
       }, (error) => {
         if (session.released || current !== session) return;
         session.writing = null;
+        const message = String(error?.message ?? error);
+        if (/Add a Groq speech key|rejected the speech key|Cloud transcription is off|isn't recording that meeting|Groq transcription failed \(4(?!29)\d{2}\)/.test(message)) {
+          session.speechBlocked = true;
+          session.speechError = session.endError = message;
+          session.droppedMs += behind(session) + chunk.endMs - chunk.startMs;
+          session.queue.length = 0;
+          void end(session, message);
+          settle(session);
+          return;
+        }
+        if (/Invalid speech chunk|16 kHz mono/.test(message)) {
+          session.droppedMs += chunk.endMs - chunk.startMs;
+          session.speechError = message;
+          report();
+          pump(session);
+          settle(session);
+          return;
+        }
         session.queue.unshift(chunk);
-        session.speechError = error.message;
+        session.speechError = message;
         session.speechRetry = setTimeout(() => { session.speechRetry = null; pump(session); }, RETRY_MS);
         report();
         settle(session);
@@ -267,6 +285,10 @@ export function listener({ here, models, call, tell }) {
   const receiveChunk = (event, chunk) => {
     const session = current;
     if (!session || session.released || event.sender !== session.window?.webContents) return;
+    if (session.speechBlocked) {
+      session.droppedMs += chunk.endMs - chunk.startMs;
+      return;
+    }
     session.queue.push(chunk);
     while (behind(session) > MOST_BEHIND_MS) {
       const dropped = session.queue.shift();

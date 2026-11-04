@@ -133,7 +133,7 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
   useEffect(() => { document.title = `${meeting.title} · Perry`; }, [meeting.title]);
   const live = meeting.status === "listening" || meeting.status === "asked";
   const writing = meeting.status === "writing";
-  const thoughts = meeting.thoughts ?? (writing ? note?.content : undefined);
+  const thoughts = meeting.thoughts;
   return <Page title={meeting.title} wide="full" actions={<>
     <Button variant="ghost" render={<Link href="/meetings" />}>All meetings</Button>
     {meeting.status === "listening" && <ActionButton disabled={meeting.stopAsked} action={() => stop({ key, id: meeting.id })}><SquareIcon />{meeting.stopAsked ? "Stopping…" : "Stop listening"}</ActionButton>}
@@ -171,7 +171,7 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
       </TabsList>
       <TabsContent value="summary" className="min-h-80 py-4">
         {writing || live ? <div className="py-12 text-center"><FileTextIcon className="mx-auto mb-4 size-7 text-muted-foreground" aria-hidden /><h2 className="text-lg font-medium">{writing ? "Your summary is on its way" : "Stay in the conversation"}</h2><p role="status" className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{writing ? "Perry is turning the transcript and your thoughts into meeting notes. A connected engine is needed." : "Add your thoughts as you go. When you finish, Perry will write the summary and next steps."}</p></div>
-          : note ? <><div className="mb-6 flex justify-end"><Button variant="ghost" size="sm" render={<Link href={noteHref(note.id)} />}>Edit in Brain</Button></div><Markdown text={note.content} /></> : <EmptyState title="No summary yet">Your transcript is still available. Try writing up the meeting again.</EmptyState>}
+          : meeting.summary ? <>{note && <div className="mb-6 flex justify-end"><Button variant="ghost" size="sm" render={<Link href={noteHref(note.id)} />}>Edit in Brain</Button></div>}<Markdown text={meeting.summary} /></> : <EmptyState title="No summary yet">Your transcript is still available. Try writing up the meeting again.</EmptyState>}
       </TabsContent>
       <TabsContent value="thoughts" className="min-h-80 py-4">
         <p className="mb-6 text-sm text-muted-foreground">The things you want to remember. Perry includes these in the summary.</p>

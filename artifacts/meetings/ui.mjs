@@ -28,14 +28,35 @@ try {
   await runtime.stop();
   const call = async (path, args) => (await runtime.call(path, args, { internal: true })).value;
   await runtime.exclusive(() => runtime.store.insert("installation", { defaultEngine: "codex", onboarding: "skipped", createdAt: Date.now() }));
+  const token = "synthetic-meeting-ui-runner";
+  await call("runner:createToken", { name: "UI fixture", token });
   const meeting = await call("meetings:start", { key, title: "Product planning" });
   await call("meetings:appendSegments", { key, id: meeting.id, segments: [{ seq: 0, source: "you", startMs: 0, endMs: 5000, text: "I will send the revised proposal on Friday." }, { seq: 1, source: "them", startMs: 5000, endMs: 10000, text: "The budget is five thousand dollars." }] });
   const note = (await call("meetings:get", { key, id: meeting.id })).noteId;
   const own = await call("notes:get", { key, id: note });
-  await call("notes:save", { key, id: note, content: "## Decisions\n\nLaunch on Friday.\n\n## Next steps\n\nSend the revised proposal.", expectedRevision: own.revision });
-  await runtime.exclusive(() => runtime.store.patch(meeting.id, { status: "done", endedAt: Date.now(), typed: "Confirm the proposal deadline.", actions: [{ text: "Send the proposal", owner: "You" }] }));
+  await call("notes:save", { key, id: note, content: "Confirm the proposal deadline.", expectedRevision: own.revision });
+  await call("meetings:finish", { key, id: meeting.id });
+  const claim = await call("meetings:claimNotes", { token, id: meeting.id });
+  await call("meetings:finishNotes", { token, id: meeting.id, claim: claim.claim, markdown: "## Decisions\n\nLaunch on Friday.\n\n## Next steps\n\nSend the revised proposal.", actions: [{ text: "Send the proposal", owner: "You" }] });
+  const failed = await call("meetings:start", { key, title: "Failed write-up" });
+  const failedNote = await call("notes:get", { key, id: (await call("meetings:get", { key, id: failed.id })).noteId });
+  await call("notes:save", { key, id: failedNote.id, content: "Keep the personal fallback.", expectedRevision: failedNote.revision });
+  await call("meetings:finish", { key, id: failed.id });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const pending = await call("meetings:claimNotes", { token, id: failed.id });
+    await call("meetings:finishNotes", { token, id: failed.id, claim: pending.claim, error: "Synthetic engine unavailable" });
+    await call("meetings:retryNotes", { id: failed.id, claim: pending.claim });
+  }
   const live = await call("meetings:start", { key, title: "Live planning" });
   await call("meetings:appendSegments", { key, id: live.id, segments: [{ seq: 0, source: "them", startMs: 0, endMs: 3000, text: "Please confirm the launch date." }] });
+  const chat = await call("conversations:create", { channel: "web", externalId: "composer-overflow-fixture", threadId: "composer-overflow-fixture", title: "Composer overflow" });
+  await runtime.exclusive(async () => {
+    for (let index = 0; index < 9; index++) {
+      const prompt = `Queued request ${index}: ${"A long request for the next reply. ".repeat(12)}`;
+      const runId = await runtime.store.insert("runs", { conversationId: chat, prompt, status: "running", startedAt: Date.now() });
+      await runtime.store.insert("codexTurns", { conversationId: chat, runId, prompt, instructions: "", engine: "codex", status: "queued", createdAt: Date.now() + index });
+    }
+  });
   await runtime.stop(); database.close(); database = null; runtime = null;
   const probe = createServer();
   await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
@@ -52,16 +73,36 @@ try {
   }
   process.env.PERRY_E2E_BROWSER ??= process.platform === "linux" ? "/usr/bin/google-chrome" : process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "C:/Program Files/Google/Chrome/Application/chrome.exe";
   browser = await openChat(base, key);
-  const until = (expression) => browser.evaluate(`new Promise((resolve, reject) => { const until = Date.now()+20000; const tick=()=>{if(${expression})resolve(true);else if(Date.now()>until)reject(new Error('UI condition timed out'));else setTimeout(tick,50)};tick()})`);
+  const until = async (expression) => {
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      try { if (await browser.evaluate(`Boolean(${expression})`)) return; }
+      catch (error) { if (!/Inspected target navigated or closed|Execution context was destroyed|Cannot find context/.test(String(error))) throw error; }
+      await sleep(50);
+    }
+    throw new Error(`UI condition timed out: ${expression}`);
+  };
   const tab = async (name) => { await browser.evaluate(`Array.from(document.querySelectorAll('[role=tab]')).find(x=>x.textContent.trim()===${JSON.stringify(name)}).click()`); await until(`document.querySelector('[role=tab][aria-selected=true]')?.textContent.trim()===${JSON.stringify(name)}`); };
-  await browser.send("Page.navigate", { url: `${base}/meetings/${meeting.id}` });
-  await until("document.body.innerText.includes('Launch on Friday.')");
-  report.checks.summaryReadable = true;
   const screenshot = async (name) => {
     await browser.evaluate("document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
     const result = await browser.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
     writeFileSync(join(output, name), Buffer.from(result.data, "base64"));
   };
+  await browser.send("Page.navigate", { url: `${base}/chat/${chat}` });
+  await until("document.querySelector('[data-up-next]') && document.querySelector('#composer')");
+  await browser.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 300, deviceScaleFactor: 1, mobile: false });
+  await browser.evaluate("Array.from(document.querySelectorAll('[data-up-next] button')).find(x=>x.textContent.includes('Show')).click(); document.querySelector('#composer').focus()");
+  await browser.send("Input.insertText", { text: "A long draft that must keep its controls reachable.\n".repeat(60) });
+  await browser.evaluate("document.querySelector('[data-composer] button[aria-label^=Send]').scrollIntoView({block:'end',behavior:'instant'})");
+  report.checks.composerControlsReachable = await browser.evaluate("(()=>{const button=document.querySelector('[data-composer] button[aria-label^=Send]');const box=button.getBoundingClientRect();return box.top>=0 && box.bottom<=innerHeight && button.contains(document.elementFromPoint(box.left+box.width/2,box.top+box.height/2))})()");
+  report.checks.composerNoticeReachable = await browser.evaluate("(()=>{const notice=document.querySelector('[data-composer]').parentElement.nextElementSibling;notice.scrollIntoView({block:'end',behavior:'instant'});const box=notice.getBoundingClientRect();return box.top>=0 && box.bottom<=innerHeight})()");
+  report.checks.noOuterChatScrollbar = await browser.evaluate("document.scrollingElement.scrollHeight<=innerHeight && document.scrollingElement.scrollWidth<=innerWidth");
+  await screenshot("short-composer.png");
+  await browser.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await browser.send("Page.navigate", { url: `${base}/meetings/${meeting.id}` });
+  await until("document.body.innerText.includes('Launch on Friday.')");
+  report.checks.summaryReadable = true;
+  report.checks.summaryExcludesPersonalNotes = await browser.evaluate("!document.querySelector('[role=tabpanel]')?.textContent.includes('Confirm the proposal deadline.')");
   await screenshot("summary.png");
   await tab("My thoughts"); await until("document.body.innerText.includes('Confirm the proposal deadline.')");
   report.checks.personalNotesSeparated = true;
@@ -84,6 +125,12 @@ try {
   await tab("My thoughts"); await until("document.querySelector('[contenteditable=true]')?.textContent.includes('Keep this important detail.')");
   report.checks.liveNotesSurviveTabSwitch = true;
   await screenshot("live-notes.png");
+  await browser.send("Page.navigate", { url: `${base}/meetings/${failed.id}` });
+  await until("document.body.innerText.includes('No summary yet')");
+  await tab("My thoughts");
+  await until("document.body.innerText.includes('Keep the personal fallback.')");
+  report.checks.failedWriteUpKeepsThoughts = true;
+  await screenshot("failed-write-up.png");
   await browser.send("Page.navigate", { url: `${base}/settings/desktop-pet` });
   await until("document.querySelector('#speech-provider')");
   await browser.evaluate("(()=>{const input=document.querySelector('#speech-provider');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(input,'large-v3-turbo');input.dispatchEvent(new Event('change',{bubbles:true}));})()");
