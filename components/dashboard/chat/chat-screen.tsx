@@ -754,7 +754,7 @@ export function ChatScreen() {
   const project = selectedId ? chat?.project : newIn ? { id: newIn.id, name: newIn.name } : undefined;
 
   return (
-    <div className="relative flex h-dvh min-h-0">
+    <div className="relative flex h-dvh min-h-0 overflow-hidden">
     {!summary?.isAgent && !chat?.contact && !queueEdit && <SelectionCite key={selectedId ?? "new"} container={scroller} onCite={(text) => { draftControl.current?.cite(text); composer.current?.focus(); }} />}
     <div className="flex min-w-0 flex-1 flex-col">
       {editing && selectedId && <MessageEditor key={editing.id} message={editing} assistant={assistant} waiting={waiting}
