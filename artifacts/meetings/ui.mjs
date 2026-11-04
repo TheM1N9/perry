@@ -57,7 +57,11 @@ try {
   await browser.send("Page.navigate", { url: `${base}/meetings/${meeting.id}` });
   await until("document.body.innerText.includes('Launch on Friday.')");
   report.checks.summaryReadable = true;
-  const screenshot = async (name) => { const result = await browser.send("Page.captureScreenshot", { format: "png" }); writeFileSync(join(output, name), Buffer.from(result.data, "base64")); };
+  const screenshot = async (name) => {
+    await browser.evaluate("document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))");
+    const result = await browser.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    writeFileSync(join(output, name), Buffer.from(result.data, "base64"));
+  };
   await screenshot("summary.png");
   await tab("My thoughts"); await until("document.body.innerText.includes('Confirm the proposal deadline.')");
   report.checks.personalNotesSeparated = true;
@@ -84,10 +88,12 @@ try {
   await until("document.querySelector('#speech-provider')");
   await browser.evaluate("(()=>{const input=document.querySelector('#speech-provider');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(input,'large-v3-turbo');input.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await browser.evaluate("Array.from(document.querySelectorAll('button')).find(x=>x.textContent.includes('Save speech settings')).click()");
-  await sleep(300);
+  await until("Array.from(document.querySelectorAll('button')).some(x => x.textContent.includes('Save speech settings') && x.disabled && x.getAttribute('aria-busy') !== 'true')");
+  const beforeReload = await browser.evaluate("performance.timeOrigin");
   await browser.send("Page.reload");
-  await until("document.querySelector('#speech-provider')?.value === 'large-v3-turbo'");
+  await until(`performance.timeOrigin !== ${beforeReload} && document.querySelector('#speech-provider')?.value === 'large-v3-turbo'`);
   report.checks.localModelChoicePersists = true;
+  await browser.evaluate("document.querySelector('#speech-provider').scrollIntoView({block:'center', behavior:'instant'})");
   await screenshot("speech-settings.png");
   report.errors = browser.errors;
   assert.ok(Object.values(report.checks).every(Boolean), JSON.stringify(report.checks));

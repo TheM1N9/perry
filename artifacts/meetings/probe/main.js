@@ -122,8 +122,8 @@ app.whenReady().then(async () => {
       await player.loadURL("data:text/html,<title>Remote speech through the OS output</title>");
       const audio = `data:audio/wav;base64,${readFileSync(join(home, "them.wav")).toString("base64")}`;
       await player.webContents.executeJavaScript(`window.audio = new Audio(${JSON.stringify(audio)}); window.audio.play()`);
-      await sleep(12_000);
     }
+    await sleep(12_000);
     if (player) { player.destroy(); player = null; }
     // Stop must flush a final partial chunk, wait for Whisper, and retry a failed delivery.
     await ears.stop();
