@@ -1,5 +1,7 @@
 "use client";
 
+import { randomUUID } from "@/lib/uuid";
+
 import { useId, useRef, useState } from "react";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -45,7 +47,7 @@ export function TaskSteering({ task }: { task: Doc<"tasks"> }) {
         const value = text.trim();
         if (!value || busy.current) return;
         // Retain the id after an ambiguous response; edits represent a different request.
-        if (request.current?.text !== value) request.current = { text: value, id: crypto.randomUUID() };
+        if (request.current?.text !== value) request.current = { text: value, id: randomUUID() };
         busy.current = true;
         setSending(true);
         setError("");

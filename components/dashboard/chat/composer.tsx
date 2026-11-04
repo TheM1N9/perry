@@ -5,6 +5,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Rea
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, typingSkill, type Access, type ModelOption } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { cn } from "@/lib/utils";
+import { randomUUID } from "@/lib/uuid";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
@@ -48,7 +49,7 @@ export function ComposerDraft({ ref, refreshSkills, storageKey, children }: {
   }, [storageKey]);
   const [before, setBefore] = useState<string>();
   useImperativeHandle(ref, () => ({ read: () => draft, write: setDraft, citations: () => citations, writeCitations: setCitations,
-    cite: (text) => setCitations([...citations, { id: crypto.randomUUID(), text, comment: "" }]),
+    cite: (text) => setCitations([...citations, { id: randomUUID(), text, comment: "" }]),
   }), [draft, setDraft, citations, setCitations]);
   const mentioning = !draft.startsWith("/") && typingSkill(before ?? draft) !== null;
   useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);

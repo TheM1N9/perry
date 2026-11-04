@@ -1,5 +1,7 @@
 "use client";
 
+import { randomUUID } from "@/lib/uuid";
+
 import { useRef, useState } from "react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { errorText } from "@/lib/format";
@@ -25,7 +27,7 @@ export function MessageEditor({ message, assistant, waiting, onClose, onStop, on
   const [text, setText] = useState(message.text);
   const [retained, setRetained] = useState(message.attachments);
   const [files, setFiles] = useState<File[]>([]);
-  const [requestId] = useState(() => crypto.randomUUID());
+  const [requestId] = useState(() => randomUUID());
   const [uploading, setUploading] = useState<{ index: number; total: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -50,7 +52,7 @@ export function MessageEditor({ message, assistant, waiting, onClose, onStop, on
         let attachment = uploaded.current.get(file);
         if (!attachment) {
           setUploading({ index: index + 1, total: files.length });
-          const uploadId = uploadIds.current.get(file) ?? crypto.randomUUID();
+          const uploadId = uploadIds.current.get(file) ?? randomUUID();
           uploadIds.current.set(file, uploadId);
           attachment = await onUpload(file, requestId, uploadId);
           uploaded.current.set(file, attachment);

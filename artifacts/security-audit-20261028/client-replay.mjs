@@ -36,7 +36,8 @@ const args = { key: 'synthetic', id: 'chat', paginationOpts: { cursor: null, num
 const name = 'dashboard:getChatMessages';
 const client = () => { const c = new BackendClient(); clients.add(c); return c; };
 const until = async predicate => {
-  for (let n = 0; n < 100; n++) { if (predicate()) return; await delay(10); }
+  // Reconnect itself waits 1s; leave room for CI scheduling after that delay.
+  for (let n = 0; n < 500; n++) { if (predicate()) return; await delay(10); }
   throw Error('Bounded synthetic cache replay timed out');
 };
 async function check(name, work) {

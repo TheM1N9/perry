@@ -1,5 +1,7 @@
 "use client";
 
+import { randomUUID } from "@/lib/uuid";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { useMutation } from "@/client/react";
@@ -41,7 +43,7 @@ function Control({ scope, input, value, onChange }: { scope: string; input: Inpu
 
 function Sandbox({ artifact, values, onChange }: { artifact: Artifact; values: Values; onChange: (id: string, value: Values[string]) => void }) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const [identity] = useState(() => ({ id: artifact.id, revision: artifact.revision, nonce: crypto.randomUUID().replace(/-/g, "") }));
+  const [identity] = useState(() => ({ id: artifact.id, revision: artifact.revision, nonce: randomUUID().replace(/-/g, "") }));
   const [status, setStatus] = useState("Rendering");
   const valuesRef = useRef(values);
   valuesRef.current = values;
@@ -152,7 +154,7 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
     saving.current = true; setSaveBusy(true); setNotice("Saving draft…");
     const sent = values;
     try {
-      const result = await save({ key, id: base.id, conversationId: base.conversationId, expectedRevision: base.revision, requestId: crypto.randomUUID(), operation, values: JSON.stringify(sent) });
+      const result = await save({ key, id: base.id, conversationId: base.conversationId, expectedRevision: base.revision, requestId: randomUUID(), operation, values: JSON.stringify(sent) });
       if (!result.ok) { setConflict(true); setNotice("Revision conflict. Your inputs are preserved; load the latest draft or explicitly keep yours."); }
       else { setBase(result.artifact); if (operation !== "save" || same(currentValues.current, sent)) setValues(result.artifact.values); setNotice("Saved draft"); }
     } catch (error) { setNotice(`Save failed: ${error instanceof Error ? error.message : String(error)}. Your inputs are still here.`); }
@@ -236,7 +238,7 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
     <form className="flex items-center gap-2" onSubmit={async (event) => {
       event.preventDefault(); if (!question.trim() || dirty || conflict || sending) return;
       setSending(true);
-      try { await followup({ key, id: base.id, conversationId: base.conversationId, expectedRevision: base.revision, requestId: crypto.randomUUID(), text: question }); setQuestion(""); setNotice("Follow-up requested in this chat"); }
+      try { await followup({ key, id: base.id, conversationId: base.conversationId, expectedRevision: base.revision, requestId: randomUUID(), text: question }); setQuestion(""); setNotice("Follow-up requested in this chat"); }
       catch (error) { setNotice(`Follow-up failed: ${error instanceof Error ? error.message : String(error)}`); }
       finally { setSending(false); }
     }}>

@@ -1,5 +1,7 @@
 "use client";
 
+import { randomUUID } from "@/lib/uuid";
+
 import { ArrowUpIcon, ChevronDownIcon, ExternalLinkIcon, FilePlusIcon, PlusIcon, ScanEyeIcon, SquareIcon, XIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
@@ -138,7 +140,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       const id = chatId ?? await createChat({ key });
       if (!chatId) onChatId(id);
       // The picture is kept on this computer as the dashboard keeps a file you attach, and goes with the message.
-      const messageKey = crypto.randomUUID();
+      const messageKey = randomUUID();
       const attachmentIds = picture ? [await attach(id, messageKey, picture)] : [];
       await sendChat({ key, id, text, ...(attachmentIds.length ? { attachmentIds, messageKey } : {}) });
       if (current.current.chatId === id) {
