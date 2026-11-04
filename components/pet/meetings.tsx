@@ -85,8 +85,11 @@ export function useMeetings(key: string, now: number, paused: boolean) {
     const send = () => bridge.setMeetingSuggestions?.({ paused: paused || connection !== "connected", headsUp: data.headsUp, notice: data.notice, upcoming: data.upcoming });
     send();
     const timer = setInterval(send, 30_000);
-    return () => { clearInterval(timer); bridge.setMeetingSuggestions?.({ paused: true, headsUp: false, notice: false, upcoming: [] }); };
+    return () => clearInterval(timer);
   }, [bridge, data, paused, connection]);
+  useEffect(() => () => {
+    bridge?.setMeetingSuggestions?.({ paused: true, headsUp: false, notice: false, upcoming: [] });
+  }, [bridge]);
 
   const upcoming = !bridge?.setMeetingSuggestions && !paused && data?.headsUp && state.phase === "off"
     ? data.upcoming.find((event) => now >= event.startsAt - 2 * 60_000 && now <= event.startsAt + 10 * 60_000 && now < event.endsAt)
