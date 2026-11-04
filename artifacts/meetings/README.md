@@ -27,6 +27,7 @@ The macOS job runs the same Electron pipeline. A system-audio permission refusal
 - The fake microphone fixture is not captured, source clocks are wrong, no chunks reach the worker, silence is hallucinated, or ONNX cannot load in the real utility process.
 - The system track is unavailable, dies after the video track is stopped, captures silence, or contains the microphone phrase instead of the independently played output phrase.
 - macOS denial hangs or silently claims successful loopback; partial capture is not reported.
+- The macOS call probe returns no script result, malformed JSON, a process error, or a timeout. A failure must retain stdout/stderr in the report and fail the probe instead of being mistaken for an idle microphone or permission refusal.
 - Recreating the pet's UI destroys its independent capture window.
 - Server delivery fails once and loses or duplicates segments; Stop drops the last phrase or finishes before the queue is drained.
 - Write-up claims can be taken twice, stale results overwrite notes, typed notes disappear, generated lines lose outside-content provenance, or an action item creates duplicate to-dos.

@@ -30,7 +30,12 @@ export async function noticeFlow({ root, output, call, ears, report, save }) {
   try {
     const observed = await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("The native call probe did not answer.")), 20_000);
-      stopProbe = noticeCalls((state) => { clearTimeout(timeout); resolve(state); });
+      stopProbe = noticeCalls((state) => { clearTimeout(timeout); resolve(state); }, (issue) => {
+        clearTimeout(timeout);
+        report.callProbeFailure = issue;
+        save();
+        reject(new Error(`Native call probe failed: ${issue.message}; stdout=${issue.stdout}; stderr=${issue.stderr}`));
+      });
     });
     stopProbe();
     report.callProbe = observed;
