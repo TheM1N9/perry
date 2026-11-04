@@ -51,3 +51,22 @@ make the active browser entropy API throw; restore it before retrying. Count
 
 Temporary probes, fixture data and browser profiles were removed after the run.
 Existing test sources were preserved. The running installation was not changed.
+
+## Message editing and citation integration, 4 November 2026
+
+Integrated main through `cc6cae5` locally after newer citation handling conflicted
+with the submission error boundary. Citation clearing and restoration stay inside
+that boundary. Citation IDs also use the HTTP-compatible UUID helper.
+
+Eight targeted browser checks passed on a non-loopback HTTP Tailscale origin:
+the editor opens without a page crash; edited words and a new attachment reach
+the rewind mutation; edit and upload request IDs are valid UUID v4 strings;
+successful save closes the editor; failed first upload preserves the raw draft,
+quote and attachment; the error is visible and Send is unlocked; retry sends the
+quote and attachment exactly once; and no browser exceptions occur.
+
+The fixture again used synthetic history and a stopped scheduler. Application
+TypeScript via the production build, Convex TypeScript, all nine smoke checks,
+and the production build passed. The temporary probe and fixture were removed.
+This integration was prepared locally; publishing, merging and installation had
+not occurred at this checkpoint.

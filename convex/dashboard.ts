@@ -34,6 +34,7 @@ import { pictureOf, stepCard, type StepCard } from "./lib/steps";
 import { diagnostics } from "./lib/internet";
 import { choiceForChat } from "./routing";
 import { questionAnswerText } from "../lib/interactive";
+import { citedMemories } from "../lib/reply-text";
 import { recheckInternetConnections } from "./composio";
 import { findBrowser } from "./lib/browser";
 
@@ -652,7 +653,7 @@ export const getRunSteps = query({
           id: span._id,
           kind: span.kind,
           name: span.name,
-          ...(span.kind === "commentary" || span.kind === "reasoning" || span.kind === "plan" ? { text: span.output } : {}),
+          ...(span.kind === "commentary" || span.kind === "reasoning" || span.kind === "plan" ? { text: span.kind === "commentary" ? citedMemories(span.output).text : span.output } : {}),
           status: span.status,
           startedAt: span.startedAt,
           ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon, ChevronRightIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
+import { ChevronRightIcon, DownloadIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -75,7 +75,7 @@ export function useUpdates() {
   return { view, update, download, install, reloadRequired };
 }
 
-/** One quiet control beside Perry’s name, with no sidebar banner. */
+/** A compact update control beside the account and notification buttons. */
 export function UpdateControl() {
   const { view, download, install, reloadRequired } = useUpdates();
   const key = useDashboardKey();
@@ -102,13 +102,11 @@ export function UpdateControl() {
     finally { inFlight.current = false; setPending(false); }
   };
   return <Tooltip>
-    <TooltipTrigger render={<Button type="button" variant="ghost" size={ready ? "sm" : "icon"} disabled={!view || busy} aria-label={label}
+    <TooltipTrigger render={<Button type="button" variant="ghost" size="icon" disabled={!view || busy} aria-label={label}
       data-update-control data-update-state={view?.state ?? "loading"} aria-busy={busy} onClick={() => void activate()}
-      className={cn("relative h-9 shrink-0 touch-manipulation rounded-full border border-border/60 bg-transparent text-muted-foreground before:absolute before:-inset-1",
-        ready ? "gap-1.5 px-2.5 group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:p-0" : "size-9",
+      className={cn("relative shrink-0 touch-manipulation text-muted-foreground before:absolute before:-inset-1.5",
         available && !busy && !ready && "text-destructive hover:text-destructive")} />}>
-      {busy ? <Spinner className="size-4" /> : ready ? <RotateCwIcon className="size-4" /> : <ArrowUpIcon className="size-4" />}
-      {ready && <span className="group-data-[collapsible=icon]:hidden">Reload</span>}
+      {busy ? <Spinner className="size-4" /> : !ready && available ? <DownloadIcon className="size-4" /> : <RefreshCwIcon className="size-4" />}
     </TooltipTrigger>
     <TooltipContent side="top">{label}</TooltipContent>
   </Tooltip>;
@@ -132,8 +130,8 @@ export function Updates() {
           <p className="mt-0.5 text-xs text-pretty text-muted-foreground">{detail(view, now, reloadRequired)}</p>
         </div>
         {reloadRequired || updateReady(view)
-          ? <ActionButton size="sm" className="min-h-11 sm:min-h-9" action={async () => toast.success(await update())}><ArrowUpIcon />{reloadRequired || view.state === "ready" ? "Reload to install" : "Download"}</ActionButton>
-          : !busy && <ActionButton variant="outline" size="sm" className="min-h-11 sm:min-h-9" aria-label="Check for updates" action={() => check({ key })}><RotateCwIcon />Check</ActionButton>}
+          ? <ActionButton size="sm" className="min-h-11 sm:min-h-9" action={async () => toast.success(await update())}>{reloadRequired || view.state === "ready" ? <RefreshCwIcon /> : <DownloadIcon />}{reloadRequired || view.state === "ready" ? "Reload to install" : "Download"}</ActionButton>
+          : !busy && <ActionButton variant="outline" size="sm" className="min-h-11 sm:min-h-9" aria-label="Check for updates" action={() => check({ key })}><RefreshCwIcon />Check</ActionButton>}
       </div>
       <label className="flex min-h-11 items-center justify-between gap-3 border-t pt-3 text-sm">
         Install overnight

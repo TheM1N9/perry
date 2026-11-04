@@ -1,0 +1,6 @@
+{
+  "name": "perry-meeting-capture-probe",
+  "private": true,
+  "type": "module",
+  "main": "main.js"
+}

@@ -60,7 +60,7 @@ import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { ACCESS_LABELS, runLabel } from "../convex/lib/commands";
 import { ENGINE_LABELS, ENGINES, refusal, updateOf, versionIn } from "../convex/lib/engines";
-import { effortFor, modelFor } from "../convex/lib/routing";
+import { effortFor, modelFor, tierOf } from "../convex/lib/routing";
 import { skillsNamedIn } from "../convex/lib/skills";
 import {
   defuse, optionOf, skillNote, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type NamedSkill, type PerryTools,
@@ -68,6 +68,7 @@ import {
 } from "./engine";
 import { createEngines } from "./engines";
 import { review } from "./review";
+import { writeUpMeeting } from "./meeting-notes";
 import { nameChat } from "./title";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
 import { TurnTrace } from "./trace";
@@ -417,6 +418,13 @@ async function main() {
   const quickPick = (engine: Engine): { model?: string; effort?: string } => {
     const model = modelFor((statuses.get(engine.kind)?.models ?? []).map((item) => ({ ...item, engine: engine.kind })), engine.kind, "quick");
     const effort = effortFor(model, "quick");
+    return { ...(model ? { model: model.id } : {}), ...(effort ? { effort } : {}) };
+  };
+  /** The standard tier's, for what is worth more than a quick answer: a call's write-up (convex/lib/routing.ts). */
+  const standardPick = (engine: Engine): { model?: string; effort?: string } => {
+    const { tier } = tierOf({ kind: "meeting" });
+    const model = modelFor((statuses.get(engine.kind)?.models ?? []).map((item) => ({ ...item, engine: engine.kind })), engine.kind, tier);
+    const effort = effortFor(model, tier);
     return { ...(model ? { model: model.id } : {}), ...(effort ? { effort } : {}) };
   };
   /** A quick turn on an engine, counted while it runs. */
@@ -1339,8 +1347,51 @@ async function main() {
     }
   });
 
+  // Calls the desktop pet listened to, written up as they end (convex/meetings.ts). Any runner with a quick-turn
+  // engine may; what it reads comes with the claim, so the watch itself stays small.
+  let writingMeeting = false;
+  let meetingLease: ReturnType<typeof setInterval> | undefined;
+  const writeMeetings = async () => {
+    if (writingMeeting) return;
+    const writer = quickEngine();
+    if (!writer) return;
+    writingMeeting = true;
+    try {
+      const requests = await client.query(api.meetings.pendingNotes, { token });
+      for (const request of requests) await quickly(writer, async () => {
+        const meeting = await client.mutation(api.meetings.claimNotes, { token, id: request.id });
+        if (!meeting) return;
+        const checkpoint = join(HOME, "meeting-writeups", `${request.id}.json`);
+        meetingLease = setInterval(() => {
+          void client.mutation(api.meetings.renewNotes, { token, id: request.id, claim: meeting.claim }).catch(() => {});
+        }, 60_000);
+        try {
+          const written = await writeUpMeeting(writer, meeting, standardPick(writer), checkpoint);
+          console.log(dim(`  wrote up a call (${written.model ?? `${writer.label} default`})`));
+          await client.mutation(api.meetings.finishNotes, { token, id: request.id, claim: meeting.claim, title: written.title, markdown: written.markdown, actions: written.actions });
+          if (existsSync(checkpoint)) unlinkSync(checkpoint);
+        } catch (error) {
+          console.log(yellow(`  could not write up a call: ${message(error)}`));
+          await client.mutation(api.meetings.finishNotes, { token, id: request.id, claim: meeting.claim, error: message(error) });
+        } finally {
+          clearInterval(meetingLease);
+          meetingLease = undefined;
+        }
+      });
+    } catch (error) {
+      console.error(red(`  Could not save a call's write-up: ${message(error)}`));
+    } finally {
+      writingMeeting = false;
+    }
+  };
+  watch(api.meetings.pendingNotes, { token }, () => { void writeMeetings(); });
+  // Also retry when an engine signed in after the pending query last changed.
+  const meetingPoll = setInterval(() => { void writeMeetings(); }, 60_000);
+
   const stop = async () => {
     clearInterval(heartbeat);
+    clearInterval(meetingPoll);
+    clearInterval(meetingLease);
     for (const engine of engines.values()) engine.kill();
     rl?.close();
     client.close();

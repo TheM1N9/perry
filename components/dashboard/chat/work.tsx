@@ -163,7 +163,7 @@ function RunSteps({ runIds, live = false, held = false, unresponsive = false, om
   return <div ref={container} className="min-w-0 pt-2" data-work-timeline>
     {groups.map((group) => <Fragment key={group.id}>{"plan" in group
       ? <NativePlan text={group.plan.text ?? ""} active={live} /> : "text" in group
-      ? <div className="py-2" data-commentary><Markdown text={group.text} /></div>
+      ? <div className="py-2" data-commentary data-cite-text><Markdown text={group.text} /></div>
       : <WorkLogBlock><ToolGroup steps={group.steps} live={live} held={held} unresponsive={unresponsive} /></WorkLogBlock>}</Fragment>)}
   </div>;
 }

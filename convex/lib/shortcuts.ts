@@ -9,6 +9,12 @@
  */
 
 export const SHORTCUTS = {
+  listen: {
+    label: "Listen to a call",
+    description: "Start or stop meeting notes with the desktop pet.",
+    default: "CommandOrControl+Shift+L",
+    global: true,
+  },
   talk: {
     label: "Talk to Perry",
     description: "Anywhere, with the desktop pet on: hold, speak, let go.",

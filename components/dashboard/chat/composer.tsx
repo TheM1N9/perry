@@ -5,6 +5,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Rea
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, typingSkill, type Access, type ModelOption } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { cn } from "@/lib/utils";
+import { randomUUID } from "@/lib/uuid";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
@@ -12,11 +13,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { InfoTip } from "../common";
 import { AttachmentList, PickedFiles, type Attachment } from "./attachments";
 import { PromptEditor, type PromptHandle } from "./prompt-editor";
+import { CitationChips, type Citation } from "./citations";
 
 export const MAX_FILES = 10;
 export const MAX_BYTES = 50 * 1024 * 1024;
 
-export type DraftHandle = { read: () => string; write: (text: string) => void };
+export type DraftHandle = { read: () => string; write: (text: string) => void; citations: () => Citation[]; writeCitations: (citations: Citation[]) => void; cite: (text: string) => void };
 /** The composer's box (prompt-editor.tsx): focused, and written at the caret. */
 export type ComposerHandle = PromptHandle;
 
@@ -26,21 +28,32 @@ export function ComposerDraft({ ref, refreshSkills, storageKey, children }: {
   storageKey: string;
   refreshSkills: () => unknown;
   /** `before`: the caret's line up to the caret, where a $name is typed. */
-  children: (state: { draft: string; setDraft: (text: string) => void; before: string | undefined; setBefore: (before: string) => void }) => ReactNode;
+  children: (state: { draft: string; setDraft: (text: string) => void; citations: Citation[]; setCitations: (citations: Citation[]) => void; before: string | undefined; setBefore: (before: string) => void }) => ReactNode;
 }) {
   const [draft, setDraftState] = useState("");
+  const [citations, setCitationState] = useState<Citation[]>([]);
+  const setCitations = useCallback((items: Citation[]) => {
+    setCitationState(items);
+    try { if (items.length) sessionStorage.setItem(`${storageKey}.citations`, JSON.stringify(items)); else sessionStorage.removeItem(`${storageKey}.citations`); } catch {}
+  }, [storageKey]);
   const setDraft = useCallback((text: string) => {
     setDraftState(text);
     try { if (text) sessionStorage.setItem(storageKey, text); else sessionStorage.removeItem(storageKey); } catch {}
   }, [storageKey]);
   useEffect(() => {
     try { setDraftState(sessionStorage.getItem(storageKey) ?? ""); } catch { setDraftState(""); }
+    try {
+      const saved: unknown = JSON.parse(sessionStorage.getItem(`${storageKey}.citations`) ?? "[]");
+      setCitationState(Array.isArray(saved) ? saved.filter((item): item is Citation => Boolean(item) && typeof item.id === "string" && typeof item.text === "string" && typeof item.comment === "string") : []);
+    } catch { setCitationState([]); }
   }, [storageKey]);
   const [before, setBefore] = useState<string>();
-  useImperativeHandle(ref, () => ({ read: () => draft, write: setDraft }), [draft, setDraft]);
+  useImperativeHandle(ref, () => ({ read: () => draft, write: setDraft, citations: () => citations, writeCitations: setCitations,
+    cite: (text) => setCitations([...citations, { id: randomUUID(), text, comment: "" }]),
+  }), [draft, setDraft, citations, setCitations]);
   const mentioning = !draft.startsWith("/") && typingSkill(before ?? draft) !== null;
   useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
-  return children({ draft, setDraft, before, setBefore });
+  return children({ draft, setDraft, citations, setCitations, before, setBefore });
 }
 const ACCEPT = "image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json";
 
@@ -68,7 +81,7 @@ type Pickers = {
 
 export function Composer({
   ref, assistant, draft, onDraftChange, onCaret, onSubmit, onQueue, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
-  suggestions, suggesting = "Commands", completing, pickers, above, editing, editingQueued,
+  suggestions, suggesting = "Commands", completing, pickers, above, editing, editingQueued, citations = [], onCitationsChange,
 }: {
   ref?: Ref<ComposerHandle>;
   assistant: string;
@@ -95,6 +108,8 @@ export function Composer({
   /** A queued message's words are in the box (up-next.tsx): sending saves them in its place, and Escape gives the draft back. */
   editingQueued?: { onCancel: () => void };
   above?: ReactNode;
+  citations?: Citation[];
+  onCitationsChange?: (citations: Citation[]) => void;
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const [highlight, setHighlight] = useState(0);
@@ -107,7 +122,7 @@ export function Composer({
 
   const shown = dismissed ? [] : suggestions;
   const index = Math.min(highlight, Math.max(0, shown.length - 1));
-  const empty = !draft.trim() && files.length === 0 && !editing?.attachments.some((file) => !file.removed);
+  const empty = !draft.trim() && citations.length === 0 && files.length === 0 && !editing?.attachments.some((file) => !file.removed);
   const stopping = waiting && empty && onStop;
 
   /** Keys the box gives the composer first; true when one was taken. Enter that is not taken sends (prompt-editor.tsx). */
@@ -155,6 +170,7 @@ export function Composer({
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
         onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); if (!editingQueued) onAddFiles(Array.from(event.dataTransfer.files)); } }}
       >
+        {citations.length > 0 && onCitationsChange && <CitationChips citations={citations} onChange={onCitationsChange} />}
         {editing ? (editing.attachments.length > 0 || files.length > 0) && <div className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1">
           {editing.attachments.length > 0 && <ul aria-label="Current attachments" className="flex gap-2">
             {editing.attachments.map((attachment, index) => <li key={attachment.id ?? index} className="relative shrink-0">

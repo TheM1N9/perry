@@ -34,6 +34,7 @@ import { TimePicker } from "@/components/ui/time-picker";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
+import { MeetingSettings } from "./meetings";
 import { PetDevices } from "../pet-devices";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
@@ -546,6 +547,7 @@ function DesktopPet() {
           <p className="mt-0.5 text-pretty text-muted-foreground">Perry may look when needed. Captures appear in the chat.</p>
         </div>
       </div>
+      <MeetingSettings />
       <PetDevices />
     </Section>
   );

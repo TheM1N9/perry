@@ -85,7 +85,7 @@ export function NoteScreen() {
 }
 
 /** The note's saves (NoteAutosave), made once for the note and fed each newer version the server sends. */
-function useNoteSaves(note: NoteView) {
+export function useNoteSaves(note: NoteView) {
   const { dashboardKey } = useSession();
   const save = useMutation(api.notes.save);
   const saveRef = useRef(save);

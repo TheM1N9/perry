@@ -1,11 +1,6 @@
 /**
- * Talking to Perry: speech to text on this computer, and the hotkey.
- *
- * Speech becomes text with Whisper (base, 8-bit, about 80 MB), run by
- * transformers.js on ONNX Runtime in this process. The model is downloaded
- * from Hugging Face the first time and kept in ~/.perry/models; after that,
- * nothing leaves the computer. Adapted from how OpenWhispr (MIT) does it,
- * with a library in place of its native whisper.cpp server.
+ * Talking to Perry: speech to text on this computer (whisper.js, in this
+ * process), and the hotkey.
  *
  * The hotkey (Ctrl+Shift+Space, Cmd+Shift+Space on a Mac) works from
  * anywhere. Tap it to start listening and tap again to send; or hold it while
@@ -17,14 +12,11 @@
 
 import { app, globalShortcut, systemPreferences } from "electron";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+
+export { transcribe, warmUp } from "./whisper.js";
 
 const require = createRequire(import.meta.url);
-const MODEL = process.env.PERRY_VOICE_MODEL ?? "onnx-community/whisper-base";
-/** Whisper guesses English when not told; set this to speak another language ("spanish", "hindi"). */
-const LANGUAGE = process.env.PERRY_VOICE_LANGUAGE ?? "english";
 /** Held longer than this, letting go sends; a shorter press is a tap. */
 const HOLD_MS = 400;
 /** Presses closer together than this are the key repeating while held, not new presses (where the key hook cannot hear them). */
@@ -34,39 +26,6 @@ const HEAR_MS = 250;
 
 /** As convex/lib/shortcuts.ts has it, until the dashboard says otherwise. */
 export const DEFAULT_HOTKEY = "CommandOrControl+Shift+Space";
-
-let recognizer = null;
-
-/** Whisper, loaded once; `progress` hears how the first download goes. */
-function load(modelsDir, progress) {
-  recognizer ??= (async () => {
-    const { pipeline, env } = await import("@huggingface/transformers");
-    env.cacheDir = modelsDir;
-    return await pipeline("automatic-speech-recognition", MODEL, {
-      dtype: "q8",
-      progress_callback: (event) => {
-        if (event.status === "progress" && event.total) progress?.({ file: event.file, loaded: event.loaded, total: event.total });
-      },
-    });
-  })().catch((error) => {
-    recognizer = null;
-    throw error;
-  });
-  return recognizer;
-}
-
-/** Load it in the background when it is already downloaded, so the first words need not wait. */
-export function warmUp(modelsDir) {
-  if (existsSync(join(modelsDir, ...MODEL.split("/")))) void load(modelsDir).catch(() => {});
-}
-
-/** 16 kHz mono samples in, what was said out. */
-export async function transcribe(modelsDir, samples, progress) {
-  const whisper = await load(modelsDir, progress);
-  const { text } = await whisper(samples, { language: LANGUAGE, task: "transcribe" });
-  // Whisper names silence and noise rather than leaving them out.
-  return text.replace(/\[(BLANK_AUDIO|MUSIC|NOISE|SILENCE)\]|\((silence|music|noise)\)/gi, "").trim();
-}
 
 /** Electron's name for a key, as uiohook names it, for hearing it go down and come up. */
 const HOOK_NAMES = {

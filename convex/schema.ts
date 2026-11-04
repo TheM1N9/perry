@@ -274,6 +274,10 @@ export default defineSchema({
     dailyLimit: v.optional(v.number()),
     /** False when the owner turned off Perry looking at the screen on his own (screen.ts). Unset: on. */
     screenLook: v.optional(v.boolean()),
+    /** False once the owner turned off the pet's heads-up as a calendar meeting starts (meetings.ts). */
+    meetingHeadsUp: v.optional(v.boolean()),
+    /** False once the owner turned off the pet asking when an app starts using the microphone (pet/listen.js). */
+    meetingNotice: v.optional(v.boolean()),
     /** When the owner last wrote to Perry anywhere, so what goes unanswered can be told apart. */
     ownerWroteAt: v.optional(v.number()),
     /** False stops Perry updating himself at night (updates.ts). Unset means on. */
@@ -848,6 +852,70 @@ export default defineSchema({
     // A person's page by their key, for one step out on the map (brainMap.neighbourhoodOf).
     .index("by_person", ["person"])
     .searchIndex("search_text", { searchField: "search" }),
+
+  /**
+   * A call the desktop pet listened to (meetings.ts): its page of notes, which is an ordinary note, and how far it
+   * has got. Asked for from the dashboard, then listening on one pet, then being written up by a runner, then done.
+   */
+  meetings: defineTable({
+    title: v.string(),
+    status: v.union(v.literal("asked"), v.literal("listening"), v.literal("writing"), v.literal("done"), v.literal("failed")),
+    /** The pet listening: one on another computer, or none for the one on Perry's own. */
+    device: v.optional(v.id("petDevices")),
+    /** The owner's page: what they type during the call, then the write-up too. May be deleted from Brain. */
+    noteId: v.optional(v.id("notes")),
+    startedAt: v.number(),
+    endedAt: v.optional(v.number()),
+    /** When its pet last said it is still listening; long past, it was cut off (sweep). */
+    aliveAt: v.number(),
+    /** The owner pressed Stop in the dashboard; the pet closes up when it sees this. */
+    stopAsked: v.optional(v.boolean()),
+    /** Which sides it could hear. */
+    heard: v.optional(v.object({ mic: v.boolean(), system: v.boolean() })),
+    segments: v.number(),
+    /** Sound that went unwritten because the computer could not keep up. */
+    droppedMs: v.optional(v.number()),
+    eventId: v.optional(v.string()),
+    joinUrl: v.optional(v.string()),
+    attendees: v.optional(v.array(v.string())),
+    template: v.optional(v.string()),
+    /** Whether the owner or a calendar gave the title; otherwise the write-up may suggest one. */
+    named: v.optional(v.boolean()),
+    /** What the owner typed before the first write-up, kept for regenerating from. */
+    typed: v.optional(v.string()),
+    claim: v.optional(v.string()),
+    claimedAt: v.optional(v.number()),
+    attempts: v.optional(v.number()),
+    /** The page's revision after the last write-up: the owner has edited it since if it moved on. */
+    writtenRevision: v.optional(v.number()),
+    writtenAt: v.optional(v.number()),
+    actions: v.optional(v.array(v.object({ text: v.string(), owner: v.optional(v.string()), todoId: v.optional(v.id("todos")) }))),
+    error: v.optional(v.string()),
+  })
+    .index("by_started", ["startedAt"])
+    .index("by_status", ["status", "startedAt"]),
+
+  /** What was said in a meeting, a row for each chunk Whisper wrote; `seq` makes sending it again harmless. */
+  meetingSegments: defineTable({
+    meetingId: v.id("meetings"),
+    seq: v.number(),
+    source: v.union(v.literal("you"), v.literal("them")),
+    startMs: v.number(),
+    endMs: v.number(),
+    text: v.string(),
+  }).index("by_meeting", ["meetingId", "seq"]),
+
+  /** The owner's next few meetings, from a connected calendar, for the pet's heads-up. Replaced by each read. */
+  upcomingMeetings: defineTable({
+    eventId: v.string(),
+    title: v.string(),
+    startsAt: v.number(),
+    endsAt: v.number(),
+    joinUrl: v.optional(v.string()),
+    attendees: v.optional(v.array(v.string())),
+    /** The owner said not now, or already started it: no more heads-ups for this one. */
+    dismissedAt: v.optional(v.number()),
+  }).index("by_event", ["eventId"]),
 
   conversations: defineTable({
     /** Idempotency key of the last atomic edit/resend. */

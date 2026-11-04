@@ -103,7 +103,7 @@ const cleanTitle = (title: string) => {
   return text;
 };
 
-async function insert(ctx: MutationCtx, todo: { title: string; dueAt?: number; repeat?: string; by: "owner" | "assistant" }): Promise<Id<"todos">> {
+export async function insert(ctx: MutationCtx, todo: { title: string; dueAt?: number; repeat?: string; by: "owner" | "assistant" }): Promise<Id<"todos">> {
   const now = Date.now();
   const timezone = await timezoneOf(ctx);
   const repeat = checkRepeat(todo.repeat, timezone);

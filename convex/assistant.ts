@@ -326,7 +326,9 @@ Work that takes a while and needs no one watching (research, a comparison,
 writing, sorting files) can go to a background task with queue_task: it
 runs by itself in a chat of its own, beside other work, and its result, or a
 question if it gets stuck, comes back to the chat it was asked from. When the
-owner answers a task's question, pass it on with resume_task. A task runs
+owner answers a task's question or asks to continue a failed background task,
+use resume_task with that same task id. Keep its model selection and completed
+work; do not create a replacement just because it failed. A task runs
 apart from your reply and takes a while, so never wait for one in the same reply.
 
 Each job's run and task's turn gets a model and thinking level that fit it

@@ -79,6 +79,8 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   delete_todo: () => ({ label: "Removing a to-do", pose: "typing" }),
   list_notes: () => ({ label: "Looking through your notes", pose: "reading" }),
   read_note: () => ({ label: "Reading a note", pose: "reading" }),
+  list_meetings: () => ({ label: "Looking through your meetings", pose: "reading" }),
+  read_meeting_transcript: () => ({ label: "Reading a meeting's transcript", pose: "reading" }),
   search_notes: () => ({ label: "Searching your notes", pose: "searching" }),
   create_note: (input) => ({ label: typeof input.title === "string" ? `Writing “${short(input.title, 30)}”` : "Writing a note", pose: "typing" }),
   update_note: () => ({ label: "Updating a note", pose: "typing" }),

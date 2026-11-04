@@ -44,4 +44,19 @@ contextBridge.exposeInMainWorld("perryPet", {
     return () => ipcRenderer.off("pet:look", handler);
   },
   setLookHotkey: (accelerator) => ipcRenderer.invoke("pet:set-look-hotkey", String(accelerator)),
+  meetingState: () => ipcRenderer.invoke("pet:meeting-state"),
+  startMeeting: (ask) => ipcRenderer.invoke("pet:meeting-start", ask),
+  stopMeeting: () => ipcRenderer.invoke("pet:meeting-stop"),
+  show: () => ipcRenderer.send("pet:show"),
+  setListenHotkey: (accelerator) => ipcRenderer.invoke("pet:set-listen-hotkey", String(accelerator)),
+  onMeeting: (listener) => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on("pet:meeting", handler);
+    return () => ipcRenderer.off("pet:meeting", handler);
+  },
+  onCallActive: (listener) => {
+    const handler = (_event, active) => listener(active);
+    ipcRenderer.on("pet:call-active", handler);
+    return () => ipcRenderer.off("pet:call-active", handler);
+  },
 });

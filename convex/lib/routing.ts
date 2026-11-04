@@ -59,13 +59,15 @@ export type Work =
   | { kind: "job"; builtin?: "heartbeat" | "daily-summary" | "consolidate" | "brain-review"; once?: boolean; event?: boolean }
   | { kind: "task"; brief: number }
   | { kind: "title" }
-  | { kind: "review" };
+  | { kind: "review" }
+  | { kind: "meeting" };
 
 /** The tier for a piece of work, and why, as a phrase: "quick, for the heartbeat". */
 export function tierOf(work: Work): { tier: Tier; why: string } {
   switch (work.kind) {
     case "title": return { tier: "quick", why: "naming a chat" };
     case "review": return { tier: "quick", why: "reviewing one action" };
+    case "meeting": return { tier: "standard", why: "writing up a call" };
     case "chat": return { tier: "standard", why: "a chat" };
     case "task": return work.brief >= LONG_BRIEF
       ? { tier: "deep", why: "a background task with a long brief" }

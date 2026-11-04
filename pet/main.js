@@ -25,6 +25,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SCREEN_RECORDING_SETTINGS, capture, lookKey } from "./look.js";
 import { DEFAULT_HOTKEY, hotkeys, transcribe, warmUp } from "./voice.js";
+import { listener } from "./listen.js";
+import { noticeCalls } from "./notice-calls.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..");
@@ -254,6 +256,31 @@ if (!app.requestSingleInstanceLock({ argv })) {
   /** The hotkey that shows him the screen (look.js), and why he does not have the one asked for. */
   let look = null;
   let lookError = null;
+  let meetings = null;
+  let listenKeys = null;
+  let stopNoticing = null;
+  const callMeeting = async (path, args) => {
+    const response = await net.fetch(`${BASE}/api/backend/call`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, args: { ...args, key: KEY } }), signal: AbortSignal.timeout(30_000),
+    });
+    const answer = await response.json();
+    if (!response.ok) throw new Error(answer.error ?? `Perry's server answered ${response.status}`);
+    return answer.value;
+  };
+  const listenNow = async (ask = {}) => {
+    show();
+    if (meetings?.state().phase !== "off") return meetings?.state();
+    // An invite can only open a known meeting host. Never allow an arbitrary URL from calendar text.
+    if (ask.joinUrl) {
+      let url;
+      try { url = new URL(ask.joinUrl); } catch { return { phase: "off", error: "That meeting link is invalid." }; }
+      if (url.protocol !== "https:" || url.username || url.password || !/(^|\.)(meet\.google\.com|zoom\.us|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com)$/i.test(url.hostname)) return { phase: "off", error: "That meeting link isn't supported." };
+      try { await shell.openExternal(url.href); }
+      catch { return { phase: "off", error: "The meeting link couldn't be opened. Use Just listen after joining the call." }; }
+    }
+    return meetings.start(ask);
+  };
   const voiceTo = (type) => {
     // Talking to him brings him back if he was hidden, without taking the focus from what you are in.
     if (type === "start" && win && !win.isVisible()) show();
@@ -419,6 +446,11 @@ if (!app.requestSingleInstanceLock({ argv })) {
         ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voice.start() }
         : { label: "Talk to him: his keys are taken by another app", enabled: false },
       { label: `Show him the screen${look?.current() ? ` (${look.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})` : ""}`, click: () => void lookNow() },
+      { label: meetings?.state().phase === "off" ? "Listen to a call" : "Stop listening", click: () => {
+        if (meetings?.state().phase === "off") void listenNow();
+        else void meetings?.stop();
+      } },
+      { label: "Meeting notes", click: () => openDashboard("/meetings") },
       { label: "Keyboard shortcuts…", click: () => openDashboard("/settings/desktop-pet#shortcuts") },
       { label: "Open Perry", click: () => openDashboard("/") },
       ...(!PAIRED ? [{ label: "Open logs", click: () => { mkdirSync(join(HOME, "logs"), { recursive: true }); void shell.openPath(join(HOME, "logs")); } }] : []),
@@ -440,6 +472,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     // Paired again (connect.js starts him): another server or key, and his page from it.
     const now = connection();
     const changed = now.base !== BASE || now.key !== KEY;
+    if (changed) meetings?.quit();
     ({ base: BASE, key: KEY, paired: PAIRED } = now);
     if (args.includes("--reload") || changed) void load();
     if (!args.includes("--reload")) show();
@@ -571,6 +604,31 @@ if (!app.requestSingleInstanceLock({ argv })) {
     if (take(saved).error && saved !== DEFAULT_HOTKEY) take(DEFAULT_HOTKEY);
     warmUp(MODELS);
     ipcMain.on("pet:open", (_event, path) => openDashboard(path));
+    meetings = listener({ here: HERE, models: MODELS, call: callMeeting, tell: (state) => {
+      win?.webContents.send("pet:meeting", state);
+      refreshMenu();
+    } });
+    listenKeys = lookKey(() => {
+      if (meetings.state().phase === "off") void listenNow();
+      else void meetings.stop();
+    });
+    listenKeys.change(readState().listenHotkey ?? "CommandOrControl+Shift+L");
+    const ownPage = (event) => event.sender === win?.webContents;
+    ipcMain.handle("pet:meeting-state", (event) => ownPage(event) ? meetings.state() : null);
+    ipcMain.handle("pet:meeting-start", (event, ask) => ownPage(event) ? listenNow(ask ?? {}) : null);
+    ipcMain.handle("pet:meeting-stop", (event) => ownPage(event) ? meetings.stop() : null);
+    ipcMain.on("pet:show", (event) => { if (ownPage(event)) show(); });
+    ipcMain.handle("pet:set-listen-hotkey", (event, accelerator) => {
+      if (!ownPage(event) || typeof accelerator !== "string") return { hotkey: null, error: "invalid" };
+      const result = listenKeys.change(accelerator);
+      if (result.hotkey) saveState({ listenHotkey: result.hotkey });
+      return { hotkey: listenKeys.current(), error: result.error ?? null };
+    });
+    stopNoticing = noticeCalls((active) => {
+      meetings.callActive(active);
+      win?.webContents.send("pet:call-active", active);
+    });
+    app.once("will-quit", () => { stopNoticing?.(); meetings.dispose(); });
     // Looking at the screen: his chat's button and Perry's look_at_screen ask for the picture; the Look hotkey sends it to the page.
     ipcMain.handle("pet:look", async (_event, byOwner) => await shoot(byOwner === true));
     look = lookKey(() => void lookNow());
