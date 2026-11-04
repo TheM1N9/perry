@@ -548,6 +548,7 @@ function DesktopPet() {
         </div>
       </div>
       <MeetingSettings />
+      <KeyRow name="GROQ_API_KEY" />
       <PetDevices />
     </Section>
   );

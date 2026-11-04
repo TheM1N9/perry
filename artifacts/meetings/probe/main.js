@@ -19,7 +19,7 @@ let ears;
 let player;
 let finishing = false;
 let fixturePreload;
-const deadline = setTimeout(() => { void finish(new Error("Native capture exceeded its three-minute deadline.")); }, 180_000);
+const deadline = setTimeout(() => { void finish(new Error("Native capture exceeded its deadline.")); }, process.env.PERRY_MEETING_LARGE_PROBE === "1" ? 360_000 : 180_000);
 async function finish(error) {
   if (finishing) return;
   finishing = true;
@@ -57,6 +57,9 @@ app.whenReady().then(async () => {
     const fork = utilityProcess.fork.bind(utilityProcess);
     utilityProcess.fork = (module, args, options) => {
       const worker = fork(module, args, { ...options, stdio: "pipe" });
+      worker.on("message", (message) => {
+        if (message.type === "done") { report.inference ??= []; report.inference.push({ seq: message.seq, ms: message.ms }); save(); }
+      });
       let log = "";
       const append = (data) => { log = (log + data).slice(-64_000); writeFileSync(join(dirname(output), "worker.log"), log); };
       worker.stdout?.on("data", append);
@@ -112,7 +115,8 @@ app.whenReady().then(async () => {
     report.checks.survivesPetReload = ears.state().phase === "listening";
     report.phase = "capturing";
     save();
-    await sleep(12_000);
+    // Remote audio starts while the synthetic microphone is still speaking.
+    await sleep(2_000);
     if (state.system === "live") {
       player = new BrowserWindow({ show: false, webPreferences: { backgroundThrottling: false, autoplayPolicy: "no-user-gesture-required" } });
       await player.loadURL("data:text/html,<title>Remote speech through the OS output</title>");
@@ -127,9 +131,23 @@ app.whenReady().then(async () => {
     if (ears.state().phase !== "off") throw new Error("The transcript queue did not drain after Stop.");
     const you = report.segments.filter((part) => part.source === "you").map((part) => part.text).join(" ");
     const them = report.segments.filter((part) => part.source === "them").map((part) => part.text).join(" ");
+    const words = (text) => text.toLowerCase().replace(/\$5,?000/g, "five thousand dollars").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+    const wer = (actual, reference) => {
+      const target = words(reference);
+      let row = Array.from({ length: target.length + 1 }, (_, index) => index);
+      for (const [index, word] of words(actual).entries()) {
+        const next = [index + 1];
+        for (let at = 0; at < target.length; at++) next.push(Math.min(next[at] + 1, row[at + 1] + 1, row[at] + Number(word !== target[at])));
+        row = next;
+      }
+      return row[target.length] / target.length;
+    };
+    report.wordErrorRate = { you: wer(you, "I will send the revised proposal on Friday. Please confirm the proposal delivery date."), them: wer(them, "The approved budget is five thousand dollars. We agreed to keep the budget at five thousand dollars.") };
     report.checks.microphoneTranscribed = /proposal|friday/i.test(you);
+    report.checks.microphonePhraseAccuracy = report.wordErrorRate.you <= 0.2;
     if (state.system === "live") {
       report.checks.loopbackTranscribed = /budget|thousand|5[,.]?000/i.test(them);
+      report.checks.loopbackPhraseAccuracy = report.wordErrorRate.them <= 0.2;
       report.checks.sourcesDistinct = !/proposal|friday/i.test(them) && !/budget|thousand|5[,.]?000/i.test(you);
       report.loopbackCoverage = report.checks.loopbackTranscribed ? "verified" : "failed";
     } else {

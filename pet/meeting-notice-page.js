@@ -8,6 +8,9 @@ const off = window.meetingNotice.onState((state) => {
   document.querySelector("h1").title = state.title;
   document.querySelector("#detail").textContent = state.detail;
   document.querySelector("#detail").title = state.detail;
+  document.querySelector("#start-label").textContent = state.recording ? "Finish" : "Start Notetaker";
+  document.querySelector("#start").disabled = state.busy === true;
+  panel.dataset.recording = String(Boolean(state.recording));
 });
 document.querySelector("#start").onclick = () => current && window.meetingNotice.action("start", current.id);
 document.querySelector("#menu").onclick = () => current && window.meetingNotice.action("menu", current.id);

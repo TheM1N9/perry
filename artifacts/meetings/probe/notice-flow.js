@@ -18,11 +18,13 @@ const waitFor = async (read) => {
 export async function noticeFlow({ root, output, call, ears, report, save }) {
   let result;
   let started = false;
+  let finished = 0;
   let stopProbe;
   let foreign;
   const count = ipcMain.listenerCount("meeting-notice:action");
   const notice = meetingNotice({ here: join(root, "pet"),
     start: async (ask) => { started = true; result = await ears.start(ask); return result; },
+    stop: () => { finished++; },
     dismiss: (eventId) => call("meetings:dismissUpcoming", { eventId }), open: () => {},
   });
   try {
@@ -32,6 +34,7 @@ export async function noticeFlow({ root, output, call, ears, report, save }) {
     });
     stopProbe();
     report.callProbe = observed;
+    report.callDetectionCoverage = observed.unavailable ? "permission-blocked" : "probe-answered";
     report.checks.nativeCallProbeAnswered = typeof observed.active === "boolean";
     const config = { paused: false, headsUp: true, notice: true, upcoming: [] };
     notice.configure(config);
@@ -55,8 +58,13 @@ export async function noticeFlow({ root, output, call, ears, report, save }) {
     notice.call({ active: false });
     notice.call({ active: true, app: "Zoom" });
     report.checks.nextCallCanPrompt = banner.isVisible();
-    notice.listening({ phase: "listening" });
-    report.checks.recordingHidesPrompt = !banner.isVisible();
+    notice.listening({ phase: "listening", title: "Product planning", startedAt: Date.now() - 65_000, speech: "Local transcription" });
+    await waitFor(() => banner.webContents.executeJavaScript("document.querySelector('#start-label').textContent === 'Finish'"));
+    report.checks.recordingReplacesPromptWithControls = banner.isVisible();
+    writeFileSync(join(dirname(output), "recording-controls.png"), (await banner.webContents.capturePage()).toPNG());
+    await banner.webContents.executeJavaScript("document.querySelector('#start').click()");
+    await waitFor(() => finished === 1);
+    report.checks.recordingFinishAction = true;
     notice.listening({ phase: "off" });
     notice.call({ active: false });
     const upcoming = (await call("meetings:pet", {})).upcoming;

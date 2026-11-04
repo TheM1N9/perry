@@ -47,6 +47,7 @@ export type MeetingSummary = {
   id: Id<"meetings">; title: string; status: Doc<"meetings">["status"]; startedAt: number; endedAt?: number; segments: number; error?: string; noteId?: Id<"notes">; preview?: string;
 };
 export type MeetingView = MeetingSummary & {
+  thoughts?: string;
   joinUrl?: string; attendees?: string[]; template: MeetingTemplate; heard?: { mic: boolean; system: boolean }; droppedMs?: number; stopAsked: boolean;
   actions: Array<{ text: string; owner?: string; added: boolean }>;
   /** The owner changed the page since the last write-up, so writing it again would replace that. */
@@ -107,9 +108,10 @@ export const start = mutation({
   args: {
     key: vKey, device: vDevice, title: v.optional(v.string()), eventId: v.optional(v.string()), joinUrl: v.optional(v.string()), askedId: v.optional(v.id("meetings")),
   },
-  handler: async (ctx, args): Promise<{ id: Id<"meetings">; title: string; startedAt: number }> => {
+  handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const now = Date.now();
+    const speech = (await ctx.db.query("installation").first())?.meetingSpeech ?? { provider: "local" as const, model: "small" as const, language: "en", vocabulary: "" };
     for (const open of await ctx.db.query("meetings").withIndex("by_status", (q) => q.eq("status", "listening")).collect()) {
       if (open.device === args.device) await closeOut(ctx, open, "Perry was cut off before this call ended, so this is what he heard until then.");
     }
@@ -121,6 +123,7 @@ export const start = mutation({
     const given = (args.title ?? event?.title)?.trim().slice(0, 160);
     const title = given || asked?.title || await defaultTitle(ctx, now);
     const fields = {
+      speech,
       status: "listening" as const, device: args.device, startedAt: now, aliveAt: now, segments: 0,
       noteId: asked?.noteId ?? await insertPage(ctx, { title, content: "", author: { by: "owner" } }),
       ...(given || asked?.named ? { named: true } : {}),
@@ -130,10 +133,10 @@ export const start = mutation({
     const joinUrl = joinable(args.joinUrl ?? event?.joinUrl);
     if (asked?.status === "asked") {
       await ctx.db.patch(asked._id, { ...fields, ...(joinUrl ? { joinUrl } : {}) });
-      return { id: asked._id, title, startedAt: now };
+      return { id: asked._id, title, startedAt: now, speech };
     }
     const id = await ctx.db.insert("meetings", { title, ...fields, ...(joinUrl ? { joinUrl } : {}) });
-    return { id, title, startedAt: now };
+    return { id, title, startedAt: now, speech };
   },
 });
 
@@ -271,6 +274,7 @@ export const get = query({
     const note = meeting.noteId ? await ctx.db.get(meeting.noteId) : null;
     return {
       ...summaryOf(meeting),
+      ...(meeting.typed ? { thoughts: meeting.typed } : {}),
       ...(!note ? { noteId: undefined } : {}),
       ...(meeting.joinUrl ? { joinUrl: meeting.joinUrl } : {}),
       ...(meeting.attendees ? { attendees: meeting.attendees } : {}),
@@ -393,21 +397,23 @@ export const remove = mutation({
 
 export const settings = query({
   args: { key: vKey },
-  handler: async (ctx, args): Promise<{ headsUp: boolean; notice: boolean }> => {
+  handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const install = await ctx.db.query("installation").first();
-    return { headsUp: install?.meetingHeadsUp !== false, notice: install?.meetingNotice !== false };
+    return { headsUp: install?.meetingHeadsUp !== false, notice: install?.meetingNotice !== false, speech: install?.meetingSpeech ?? { provider: "local" as const, model: "small" as const, language: "en", vocabulary: "" } };
   },
 });
 
 export const setSettings = mutation({
-  args: { key: vKey, headsUp: v.optional(v.boolean()), notice: v.optional(v.boolean()) },
+  args: { key: vKey, headsUp: v.optional(v.boolean()), notice: v.optional(v.boolean()), speech: v.optional(v.object({ provider: v.union(v.literal("local"), v.literal("groq")), model: v.union(v.literal("small"), v.literal("large-v3-turbo")), language: v.string(), vocabulary: v.string() })) },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const install = await ctx.db.query("installation").first();
     if (!install) throw new Error("Run pnpm run setup first.");
-    await ctx.db.patch(install._id, { ...(args.headsUp === undefined ? {} : { meetingHeadsUp: args.headsUp }), ...(args.notice === undefined ? {} : { meetingNotice: args.notice }) });
+    if (args.speech && (!/^(auto|[a-z]{2})$/.test(args.speech.language) || args.speech.vocabulary.length > 800)) throw new Error("Choose a speech language and keep vocabulary under 800 characters.");
+    if (args.speech?.provider === "local" && args.speech.language === "auto") throw new Error("Choose a language for the local speech model.");
+    await ctx.db.patch(install._id, { ...(args.headsUp === undefined ? {} : { meetingHeadsUp: args.headsUp }), ...(args.notice === undefined ? {} : { meetingNotice: args.notice }), ...(args.speech ? { meetingSpeech: args.speech } : {}) });
     return null;
   },
 });

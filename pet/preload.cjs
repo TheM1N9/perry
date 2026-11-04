@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("perryPet", {
+  meetingControls: true,
   solid: (on) => ipcRenderer.send("pet:solid", Boolean(on)),
   moveTo: (x, y) => ipcRenderer.send("pet:move", Number(x), Number(y)),
   // A drag of him: where his body is in the window as it starts, and its end; whether he is over the circle that hides him.

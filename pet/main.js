@@ -612,6 +612,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       refreshMenu();
     } });
     meetingPrompt = meetingNotice({ here: HERE, start: listenNow,
+      stop: () => meetings.stop(),
       dismiss: (eventId) => callMeeting("meetings:dismissUpcoming", { eventId }), open: openDashboard });
     listenKeys = lookKey(() => {
       if (meetings.state().phase === "off") void listenNow();

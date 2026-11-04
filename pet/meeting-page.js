@@ -5,24 +5,17 @@
  * replaced whenever it reloads. Nothing here is kept or played; closing the
  * window ends all of it.
  *
- * On a speaker the microphone hears the others too, and they would be written
- * down twice, the second time as the owner. So a moment when the computer plays
- * something much louder than the microphone hears is the others', and the
- * microphone's copy goes. Words the owner says over someone are lost with it,
- * which is the better of the two mistakes.
+ * The browser's audio processing handles microphone echo and noise. Both
+ * sources remain independent when people talk over each other.
  */
 
 (() => {
   const SAMPLE_RATE = 16_000;
   const BLOCK_MS = 100;
   /** As components/pet/voice.tsx has it: below this (-46 dBFS), nothing was said. */
-  const SPEECH_FLOOR = 0.005;
+  const SPEECH_FLOOR = 0.002;
   /** How far above the room's own hum a block must be to count as someone speaking. */
   const OVER_HUM = 3;
-  /** The microphone below this share of what plays is only hearing the speakers. */
-  const ECHO_SHARE = 0.6;
-  /** The room rings on after what played stops, for this many blocks. */
-  const ECHO_TAIL = 3;
   /** A chunk ends at a pause of this many blocks, or a shorter one once it is long enough, or at the longest Whisper reads well. */
   const LONG_PAUSE = 12;
   const SHORT_PAUSE = 5;
@@ -33,7 +26,7 @@
   /** Fewer spoken blocks than this is a cough or a door. */
   const FEWEST_SPOKEN = 4;
   /** How often the window hears how much sound there has been. */
-  const REPORT_MS = 5_000;
+  const REPORT_MS = 1_000;
 
   const bridge = window.perryMeeting;
   let context = null;
@@ -43,7 +36,6 @@
   let peak = { mic: 0, system: 0 };
   let reportTimer = 0;
   let clock = 0;
-  let echoHold = 0;
 
   const rms = (samples) => {
     let squares = 0;
@@ -59,7 +51,7 @@
     let hum = 0.0005;
 
     const cut = () => {
-      const blocks = open.blocks.slice(0, open.blocks.length - Math.min(quiet, open.blocks.length));
+      const blocks = open.blocks.slice(0, open.blocks.length - Math.min(Math.max(0, quiet - 2), open.blocks.length));
       if (open.spoken >= FEWEST_SPOKEN && blocks.length) {
         const samples = new Float32Array(blocks.length * blocks[0].length);
         blocks.forEach((block, index) => samples.set(block, index * block.length));
@@ -102,17 +94,8 @@
   function hear({ mic, system }) {
     const atMs = clock;
     clock += BLOCK_MS;
-    let micLevel = rms(mic);
+    const micLevel = rms(mic);
     const systemLevel = rms(system);
-    if (systemLevel > SPEECH_FLOOR) {
-      if (micLevel < systemLevel * ECHO_SHARE) echoHold = ECHO_TAIL;
-    }
-    if (echoHold > 0) {
-      echoHold -= 1;
-      // Heard only through the speakers: for the microphone, this moment was silence.
-      mic.fill(0);
-      micLevel = 0;
-    }
     you.push(mic, micLevel, atMs);
     them.push(system, systemLevel, atMs);
     if (micLevel > SPEECH_FLOOR) heardAt.mic = Date.now();
@@ -122,7 +105,7 @@
   }
 
   const openMic = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     streams.push(stream);
     return stream;
   };

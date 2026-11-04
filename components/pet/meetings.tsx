@@ -11,9 +11,11 @@ export type ListeningState = {
   id?: string; title?: string; startedAt?: number; mic?: string; system?: string;
   behindMs?: number; droppedMs?: number; progress?: number; error?: string;
   callActive?: boolean | null;
+  speech?: string;
 };
 type ListenAsk = { title?: string; eventId?: string; joinUrl?: string; askedId?: string };
 export type MeetingBridge = {
+  meetingControls?: boolean;
   meetingState?: () => Promise<ListeningState>;
   onMeeting?: (listener: (state: ListeningState) => void) => () => void;
   startMeeting?: (ask?: ListenAsk) => Promise<ListeningState>;
@@ -97,7 +99,7 @@ export function useMeetings(key: string, now: number, paused: boolean) {
   }, [bridge, prompt]);
 
   return {
-    state, upcoming, notice, start, stop, hotkey,
+    state, upcoming, notice, start, stop, hotkey, nativeControls: bridge?.meetingControls === true,
     dismiss: () => {
       if (upcoming) void dismiss({ key, eventId: upcoming.eventId }).catch((error) => setState({ phase: "off", error: errorText(error) }));
       else setCallHidden(true);

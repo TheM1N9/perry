@@ -2,13 +2,14 @@ import { BrowserWindow, Menu, ipcMain, screen } from "electron";
 import { join } from "node:path";
 
 /** One small native window survives pet page reloads; all calendar data is replaced on each heartbeat. */
-export function meetingNotice({ here, start, dismiss, open }) {
+export function meetingNotice({ here, start, stop, dismiss, open }) {
   let window = null;
   let config = null;
   let receivedAt = 0;
   let call = { active: false };
   let callId = 0;
   let phase = "off";
+  let listening = null;
   let callHidden = false;
   let hidden = [];
   let prompt = null;
@@ -19,8 +20,9 @@ export function meetingNotice({ here, start, dismiss, open }) {
   const position = () => {
     if (!window || window.isDestroyed()) return;
     const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-    const width = Math.min(640, area.width);
-    window.setBounds({ x: area.x + area.width - width, y: area.y + area.height - 144, width, height: 136 });
+    const width = Math.min(prompt?.recording ? 480 : 640, area.width);
+    const height = prompt?.recording ? 104 : 136;
+    window.setBounds({ x: area.x + area.width - width, y: area.y + area.height - height - 8, width, height });
   };
   const send = () => {
     if (!window || window.isDestroyed()) return;
@@ -30,6 +32,7 @@ export function meetingNotice({ here, start, dismiss, open }) {
   };
   const render = () => {
     if (disposed) return;
+    const wasRecording = prompt?.recording;
     const previous = JSON.stringify(prompt);
     const now = Date.now();
     const enabled = config && !config.paused && now - receivedAt < 90_000 && phase === "off";
@@ -43,7 +46,14 @@ export function meetingNotice({ here, start, dismiss, open }) {
       detail: error || (detected ? [call.app, "Now"].filter(Boolean).join(" · ") : event.startsAt > now ? `Starts in ${Math.ceil((event.startsAt - now) / 60_000)} min` : "Now"),
       detected: Boolean(detected), event,
     } : null;
+    if (listening && phase !== "off") {
+      const seconds = Math.max(0, Math.floor((now - (listening.startedAt ?? now)) / 1000));
+      const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+      prompt = { id: `recording:${listening.id ?? "starting"}`, title: listening.title ?? "New meeting", recording: true, busy: phase !== "listening",
+        detail: listening.error || (phase === "starting" ? "Connecting audio…" : phase === "stopping" ? "Finishing transcript…" : listening.progress !== undefined ? `Downloading speech model · ${Math.round(listening.progress * 100)}%` : listening.behindMs > 15_000 ? `${elapsed} · Transcript ${Math.ceil(listening.behindMs / 1000)}s behind` : `${elapsed} · ${listening.speech ?? "Listening"}`) };
+    }
     if (JSON.stringify(prompt) === previous) return;
+    if (window && wasRecording !== prompt?.recording) position();
     if (prompt && !window) {
       window = new BrowserWindow({ width: 640, height: 136, show: false, frame: false, transparent: true, resizable: false, skipTaskbar: true, alwaysOnTop: true,
         webPreferences: { preload: join(here, "meeting-notice-preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true } });
@@ -85,9 +95,14 @@ export function meetingNotice({ here, start, dismiss, open }) {
   };
   const action = (event, name, id) => {
     if (event.sender !== window?.webContents || !prompt || id !== prompt.id) return;
-    if (name === "start") void begin();
+    if (name === "start") {
+      if (prompt.recording) { if (!prompt.busy) void stop?.(); }
+      else void begin();
+    }
     else if (name === "dismiss") hidePrompt();
-    else if (name === "menu") Menu.buildFromTemplate([
+    else if (name === "menu") Menu.buildFromTemplate(prompt.recording ? [
+      { label: "Open meeting notes", click: () => open(listening.id ? `/meetings/${listening.id}` : "/meetings") },
+    ] : [
       ...(prompt.event?.joinUrl ? [{ label: "Join & start Notetaker", click: () => { if (prompt?.id === id) void begin(true); } }] : []),
       { label: "Open Meetings", click: () => open("/meetings") },
       { type: "separator" },
@@ -107,7 +122,7 @@ export function meetingNotice({ here, start, dismiss, open }) {
       render();
     },
     call(next) { if (!next.active) callHidden = false; if (next.active && !call.active) callId++; call = next; render(); },
-    listening(state) { phase = state.phase; render(); },
+    listening(state) { phase = state.phase; listening = state; render(); },
     dispose() {
       disposed = true;
       clearInterval(timer);
