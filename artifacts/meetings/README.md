@@ -28,6 +28,10 @@ The macOS job runs the same Electron pipeline. A system-audio permission refusal
 - Switching tabs loses typed notes, hides recording controls, or renders a large transcript while its tab is offscreen. Search/copy actions do not reflect the actual transcript.
 
 - Call prompts fail to appear, steal keyboard focus, render calendar text as HTML, repeat after dismissal, survive pause/recording, or leave their window, timer, and IPC listeners alive after disposal.
+- A detected call's prompt never goes away, disappears while the pointer rests on it, or can only be closed with a key it never has focus for. The prompt shows in screen shares.
+- The notes stop the moment a call app flickers off the microphone, while people are still talking, or never stop after the call ends; music or video playing afterwards keeps them going; the countdown runs out under the pointer; "Keep going" does not hold, or holds through the next call too; Cancel is unavailable while audio connects.
+- "Started by mistake?" offers to throw away a real meeting, discards a different one, or lets a paired pet delete any meeting; "Your notes are ready" appears for another computer's meeting, appears twice, or opens the wrong page.
+- A template chosen during the call is lost before the write-up; transcript search highlights other words than it filters by, or Copy ignores the search.
 - Calendar pagination or secondary calendars are skipped; Google and Outlook IDs collide; declined, cancelled, all-day, or invalid-time events become recommendations; stale/failed calendar reads erase valid recommendations or appear current.
 - A calendar listening request loses its title, attendees, or event association when the pet takes it. An invite opens an unsafe URL, or another renderer can trigger the notification's privileged actions.
 - Electron does not boot, cannot load the sandboxed preload/worklet, or exits without a report.

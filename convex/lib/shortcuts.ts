@@ -10,7 +10,7 @@
 
 export const SHORTCUTS = {
   listen: {
-    label: "Listen to a call",
+    label: "Start or stop Notetaker",
     description: "Start or stop meeting notes with the desktop pet.",
     default: "CommandOrControl+Shift+L",
     global: true,

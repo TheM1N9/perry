@@ -27,7 +27,7 @@ const PET_CALLS: Record<string, "which pet" | true> = {
   "dashboard:createChat": true, "dashboard:sendChat": true, "dashboard:stopChat": true, "dashboard:registerAttachment": true,
   "screen:asked": "which pet", "screen:fulfil": "which pet",
   // Listening to a call on that computer: sending what it hears, its own heads-ups. Nothing here reads a transcript or a page back.
-  "meetings:pet": "which pet", "meetings:start": "which pet", "meetings:heard": "which pet", "meetings:alive": "which pet", "meetings:appendSegments": "which pet", "meetings:finish": "which pet", "meetings:abandon": "which pet", "meetings:dismissUpcoming": true,
+  "meetings:pet": "which pet", "meetings:start": "which pet", "meetings:heard": "which pet", "meetings:alive": "which pet", "meetings:appendSegments": "which pet", "meetings:finish": "which pet", "meetings:abandon": "which pet", "meetings:discard": "which pet", "meetings:dismissUpcoming": true,
   "speech:transcribe": "which pet",
   "updates:status": true, "updates:update": true,
   "pause:status": true, "pause:set": true,

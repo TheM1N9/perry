@@ -1,18 +1,32 @@
 let current = null;
 const panel = document.querySelector("main");
+const $ = (selector) => document.querySelector(selector);
+const send = (name) => current && window.meetingNotice.action(name, current.id);
 const off = window.meetingNotice.onState((state) => {
   current = state;
   panel.hidden = !state;
   if (!state) return;
-  document.querySelector("h1").textContent = state.title;
-  document.querySelector("h1").title = state.title;
-  document.querySelector("#detail").textContent = state.detail;
-  document.querySelector("#detail").title = state.detail;
-  document.querySelector("#start-label").textContent = state.recording ? "Finish" : "Start Notetaker";
-  document.querySelector("#start").disabled = state.busy === true;
+  $("h1").textContent = state.title;
+  $("h1").title = state.title;
+  $("#detail").textContent = state.detail;
+  $("#detail").title = state.detail;
+  $("#start-label").textContent = state.primary?.label ?? "";
+  $("#start").disabled = state.primary?.disabled === true;
+  // The waveform belongs to starting the notetaker, not to Stop, Keep going or View notes.
+  $("#start svg").style.display = state.primary?.name === "start" ? "" : "none";
+  $("#second").hidden = !state.secondary;
+  $("#second").textContent = state.secondary?.label ?? "";
+  $("#menu").hidden = !state.menu;
+  $("#close").hidden = !state.closable;
   panel.dataset.recording = String(Boolean(state.recording));
+  panel.dataset.warning = String(Boolean(state.warning));
 });
-document.querySelector("#start").onclick = () => current && window.meetingNotice.action("start", current.id);
-document.querySelector("#menu").onclick = () => current && window.meetingNotice.action("menu", current.id);
-document.onkeydown = (event) => { if (event.key === "Escape" && current) window.meetingNotice.action("dismiss", current.id); };
+$("#start").onclick = () => current?.primary && send(current.primary.name);
+$("#second").onclick = () => current?.secondary && send(current.secondary.name);
+$("#menu").onclick = () => send("menu");
+$("#close").onclick = () => send("dismiss");
+// Resting the pointer on the card pauses whatever it is counting down.
+panel.addEventListener("mouseenter", () => send("hover"));
+panel.addEventListener("mouseleave", () => send("leave"));
+document.onkeydown = (event) => { if (event.key === "Escape" && current?.closable) send("dismiss"); };
 window.addEventListener("pagehide", off, { once: true });

@@ -151,7 +151,7 @@ try {
     child.stderr.on("data", (data) => { log = (log + data).slice(-64_000); writeFileSync(join(output, "electron.log"), log); });
     let launchError;
     child.on("error", (error) => { launchError = error; });
-    const deadline = Date.now() + (process.argv.includes("--large") ? 390_000 : 210_000);
+    const deadline = Date.now() + (process.argv.includes("--large") ? 690_000 : 510_000);
     while (Date.now() < deadline) {
       if (existsSync(env.PERRY_MEETING_PROBE_OUT)) {
         try { probe = JSON.parse(readFileSync(env.PERRY_MEETING_PROBE_OUT, "utf8")); } catch {}

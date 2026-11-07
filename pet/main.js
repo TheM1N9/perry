@@ -279,7 +279,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       try { url = new URL(ask.joinUrl); } catch { return { phase: "off", error: "That meeting link is invalid." }; }
       if (url.protocol !== "https:" || url.username || url.password || !/(^|\.)(meet\.google\.com|zoom\.us|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com)$/i.test(url.hostname)) return { phase: "off", error: "That meeting link isn't supported." };
       try { await shell.openExternal(url.href); }
-      catch { return { phase: "off", error: "The meeting link couldn't be opened. Use Just listen after joining the call." }; }
+      catch { return { phase: "off", error: "The meeting link couldn't be opened. Join the call yourself, then choose Start Notetaker." }; }
     }
     return meetings.start(ask);
   };
@@ -448,7 +448,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
         ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voice.start() }
         : { label: "Talk to him: his keys are taken by another app", enabled: false },
       { label: `Show him the screen${look?.current() ? ` (${look.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})` : ""}`, click: () => void lookNow() },
-      { label: meetings?.state().phase === "off" ? "Listen to a call" : "Stop listening", click: () => {
+      { label: meetings?.state().phase === "off" ? "Start Notetaker" : "Stop Notetaker", click: () => {
         if (meetings?.state().phase === "off") void listenNow();
         else void meetings?.stop();
       } },
@@ -613,6 +613,8 @@ if (!app.requestSingleInstanceLock({ argv })) {
     } });
     meetingPrompt = meetingNotice({ here: HERE, start: listenNow,
       stop: () => meetings.stop(),
+      keepGoing: () => meetings.keepGoing(), holdEnding: (held) => meetings.holdEnding(held), forget: () => meetings.forgetEnded(),
+      discard: (id) => callMeeting("meetings:discard", { id }),
       dismiss: (eventId) => callMeeting("meetings:dismissUpcoming", { eventId }), open: openDashboard });
     listenKeys = lookKey(() => {
       if (meetings.state().phase === "off") void listenNow();
@@ -625,6 +627,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     ipcMain.handle("pet:meeting-stop", (event) => ownPage(event) ? meetings.stop() : null);
     ipcMain.on("pet:show", (event) => { if (ownPage(event)) show(); });
     ipcMain.on("pet:meeting-suggestions", (event, config) => { if (ownPage(event)) meetingPrompt.configure(config); });
+    ipcMain.on("pet:meeting-written", (event, meeting) => { if (ownPage(event)) meetingPrompt.written(meeting); });
     ipcMain.handle("pet:set-listen-hotkey", (event, accelerator) => {
       if (!ownPage(event) || typeof accelerator !== "string") return { hotkey: null, error: "invalid" };
       const result = listenKeys.change(accelerator);

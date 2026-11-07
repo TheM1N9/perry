@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { HeadphonesIcon, SquareIcon, Trash2Icon, MessageSquareIcon, PlusIcon, TriangleAlertIcon, CopyIcon, FileTextIcon, SearchIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -110,6 +111,7 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
   const note = useQuery(api.notes.get, meeting.noteId ? { key, id: meeting.noteId } : "skip");
   const stop = useMutation(api.meetings.stop);
   const regenerate = useMutation(api.meetings.regenerate);
+  const chooseTemplate = useMutation(api.meetings.setTemplate);
   const remove = useMutation(api.meetings.remove);
   const rename = useMutation(api.meetings.rename);
   const add = useMutation(api.meetings.addAction);
@@ -130,13 +132,18 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
     if (box && following.current) box.scrollTop = box.scrollHeight;
   }, [segments?.length, tab]);
   useEffect(() => setTitle(meeting.title), [meeting.title]);
+  useEffect(() => setTemplate(meeting.template), [meeting.template]);
+  const matches = (text: string) => !search || text.toLocaleLowerCase().includes(search.toLocaleLowerCase());
   useEffect(() => { document.title = `${meeting.title} · Perry`; }, [meeting.title]);
   const live = meeting.status === "listening" || meeting.status === "asked";
   const writing = meeting.status === "writing";
   const thoughts = meeting.thoughts;
+  const minutes = Math.max(1, Math.round(((meeting.endedAt ?? now) - meeting.startedAt) / 60_000));
+  // Five minutes on is longer than a write-up takes: then it is waiting for an engine, and says so.
+  const waiting = meeting.writingSince !== undefined && now - meeting.writingSince > 5 * 60_000;
   return <Page title={meeting.title} wide="full" actions={<>
     <Button variant="ghost" render={<Link href="/meetings" />}>All meetings</Button>
-    {meeting.status === "listening" && <ActionButton disabled={meeting.stopAsked} action={() => stop({ key, id: meeting.id })}><SquareIcon />{meeting.stopAsked ? "Stopping…" : "Stop listening"}</ActionButton>}
+    {meeting.status === "listening" && <ActionButton disabled={meeting.stopAsked} action={() => stop({ key, id: meeting.id })}><SquareIcon />{meeting.stopAsked ? "Stopping…" : "Stop Notetaker"}</ActionButton>}
   </>}>
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
       <MeetingStatus meeting={meeting} now={now} />
@@ -170,7 +177,7 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
         <TabsTrigger className="min-h-11 flex-none px-1" value="tasks">Tasks{meeting.actions.length > 0 && <span className="text-muted-foreground">{meeting.actions.length}</span>}</TabsTrigger>
       </TabsList>
       <TabsContent value="summary" className="min-h-80 py-4">
-        {writing || live ? <div className="py-12 text-center"><FileTextIcon className="mx-auto mb-4 size-7 text-muted-foreground" aria-hidden /><h2 className="text-lg font-medium">{writing ? "Your summary is on its way" : "Stay in the conversation"}</h2><p role="status" className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{writing ? "Perry is turning the transcript and your thoughts into meeting notes. A connected engine is needed." : "Add your thoughts as you go. When you finish, Perry will write the summary and next steps."}</p></div>
+        {writing || live ? <div className="py-12 text-center"><FileTextIcon className="mx-auto mb-4 size-7 text-muted-foreground" aria-hidden /><h2 className="text-lg font-medium">{writing ? `Turning your ${minutes}-minute call into a two-minute read` : "Stay in the conversation"}</h2><p role="status" className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{writing ? waiting ? "This is taking longer than usual. Perry needs a connected engine to write it, and will finish as soon as one is free." : "Perry is writing the summary and next steps from the transcript and your thoughts." : "Add your thoughts as you go. When you finish, Perry will write the summary and next steps."}</p></div>
           : meeting.summary ? <>{note && <div className="mb-6 flex justify-end"><Button variant="ghost" size="sm" render={<Link href={noteHref(note.id)} />}>Edit in Brain</Button></div>}<Markdown text={meeting.summary} /></> : <EmptyState title="No summary yet">Your transcript is still available. Try writing up the meeting again.</EmptyState>}
       </TabsContent>
       <TabsContent value="thoughts" className="min-h-80 py-4">
@@ -178,26 +185,32 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
         {live && note ? <MeetingNotes key={note.id} note={note} /> : thoughts ? <Markdown text={thoughts} /> : <EmptyState title="No personal notes">Thoughts you add while recording will stay here after the meeting.</EmptyState>}
       </TabsContent>
       <TabsContent value="transcript" className="min-h-80">
-        <div className="mb-6 flex items-center gap-3"><div className="relative flex-1"><SearchIcon aria-hidden className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search transcript" placeholder="Search transcript" value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9 text-base" /></div><ActionButton variant="ghost" size="sm" disabled={!segments?.length} action={() => navigator.clipboard.writeText(transcriptText(segments ?? []))}><CopyIcon />Copy</ActionButton></div>
+        <div className="mb-6 flex items-center gap-3"><div className="relative flex-1"><SearchIcon aria-hidden className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Search transcript" placeholder="Search transcript" value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9 text-base" /></div><ActionButton variant="ghost" size="sm" disabled={!segments?.length} action={() => navigator.clipboard.writeText(transcriptText((segments ?? []).filter((segment) => matches(segment.text))))}><CopyIcon />{search ? "Copy matches" : "Copy"}</ActionButton></div>
         <div ref={transcriptBox} onScroll={(event) => { const box = event.currentTarget; following.current = box.scrollHeight - box.clientHeight - box.scrollTop < 40; }} className="max-h-[65dvh] space-y-7 overflow-y-auto px-1 pb-8" tabIndex={0} aria-label="Meeting transcript">
           {segments && segments.length > visibleSegments && <Button variant="ghost" size="sm" onClick={() => { following.current = false; setVisibleSegments((count) => count + 200); }}>Show earlier speech</Button>}
           {segments === undefined ? <ListSkeleton rows={3} /> : !segments.length ? <EmptyState title={live ? "Listening for the conversation" : "No speech transcribed"}>{meeting.status === "asked" ? "Keep the desktop pet running on your computer." : live ? "The first words appear after a phrase is transcribed. The local model downloads once on first use." : "Check your microphone and system audio before the next recording."}</EmptyState>
-            : segments.filter((segment) => segment.text && (!search || segment.text.toLocaleLowerCase().includes(search.toLocaleLowerCase()))).slice(-visibleSegments).map((segment) => <div key={segment.seq} className="flex gap-4">
-              <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">{segment.source === "you" ? "Y" : "C"}</span><div className="min-w-0"><p className="mb-1.5 flex items-baseline gap-3 text-xs"><span className="font-medium">{segment.source === "you" ? "You" : "Other participants"}</span><span className="tabular-nums text-muted-foreground">{clockOf(segment.startMs)}</span></p><p className="max-w-prose whitespace-pre-wrap text-base leading-7">{segment.text}</p></div>
+            : segments.filter((segment) => segment.text && matches(segment.text)).slice(-visibleSegments).map((segment) => <div key={segment.seq} className="flex gap-4">
+              <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">{segment.source === "you" ? "Y" : "O"}</span><div className="min-w-0"><p className="mb-1.5 flex items-baseline gap-3 text-xs"><span className="font-medium">{segment.source === "you" ? "You" : "Others"}</span><span className="tabular-nums text-muted-foreground">{clockOf(segment.startMs)}</span></p><p className="max-w-prose whitespace-pre-wrap text-base leading-7"><Highlighted text={segment.text} search={search} /></p></div>
             </div>)}
-          {search && segments?.length && !segments.some((segment) => segment.text.toLocaleLowerCase().includes(search.toLocaleLowerCase())) ? <p className="text-sm text-muted-foreground">No matching speech.</p> : null}
+          {search && segments?.length && !segments.some((segment) => matches(segment.text)) ? <p className="text-sm text-muted-foreground">No matching speech.</p> : null}
         </div>
       </TabsContent>
       <TabsContent value="tasks" className="min-h-80 py-4">
         {!meeting.actions.length ? <EmptyState title="No action items yet">{live || writing ? "Perry will pull out the next steps when the meeting is written up." : "No action items were found in this meeting."}</EmptyState> : <List label="Action items">{meeting.actions.map((action, index) => <li key={index} className="flex items-start justify-between gap-4 py-4"><div><p className="text-base leading-relaxed">{action.text}</p>{action.owner && <p className="mt-1 text-xs text-muted-foreground">{action.owner}</p>}</div><ActionButton variant="outline" size="sm" disabled={action.added} action={() => add({ key, id: meeting.id, index })}>{action.added ? "Added" : <><PlusIcon />Add to to-dos</>}</ActionButton></li>)}</List>}
       </TabsContent>
     </Tabs>
-    {!live && <div className="mt-8 flex flex-wrap items-end gap-3 border-t pt-5">
+    <div className="mt-8 flex flex-wrap items-end gap-3 border-t pt-5">
       <div className="grid gap-1.5"><label htmlFor="meeting-template" className="text-xs text-muted-foreground">Notes template</label>
-        <select id="meeting-template" value={template} disabled={writing} onChange={(event) => setTemplate(event.target.value as typeof template)} className="h-9 rounded-md border bg-background px-3 text-base focus-visible:outline-2 focus-visible:outline-ring">
+        <select id="meeting-template" value={template} disabled={writing} onChange={(event) => {
+          const next = event.target.value as typeof template;
+          setTemplate(next);
+          // During the call the choice is saved at once, for the write-up when it ends.
+          if (live) void chooseTemplate({ key, id: meeting.id, template: next }).catch((error) => { setTemplate(meeting.template); toast.error(errorText(error)); });
+        }} className="h-9 rounded-md border bg-background px-3 text-base focus-visible:outline-2 focus-visible:outline-ring">
           {Object.entries(MEETING_TEMPLATES).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
         </select>
       </div>
+      {live ? <p className="pb-2 text-sm text-muted-foreground">Perry writes the notes this way when the call ends.</p> : <>
       <ActionButton variant="outline" disabled={writing} confirm={meeting.editedSince ? { title: "Replace your edited notes?", body: "The new write-up replaces the current page. Your original call notes and transcript are kept, and previous page versions remain in Brain.", label: "Write up again" } : undefined}
         action={() => regenerate({ key, id: meeting.id, template })}>{meeting.status === "failed" ? "Retry write-up" : "Write up again"}</ActionButton>
       <ActionButton variant="ghost" action={async () => {
@@ -205,10 +218,27 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
         await sendChat({ key, id: chat, text: `Let's review meeting ${meeting.id}. Read its transcript and notes first, then help me with my questions.` });
         router.push(`/chat/${chat}`);
       }}><MessageSquareIcon />Ask Perry</ActionButton>
-    </div>}
+      </>}
+    </div>
     <div className="mt-12 border-t pt-4"><ActionButton variant="ghost" className="text-muted-foreground hover:text-destructive" confirm={{ title: "Delete this meeting?", body: "This deletes the transcript and its notes page. To-dos you added stay on your list.", label: "Delete meeting" }}
       action={async () => { await remove({ key, id: meeting.id }); router.push("/meetings"); }}><Trash2Icon />Delete meeting</ActionButton></div>
   </Page>;
+}
+
+/** The transcript line with what was searched for marked, matched as the filter matches it. */
+function Highlighted({ text, search }: { text: string; search: string }) {
+  if (!search) return <>{text}</>;
+  const lower = text.toLocaleLowerCase();
+  const needle = search.toLocaleLowerCase();
+  const parts: ReactNode[] = [];
+  let from = 0;
+  for (let at = lower.indexOf(needle); at >= 0 && needle; at = lower.indexOf(needle, from)) {
+    if (at > from) parts.push(text.slice(from, at));
+    parts.push(<mark key={at} className="rounded-sm bg-warning/25 text-foreground">{text.slice(at, at + needle.length)}</mark>);
+    from = at + needle.length;
+  }
+  parts.push(text.slice(from));
+  return <>{parts}</>;
 }
 
 function MeetingNotes({ note }: { note: NoteView }) {
