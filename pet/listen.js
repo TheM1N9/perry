@@ -37,6 +37,24 @@ const MOST_CRASHES = 3;
 const BATCH = 40;
 /** The page's last words on stopping, waited for this long. */
 const LAST_WORDS_MS = 3_000;
+/**
+ * The call app let go of the microphone. Like Wispr Flow, Perry confirms it (the call probe polls every 10 s, so a
+ * flicker shows again by then), waits for nobody to be talking, then counts down where the owner can keep going.
+ * Within the first two minutes, talking puts the countdown off; after that it runs anyway. "Talking" is words being
+ * written down, not sound: music or a video playing after the call is no reason to keep taking notes.
+ */
+const CALL_GONE_CONFIRM_MS = 10_000;
+/** Words written this recently mean someone is still talking; it allows for a phrase being cut and transcribed. */
+const SPOKE_RECENTLY_MS = 8_000;
+const TALK_VETO_MS = 2 * 60_000;
+const ENDING_MS = 15_000;
+/** A countdown paused under the pointer gets at least this long once the pointer leaves. */
+const ENDING_AFTER_HOLD_MS = 3_000;
+/** Nobody heard for this long, Perry asks "Meeting still going?" and stops after this countdown unless told otherwise. */
+const QUIET_CHECK_MS = 10 * 60_000;
+const QUIET_ENDING_MS = 30_000;
+/** The microphone saying nothing this long while the other side talks is worth telling the owner. */
+const MIC_QUIET_MS = 3 * 60_000;
 
 /**
  * `call(path, args)` calls Perry's server as his page does. `tell(state)` hears
@@ -48,10 +66,19 @@ export function listener({ here, models, call, tell }) {
   let otherCall = null;
   /** Why the last one ended early, until the next begins. */
   let lastError = null;
+  /** The meeting that just ended, with how many words it heard, until the next begins. */
+  let lastEnded = null;
 
   const view = () => current
-    ? { phase: current.phase, id: current.id, title: current.title, startedAt: current.startedAt, mic: current.mic, system: current.system, behindMs: behind(current), droppedMs: current.droppedMs, callActive: otherCall, speech: current.speech?.provider === "groq" ? "Whisper Large v3 · Cloud" : current.speech?.model === "large-v3-turbo" ? "Whisper Large v3 Turbo · Local" : "Whisper Small · Local", ...(current.speechError ? { error: current.speechError } : {}), ...(current.progress ? { progress: current.progress } : {}) }
-    : { phase: "off", callActive: otherCall, ...(lastError ? { error: lastError } : {}) };
+    ? { phase: current.phase, id: current.id, title: current.title, startedAt: current.startedAt, mic: current.mic, system: current.system, behindMs: behind(current), droppedMs: current.droppedMs, callActive: otherCall, words: current.words, speech: current.speech?.provider === "groq" ? "Whisper Large v3 · Cloud" : current.speech?.model === "large-v3-turbo" ? "Whisper Large v3 Turbo · Local" : "Whisper Small · Local", ...(current.speechError ? { error: current.speechError } : {}), ...(current.progress ? { progress: current.progress } : {}), ...(micQuiet(current) ? { micQuietMs: micQuiet(current) } : {}), ...(current.endingAt ? { endingAt: current.endingAt, ending: current.endingWhy } : current.endingLeft ? { endingLeft: current.endingLeft, ending: current.endingWhy } : {}) }
+    : { phase: "off", callActive: otherCall, ...(lastError ? { error: lastError } : {}), ...(lastEnded ? { ended: lastEnded } : {}) };
+  /** How long the microphone has heard nothing while the computer's sound has, when that is long enough to say. */
+  const micQuiet = (session) => {
+    if (session.phase !== "listening" || session.mic !== "live" || session.system !== "live" || !session.heard) return 0;
+    const now = Date.now();
+    const mic = now - Math.max(session.startedAt, session.heard.mic ?? 0);
+    return mic >= MIC_QUIET_MS && now - (session.heard.system ?? 0) < MIC_QUIET_MS ? mic : 0;
+  };
   const report = () => tell(view());
   const behind = (session) => session.queue.reduce((sum, chunk) => sum + chunk.endMs - chunk.startMs, 0);
 
@@ -113,6 +140,8 @@ export function listener({ here, models, call, tell }) {
       session.heardMs += chunk ? chunk.endMs - chunk.startMs : 0;
       if (message.text && chunk) {
         session.unsent.push({ seq: chunk.seq, source: chunk.source, startMs: chunk.startMs, endMs: chunk.endMs, text: message.text });
+        session.words += message.text.split(/\s+/).filter(Boolean).length;
+        session.spokeAt = Date.now();
         if (session.unsent.length > 2_000) void end(session, "Perry's server has been unavailable too long. The saved transcript may contain gaps.");
         void flush(session);
       }
@@ -220,6 +249,7 @@ export function listener({ here, models, call, tell }) {
     release(session);
     if (current === session) current = null;
     lastError = session.endError ?? null;
+    if (!session.gone && session.id) lastEnded = { id: session.id, words: session.words, at: Date.now() };
     report();
   }
 
@@ -304,15 +334,37 @@ export function listener({ here, models, call, tell }) {
     if (status.heard) session.heard = { mic: status.heard.mic, system: status.heard.system };
     if ((status.mic || status.system) && session.id) void call("meetings:heard", { id: session.id, mic: session.mic === "live", system: session.system === "live" }).catch(() => {});
     if (session.phase === "listening" && status.runningMs) {
-      const lastHeard = Math.max(session.startedAt, session.heard?.mic ?? 0, session.heard?.system ?? 0);
-      const quietFor = Date.now() - lastHeard;
+      const spokeAt = Math.max(session.startedAt, session.spokeAt ?? 0);
+      const silentFor = Date.now() - spokeAt;
       if (session.mic !== "live" && session.system !== "live") void end(session, "Both audio sources disconnected. The transcript so far is kept.");
-      else if (status.runningMs >= 4 * 60 * 60_000 || quietFor >= 15 * 60_000 || (otherCall === false && session.hadCall && quietFor >= 2 * 60_000)) void end(session);
+      else if (status.runningMs >= 4 * 60 * 60_000) void end(session);
+      else stillGoing(session, silentFor, spokeAt);
     }
     // On the same pipe as the chunks, so after the last of them.
     if (status.closed) session.closedPage?.();
     report();
   };
+  /** Long quiet: "Meeting still going?", answered by anyone speaking or by the owner; unanswered, the notes stop. */
+  function stillGoing(session, silentFor, spokeAt) {
+    if (session.endingWhy === "quiet" && silentFor < SPOKE_RECENTLY_MS) Object.assign(session, { endingAt: null, endingLeft: null, endingWhy: null });
+    if (session.endingAt && Date.now() >= session.endingAt) { void end(session); return; }
+    if (!session.endingAt && !session.endingLeft && silentFor >= QUIET_CHECK_MS && session.quietKept !== spokeAt) {
+      Object.assign(session, { endingAt: Date.now() + QUIET_ENDING_MS, endingWhy: "quiet" });
+      return;
+    }
+    if (session.endingWhy !== "quiet") endingCall(session, silentFor);
+  }
+
+  /** The call ended: confirm it, wait for quiet, count down, stop. Talking, or the owner, puts it off. */
+  function endingCall(session, silentFor) {
+    if (!session.callEndedAt || session.keptGoing || otherCall !== false) return;
+    const now = Date.now();
+    const talking = silentFor < SPOKE_RECENTLY_MS && now - session.callEndedAt < TALK_VETO_MS;
+    if (session.endingAt && talking) session.endingAt = null;
+    else if (session.endingAt && now >= session.endingAt) void end(session);
+    else if (!session.endingAt && !session.endingLeft && !talking && now - session.callEndedAt >= CALL_GONE_CONFIRM_MS) Object.assign(session, { endingAt: now + ENDING_MS, endingWhy: "call" });
+  }
+
   ipcMain.on("meeting:chunk", receiveChunk);
   ipcMain.on("meeting:status", receiveStatus);
 
@@ -352,8 +404,10 @@ export function listener({ here, models, call, tell }) {
       const session = current = {
         phase: "starting", id: null, title: ask.title ?? "Call", startedAt: Date.now(), mic: "off", system: "off",
         worker: null, window: null, queue: [], writing: null, unsent: [], flushing: false, retry: null, alive: null,
-        crashes: 0, failures: 0, wrote: false, spentMs: 0, heardMs: 0, droppedMs: 0, files: new Map(), hadCall: otherCall === true,
+        crashes: 0, failures: 0, wrote: false, spentMs: 0, heardMs: 0, droppedMs: 0, words: 0, files: new Map(), hadCall: otherCall === true,
+        callEndedAt: null, endingAt: null, endingLeft: null, endingWhy: null, keptGoing: false, quietKept: null, spokeAt: 0,
       };
+      lastEnded = null;
       report();
       try {
         const meeting = await call("meetings:start", ask);
@@ -398,7 +452,33 @@ export function listener({ here, models, call, tell }) {
       }
       return view();
     },
-    callActive(active) { otherCall = active; if (current && active) current.hadCall = true; },
+    callActive(active) {
+      otherCall = active;
+      const session = current;
+      if (!session) return;
+      if (active) Object.assign(session, { hadCall: true, callEndedAt: null, endingAt: null, endingLeft: null, endingWhy: null, keptGoing: false });
+      else if (session.hadCall) session.callEndedAt ??= Date.now();
+      report();
+    },
+    /** "Keep going": this call's end, or this quiet, no longer stops the notes; a new call ending, or new quiet, can. */
+    keepGoing() {
+      if (!current || current.phase !== "listening") return;
+      if (current.endingWhy === "quiet") current.quietKept = Math.max(current.startedAt, current.spokeAt ?? 0);
+      else current.keptGoing = true;
+      Object.assign(current, { endingAt: null, endingLeft: null, endingWhy: null });
+      report();
+    },
+    /** The pointer is over the countdown: it waits, as the owner reads it. */
+    holdEnding(held) {
+      const session = current;
+      if (!session || session.phase !== "listening") return;
+      if (held && session.endingAt) Object.assign(session, { endingLeft: Math.max(0, session.endingAt - Date.now()), endingAt: null });
+      else if (!held && session.endingLeft) Object.assign(session, { endingAt: Date.now() + Math.max(session.endingLeft, ENDING_AFTER_HOLD_MS), endingLeft: null });
+      else return;
+      report();
+    },
+    /** The owner chose to keep, or throw away, what just ended: either way it is no longer offered. */
+    forgetEnded() { lastEnded = null; report(); },
     /** How fast Whisper is going, as seconds of writing for each second heard. */
     pace: () => (current?.heardMs ? current.spentMs / current.heardMs : null),
     /** He is quitting: nothing is held up for it; Perry's server finds a meeting that stopped saying it is alive. */

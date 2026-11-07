@@ -20,7 +20,7 @@ let ears;
 let player;
 let finishing = false;
 let fixturePreload;
-const deadline = setTimeout(() => { void finish(new Error("Native capture exceeded its deadline.")); }, process.env.PERRY_MEETING_LARGE_PROBE === "1" ? 360_000 : 180_000);
+const deadline = setTimeout(() => { void finish(new Error("Native capture exceeded its deadline.")); }, process.env.PERRY_MEETING_LARGE_PROBE === "1" ? 660_000 : 480_000);
 async function finish(error) {
   if (finishing) return;
   finishing = true;
@@ -134,11 +134,40 @@ app.whenReady().then(async () => {
     }
     await sleep(12_000);
     if (player) { player.destroy(); player = null; }
-    // Stop must flush a final partial chunk, wait for Whisper, and retry a failed delivery.
-    await ears.stop();
+    // The call app lets go of the microphone. Perry confirms it, waits for quiet, and counts down where the owner can
+    // pause it (pointer resting on it) or keep going; a later call ending stops the notes by itself. Stopping must
+    // still flush a final partial chunk, wait for Whisper, and retry a failed delivery.
+    const until = async (read, ms) => { for (const end = Date.now() + ms; Date.now() < end; await sleep(200)) { const value = read(); if (value) return value; } return null; };
+    ears.callActive(true); ears.callActive(false);
+    // Speech still being written down holds the countdown off; other sound playing on this computer does not.
+    const endedAt = Date.now();
+    // Paused the moment it is seen, so a slow machine cannot let the countdown run out between steps.
+    report.checks.callEndCountsDown = Boolean(await until(() => {
+      const now = ears.state();
+      if (now.phase !== "listening" || !now.endingAt) return null;
+      ears.holdEnding(true);
+      return now;
+    }, 60_000));
+    report.callEndCountdownAfterMs = Date.now() - endedAt;
+    report.checks.callEndPausesUnderPointer = ears.state().endingLeft > 0 && !ears.state().endingAt;
+    await sleep(1_500);
+    report.checks.callEndStaysPaused = ears.state().phase === "listening" && ears.state().endingLeft > 0;
+    ears.holdEnding(false);
+    ears.keepGoing();
+    await sleep(1_500);
+    report.checks.keepGoingCancelsCountdown = ears.state().phase === "listening" && !ears.state().endingAt && !ears.state().endingLeft;
+    ears.callActive(true); ears.callActive(false);
+    const stopped = await until(() => ears.state().phase !== "listening", 90_000);
+    report.checks.callEndStopsNotes = Boolean(stopped);
+    if (!stopped) await ears.stop();
     for (let at = 0; at < 240 && ears.state().phase !== "off"; at++) await sleep(500);
     if (ears.state().phase !== "off") throw new Error("The transcript queue did not drain after Stop.");
     const you = report.segments.filter((part) => part.source === "you").map((part) => part.text).join(" ");
+    const spoken = report.segments.reduce((sum, part) => sum + part.text.split(/\s+/).filter(Boolean).length, 0);
+    report.ended = ears.state().ended;
+    report.checks.endedCountsWords = ears.state().ended?.id === report.meetingId && ears.state().ended?.words === spoken;
+    ears.forgetEnded();
+    report.checks.forgetEndedClears = !ears.state().ended;
     const them = report.segments.filter((part) => part.source === "them").map((part) => part.text).join(" ");
     const words = (text) => text.toLowerCase().replace(/\$5,?000/g, "five thousand dollars").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
     const wer = (actual, reference) => {

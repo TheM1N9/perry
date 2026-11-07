@@ -39,6 +39,10 @@ const MOST_ATTEMPTS = 3;
 const WRITING_TTL_MS = 24 * 60 * 60_000;
 /** The calendar is read this far ahead. */
 const LOOK_AHEAD_MS = 24 * 60 * 60_000;
+/** "Started by mistake?" can throw away a meeting that ended this recently, and none older. */
+const DISCARD_MS = 10 * 60_000;
+/** Notes written this recently are announced by the pet that recorded them. */
+const ANNOUNCE_MS = 10 * 60_000;
 
 const vKey = v.string();
 const vDevice = v.optional(v.id("petDevices"));
@@ -61,6 +65,8 @@ export type PetMeetings = {
   asked?: { id: Id<"meetings">; title: string };
   /** This pet's meeting, and whether Stop was pressed in the dashboard. */
   listening?: { id: Id<"meetings">; title: string; stopAsked: boolean };
+  /** This pet's meeting whose notes were written last, lately: "Your notes are ready". */
+  written?: { id: Id<"meetings">; title: string };
   /** Calendar meetings still to come or just started, soonest first. */
   upcoming: Array<{ eventId: string; title: string; startsAt: number; endsAt: number; joinUrl?: string; attendees?: string[] }>;
   headsUp: boolean;
@@ -226,14 +232,36 @@ export const pet = query({
     const asked = askedRows.find((row) => row.device === args.device);
     const listening = (await ctx.db.query("meetings").withIndex("by_status", (q) => q.eq("status", "listening")).collect()).find((row) => row.device === args.device);
     const rows = await ctx.db.query("upcomingMeetings").collect();
+    const [written] = (await ctx.db.query("meetings").withIndex("by_status", (q) => q.eq("status", "done").gt("startedAt", now - 12 * 60 * 60_000)).collect())
+      .filter((row) => row.device === args.device && row.writtenAt !== undefined && now - row.writtenAt < ANNOUNCE_MS)
+      .sort((a, b) => b.writtenAt! - a.writtenAt!);
     return {
       ...(asked ? { asked: { id: asked._id, title: asked.title } } : {}),
+      ...(written ? { written: { id: written._id, title: written.title } } : {}),
       ...(listening ? { listening: { id: listening._id, title: listening.title, stopAsked: listening.stopAsked === true } } : {}),
       upcoming: rows.filter((row) => !row.dismissedAt && row.endsAt > now).sort((a, b) => a.startsAt - b.startsAt).slice(0, 5)
         .map((row) => ({ eventId: row.eventId, title: row.title, startsAt: row.startsAt, endsAt: row.endsAt, ...(row.joinUrl ? { joinUrl: row.joinUrl } : {}), ...(row.attendees ? { attendees: row.attendees.slice(0, 5) } : {}) })),
       headsUp: install?.meetingHeadsUp !== false,
       notice: install?.meetingNotice !== false,
     };
+  },
+});
+
+/**
+ * "Started by mistake?" then Discard, from the pet that recorded it: only its own meeting, only just ended.
+ * Anything the owner typed during it stays, as a page in Brain.
+ */
+export const discard = mutation({
+  args: { key: vKey, device: vDevice, id: v.id("meetings") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const meeting = await ctx.db.get(args.id);
+    if (!meeting || meeting.device !== args.device || !meeting.endedAt || Date.now() - meeting.endedAt > DISCARD_MS) return null;
+    if (meeting.status === "asked" || meeting.status === "listening") return null;
+    const note = meeting.noteId ? await ctx.db.get(meeting.noteId) : null;
+    await removeMeeting(ctx, args.id, Boolean(note?.content.trim()));
+    return null;
   },
 });
 
@@ -333,6 +361,19 @@ export const stop = mutation({
     assertDashboardKey(args.key);
     const meeting = await mine(ctx, args.id);
     if (meeting.status === "listening") await ctx.db.patch(args.id, { stopAsked: true });
+    return null;
+  },
+});
+
+/** The notes template, chosen before the call ends: the first write-up uses it. */
+export const setTemplate = mutation({
+  args: { key: vKey, id: v.id("meetings"), template: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const meeting = await mine(ctx, args.id);
+    if (meeting.status !== "asked" && meeting.status !== "listening") return null;
+    await ctx.db.patch(args.id, { template: templateOf(args.template) });
     return null;
   },
 });

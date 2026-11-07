@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld("perryPet", {
   setMeetingSuggestions: (config) => ipcRenderer.send("pet:meeting-suggestions", config),
   startMeeting: (ask) => ipcRenderer.invoke("pet:meeting-start", ask),
   stopMeeting: () => ipcRenderer.invoke("pet:meeting-stop"),
+  meetingWritten: (meeting) => ipcRenderer.send("pet:meeting-written", meeting),
   show: () => ipcRenderer.send("pet:show"),
   setListenHotkey: (accelerator) => ipcRenderer.invoke("pet:set-listen-hotkey", String(accelerator)),
   onMeeting: (listener) => {

@@ -110,6 +110,8 @@ try {
   await browser.evaluate("(()=>{const input=document.querySelector('input[aria-label=\"Search transcript\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'proposal');input.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("!document.querySelector('[aria-label=\"Meeting transcript\"]').textContent.includes('five thousand dollars')");
   report.checks.transcriptSearch = true;
+  report.checks.transcriptSearchHighlights = await browser.evaluate("Array.from(document.querySelectorAll('[aria-label=\"Meeting transcript\"] mark')).every((mark) => mark.textContent.toLowerCase() === 'proposal') && document.querySelectorAll('[aria-label=\"Meeting transcript\"] mark').length > 0");
+  report.checks.copyFollowsSearch = await browser.evaluate("Array.from(document.querySelectorAll('button')).some((button) => button.textContent.trim() === 'Copy matches')");
   await screenshot("transcript.png");
   await tab("Tasks1"); await until("document.body.innerText.includes('Send the proposal')");
   report.checks.tasksSeparated = true;
@@ -125,6 +127,13 @@ try {
   await tab("My thoughts"); await until("document.querySelector('[contenteditable=true]')?.textContent.includes('Keep this important detail.')");
   report.checks.liveNotesSurviveTabSwitch = true;
   await screenshot("live-notes.png");
+  // The template can be chosen during the call, and the choice is kept for the write-up.
+  await until("document.querySelector('#meeting-template') && document.body.innerText.includes('Perry writes the notes this way when the call ends.')");
+  await browser.evaluate("(()=>{const select=document.querySelector('#meeting-template');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'standup');select.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await sleep(1_000);
+  await browser.send("Page.reload");
+  await until("document.querySelector('#meeting-template')?.value === 'standup'");
+  report.checks.liveTemplateChoiceSaved = true;
   await browser.send("Page.navigate", { url: `${base}/meetings/${failed.id}` });
   await until("document.body.innerText.includes('No summary yet')");
   await tab("My thoughts");

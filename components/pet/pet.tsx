@@ -600,7 +600,7 @@ function Pet() {
     const warning = meeting.state.droppedMs ? "Some audio could not be transcribed." : meeting.state.system !== "live" ? /permission/i.test(meeting.state.system ?? "") ? meeting.state.system : "Microphone only. I can't hear the other side yet." : meeting.state.mic !== "live" ? "Computer sound only. I can't hear your microphone." : "Hearing you and the call. Only text is saved.";
     bubble = <Bubble id="meeting" title={listening ? `Listening · ${clockOf(now - (meeting.state.startedAt ?? now))}` : meeting.state.phase === "starting" ? "Opening my ears…" : "Finishing the transcript…"}
       detail={meeting.state.progress !== undefined ? `Downloading speech model: ${Math.round(meeting.state.progress * 100)}%` : warning}>
-      {listening && <BubbleButton primary onClick={meeting.stop}>Stop listening</BubbleButton>}
+      {listening && <BubbleButton primary onClick={meeting.stop}>Stop Notetaker</BubbleButton>}
       {meeting.state.phase === "starting" && <BubbleButton onClick={meeting.stop}>Cancel</BubbleButton>}
       {meeting.state.id && <BubbleButton onClick={() => openPath(`/meetings/${meeting.state.id}`)}>Notes</BubbleButton>}
     </Bubble>;
@@ -608,9 +608,9 @@ function Pet() {
     bubble = <Bubble title="I couldn't listen" detail={meeting.state.error} onClose={meeting.clearError} />;
   } else if (meeting.upcoming || meeting.notice) {
     const event = meeting.upcoming;
-    bubble = <Bubble id="meeting-upcoming" title={event ? `Time for your meet: ${event.title}` : "On a call?"} detail="I can listen and write your notes." onClose={meeting.dismiss}>
-      {event?.joinUrl && <BubbleButton primary onClick={() => void meeting.start({ title: event.title, eventId: event.eventId, joinUrl: event.joinUrl })}>Join &amp; listen</BubbleButton>}
-      <BubbleButton primary={!event?.joinUrl} onClick={() => void meeting.start(event ? { title: event.title, eventId: event.eventId } : {})}>Just listen</BubbleButton>
+    bubble = <Bubble id="meeting-upcoming" title={event ? `Starting soon: ${event.title}` : "On a call?"} detail="I can listen and write your notes." onClose={meeting.dismiss}>
+      {event?.joinUrl && <BubbleButton primary onClick={() => void meeting.start({ title: event.title, eventId: event.eventId, joinUrl: event.joinUrl })}>Join &amp; start Notetaker</BubbleButton>}
+      <BubbleButton primary={!event?.joinUrl} onClick={() => void meeting.start(event ? { title: event.title, eventId: event.eventId } : {})}>Start Notetaker</BubbleButton>
       <BubbleButton onClick={meeting.dismiss}>Not now</BubbleButton>
     </Bubble>;
   } else if (said && said.until > now) {
@@ -733,7 +733,7 @@ function Pet() {
   const panel = (
     <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)} onOpenApp={() => openPath("/")}
       status={meeting.state.phase === "listening" ? <Button variant="link" className="h-auto p-0 text-xs" onClick={meeting.stop}>Listening · {clockOf(now - (meeting.state.startedAt ?? now))} · Stop</Button> : status} busy={Boolean(petChat?.isRunning)}>
-      {window.perryPet?.startMeeting && meeting.state.phase === "off" && <div className="flex justify-end px-3 pt-2"><Button variant="ghost" size="sm" onClick={() => void meeting.start()}>Listen to a call</Button></div>}
+      {window.perryPet?.startMeeting && meeting.state.phase === "off" && <div className="flex justify-end px-3 pt-2"><Button variant="ghost" size="sm" onClick={() => void meeting.start()}>Start Notetaker</Button></div>}
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
           voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} hold={hotkey.hold ?? null} byHotkey={talkSends.current} sendSignal={sendSignal}

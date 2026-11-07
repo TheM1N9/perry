@@ -20,6 +20,8 @@ export type MeetingBridge = {
   onMeeting?: (listener: (state: ListeningState) => void) => () => void;
   startMeeting?: (ask?: ListenAsk) => Promise<ListeningState>;
   stopMeeting?: () => Promise<ListeningState>;
+  /** A meeting's notes were written; the pet says so if it recorded that one. */
+  meetingWritten?: (meeting: { id: string; title: string }) => void;
   onCallActive?: (listener: (active: boolean) => void) => () => void;
   setListenHotkey?: (accelerator: string) => Promise<HotkeyState>;
   show?: () => void;
@@ -90,6 +92,11 @@ export function useMeetings(key: string, now: number, paused: boolean) {
   useEffect(() => () => {
     bridge?.setMeetingSuggestions?.({ paused: true, headsUp: false, notice: false, upcoming: [] });
   }, [bridge]);
+  const writtenId = data?.written?.id;
+  const writtenTitle = data?.written?.title;
+  useEffect(() => {
+    if (writtenId && writtenTitle) bridge?.meetingWritten?.({ id: writtenId, title: writtenTitle });
+  }, [bridge, writtenId, writtenTitle]);
 
   const upcoming = !bridge?.setMeetingSuggestions && !paused && data?.headsUp && state.phase === "off"
     ? data.upcoming.find((event) => now >= event.startsAt - 2 * 60_000 && now <= event.startsAt + 10 * 60_000 && now < event.endsAt)
