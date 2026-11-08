@@ -44,8 +44,16 @@ try {
   const port = probe.address().port;
   await new Promise((done) => probe.close(done));
   const base = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port), "-H", "127.0.0.1"], { cwd: resolve("."), env: { ...process.env, PERRY_PORT: String(port), TELEGRAM_BOT_TOKEN: "", COMPOSIO_API_KEY: "", PERRY_WAKE_DISABLED: "1" }, windowsHide: true, stdio: ["ignore", "ignore", "ignore"] });
-  for (let at = 0; at < 300 && !await fetch(base).then((response) => response.ok, () => false); at++) await sleep(100);
+  server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port), "-H", "127.0.0.1"], { cwd: resolve("."), env: { ...process.env, PERRY_PORT: String(port), TELEGRAM_BOT_TOKEN: "", COMPOSIO_API_KEY: "", PERRY_WAKE_DISABLED: "1" }, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+  let serverLog = "";
+  server.stderr.on("data", (chunk) => { serverLog = (serverLog + chunk).slice(-8_000); });
+  let answered = false;
+  for (let at = 0; at < 300 && !answered; at++) {
+    if (server.exitCode !== null) throw new Error(`The server exited before answering (${server.exitCode}). Run pnpm build first.\n${serverLog}`);
+    answered = await fetch(base).then((response) => response.ok, () => false);
+    if (!answered) await sleep(100);
+  }
+  if (!answered) throw new Error(`The server did not answer in 30 seconds.\n${serverLog}`);
   const call = async (path, args = {}) => {
     const response = await fetch(`${base}/api/backend/admin`, { method: "POST", headers: { "content-type": "application/json", "x-perry-key": key }, body: JSON.stringify({ path, args: { key, ...args } }) });
     const body = await response.json();

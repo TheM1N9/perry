@@ -545,6 +545,7 @@ function Pet() {
     const heardWords = await result;
     if (!heardWords) return;
     const text = applyWords(heardWords, readWords());
+    window.perryPet?.setLastHeard?.(text);
     wroteDown.current = sends ? "" : text;
     setDraft((previous) => (previous.trim() ? `${previous.trimEnd()} ${text}` : text));
     if (sends) setSendSignal((count) => count + 1);

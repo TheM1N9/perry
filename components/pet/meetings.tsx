@@ -20,6 +20,8 @@ export type MeetingBridge = {
   onMeeting?: (listener: (state: ListeningState) => void) => () => void;
   startMeeting?: (ask?: ListenAsk) => Promise<ListeningState>;
   stopMeeting?: () => Promise<ListeningState>;
+  /** What the paste shortcut pastes: the words as he wrote them down, learned spellings and all. */
+  setLastHeard?: (text: string) => void;
   setPasteHotkey?: (accelerator: string) => Promise<HotkeyState>;
   /** The paste shortcut was pressed: what came of it. */
   onPasted?: (listener: (how: "pasted" | "copied" | "nothing" | "failed") => void) => () => void;

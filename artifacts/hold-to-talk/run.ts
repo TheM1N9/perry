@@ -62,6 +62,7 @@ import { openChat, sleep } from "../browser";
 //      taken back; or a rewritten sentence is taken for a correction.
 //  20. Quiet for an hour holds back approvals, or cannot be undone.
 //  21. Pasting with nothing said says nothing; the check touches the owner's clipboard.
+//  22. The language chosen in Settings never reaches Whisper.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/hold-to-talk/run.ts <outDir>");
@@ -368,6 +369,11 @@ app.whenReady().then(() => {
   const type = (value: string) => page!.evaluate(`(() => { const area = document.querySelector('textarea[aria-label="Message Perry"]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(area, ${JSON.stringify(value)}); area.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
   const send = () => page!.evaluate(`(() => { document.querySelector('button[aria-label="Send"]').click(); return true; })()`);
   const stand = (value: object) => main!.evaluate(`(() => { globalThis.perryFakeTranscribe = ${JSON.stringify(value)}; return true; })()`);
+  // A ticked box leaves the menu open, so it is opened only if it is not already.
+  const openMenu = async () => {
+    if (!/Sounds when listening/.test(await text())) await clickText("Perry's menu");
+    await until(async () => /Sounds when listening/.test(await text()), "the menu", 5);
+  };
   const holdAndLetGo = `${heldDown} k.down(KEY); k.shortcut(); await wait(500); await repeat(${HOLD - 500}); k.up(KEY); ${modsUp}`;
 
   // 15. It fails: nothing is sent, the recording is kept, and Try again puts it in the box to check.
@@ -431,14 +437,23 @@ app.whenReady().then(() => {
   checks.offSendsNothing = (await said()).length === count;
   checks.settingIsKept = /"sendsAtOnce":false/.test(await page.evaluate(`localStorage.getItem("perry.pet.voice")`) as string);
   await type("");
-  await clickText("Perry's menu");
-  await until(async () => /Sounds when listening/.test(await text()), "the menu", 5);
+  await openMenu();
   await clickText("Send what I say right away");
   await sleep(300);
 
+  // 22. The speech language in Settings is the one he writes down in.
+  await call("meetings:setSettings", { key: KEY, speech: { provider: "local", model: "small", language: "hi", vocabulary: "" } });
+  await sleep(1_500);
+  await until(idle, "him to be done", 30);
+  await stand({});
+  await keys(holdAndLetGo);
+  await check("talkingUsesTheSpeechLanguage", () => main!.evaluate("globalThis.perryFakeTranscribe.language === 'hi'") as Promise<boolean>, 30, () => main!.evaluate("globalThis.perryFakeTranscribe.language"));
+  await until(idle, "him to be done", 60);
+  await call("meetings:setSettings", { key: KEY, speech: { provider: "local", model: "small", language: "en", vocabulary: "" } });
+  await sleep(1_500);
+
   // 20. Quiet for an hour, undone from where it says so.
-  await clickText("Perry's menu");
-  await until(async () => /Quiet for an hour/.test(await text()), "the menu", 5);
+  await openMenu();
   await clickText("Quiet for an hour");
   await check("quietSaysUntilWhen", async () => /Quiet until/.test(await text()), 5, text);
   await clickText("Undo");

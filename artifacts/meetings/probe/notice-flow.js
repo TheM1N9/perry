@@ -134,17 +134,32 @@ export async function noticeFlow({ root, output, call, ears, report, save }) {
     report.checks.mistakeSaysWords = /Only 3 words/.test(await text("#detail"));
     writeFileSync(join(dirname(output), "started-by-mistake.png"), (await banner.webContents.capturePage()).toPNG());
     // Discard can be undone for a few seconds; only then does the meeting go.
+    // As the real listener does, once told to forget: the offer is over either way.
     await click("#second");
     await waitFor(async () => await text("h1") === "Recording discarded" && forgot === 1);
+    notice.listening({ phase: "off" });
     report.checks.discardWaitsForUndo = discarded.length === 0;
     await click("#start");
-    await waitFor(async () => await text("h1") === "Started by mistake?");
+    await waitFor(() => !banner.isVisible());
+    await sleep(6_500);
     report.checks.undoKeepsTheMeeting = discarded.length === 0;
+    notice.listening({ phase: "off", ended: { id: "meeting-a", words: 3, at: Date.now() } });
+    await waitFor(async () => banner.isVisible() && await text("h1") === "Started by mistake?");
     await click("#second");
-    await waitFor(async () => await text("h1") === "Recording discarded");
+    await waitFor(async () => await text("h1") === "Recording discarded" && forgot === 2);
+    notice.listening({ phase: "off" });
     await click("#close");
     await waitFor(() => discarded.length === 1);
     report.checks.mistakeDiscardsThatMeeting = discarded[0] === "meeting-a";
+    // A new recording during the Undo window must not hold up the discard, which the server refuses once it is old.
+    notice.listening({ phase: "off", ended: { id: "meeting-c", words: 2, at: Date.now() } });
+    await waitFor(async () => banner.isVisible() && await text("h1") === "Started by mistake?");
+    await click("#second");
+    await waitFor(async () => await text("h1") === "Recording discarded");
+    notice.listening({ phase: "listening", id: "meeting-d", title: "Next call", startedAt: Date.now(), mic: "live", system: "live" });
+    await waitFor(() => discarded.length === 2);
+    report.checks.discardGoesThroughDuringTheNextRecording = discarded[1] === "meeting-c";
+    notice.listening({ phase: "off" });
     notice.listening({ phase: "off" });
     await waitFor(() => !banner.isVisible());
     // With the pet on screen, the card comes up beside him rather than in the corner.

@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld("perryPet", {
     ipcRenderer.on("pet:voice-progress", handler);
     return () => ipcRenderer.off("pet:voice-progress", handler);
   },
-  transcribe: (samples) => ipcRenderer.invoke("pet:transcribe", samples),
+  transcribe: (samples, options) => ipcRenderer.invoke("pet:transcribe", samples, options),
   voiceDone: () => ipcRenderer.send("pet:voice-done"),
   // Showing him the screen: a picture of the window you are in and of the screen, from his chat's button (byOwner) or for Perry, or from the Look hotkey; and which keys that is on.
   look: (byOwner) => ipcRenderer.invoke("pet:look", byOwner === true),
@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld("perryPet", {
   startMeeting: (ask) => ipcRenderer.invoke("pet:meeting-start", ask),
   stopMeeting: () => ipcRenderer.invoke("pet:meeting-stop"),
   meetingWritten: (meeting) => ipcRenderer.send("pet:meeting-written", meeting),
+  setLastHeard: (text) => ipcRenderer.send("pet:last-heard", String(text)),
   setPasteHotkey: (accelerator) => ipcRenderer.invoke("pet:set-paste-hotkey", String(accelerator)),
   onPasted: (listener) => {
     const handler = (_event, how) => listener(how);

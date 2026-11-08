@@ -113,7 +113,7 @@ export function Welcome() {
       }
       const reviewed = steps?.includes(REVIEW);
       const written = kind === "save" ? (reviewed ? userMd : composeUserMd(answers, timezone)) : "";
-      const chatId = await finish({ key: dashboardKey, name: assistant, personality, ...(written.trim() ? { userMd: written } : {}), ...(kind === "save" && !reviewed ? { interview: true } : {}) });
+      const chatId = await finish({ key: dashboardKey, name: assistant, personality, ...(written.trim() ? { userMd: written } : {}), ...(kind === "save" && !reviewed ? { interview: { name: Boolean(answers.call.trim()), help: answers.help.length > 0 || Boolean(answers.helpOther.trim()) } } : {}) });
       window.localStorage.setItem(ACTIVE_CHAT, chatId);
       router.replace(`/chat/${chatId}`);
     } catch (cause) {

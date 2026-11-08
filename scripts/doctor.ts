@@ -167,9 +167,10 @@ async function main() {
     else note("desktop pet", "not running (optional): perry pet");
     const talk = shortcuts?.pet?.keys?.talk;
     if (pet?.running && talk?.error) warn("talk hotkey", `${shortcuts.shortcuts.talk} is taken by another app. Pick other keys in Settings → Desktop pet`);
-    else if (pet?.running && talk?.hold) warn("talk hotkey", "only tapping works here; holding needs Accessibility on a Mac");
+    else if (pet?.running && talk?.hold === "access") warn("talk hotkey", "only tapping works; holding needs Accessibility for Electron in System Settings → Privacy & Security");
+    else if (pet?.running && talk?.hold) warn("talk hotkey", "only tapping works; his window can't hear keys come up on this computer");
     else if (pet?.running && talk?.hotkey) ok("talk hotkey", talk.hotkey);
-    const model = join(process.env.PERRY_MODELS_DIR ?? join(HOME, "models"), "onnx-community", "whisper-small");
+    const model = join(process.env.PERRY_MODELS_DIR ?? join(HOME, "models"), ...(process.env.PERRY_VOICE_MODEL ?? "onnx-community/whisper-small").split("/"));
     if (pet?.running) (existsSync(model) ? ok("voice model", "downloaded") : warn("voice model", "not downloaded yet; he fetches it (about 80 MB) when he starts"));
     if (pet?.running) note("microphone", pet.heardVoice ? "has worked" : "not tried yet: talk to him once to check it");
   }

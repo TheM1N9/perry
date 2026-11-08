@@ -237,6 +237,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     // The size is set with the place each time: on a scaled screen, moving alone can grow a window a pixel at a time.
     win?.setBounds(framed.bounds);
     win?.webContents.send("pet:place", framed.place);
+    meetingPrompt?.moved();
   };
   /** Where his body's middle is on the screen, for the screen he is on. */
   const bodyPoint = () => ({ x: spot.x + SIZE.width - BODY.width / 2, y: spot.y + SIZE.height - BODY.height / 2 });
@@ -593,6 +594,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
         if (stand?.delayMs) await new Promise((resolve) => setTimeout(resolve, stand.delayMs));
         if (stand?.fail > 0) { stand.fail -= 1; return { error: "a stand-in failure" }; }
         const language = typeof options?.language === "string" && /^[a-z]{2,20}$/.test(options.language) ? options.language : undefined;
+        if (stand) stand.language = language;
         const text = await transcribe(MODELS, samples, (progress) => win?.webContents.send("pet:voice-progress", progress), language ? { language } : {});
         if (text) lastHeard = text;
         return { text };
@@ -654,6 +656,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       if (result.hotkey) saveState({ listenHotkey: result.hotkey });
       return { hotkey: listenKeys.current(), error: result.error ?? null };
     });
+    ipcMain.on("pet:last-heard", (event, text) => { if (ownPage(event) && typeof text === "string") lastHeard = text.slice(0, 50_000); });
     ipcMain.handle("pet:set-paste-hotkey", (event, accelerator) => {
       if (!ownPage(event) || typeof accelerator !== "string") return { hotkey: null, error: "invalid" };
       const result = pasteKeys.change(accelerator);

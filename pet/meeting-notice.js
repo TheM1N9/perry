@@ -40,8 +40,9 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
   let recorded = [];
   let announced = [];
   let ready = null;
-  /** The recording just discarded, while that can still be undone. */
+  /** The recording just discarded, while that can still be undone, and when it really goes (whatever card is showing by then). */
   let undoing = null;
+  let undoTimer = null;
   /** A card's own clock: when it goes, or how long it had left while the pointer rests on it. */
   let expiry = null;
   let expiryTimer = null;
@@ -109,7 +110,7 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
     if (listening && phase !== "off") prompt = recordingCard(now);
     else if (undoing) {
       prompt = { id: `undo:${undoing}`, undoing, title: "Recording discarded", detail: "Its notes won't be written.", closable: true,
-        timeoutMs: UNDO_DISCARD_MS, timeoutAction: "dismiss", primary: { name: "undo", label: "Undo" } };
+        primary: { name: "undo", label: "Undo" } };
     } else if (ended) {
       prompt = { id: `mistake:${ended.id}`, ended: ended.id, title: "Started by mistake?", closable: true, timeoutMs: MISTAKE_MS, timeoutAction: "keep",
         detail: ended.words === 0 ? "Nothing was heard." : `Only ${ended.words} word${ended.words === 1 ? "" : "s"} were heard.`,
@@ -200,6 +201,7 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
     finally { busy = false; render(); }
   };
   const discardNow = () => {
+    clearTimeout(undoTimer);
     if (!undoing) return;
     const id = undoing;
     undoing = null;
@@ -214,10 +216,13 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
     else if (name === "keep-going" && card.recording) keepGoing?.();
     else if (name === "keep" && card.ended) forget?.();
     else if (name === "discard" && card.ended) {
+      discardNow();
       undoing = card.ended;
+      undoTimer = setTimeout(() => { discardNow(); render(); }, UNDO_DISCARD_MS);
       forget?.();
       render();
     } else if (name === "undo" && card.undoing) {
+      clearTimeout(undoTimer);
       undoing = null;
       render();
     } else if (name === "dismiss" && card.undoing) {
@@ -263,6 +268,8 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
       if (state.id && !recorded.includes(state.id)) recorded = [...recorded, state.id].slice(-10);
       render();
     },
+    /** He was moved: the card goes with him. */
+    moved() { if (prompt) position(); },
     /** The pet's page saw a meeting's notes written: said once, and only for one this pet recorded. */
     written(next) {
       if (!next || typeof next.id !== "string" || typeof next.title !== "string") return;

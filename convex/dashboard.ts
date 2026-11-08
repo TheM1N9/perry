@@ -1673,7 +1673,7 @@ export const restorePersonaVersion = mutation({
  * userMd, the owner chose to chat instead, and the assistant asks.
  */
 export const finishOnboarding = mutation({
-  args: { key: vKey, name: v.string(), personality: v.string(), userMd: v.optional(v.string()), interview: v.optional(v.boolean()) },
+  args: { key: vKey, name: v.string(), personality: v.string(), userMd: v.optional(v.string()), interview: v.optional(v.object({ name: v.boolean(), help: v.boolean() })) },
   returns: v.id("conversations"),
   handler: async (ctx, args): Promise<Id<"conversations">> => {
     assertDashboardKey(args.key);
@@ -1682,12 +1682,19 @@ export const finishOnboarding = mutation({
     if (userMd) await ctx.runMutation(internal.persona.writeUser, { text: userMd, by: "owner" });
     await ctx.runMutation(internal.installation.setOnboarding, { state: "done" });
     return await startWelcomeChat(ctx, args.interview
-      ? { title: "Getting to know you", prompt: `${INTERVIEW}\n\n(They have already said what to call them and what they want help with; it is in USER.md. Greet them by name and do not ask those again.)`, label: "Getting to know you" }
+      ? { title: "Getting to know you", prompt: `${INTERVIEW}${alreadySaid(args.interview)}`, label: "Getting to know you" }
       : userMd
       ? { title: "Welcome", prompt: GREETING, label: "Welcome greeting" }
       : { title: "Getting to know you", prompt: INTERVIEW, label: "Getting to know you" });
   },
 });
+
+/** What the short welcome page already asked, so the first chat does not ask it again, and only that. */
+function alreadySaid(answered: { name: boolean; help: boolean }): string {
+  const known = [answered.name && "what to call them", answered.help && "what they want help with"].filter(Boolean);
+  if (!known.length) return "";
+  return `\n\n(They have already said ${known.join(" and ")}; it is in USER.md. ${answered.name ? "Greet them by name, and do" : "Do"} not ask ${known.length > 1 ? "those" : "that"} again.)`;
+}
 
 /** Not now: the dashboard opens on chat, and About you can start it again. */
 export const skipOnboarding = mutation({

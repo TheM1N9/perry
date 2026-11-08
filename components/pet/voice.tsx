@@ -84,7 +84,7 @@ function rms(samples: Float32Array, offset = 0, end = samples.length) {
   return Math.sqrt(Math.max(0, squares / length - (sum / length) ** 2));
 }
 /** What is being written down, which can be cancelled. */
-type Job = { cancelled: boolean; done: () => void; decoder?: AudioContext };
+type Job = { cancelled: boolean; done: () => void; decoder?: AudioContext; samples?: Float32Array };
 /** One time of listening: the microphone, what it recorded, and the waveform's meter. */
 type Live = Job & {
   stream: MediaStream; recorder: MediaRecorder; chunks: Blob[]; context: AudioContext;
@@ -170,6 +170,7 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
   /** Words from samples: kept to try again if it fails, however it fails. */
   const write = useCallback(async (job: Job, samples: Float32Array): Promise<string> => {
     const wanted = () => mounted.current && !job.cancelled;
+    job.samples = samples;
     const fail = (why: string) => {
       setError(`He couldn't make that out: ${why}`);
       keep(samples);
@@ -436,6 +437,8 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
     live.current = null;
     for (const pending of writing.current) {
       pending.cancelled = true;
+      // Stopped while being written down, it is kept all the same: he said it was safe.
+      if (pending.samples) keep(pending.samples);
       pending.done();
       closeDecoder(pending);
     }
@@ -448,7 +451,7 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
     }
     if (mounted.current) setDownloading(null);
     settle();
-  }, [close, settle]);
+  }, [close, keep, settle]);
 
   useEffect(() => {
     mounted.current = true;
