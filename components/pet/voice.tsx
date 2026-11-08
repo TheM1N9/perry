@@ -29,9 +29,12 @@ export type VoiceBridge = {
   setHotkey: (accelerator: string) => Promise<HotkeyState>;
   onVoice: (listener: (type: "start" | "stop" | "cancel") => void) => () => void;
   onVoiceProgress: (listener: (progress: Progress) => void) => () => void;
-  transcribe: (samples: Float32Array) => Promise<Transcribed>;
+  transcribe: (samples: Float32Array, options?: { language?: string }) => Promise<Transcribed>;
   voiceDone: () => void;
 };
+
+/** How talking works on this computer. The language is Perry's; the microphone and sounds are this computer's. */
+export type VoiceSettings = { language?: string; microphone?: string; sounds: boolean };
 
 export type VoiceState = "idle" | "listening" | "transcribing";
 export type Voice = {
@@ -41,16 +44,30 @@ export type Voice = {
   /** How far the voice model's first download has got, 0 to 1, while it downloads. */
   downloading: number | null;
   error: string;
+  /** Writing it down is taking longer than it should. */
+  slow: boolean;
+  /** A recording that could not be written down is kept, to try again. */
+  failed: boolean;
   /** Start listening; whether he is, once the microphone is open. */
   start: () => Promise<boolean>;
   /** Stop listening and return what was said ("" for nothing), once the microphone is open if it is still opening. */
   stop: () => Promise<string>;
   cancel: () => void;
+  /** Write the kept recording down again, and return what was said ("" for nothing). */
+  retry: () => Promise<string>;
+  /** Let the kept recording go. */
+  discard: () => void;
 };
 
 const BARS = 28;
 const SAMPLE_RATE = 16_000;
 const MAX_RECORDING_MS = 5 * 60_000;
+/** Writing it down has taken this long: he says so, and that the recording is safe. */
+const SLOW_MS = 4_000;
+/** A kept recording is up to 19 MB, so it does not stay for ever in a window that is open for days. */
+const KEEP_FAILED_MS = 30 * 60_000;
+/** Shorter than this, there is nothing to write down: a slip of the key, said as such. */
+const SHORTEST_MS = 333;
 // RMS amplitude (-46 dBFS): reject muted/quiet input before invoking the model.
 const SPEECH_FLOOR = 0.005;
 /** Ignore DC offset as well as silence. Native audio samples are normalized to -1..1. */
@@ -66,27 +83,66 @@ function rms(samples: Float32Array, offset = 0, end = samples.length) {
   const length = end - offset;
   return Math.sqrt(Math.max(0, squares / length - (sum / length) ** 2));
 }
+/** What is being written down, which can be cancelled. */
+type Job = { cancelled: boolean; done: () => void; decoder?: AudioContext; samples?: Float32Array };
 /** One time of listening: the microphone, what it recorded, and the waveform's meter. */
-type Live = {
+type Live = Job & {
   stream: MediaStream; recorder: MediaRecorder; chunks: Blob[]; context: AudioContext;
-  timer: number; deadline: number; frame: number; peak: number; cancelled: boolean;
-  closed: boolean; stopped: Promise<void>; done: () => void; failure?: string; decoder?: AudioContext;
+  timer: number; deadline: number; frame: number; peak: number; startedAt: number;
+  closed: boolean; stopped: Promise<void>; failure?: string;
 };
 type Opening = { promise: Promise<boolean>; cancelled: boolean; release?: () => void };
 
-function closeDecoder(current: Live) {
+function closeDecoder(current: Job) {
   const decoder = current.decoder;
   current.decoder = undefined;
   if (decoder) void decoder.close().catch(() => {});
 }
 
+/** A short, quiet tone: rising when he starts listening, falling when he stops. */
+function chime(rising: boolean) {
+  try {
+    const context = new AudioContext();
+    const tone = context.createOscillator();
+    const gain = context.createGain();
+    const now = context.currentTime;
+    tone.frequency.setValueAtTime(rising ? 620 : 860, now);
+    tone.frequency.exponentialRampToValueAtTime(rising ? 860 : 620, now + 0.09);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.05, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
+    tone.connect(gain).connect(context.destination);
+    tone.onended = () => void context.close().catch(() => {});
+    void context.resume().catch(() => {});
+    tone.start(now);
+    tone.stop(now + 0.12);
+  } catch { /* A sound is a nicety; talking works without one. */ }
+}
+
+/** Why the microphone would not open, and what to do about it. */
+function cannotHear(cause: unknown): string {
+  const name = cause instanceof DOMException ? cause.name : "";
+  if (name === "NotAllowedError") return "He can't hear you: allow the microphone for Perry in your system's privacy settings.";
+  if (name === "NotFoundError" || name === "OverconstrainedError") return "He can't hear you: no microphone was found. Plug one in, or choose another in his menu.";
+  if (name === "NotReadableError") return "He can't hear you: another app may be holding the microphone. Close it, or choose another in his menu.";
+  return `He can't hear you: ${cause instanceof Error ? cause.message : String(cause)}`;
+}
+
 /** Automatic stops use the same consumer path as Send, including its draft/hotkey policy. */
-export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Promise<string>) => void): Voice {
+export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Promise<string>) => void, settings: VoiceSettings = { sounds: false }): Voice {
   const [state, setState] = useState<VoiceState>("idle");
   const waveform = useRef<HTMLDivElement | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [slow, setSlow] = useState(false);
+  const [failed, setFailed] = useState(false);
   const live = useRef<Live | null>(null);
+  /** The latest settings, for a recording that outlives the render that started it. */
+  const options = useRef(settings);
+  options.current = settings;
+  /** The recording that could not be written down, and when it is let go. */
+  const kept = useRef<Float32Array | null>(null);
+  const keptTimer = useRef(0);
   /**
    * The microphone while it opens, which can take a second (a Bluetooth
    * headset changing over): a stop that comes meanwhile waits for it, and a
@@ -95,10 +151,47 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
   const opening = useRef<Opening | null>(null);
   const mounted = useRef(true);
   /** What is being written down: the last thing said can be, while he already listens to the next. */
-  const writing = useRef(new Set<Live>());
+  const writing = useRef(new Set<Job>());
   const settle = useCallback(() => {
     if (mounted.current) setState(live.current ? "listening" : writing.current.size ? "transcribing" : "idle");
   }, []);
+
+  const discard = useCallback(() => {
+    window.clearTimeout(keptTimer.current);
+    kept.current = null;
+    if (mounted.current) setFailed(false);
+  }, []);
+  const keep = useCallback((samples: Float32Array) => {
+    window.clearTimeout(keptTimer.current);
+    kept.current = samples;
+    keptTimer.current = window.setTimeout(discard, KEEP_FAILED_MS);
+    if (mounted.current) setFailed(true);
+  }, [discard]);
+  /** Words from samples: kept to try again if it fails, however it fails. */
+  const write = useCallback(async (job: Job, samples: Float32Array): Promise<string> => {
+    const wanted = () => mounted.current && !job.cancelled;
+    job.samples = samples;
+    const fail = (why: string) => {
+      setError(`He couldn't make that out: ${why}`);
+      keep(samples);
+    };
+    const waited = window.setTimeout(() => { if (wanted()) setSlow(true); }, SLOW_MS);
+    try {
+      const language = options.current.language;
+      const result = await bridge!.transcribe(samples, language ? { language } : undefined);
+      if (!wanted()) return "";
+      if (result.error) { fail(result.error); return ""; }
+      if (kept.current === samples) discard();
+      if (!result.text) setError("He didn't catch any words that time.");
+      return result.text ?? "";
+    } catch (cause) {
+      if (wanted()) fail(cause instanceof Error ? cause.message : String(cause));
+      return "";
+    } finally {
+      window.clearTimeout(waited);
+      if (mounted.current) setSlow(false);
+    }
+  }, [bridge, discard, keep]);
 
   // The first time, the model downloads (a few files); its progress is all of them together.
   useEffect(() => {
@@ -138,6 +231,7 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
     live.current = null;
     writing.current.add(current);
     settle();
+    if (options.current.sounds) chime(false);
     const wanted = () => mounted.current && !current.cancelled;
     try {
       if (current.recorder.state !== "inactive") current.recorder.stop();
@@ -146,6 +240,10 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
       await current.stopped;
       if (!wanted()) return "";
       if (current.failure) throw new Error(current.failure);
+      if (performance.now() - current.startedAt < SHORTEST_MS) {
+        setError("That was too quick to catch. Talk for a moment longer.");
+        return "";
+      }
       if (current.peak < SPEECH_FLOOR) {
         setError("We didn't hear anything. Check that your microphone is on and try again.");
         return "";
@@ -175,11 +273,7 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
         setError("We didn't hear anything. Check that your microphone is on and try again.");
         return "";
       }
-      const result = await bridge.transcribe(samples);
-      if (!wanted()) return "";
-      if (result.error) setError(`He couldn't make that out: ${result.error}`);
-      else if (!result.text) setError("He didn't catch any words that time.");
-      return result.error ? "" : result.text ?? "";
+      return await write(current, samples);
     } catch (cause) {
       if (wanted()) setError(`He couldn't make that out: ${cause instanceof Error ? cause.message : String(cause)}`);
       return "";
@@ -192,7 +286,28 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
         settle();
       }
     }
-  }, [bridge, close, settle]);
+  }, [bridge, close, settle, write]);
+
+  const retry = useCallback(async (): Promise<string> => {
+    const samples = kept.current;
+    if (!samples || !bridge) return "";
+    const job: Job = { cancelled: false, done: () => {} };
+    writing.current.add(job);
+    setError("");
+    setFailed(false);
+    settle();
+    try {
+      return await write(job, samples);
+    } finally {
+      writing.current.delete(job);
+      // Cancelled, it is still kept: nothing was decided about it.
+      if (mounted.current) {
+        if (kept.current === samples) setFailed(true);
+        if (!writing.current.size) setDownloading(null);
+        settle();
+      }
+    }
+  }, [bridge, settle, write]);
 
   const autoStop = useEffectEvent((current: Live, message: string) => {
     if (live.current !== current || current.cancelled || !mounted.current) return;
@@ -223,7 +338,9 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
       request.release = releaseOpening;
       try {
         // As OpenWhispr does: the browser's echo and noise filters blur words, and Whisper copes with a room better than they do.
-        stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        // "ideal": a microphone chosen once and since unplugged falls back to the computer's own choice.
+        const microphone = options.current.microphone;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false, ...(microphone ? { deviceId: { ideal: microphone } } : {}) } });
         if (request.cancelled || !mounted.current) {
           releaseOpening();
           return false;
@@ -252,7 +369,7 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
           resolve();
           autoStop(current, "The microphone stopped. Check its connection before recording again.");
         }; });
-        const current: Live = { stream, recorder, chunks, context, stopped, done, timer: 0, deadline: 0, frame: 0, peak: 0, cancelled: false, closed: false };
+        const current: Live = { stream, recorder, chunks, context, stopped, done, timer: 0, deadline: 0, frame: 0, peak: 0, startedAt: started, cancelled: false, closed: false };
         active = current;
         request.release = undefined;
         const meter = () => {
@@ -282,6 +399,7 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
         };
         recorder.start(250);
         live.current = current;
+        if (options.current.sounds) chime(true);
         meter();
         current.timer = window.setInterval(meter, 80);
         current.frame = window.requestAnimationFrame(draw);
@@ -297,9 +415,7 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
         if (!active) {
           releaseOpening();
         }
-        if (!request.cancelled && mounted.current) setError(cause instanceof DOMException && cause.name === "NotAllowedError"
-          ? "He can't hear you: allow the microphone for Perry in your system's privacy settings."
-          : `He can't hear you: ${cause instanceof Error ? cause.message : String(cause)}`);
+        if (!request.cancelled && mounted.current) setError(cannotHear(cause));
         return false;
       }
     })();
@@ -321,6 +437,8 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
     live.current = null;
     for (const pending of writing.current) {
       pending.cancelled = true;
+      // Stopped while being written down, it is kept all the same: he said it was safe.
+      if (pending.samples) keep(pending.samples);
       pending.done();
       closeDecoder(pending);
     }
@@ -333,13 +451,18 @@ export function useVoice(bridge: VoiceBridge | undefined, onAutoStop?: (text: Pr
     }
     if (mounted.current) setDownloading(null);
     settle();
-  }, [close, settle]);
+  }, [close, keep, settle]);
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; cancel(); };
+    return () => {
+      mounted.current = false;
+      cancel();
+      window.clearTimeout(keptTimer.current);
+      kept.current = null;
+    };
   }, [cancel]);
-  return { state, waveform, downloading, error, start, stop, cancel };
+  return { state, waveform, downloading, error, slow, failed, start, stop, cancel, retry, discard };
 }
 
 /** Where the composer was, while he listens: the waveform, and how to send or stop. */
@@ -355,9 +478,10 @@ export function Listening({ voice, onSend, onCancel }: { voice: Voice; onSend: (
       );
     }
     return (
-      <div className="flex h-9 items-center gap-2 px-1 text-sm text-muted-foreground" role="status">
-        <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-        Writing it down…
+      <div className="flex h-9 items-center gap-2 text-sm text-muted-foreground" role="status">
+        <Button variant="ghost" size="icon-sm" className="rounded-full text-muted-foreground" aria-label="Stop writing it down" onClick={onCancel}><XIcon /></Button>
+        <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+        <span className="min-w-0 flex-1 truncate">{voice.slow ? "Taking longer than usual. Your recording is safe." : "Writing it down…"}</span>
       </div>
     );
   }

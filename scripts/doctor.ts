@@ -157,6 +157,24 @@ async function main() {
   if (health?.ok) ok("perry server", `http://127.0.0.1:${port}`);
   else bad("perry server", "not answering. Run: perry start");
 
+  // The desktop pet: what the server knows of it, and what a first talk would need.
+  if (health?.ok && env.DASHBOARD_KEY) {
+    const call = (path: string) => fetch(`http://127.0.0.1:${port}/api/backend/call`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path, args: { key: env.DASHBOARD_KEY } }) })
+      .then((response) => (response.ok ? response.json() : null), () => null) as Promise<{ value?: any } | null>;
+    const pet = (await call("pet:status"))?.value;
+    const shortcuts = (await call("dashboard:getShortcuts"))?.value;
+    if (pet?.running) ok("desktop pet", `on ${pet.host}`);
+    else note("desktop pet", "not running (optional): perry pet");
+    const talk = shortcuts?.pet?.keys?.talk;
+    if (pet?.running && talk?.error) warn("talk hotkey", `${shortcuts.shortcuts.talk} is taken by another app. Pick other keys in Settings → Desktop pet`);
+    else if (pet?.running && talk?.hold === "access") warn("talk hotkey", "only tapping works; holding needs Accessibility for Electron in System Settings → Privacy & Security");
+    else if (pet?.running && talk?.hold) warn("talk hotkey", "only tapping works; his window can't hear keys come up on this computer");
+    else if (pet?.running && talk?.hotkey) ok("talk hotkey", talk.hotkey);
+    const model = join(process.env.PERRY_MODELS_DIR ?? join(HOME, "models"), ...(process.env.PERRY_VOICE_MODEL ?? "onnx-community/whisper-small").split("/"));
+    if (pet?.running) (existsSync(model) ? ok("voice model", "downloaded") : warn("voice model", "not downloaded yet; he fetches it (about 80 MB) when he starts"));
+    if (pet?.running) note("microphone", pet.heardVoice ? "has worked" : "not tried yet: talk to him once to check it");
+  }
+
   const database = join(HOME, "perry.sqlite");
   if (existsSync(database)) ok("data", `${database} (${Math.round(statSync(database).size / 1024)} KB)`);
   else warn("data", `no database yet in ${HOME}; the server makes it when it starts`);

@@ -11,12 +11,16 @@ const MISTAKE_WORDS = 20;
 /** After the pointer leaves, a paused card has at least this long left. */
 const AFTER_HOVER_MS = 3_000;
 const SNOOZE_MS = 2 * 60_000;
+/** A discarded recording really goes only after this long, so Discard can be undone. */
+const UNDO_DISCARD_MS = 6_000;
+/** The card's window has this much see-through margin round what shows. */
+const WINDOW_MARGIN = 12;
 
 /**
  * One small native window survives pet page reloads; all calendar data is replaced on each heartbeat.
  * It shows one card at a time: a recording's controls, "Started by mistake?", "Your notes are ready", or a prompt.
  */
-export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget, discard, dismiss, open }) {
+export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget, discard, dismiss, open, anchor }) {
   let window = null;
   let config = null;
   let receivedAt = 0;
@@ -36,16 +40,26 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
   let recorded = [];
   let announced = [];
   let ready = null;
+  /** The recording just discarded, while that can still be undone, and when it really goes (whatever card is showing by then). */
+  let undoing = null;
+  let undoTimer = null;
   /** A card's own clock: when it goes, or how long it had left while the pointer rests on it. */
   let expiry = null;
   let expiryTimer = null;
   const eventKey = (event) => `${event.eventId}:${event.startsAt}`;
   const position = () => {
     if (!window || window.isDestroyed()) return;
-    const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+    const pet = anchor?.();
+    const area = pet ? screen.getDisplayMatching(pet).workArea : screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
     const width = Math.min(prompt?.recording ? 480 : 640, area.width);
     const height = prompt?.recording ? 104 : 136;
-    window.setBounds({ x: area.x + area.width - width, y: area.y + area.height - height - 8, width, height });
+    if (!pet) return window.setBounds({ x: area.x + area.width - width, y: area.y + area.height - height - 8, width, height });
+    // Beside him, on whichever side has room; what he says goes above him, so the two do not cover each other.
+    const left = pet.x - width + WINDOW_MARGIN;
+    const right = pet.x + pet.width - WINDOW_MARGIN;
+    const x = left >= area.x ? left : right + width <= area.x + area.width ? right : Math.max(area.x, area.x + area.width - width);
+    const y = Math.round(Math.min(area.y + area.height - height, Math.max(area.y, pet.y + pet.height / 2 - height / 2)));
+    window.setBounds({ x: Math.round(x), y, width, height });
   };
   const send = () => {
     if (!window || window.isDestroyed()) return;
@@ -83,6 +97,7 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
   const render = () => {
     if (disposed) return;
     const wasRecording = prompt?.recording;
+    const hadCard = Boolean(prompt);
     const previous = JSON.stringify(prompt);
     const now = Date.now();
     for (const [id, until] of snoozed) if (until <= now) snoozed.delete(id);
@@ -93,7 +108,10 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
       (now <= item.startsAt + 600_000 || detected)).sort((a, b) => Math.abs(a.startsAt - now) - Math.abs(b.startsAt - now))[0] : undefined;
     const ended = phase === "off" && listening?.ended && listening.ended.words < MISTAKE_WORDS && now - listening.ended.at < MISTAKE_MS + 60_000 ? listening.ended : null;
     if (listening && phase !== "off") prompt = recordingCard(now);
-    else if (ended) {
+    else if (undoing) {
+      prompt = { id: `undo:${undoing}`, undoing, title: "Recording discarded", detail: "Its notes won't be written.", closable: true,
+        primary: { name: "undo", label: "Undo" } };
+    } else if (ended) {
       prompt = { id: `mistake:${ended.id}`, ended: ended.id, title: "Started by mistake?", closable: true, timeoutMs: MISTAKE_MS, timeoutAction: "keep",
         detail: ended.words === 0 ? "Nothing was heard." : `Only ${ended.words} word${ended.words === 1 ? "" : "s"} were heard.`,
         primary: { name: "keep", label: "Keep" }, secondary: { name: "discard", label: "Discard" } };
@@ -117,7 +135,7 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
       if (expiry) expiryTimer = setTimeout(expire, prompt.timeoutMs);
     }
     if (JSON.stringify(prompt) === previous) return;
-    if (window && wasRecording !== prompt?.recording) position();
+    if (window && (wasRecording !== prompt?.recording || (prompt && !hadCard))) position();
     if (prompt && !window) {
       window = new BrowserWindow({ width: 640, height: 136, show: false, frame: false, transparent: true, resizable: false, skipTaskbar: true, alwaysOnTop: true,
         webPreferences: { preload: join(here, "meeting-notice-preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true } });
@@ -182,6 +200,13 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
     } catch { error = "Couldn't start. Check Perry's connection and try again."; }
     finally { busy = false; render(); }
   };
+  const discardNow = () => {
+    clearTimeout(undoTimer);
+    if (!undoing) return;
+    const id = undoing;
+    undoing = null;
+    void discard?.(id).catch((error) => console.warn("The meeting wasn't discarded:", error.message));
+  };
   /** What each button, key and timeout does, for the card on screen now. */
   const act = (name) => {
     if (!prompt) return;
@@ -191,8 +216,18 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
     else if (name === "keep-going" && card.recording) keepGoing?.();
     else if (name === "keep" && card.ended) forget?.();
     else if (name === "discard" && card.ended) {
+      discardNow();
+      undoing = card.ended;
+      undoTimer = setTimeout(() => { discardNow(); render(); }, UNDO_DISCARD_MS);
       forget?.();
-      void discard?.(card.ended).catch((error) => console.warn("The meeting wasn't discarded:", error.message));
+      render();
+    } else if (name === "undo" && card.undoing) {
+      clearTimeout(undoTimer);
+      undoing = null;
+      render();
+    } else if (name === "dismiss" && card.undoing) {
+      discardNow();
+      render();
     } else if (name === "view" && card.meeting) { ready = null; open(`/meetings/${card.meeting}`); render(); }
     else if (name === "dismiss" && card.ended) forget?.();
     else if (name === "dismiss" && card.meeting) { ready = null; render(); }
@@ -233,6 +268,8 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
       if (state.id && !recorded.includes(state.id)) recorded = [...recorded, state.id].slice(-10);
       render();
     },
+    /** He was moved: the card goes with him. */
+    moved() { if (prompt) position(); },
     /** The pet's page saw a meeting's notes written: said once, and only for one this pet recorded. */
     written(next) {
       if (!next || typeof next.id !== "string" || typeof next.title !== "string") return;
@@ -242,6 +279,7 @@ export function meetingNotice({ here, start, stop, keepGoing, holdEnding, forget
       render();
     },
     dispose() {
+      discardNow();
       disposed = true;
       clearInterval(timer);
       clearTimeout(expiryTimer);

@@ -21,6 +21,12 @@ export const SHORTCUTS = {
     default: "CommandOrControl+Shift+Space",
     global: true,
   },
+  paste: {
+    label: "Paste what you last said",
+    description: "Anywhere, with the desktop pet on: what you last said to him goes into the app you're in.",
+    default: "CommandOrControl+Alt+Shift+V",
+    global: true,
+  },
   look: {
     label: "Show Perry the screen",
     description: "Anywhere, with the desktop pet on: the window you're in goes to his chat.",

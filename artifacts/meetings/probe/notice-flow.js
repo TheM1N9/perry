@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow, ipcMain, screen } from "electron";
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { meetingNotice } from "../../../pet/meeting-notice.js";
@@ -22,6 +22,7 @@ export async function noticeFlow({ root, output, call, ears, report, save }) {
   let finished = 0;
   let keptGoing = 0;
   let forgot = 0;
+  let petAt = null;
   const holds = [];
   const discarded = [];
   const opened = [];
@@ -33,6 +34,7 @@ export async function noticeFlow({ root, output, call, ears, report, save }) {
     stop: () => { finished++; },
     keepGoing: () => { keptGoing++; }, holdEnding: (held) => { holds.push(held); }, forget: () => { forgot++; },
     discard: async (id) => { discarded.push(id); },
+    anchor: () => petAt,
     dismiss: (eventId) => call("meetings:dismissUpcoming", { eventId }), open: (path) => { opened.push(path); },
   });
   try {
@@ -131,17 +133,46 @@ export async function noticeFlow({ root, output, call, ears, report, save }) {
     await waitFor(async () => banner.isVisible() && await text("h1") === "Started by mistake?");
     report.checks.mistakeSaysWords = /Only 3 words/.test(await text("#detail"));
     writeFileSync(join(dirname(output), "started-by-mistake.png"), (await banner.webContents.capturePage()).toPNG());
+    // Discard can be undone for a few seconds; only then does the meeting go.
+    // As the real listener does, once told to forget: the offer is over either way.
     await click("#second");
-    await waitFor(() => discarded.length === 1 && forgot === 1);
+    await waitFor(async () => await text("h1") === "Recording discarded" && forgot === 1);
+    notice.listening({ phase: "off" });
+    report.checks.discardWaitsForUndo = discarded.length === 0;
+    await click("#start");
+    await waitFor(() => !banner.isVisible());
+    await sleep(6_500);
+    report.checks.undoKeepsTheMeeting = discarded.length === 0;
+    notice.listening({ phase: "off", ended: { id: "meeting-a", words: 3, at: Date.now() } });
+    await waitFor(async () => banner.isVisible() && await text("h1") === "Started by mistake?");
+    await click("#second");
+    await waitFor(async () => await text("h1") === "Recording discarded" && forgot === 2);
+    notice.listening({ phase: "off" });
+    await click("#close");
+    await waitFor(() => discarded.length === 1);
     report.checks.mistakeDiscardsThatMeeting = discarded[0] === "meeting-a";
+    // A new recording during the Undo window must not hold up the discard, which the server refuses once it is old.
+    notice.listening({ phase: "off", ended: { id: "meeting-c", words: 2, at: Date.now() } });
+    await waitFor(async () => banner.isVisible() && await text("h1") === "Started by mistake?");
+    await click("#second");
+    await waitFor(async () => await text("h1") === "Recording discarded");
+    notice.listening({ phase: "listening", id: "meeting-d", title: "Next call", startedAt: Date.now(), mic: "live", system: "live" });
+    await waitFor(() => discarded.length === 2);
+    report.checks.discardGoesThroughDuringTheNextRecording = discarded[1] === "meeting-c";
+    notice.listening({ phase: "off" });
     notice.listening({ phase: "off" });
     await waitFor(() => !banner.isVisible());
+    // With the pet on screen, the card comes up beside him rather than in the corner.
+    const { workArea } = screen.getPrimaryDisplay();
+    petAt = { x: workArea.x + workArea.width - 220, y: workArea.y + workArea.height - 300, width: 150, height: 170 };
     // Notes written: said only for a meeting this pet recorded (meeting-b, above), once.
     notice.written({ id: "meeting-elsewhere", title: "Another computer's call" });
     await sleep(300);
     report.checks.readyOnlyForOwnRecordings = !banner.isVisible();
     notice.written({ id: "meeting-b", title: "Product planning" });
     await waitFor(async () => banner.isVisible() && await text("h1") === "Your notes are ready");
+    report.checks.cardComesUpBesideThePet = banner.getBounds().x === petAt.x - banner.getBounds().width + 12;
+    petAt = null;
     writeFileSync(join(dirname(output), "notes-ready.png"), (await banner.webContents.capturePage()).toPNG());
     await click("#start");
     await waitFor(() => opened.length === 1 && !banner.isVisible());

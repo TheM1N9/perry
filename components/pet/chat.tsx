@@ -55,7 +55,7 @@ export async function keepPicture(image: string): Promise<{ path: string; fileNa
   return { path: body.path, fileName, size: file.size };
 }
 
-export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, hold, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel, shot, onShot, onLook, lookKeys }: {
+export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, hold, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel, onRetry, onSent, teachKeys, notice, learned, shot, onShot, onLook, lookKeys }: {
   chatId: PetChatId;
   onChatId: (id: PetChatId) => void;
   draft: string;
@@ -73,6 +73,16 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   onTalk: () => void;
   onTalkSend: () => void;
   onTalkCancel: () => void;
+  /** Write down again a recording that could not be written down. */
+  onRetry?: () => void;
+  /** A message went, with these words: what was written down may have been corrected first. */
+  onSent?: (text: string) => void;
+  /** Whether to show the Talk keys where there is room, until they have been used a few times. */
+  teachKeys?: boolean;
+  /** Something he has to say that belongs under the box. */
+  notice?: string;
+  /** A spelling just learned, with a way to take it back. */
+  learned?: { text: string; undo: () => void; dismiss: () => void } | null;
   shot: Shot | null;
   onShot: (shot: Shot | null) => void;
   /** Take a picture of the screen, where his window can (not in a plain browser). */
@@ -143,6 +153,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       const messageKey = randomUUID();
       const attachmentIds = picture ? [await attach(id, messageKey, picture)] : [];
       await sendChat({ key, id, text, ...(attachmentIds.length ? { attachmentIds, messageKey } : {}) });
+      onSent?.(text);
       if (current.current.chatId === id) {
         if (current.current.draft.trim() === text) onDraft("");
         if (current.current.shot === shot) onShot(null);
@@ -215,7 +226,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       <div className="flex min-h-full flex-col space-y-3 px-3.5 pt-3 pb-2 [&_.prose-chat]:text-sm [&_.prose-chat]:leading-[1.6]" aria-live="polite">
         {!chatId && (<div className="flex flex-1 flex-col justify-center pb-3">
           <Empty title="What can I do for you?" awake className="pt-0">
-            {voice && hotkey ? (holdProblem(hold)
+            {voice && hotkey && teachKeys !== false ? (holdProblem(hold)
               ? <>Type, or tap <Kbd>{keys(hotkey)}</Kbd> anywhere, talk, and tap it again.</>
               : <>Type, or hold <Kbd>{keys(hotkey)}</Kbd> anywhere and talk.</>)
               : null}
@@ -301,7 +312,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
               onChange={(event) => { onDraft(event.target.value); setError(""); }}
               onKeyDown={onKey}
               aria-label="Message Perry"
-              placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : "Message Perry"}
+              placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : voice && hotkey && teachKeys ? `Message Perry, or hold ${keys(hotkey)}` : "Message Perry"}
               className="max-h-28 min-h-9 py-2 pl-3 text-sm md:text-sm"
             />
             <InputGroupAddon align="inline-end" className="gap-1 self-end pb-1.5">
@@ -336,6 +347,20 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
           </p>
         )}
         {(error || voice?.error) && <p className="mt-1 px-1 text-xs text-destructive" role="alert">{error || voice?.error}</p>}
+        {voice?.failed && voice.state === "idle" && (
+          <p className="mt-1 flex items-center gap-2 px-1 text-xs text-muted-foreground" role="status">
+            Your recording is saved.
+            <button type="button" className="font-medium underline underline-offset-2 hover:text-foreground" onClick={onRetry}>Try again</button>
+            <button type="button" className="underline-offset-2 hover:text-foreground hover:underline" onClick={voice.discard}>Discard</button>
+          </p>
+        )}
+        {notice && !error && <p className="mt-1 px-1 text-xs font-medium text-primary" role="status" data-notice>{notice}</p>}
+        {learned && !error && (
+          <p className="mt-1 px-1 text-xs text-muted-foreground" role="status" data-learned>
+            I'll write {learned.text} that way from now on.{" "}
+            <button type="button" className="font-medium underline underline-offset-2 hover:text-foreground" onClick={learned.undo}>Undo</button>
+          </p>
+        )}
         {noted && !error && (
           <p className="mt-1 px-1 text-xs text-muted-foreground" role="status" data-noted>
             {noted.text}{" "}

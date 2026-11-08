@@ -9,17 +9,17 @@
  * a call (listen-worker.js) in a process of its own, for hours at a time.
  */
 
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 const MODEL = process.env.PERRY_VOICE_MODEL ?? "onnx-community/whisper-small";
 /** Whisper guesses English when not told; set this to speak another language ("spanish", "hindi"). */
 const LANGUAGE = process.env.PERRY_VOICE_LANGUAGE ?? "english";
 
 let recognizer = null;
+/** Who hears how the download goes: whoever is waiting for it now, even if it began without them. */
+let listening = null;
 
 /** Whisper, loaded once; `progress` hears how the first download goes. */
 function load(modelsDir, progress, model = MODEL) {
+  if (progress) listening = progress;
   recognizer ??= (async () => {
     const { pipeline, env } = await import("@huggingface/transformers");
     env.cacheDir = modelsDir;
@@ -27,7 +27,7 @@ function load(modelsDir, progress, model = MODEL) {
       dtype: "q8",
       device: process.env.PERRY_VOICE_DEVICE ?? "cpu",
       progress_callback: (event) => {
-        if (event.status === "progress" && event.total) progress?.({ file: event.file, loaded: event.loaded, total: event.total });
+        if (event.status === "progress" && event.total) listening?.({ file: event.file, loaded: event.loaded, total: event.total });
       },
     });
   })().catch((error) => {
@@ -37,14 +37,15 @@ function load(modelsDir, progress, model = MODEL) {
   return recognizer;
 }
 
-/** Load it in the background when it is already downloaded, so the first words need not wait. */
+/** Load it in the background, downloading it the first time, so the first words need not wait for either. */
 export function warmUp(modelsDir) {
-  if (existsSync(join(modelsDir, ...MODEL.split("/")))) void load(modelsDir).catch(() => {});
+  void load(modelsDir).catch(() => {});
 }
 
 /** 16 kHz mono samples in, what was said out. */
 export async function transcribe(modelsDir, samples, progress, options = {}) {
   const whisper = await load(modelsDir, progress, options.model ?? MODEL);
+  listening = null;
   const { text } = await whisper(samples, { language: options.language ?? LANGUAGE, task: "transcribe" });
   // Whisper names silence and noise rather than leaving them out.
   return text.replace(/\[(BLANK_AUDIO|MUSIC|NOISE|SILENCE)\]|\((silence|music|noise)\)/gi, "").trim();

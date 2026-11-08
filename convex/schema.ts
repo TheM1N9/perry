@@ -473,6 +473,8 @@ export default defineSchema({
    */
   petPresence: defineTable({
     device: v.optional(v.id("petDevices")),
+    /** The owner is talking to it, until about then: an update waits. */
+    talkingUntil: v.optional(v.number()),
     seenAt: v.number(),
     activeAt: v.number(),
     /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
@@ -513,6 +515,9 @@ export default defineSchema({
    * One row: the pet being turned on or off from the dashboard (pet.ts), the
    * step it is on, and how it ended.
    */
+  /** The first time the owner talked to the desktop pet, which the welcome page waits for. */
+  petFirstWords: defineTable({ at: v.number() }),
+
   petSetup: defineTable({
     action: v.union(v.literal("on"), v.literal("off")),
     state: v.union(v.literal("working"), v.literal("failed"), v.literal("done")),

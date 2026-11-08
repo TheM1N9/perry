@@ -31,6 +31,8 @@ const PET_CALLS: Record<string, "which pet" | true> = {
   "speech:transcribe": "which pet",
   "updates:status": true, "updates:update": true,
   "pause:status": true, "pause:set": true,
+  // That the owner has talked to him, for the welcome page. It says nothing of what was said.
+  "pet:heardVoice": true,
   // Noting something down from him: "/note <words>" to the Inbox note, and a reply kept as a note. Nothing reads notes back.
   "notes:jot": true, "notes:fromChat": true,
   // How much of each engine's plan is used, so he warns before a reply fails for it.

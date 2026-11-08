@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
+import { useAction, useConnection, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
+import { NextStep } from "./next-step";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Artifact } from "@/convex/interactive";
@@ -124,6 +125,14 @@ export function ChatScreen() {
   const panel = useChatPanel(selectedId ?? "new");
 
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  // A blink of the connection is nothing; a few seconds out of reach is worth saying.
+  const connection = useConnection();
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    if (connection === "connected") { setOffline(false); return; }
+    const timer = window.setTimeout(() => setOffline(true), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [connection]);
   const assistant = status?.assistantName ?? "Perry";
   const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
   const summary = chats?.find((item) => item.id === selectedId);
@@ -828,6 +837,7 @@ export function ChatScreen() {
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
               <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
+              {!project && !noEngine && status?.onboarding !== "offer" && <NextStep assistant={assistant} />}
             </div>
           ) : (
             <ChatFiles.Provider value={chatFiles ?? NO_FILES}>
@@ -1017,6 +1027,7 @@ export function ChatScreen() {
                   {chat.moved.to ? `It goes back to ${ENGINE_LABELS[chat.moved.from]} once that has room.` : `Pick a ${ENGINE_LABELS[chat.moved.from]} model to move it back.`}
                 </ComposerNote>
               )}
+              {offline && <ComposerNote tone="warning">Can&apos;t reach Perry&apos;s server. Trying again…</ComposerNote>}
               {limit && limitSeen !== limitMark && (
                 <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
                   <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}

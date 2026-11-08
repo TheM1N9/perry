@@ -71,6 +71,8 @@ export type PetMeetings = {
   upcoming: Array<{ eventId: string; title: string; startsAt: number; endsAt: number; joinUrl?: string; attendees?: string[] }>;
   headsUp: boolean;
   notice: boolean;
+  /** The language speech is written down in, for talking to the pet too. */
+  language: string;
 };
 
 const summaryOf = (meeting: Doc<"meetings">): MeetingSummary => ({
@@ -243,6 +245,7 @@ export const pet = query({
         .map((row) => ({ eventId: row.eventId, title: row.title, startsAt: row.startsAt, endsAt: row.endsAt, ...(row.joinUrl ? { joinUrl: row.joinUrl } : {}), ...(row.attendees ? { attendees: row.attendees.slice(0, 5) } : {}) })),
       headsUp: install?.meetingHeadsUp !== false,
       notice: install?.meetingNotice !== false,
+      language: install?.meetingSpeech?.language ?? "en",
     };
   },
 });

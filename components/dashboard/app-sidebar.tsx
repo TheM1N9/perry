@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   BellIcon, BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, LibraryIcon, ListChecksIcon, LockIcon, HeadphonesIcon,
-  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
+  LifeBuoyIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAction, useConvex, useMutation, useQuery } from "@/client/react";
@@ -471,6 +471,7 @@ function AccountMenu() {
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuItem onClick={() => go("/settings/general")}><SettingsIcon />Settings</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => window.open("https://github.com/TheM1N9/perry/issues/new", "_blank", "noopener,noreferrer")}><LifeBuoyIcon />Report a problem</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={lock}><LockIcon />Lock dashboard</DropdownMenuItem>
           </DropdownMenuContent>
