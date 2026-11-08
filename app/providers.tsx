@@ -20,7 +20,8 @@ if (typeof window !== "undefined") {
         const stored = Number(localStorage.getItem("perry.starPrompts") ?? 0);
         const count = (Number.isSafeInteger(stored) && stored >= 0 ? stored : 0) + 1;
         localStorage.setItem("perry.starPrompts", String(count));
-        if ([5, 50, 250].includes(count) || count % 500 === 0) toast("Enjoying Perry?", {
+        // Not in the desktop pet: his window lets clicks through everywhere but him, so its button could not be pressed.
+        if (!("perryPet" in window) && ([5, 50, 250].includes(count) || count % 500 === 0)) toast("Enjoying Perry?", {
           id: "perry-github-star",
           description: "A star on GitHub helps others find us.",
           icon: <StarIcon className="size-4" aria-hidden />,

@@ -20,6 +20,9 @@ export type MeetingBridge = {
   onMeeting?: (listener: (state: ListeningState) => void) => () => void;
   startMeeting?: (ask?: ListenAsk) => Promise<ListeningState>;
   stopMeeting?: () => Promise<ListeningState>;
+  setPasteHotkey?: (accelerator: string) => Promise<HotkeyState>;
+  /** The paste shortcut was pressed: what came of it. */
+  onPasted?: (listener: (how: "pasted" | "copied" | "nothing" | "failed") => void) => () => void;
   /** A meeting's notes were written; the pet says so if it recorded that one. */
   meetingWritten?: (meeting: { id: string; title: string }) => void;
   onCallActive?: (listener: (active: boolean) => void) => () => void;
@@ -110,6 +113,8 @@ export function useMeetings(key: string, now: number, paused: boolean) {
 
   return {
     state, upcoming, notice, start, stop, hotkey, nativeControls: bridge?.meetingControls === true,
+    /** The language speech is written down in; "auto" only the cloud model can do, so talking falls back to the default. */
+    language: data?.language && data.language !== "auto" ? data.language : undefined,
     dismiss: () => {
       if (upcoming) void dismiss({ key, eventId: upcoming.eventId }).catch((error) => setState({ phase: "off", error: errorText(error) }));
       else setCallHidden(true);

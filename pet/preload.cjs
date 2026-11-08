@@ -50,6 +50,12 @@ contextBridge.exposeInMainWorld("perryPet", {
   startMeeting: (ask) => ipcRenderer.invoke("pet:meeting-start", ask),
   stopMeeting: () => ipcRenderer.invoke("pet:meeting-stop"),
   meetingWritten: (meeting) => ipcRenderer.send("pet:meeting-written", meeting),
+  setPasteHotkey: (accelerator) => ipcRenderer.invoke("pet:set-paste-hotkey", String(accelerator)),
+  onPasted: (listener) => {
+    const handler = (_event, how) => listener(how);
+    ipcRenderer.on("pet:pasted", handler);
+    return () => ipcRenderer.off("pet:pasted", handler);
+  },
   show: () => ipcRenderer.send("pet:show"),
   setListenHotkey: (accelerator) => ipcRenderer.invoke("pet:set-listen-hotkey", String(accelerator)),
   onMeeting: (listener) => {

@@ -2,40 +2,47 @@
 
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { CheckIcon, RefreshCwIcon } from "lucide-react";
+import { CheckIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type Ref } from "react";
-import { useMutation, useQuery } from "@/client/react";
+import { toast } from "sonner";
+import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { EngineKind } from "@/convex/lib/engines";
 import { errorText } from "@/lib/format";
 import { EMPTY_ANSWERS, HELP, PERSONALITIES, REPLY_STYLES, composeUserMd, type Answers } from "@/lib/persona";
 import { hasUserMd } from "@/convex/lib/pages";
+import { describe, holdProblem } from "@/convex/lib/shortcuts";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { PerryMark } from "../common";
 import { EngineChoice, useEngineChoices } from "../default-engine";
-import { Platypus } from "../platypus";
+import { Platypus, PlatypusArt } from "../platypus";
 import { EngineRow } from "./settings";
 
-const STEPS = ["Meet your assistant", "About you", "Review"] as const;
+const REVIEW = "Review";
+const SAY_HELLO = "Say hello";
+const STEPS = ["Meet your assistant", "About you", SAY_HELLO] as const;
 /** First, when Perry has no default engine yet: it never picks one for the owner. */
 const ENGINE_STEP = "Choose an engine";
-type Step = typeof ENGINE_STEP | (typeof STEPS)[number];
+type Step = typeof ENGINE_STEP | typeof REVIEW | (typeof STEPS)[number];
 
 /**
  * Getting to know each other, before the first chat: choose the engine Perry
  * thinks with when none is chosen yet, name the assistant, set its
- * personality, answer a few questions, and review the USER.md written from
- * them. Every answer is optional, and "just chat" asks the same questions in
- * the chat instead.
+ * personality, say what to call you and what you want help with, and say
+ * hello out loud through the desktop pet. The rest is asked in the first chat,
+ * one thing at a time. Every answer is optional. Coming back with a USER.md
+ * already written, the old questions and a review return, since saving here
+ * replaces that page.
  */
 export function Welcome() {
   const { dashboardKey } = useSession();
@@ -47,6 +54,7 @@ export function Welcome() {
   const chooseEngine = useMutation(api.dashboard.setDefaultEngine);
   const finish = useMutation(api.dashboard.finishOnboarding);
   const skip = useMutation(api.dashboard.skipOnboarding);
+  const pet = useQuery(api.pet.status, { key: dashboardKey });
   const id = useId();
   const reduce = useReducedMotion();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -74,7 +82,8 @@ export function Welcome() {
     if (known) setPreset(known.id);
     else if (persona.personality) { setPreset("custom"); setCustom(persona.personality); }
     setAnswers((current) => ({ ...current, call: status.displayName ?? "" }));
-    setSteps(status.defaultEngine ? STEPS : [ENGINE_STEP, ...STEPS]);
+    const asked: Step[] = hasUserMd(persona.user) ? [STEPS[0], STEPS[1], REVIEW, SAY_HELLO] : [...STEPS];
+    setSteps(status.defaultEngine ? asked : [ENGINE_STEP, ...asked]);
     setLoaded(true);
   }, [loaded, persona, status]);
   useEffect(() => { if (loaded) heading.current?.focus(); }, [step, loaded]);
@@ -102,7 +111,9 @@ export function Welcome() {
         await skip({ key: dashboardKey });
         return router.replace("/chat");
       }
-      const chatId = await finish({ key: dashboardKey, name: assistant, personality, ...(kind === "save" ? { userMd } : {}) });
+      const reviewed = steps?.includes(REVIEW);
+      const written = kind === "save" ? (reviewed ? userMd : composeUserMd(answers, timezone)) : "";
+      const chatId = await finish({ key: dashboardKey, name: assistant, personality, ...(written.trim() ? { userMd: written } : {}), ...(kind === "save" && !reviewed ? { interview: true } : {}) });
       window.localStorage.setItem(ACTIVE_CHAT, chatId);
       router.replace(`/chat/${chatId}`);
     } catch (cause) {
@@ -121,10 +132,15 @@ export function Welcome() {
       void chooseEngine({ key: dashboardKey, engine }).then(() => { setBusy(""); setStep(step + 1); }, (cause) => { setError(errorText(cause)); setBusy(""); });
     } else if (at === "Meet your assistant") setStep(step + 1);
     else if (at === "About you") { if (!edited) setUserMd(composeUserMd(answers, timezone)); setStep(step + 1); }
+    else if (at === REVIEW) setStep(step + 1);
     // An emptied USER.md is no page about you: Perry asks in the chat instead.
-    else void run(userMd.trim() ? "save" : "chat");
+    else void run(steps.includes(REVIEW) && !userMd.trim() ? "chat" : "save");
   };
   const last = step === steps.length - 1;
+  const returning = steps.includes(REVIEW);
+  // The way on appears once the thing has been done, so the only place to look is the thing.
+  const waitingToHear = at === SAY_HELLO && !pet?.heardVoice;
+  const leaving = at === ENGINE_STEP || at === "Meet your assistant";
 
   return (
     <main className="min-h-dvh bg-muted/40 px-4 py-10 sm:py-16">
@@ -145,7 +161,14 @@ export function Welcome() {
           </ol>
         </div>
 
-        <div className="rounded-2xl border bg-card p-6 shadow-float sm:p-8">
+        <div className="relative rounded-2xl border bg-card p-6 shadow-float sm:p-8">
+          {(at === "Meet your assistant" || waitingToHear) && (
+            <div className="welcome-escapes absolute top-4 right-5 flex gap-4 text-xs text-muted-foreground">
+              {at === "Meet your assistant" && <button type="button" className="hover:underline" disabled={Boolean(busy)} onClick={() => void run("chat")}>{busy === "chat" && <Spinner />}I&apos;d rather just chat</button>}
+              {at === "Meet your assistant" && <button type="button" className="hover:underline" disabled={Boolean(busy)} onClick={() => void run("skip")}>{busy === "skip" && <Spinner />}Skip for now</button>}
+              {waitingToHear && <button type="button" className="hover:underline" disabled={Boolean(busy)} onClick={() => void run("save")}>{busy === "save" && <Spinner />}Skip for now</button>}
+            </div>
+          )}
           <AnimatePresence mode="wait" initial={false}>
             <motion.div key={step}
               initial={reduce ? false : { opacity: 0, x: 16 }}
@@ -219,7 +242,7 @@ export function Welcome() {
                   <Question id={`${id}-call`} label="What should I call you?">
                     <Input id={`${id}-call`} value={answers.call} autoComplete="given-name" onChange={(event) => set("call", event.target.value)} className="h-10 max-w-xs" />
                   </Question>
-                  <Question id={`${id}-work`} label="What do you do?">
+                  {returning && <><Question id={`${id}-work`} label="What do you do?">
                     <Textarea id={`${id}-work`} rows={2} value={answers.work} onChange={(event) => set("work", event.target.value)} />
                   </Question>
                   <Question id={`${id}-day`} label="What does a typical day look like?" hint={timezone ? `Your timezone, ${timezone}, is saved too.` : undefined}>
@@ -238,7 +261,7 @@ export function Welcome() {
                   </Field>
                   <Question id={`${id}-language`} label="Language" hint="Empty: whatever you write in.">
                     <Input id={`${id}-language`} value={answers.language} autoComplete="off" placeholder="English" onChange={(event) => set("language", event.target.value)} className="h-10 max-w-xs" />
-                  </Question>
+                  </Question></>}
                   <FieldSet>
                     <FieldLegend variant="label">What do you want help with?</FieldLegend>
                     <div className="flex flex-wrap gap-2" role="group" aria-label="What you want help with">
@@ -254,11 +277,14 @@ export function Welcome() {
                     </div>
                     <Textarea aria-label="Anything else" rows={2} value={answers.helpOther} placeholder="Anything else, one per line" onChange={(event) => set("helpOther", event.target.value)} />
                   </FieldSet>
-                  <Question id={`${id}-boundaries`} label="Anything I should never do?">
+                  {returning && <Question id={`${id}-boundaries`} label="Anything I should never do?">
                     <Textarea id={`${id}-boundaries`} rows={2} value={answers.boundaries} onChange={(event) => set("boundaries", event.target.value)} />
-                  </Question>
+                  </Question>}
+                  {!returning && <p className="text-sm text-muted-foreground">{assistant} will ask about the rest as you talk.</p>}
                 </>
               )}
+
+              {at === SAY_HELLO && <SayHello ref={heading} assistant={assistant} />}
 
               {at === "Review" && (
                 <>
@@ -284,19 +310,14 @@ export function Welcome() {
 
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6">
             <div>{step > 0 && <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => setStep(step - 1)}>Back</Button>}</div>
-            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy) || (at === ENGINE_STEP && !engine)} aria-busy={busy === "save" || busy === "engine" || undefined}>
+            {!waitingToHear && <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy) || (at === ENGINE_STEP && !engine)} aria-busy={busy === "save" || busy === "engine" || undefined}>
               {(busy === "save" || busy === "engine" || (last && busy === "chat")) && <Spinner />}{last ? `Save and meet ${assistant}` : "Continue"}
-            </Button>
+            </Button>}
           </div>
         </div>
 
-        {(at === ENGINE_STEP || at === "Meet your assistant") && (
+        {leaving && (
           <div className="mt-6 flex flex-col items-center gap-4">
-            <div className="flex flex-wrap justify-center gap-2">
-              {/* Chatting needs an engine; skipping does not, and the chat page asks for one then. */}
-              {at === "Meet your assistant" && <Button type="button" variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void run("chat")}>{busy === "chat" && <Spinner />}I&apos;d rather just chat</Button>}
-              <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" disabled={Boolean(busy)} onClick={() => void run("skip")}>{busy === "skip" && <Spinner />}Skip for now</Button>
-            </div>
             <div className="hidden w-40 sm:block"><Platypus greeting={`Hi. I'm ${assistant}.`} /></div>
           </div>
         )}
@@ -321,5 +342,57 @@ function Question({ id, label, hint, children }: { id: string; label: string; hi
       {children}
       {hint && <FieldDescription>{hint}</FieldDescription>}
     </Field>
+  );
+}
+
+/**
+ * The last step: he goes on the desktop if he is not there, and is talked to
+ * for the first time. It waits for that to happen, since nothing else
+ * teaches it as well; it can be skipped, and he shows how when he arrives.
+ */
+function SayHello({ ref, assistant }: { ref: Ref<HTMLHeadingElement>; assistant: string }) {
+  const { dashboardKey } = useSession();
+  const pet = useQuery(api.pet.status, { key: dashboardKey });
+  const shortcuts = useQuery(api.dashboard.getShortcuts, { key: dashboardKey });
+  const turnOn = useAction(api.pet.turnOn);
+  const reduce = useReducedMotion();
+  if (!pet || !shortcuts) return <Spinner className="size-5 text-muted-foreground" />;
+  const working = pet.setup?.state === "working";
+  const failed = pet.setup?.state === "failed" ? pet.setup : null;
+  const talk = shortcuts.pet.keys.talk;
+  const onlyTap = holdProblem(talk?.hold);
+  const keys = describe(shortcuts.shortcuts.talk, /Mac/.test(navigator.platform));
+  return (
+    <>
+      <Heading ref={ref} title={pet.heardVoice ? `${assistant} heard you` : `Say hello to ${assistant}`}>
+        {pet.heardVoice ? "That's all it takes, from any app." : `Talk to ${assistant} from anywhere, with no window to open.`}
+      </Heading>
+      <div className="relative grid min-h-40 place-items-center rounded-xl border bg-muted/40 p-6 text-center" aria-live="polite">
+        {pet.heardVoice ? (
+          <>
+            <PlatypusArt head className="size-16 rounded-full bg-brand-soft" />
+            <motion.span initial={reduce ? false : { opacity: 0, scale: 0.6, rotate: -14 }} animate={{ opacity: 1, scale: 1, rotate: -6 }} transition={{ type: "spring", stiffness: 420, damping: 18 }}
+              className="absolute top-3 right-3 rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground shadow-raised">Well done!</motion.span>
+          </>
+        ) : pet.running ? (
+          <div className="space-y-3">
+            <p className="text-lg">{onlyTap ? "Tap " : "Hold "}<Kbd className="align-middle">{keys}</Kbd>{onlyTap ? ", say hi, and tap it again" : " and say hi"}</p>
+            <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden />Waiting to hear you on {pet.host}</p>
+          </div>
+        ) : working ? (
+          <div className="space-y-2">
+            <p className="flex items-center justify-center gap-2 font-medium"><Spinner />{pet.setup?.step ?? "Getting him ready…"}</p>
+            <p className="text-sm text-pretty text-muted-foreground">Under 1 GB, a few minutes the first time. You can skip this; he&apos;ll show you how to talk when he arrives.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <PlatypusArt head asleep hat={false} className="mx-auto size-14 rounded-full bg-brand-soft" />
+            <p className="text-sm text-pretty text-muted-foreground">{assistant} would appear on {pet.host}, and start with it.</p>
+            {failed && <p role="alert" className="flex items-start justify-center gap-1.5 text-sm text-destructive"><TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />{failed.error}</p>}
+            <Button type="button" onClick={() => void turnOn({ key: dashboardKey }).catch((cause) => toast.error(errorText(cause)))}>{failed ? "Try again" : `Put ${assistant} on my desktop`}</Button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

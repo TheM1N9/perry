@@ -17,6 +17,9 @@ on:
       - 'convex/schema.ts'
       - 'runner/meeting-notes.ts'
       - 'artifacts/meetings/**'
+      - 'artifacts/welcome/**'
+      - 'components/dashboard/screens/welcome.tsx'
+      - 'components/dashboard/chat/next-step.tsx'
       - 'artifacts/browser.ts'
       - '.github/workflows/meetings.yml'
       - 'pnpm-lock.yaml'
@@ -37,6 +40,9 @@ on:
       - 'convex/schema.ts'
       - 'runner/meeting-notes.ts'
       - 'artifacts/meetings/**'
+      - 'artifacts/welcome/**'
+      - 'components/dashboard/screens/welcome.tsx'
+      - 'components/dashboard/chat/next-step.tsx'
       - 'artifacts/browser.ts'
       - '.github/workflows/meetings.yml'
       - 'pnpm-lock.yaml'
@@ -68,6 +74,7 @@ jobs:
       - run: pnpm run build
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/run.mjs "${{ runner.temp }}/meeting-backend" --backend-only
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/ui.mjs "${{ runner.temp }}/meeting-ui"
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/welcome/ui.mjs "${{ runner.temp }}/welcome-ui"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -75,6 +82,7 @@ jobs:
           path: |
             ${{ runner.temp }}/meeting-backend
             ${{ runner.temp }}/meeting-ui
+            ${{ runner.temp }}/welcome-ui
           if-no-files-found: warn
           retention-days: 7
 

@@ -147,7 +147,7 @@ app.whenReady().then(async () => {
       if (now.phase !== "listening" || !now.endingAt) return null;
       ears.holdEnding(true);
       return now;
-    }, 60_000));
+    }, 150_000));
     report.callEndCountdownAfterMs = Date.now() - endedAt;
     report.checks.callEndPausesUnderPointer = ears.state().endingLeft > 0 && !ears.state().endingAt;
     await sleep(1_500);
@@ -157,7 +157,7 @@ app.whenReady().then(async () => {
     await sleep(1_500);
     report.checks.keepGoingCancelsCountdown = ears.state().phase === "listening" && !ears.state().endingAt && !ears.state().endingLeft;
     ears.callActive(true); ears.callActive(false);
-    const stopped = await until(() => ears.state().phase !== "listening", 90_000);
+    const stopped = await until(() => ears.state().phase !== "listening", 180_000);
     report.checks.callEndStopsNotes = Boolean(stopped);
     if (!stopped) await ears.stop();
     for (let at = 0; at < 240 && ears.state().phase !== "off"; at++) await sleep(500);

@@ -75,6 +75,8 @@ async function busyWith(ctx: QueryCtx): Promise<string | undefined> {
   if (pet?.state === "working" && Date.now() - pet.startedAt < HOUR_MS) return "setting up the desktop pet";
   // An update restarts the pet too, and a call in progress would lose the rest of its words.
   if (await ctx.db.query("meetings").withIndex("by_status", (q) => q.eq("status", "listening")).first()) return "listening to a call";
+  // And someone mid-sentence would lose what they said.
+  if ((await ctx.db.query("petPresence").collect()).some((pet) => (pet.talkingUntil ?? 0) > Date.now())) return "listening to you";
   return undefined;
 }
 

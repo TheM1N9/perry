@@ -274,7 +274,7 @@ function SpeechSettings({ speech }: { speech: { provider: "local" | "groq"; mode
   const save = useMutation(api.meetings.setSettings);
   const [draft, setDraft] = useState(speech);
   return <div className="mb-6 space-y-4 border-b pb-6">
-    <div><h3 className="font-medium">Transcription</h3><p className="mt-1 text-sm text-muted-foreground">Applies to your next recording. Cloud mode sends meeting audio to Groq; local mode keeps audio on your computer.</p></div>
+    <div><h3 className="font-medium">Transcription</h3><p className="mt-1 text-sm text-muted-foreground">Applies to your next recording. The language is also used when you talk to the desktop pet. Cloud mode sends meeting audio to Groq; local mode keeps audio on your computer.</p></div>
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="grid gap-1.5"><label htmlFor="speech-provider" className="text-sm">Speech model</label><select id="speech-provider" value={draft.provider === "groq" ? "groq" : draft.model} onChange={(event) => {
           const choice = event.target.value;
