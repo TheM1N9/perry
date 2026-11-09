@@ -22,6 +22,7 @@ contextBridge.executeInMainWorld({
       source.onended = close;
       window.addEventListener("pagehide", close, { once: true });
       await context.resume();
+      window.ciMicrophoneStarted = { state: context.state, sampleRate: context.sampleRate, seconds: source.buffer.duration };
       source.start();
       // Close the fixture's separate audio context as soon as its recording ends.
       window.ciMicrophone = { context, source, destination };

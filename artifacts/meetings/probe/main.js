@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, systemPreferences, utilityProcess } from "electron";
+import { app, BrowserWindow, ipcMain, session, systemPreferences, utilityProcess, webContents } from "electron";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,19 @@ let ears;
 let player;
 let finishing = false;
 let fixturePreload;
+/** Whether sound reached the capture page at all, and whether the fixture's clock ran: what tells a silent run from a transcription fault. */
+const heard = { reports: 0, loudestMic: 0, loudestSystem: 0, fixture: [] };
+const hearReport = (_event, status) => {
+  if (!status?.peak) return;
+  heard.reports += 1;
+  heard.loudestMic = Math.max(heard.loudestMic, status.peak.mic);
+  heard.loudestSystem = Math.max(heard.loudestSystem, status.peak.system);
+};
+const fixtureClock = async () => {
+  const hearing = webContents.getAllWebContents().find((contents) => contents.session === session.fromPartition("perry-listening"));
+  if (!hearing || hearing.isDestroyed()) return;
+  heard.fixture.push(await hearing.executeJavaScript("({ started: window.ciMicrophoneStarted ?? null, state: window.ciMicrophone?.context.state ?? 'closed', at: window.ciMicrophone?.context.currentTime ?? null })").catch((error) => String(error)));
+};
 const deadline = setTimeout(() => { void finish(new Error("Native capture exceeded its deadline.")); }, process.env.PERRY_MEETING_LARGE_PROBE === "1" ? 660_000 : 480_000);
 async function finish(error) {
   if (finishing) return;
@@ -27,6 +40,8 @@ async function finish(error) {
   clearTimeout(deadline);
   if (error) { report.error = String(error.stack ?? error); save(); }
   ears?.dispose();
+  ipcMain.off("meeting:status", hearReport);
+  report.heard = heard;
   if (fixturePreload) session.fromPartition("perry-listening").unregisterPreloadScript(fixturePreload);
   ipcMain.removeAllListeners("ci:microphone-fixture");
   if (player && !player.isDestroyed()) player.destroy();
@@ -111,6 +126,7 @@ app.whenReady().then(async () => {
       if (report.states.length > 30) report.states.shift();
       save();
     } });
+    ipcMain.on("meeting:status", hearReport);
     report.phase = "opening-capture";
     save();
     const state = await noticeFlow({ root, output, call, ears, report, save });
@@ -132,7 +148,10 @@ app.whenReady().then(async () => {
       const audio = `data:audio/wav;base64,${readFileSync(join(home, "them.wav")).toString("base64")}`;
       await player.webContents.executeJavaScript(`window.audio = new Audio(${JSON.stringify(audio)}); window.audio.play()`);
     }
-    await sleep(12_000);
+    await fixtureClock();
+    await sleep(2_000);
+    await fixtureClock();
+    await sleep(10_000);
     if (player) { player.destroy(); player = null; }
     // The call app lets go of the microphone. Perry confirms it, waits for quiet, and counts down where the owner can
     // pause it (pointer resting on it) or keep going; a later call ending stops the notes by itself. Stopping must
