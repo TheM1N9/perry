@@ -66,7 +66,7 @@ try {
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
       try { if (await browser.evaluate(`Boolean(${expression})`)) return; }
-      catch (error) { if (!/navigated or closed|context was destroyed|Cannot find context/.test(String(error))) throw error; }
+      catch (error) { if (!/navigated or closed|context was destroyed|Cannot find context|Cannot read properties of null/.test(String(error))) throw error; }
       await sleep(50);
     }
     throw new Error(`UI condition timed out: ${expression}\n${await browser.evaluate("document.body.innerText").catch(() => "")}`);

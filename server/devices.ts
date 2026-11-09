@@ -19,7 +19,7 @@ import { backend } from "./index";
  * refused to a pet, never opened by mistake.
  */
 const PET_CALLS: Record<string, "which pet" | true> = {
-  "todos:board": true, "todos:add": true, "todos:setDone": true, "todos:pushBack": true, "todos:remove": true, "todos:setRepeat": true, "todos:endDay": true,
+  "todos:board": true, "todos:add": true, "todos:restore": true, "todos:setDone": true, "todos:pushBack": true, "todos:remove": true, "todos:setRepeat": true, "todos:endDay": true,
   "todos:presence": "which pet",
   "approvals:pending": true, "approvals:decide": true,
   "dashboard:getInbox": true, "dashboard:dismissInbox": true, "dashboard:getShortcuts": true, "dashboard:getActivity": true,

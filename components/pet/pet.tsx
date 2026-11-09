@@ -115,7 +115,9 @@ const QUIET_MS = 60 * 60_000;
 /** The server out of reach this long is worth saying; less is a blink. */
 const OFFLINE_AFTER_MS = 4_000;
 /** The least time between two of the same kind of passing remark. What it was about stays in its list. */
-const REMARK_EVERY_MS = { news: 30_000, added: 20_000 } as const;
+const REMARK_EVERY_MS = { news: 30_000, added: 20_000, looked: 30_000 } as const;
+/** Work going on in another chat is mentioned for this long; after that, it is in that chat's list. */
+const AWAY_SHOWS_MS = 20_000;
 
 export function PetScreen() {
   const [key, setKey] = useState<string | null>(null);
@@ -343,6 +345,7 @@ function Pet() {
 
   const say = useCallback((title: string, detail?: string, ms = 3500, onOpen?: () => void, more?: Pick<Said, "undo" | "ambient">) => setSaid({ title, detail, until: Date.now() + ms, onOpen, ...more }), []);
   const remarked = useRef<Partial<Record<keyof typeof REMARK_EVERY_MS, number>>>({});
+  const [awaySeen, setAwaySeen] = useState<{ id: string; since: number } | null>(null);
   /** Whether a passing remark of this kind may be made now; it counts as made if so. */
   const mayRemark = useCallback((kind: keyof typeof REMARK_EVERY_MS) => {
     const at = Date.now();
@@ -698,13 +701,13 @@ function Pet() {
           if (!picture) throw new Error(taken.error ?? "The desktop pet could not take the picture.");
           const kept = await keepPicture(picture.image);
           await fulfilLook({ key, id: request.id, path: kept.path, name: picture.name });
-          say("I looked at your screen", request.why, 6000);
+          if (mayRemark("looked")) say("I looked at your screen", request.why, 6000, undefined, { ambient: true });
         } catch (error) {
           await fulfilLook({ key, id: request.id, error: error instanceof Error ? error.message : String(error) }).catch(() => {});
         }
       })();
     }
-  }, [lookRequests, key, fulfilLook, say]);
+  }, [lookRequests, key, fulfilLook, say, mayRemark]);
   const lookNow = useCallback(async () => {
     const taken = await window.perryPet?.look?.(true).catch((error: unknown) => ({ error: String(error) }));
     if (taken) showShot(taken);
@@ -742,6 +745,10 @@ function Pet() {
   const step = working ? shownStep(activity, now) : undefined;
   const away = !petChat?.isRunning && elsewhere?.running && elsewhere.conversationId !== chatId ? elsewhere : undefined;
   const awayStep = shownStep(away, now);
+  // Only so long for each stretch of work elsewhere: it is the owner's attention, and the work is not waiting on it.
+  const awayId = away?.conversationId ?? null;
+  useEffect(() => { setAwaySeen(awayId ? { id: awayId, since: Date.now() } : null); }, [awayId]);
+  const awayShowing = Boolean(awaySeen && awaySeen.id === awayId && now - awaySeen.since < AWAY_SHOWS_MS);
   // How long the step has taken, once that is worth saying.
   const took = (since?: number) => since !== undefined && now - since >= STEP_TIMER_MS ? countdown(now - since) : undefined;
   let bubble: ReactNode = null;
@@ -825,7 +832,7 @@ function Pet() {
     const writing = step?.label === "Writing the reply" && petStream;
     ambient = true;
     bubble = <Bubble id="working" title={step?.label ?? "On it…"} detail={writing ? excerpt(petStream!, true) : took(step?.since)} onOpen={() => openChat(chatId)} />;
-  } else if (away && awayStep) {
+  } else if (away && awayStep && awayShowing) {
     const where = [away.chat && `In ${away.chat}`, took(awayStep.since)].filter(Boolean).join(" · ");
     ambient = true;
     bubble = <Bubble id="elsewhere" title={awayStep.label} detail={where || undefined} onOpen={() => openChat(away.conversationId)} />;
@@ -1353,6 +1360,21 @@ function PetTodos({ board, now, onDone, onAdded }: {
   onDone: (todo: TodoView) => void;
   onAdded: (title: string, dueAt?: number) => void;
 }) {
+  /** The to-do just removed, for a few seconds, with a way to bring it back. */
+  const [removed, setRemoved] = useState<{ title: string; undo: () => void } | null>(null);
+  useEffect(() => {
+    if (!removed) return;
+    const timer = window.setTimeout(() => setRemoved(null), 6_000);
+    return () => window.clearTimeout(timer);
+  }, [removed]);
+  /** What did not go through: said here, since his bubbles wait behind an open panel. */
+  const [problem, setProblem] = useState("");
+  const onProblem = setProblem;
+  useEffect(() => {
+    if (!problem) return;
+    const timer = window.setTimeout(() => setProblem(""), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [problem]);
   const key = useDashboardKey();
   const endDay = useMutation(api.todos.endDay);
   const [ending, setEnding] = useState(false);
@@ -1376,24 +1398,31 @@ function PetTodos({ board, now, onDone, onAdded }: {
               </p>
               <StreakBadge days={board.streak} />
             </div>
-            <TodoRows todos={board.open} now={now} compact onDone={onDone} />
+            <TodoRows todos={board.open} now={now} compact onDone={onDone} onProblem={onProblem} onRemoved={(todo, undo) => setRemoved({ title: todo.title, undo })} />
           </>)}
         {board && board.doneToday.length > 0 && (
           <div className="px-1 pt-1.5">
             <Button variant="ghost" size="xs" className="px-1.5 text-muted-foreground" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone}>
               <CheckIcon className="size-3.5 text-success" aria-hidden />{board.doneToday.length} done today
             </Button>
-            {showDone && <TodoRows todos={board.doneToday} now={now} compact />}
+            {showDone && <TodoRows todos={board.doneToday} now={now} compact onProblem={onProblem} onRemoved={(todo, undo) => setRemoved({ title: todo.title, undo })} />}
           </div>
         )}
       </div>
       </ScrollArea>
+      {problem && <p className="px-3.5 pb-2 text-xs text-destructive" role="alert">{problem}</p>}
+      {removed && (
+        <p className="truncate px-3.5 pb-2 text-xs text-muted-foreground" role="status">
+          Removed “{removed.title}”.{" "}
+          <button type="button" className="font-medium underline underline-offset-2 hover:text-foreground" onClick={() => { removed.undo(); setRemoved(null); }}>Undo</button>
+        </p>
+      )}
       {leftToday > 0 && (
         <footer className="flex h-11 items-center gap-1.5 border-t bg-muted/30 px-3">
           {ending ? (
             <>
-              <BubbleButton primary onClick={() => { void endDay({ key, action: "move" }); setEnding(false); }}>Move {leftToday} to tomorrow</BubbleButton>
-              <BubbleButton onClick={() => { void endDay({ key, action: "clear" }); setEnding(false); }}>Clear</BubbleButton>
+              <BubbleButton primary onClick={() => { void endDay({ key, action: "move" }).catch((cause: unknown) => onProblem(errorText(cause))); setEnding(false); }}>Move {leftToday} to tomorrow</BubbleButton>
+              <BubbleButton onClick={() => { void endDay({ key, action: "clear" }).catch((cause: unknown) => onProblem(errorText(cause))); setEnding(false); }}>Clear</BubbleButton>
               <span className="flex-1" />
               <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setEnding(false)}>Cancel</Button>
             </>

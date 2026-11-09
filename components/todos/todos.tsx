@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import { AlarmClockIcon, FlameIcon, PlusIcon, RepeatIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/client/react";
@@ -84,10 +85,23 @@ export function StreakBadge({ days }: { days: number }) {
   );
 }
 
-export function TodoRows({ todos, now, compact, onDone }: { todos: TodoView[]; now: number; compact?: boolean; onDone?: (todo: TodoView) => void }) {
+export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: {
+  todos: TodoView[]; now: number; compact?: boolean; onDone?: (todo: TodoView) => void;
+  /** A to-do was removed, with a way to bring it back. Without this, a toast offers that. */
+  onRemoved?: (todo: TodoView, undo: () => void) => void;
+  /** Something did not go through. Without this, a toast says so. */
+  onProblem?: (message: string) => void;
+}) {
   const key = useDashboardKey();
   const setDone = useMutation(api.todos.setDone);
   const remove = useMutation(api.todos.remove);
+  const restore = useMutation(api.todos.restore);
+  const fail = (cause: unknown) => { if (onProblem) onProblem(errorText(cause)); else toast.error(errorText(cause)); };
+  const removeTodo = (todo: TodoView) => void remove({ key, id: todo.id }).then(() => {
+    const undo = () => void restore({ key, title: todo.title, by: todo.by, ...(todo.dueAt !== undefined ? { dueAt: todo.dueAt } : {}), ...(todo.repeat ? { repeat: todo.repeat } : {}), ...(todo.doneAt ? { doneAt: todo.doneAt } : {}) }).catch(fail);
+    if (onRemoved) onRemoved(todo, undo);
+    else toast(`Removed “${todo.title}”`, { action: { label: "Undo", onClick: undo } });
+  }, fail);
   return (
     <ul className="flex flex-col" aria-label="To-dos">
       {todos.map((todo) => {
@@ -101,7 +115,7 @@ export function TodoRows({ todos, now, compact, onDone }: { todos: TodoView[]; n
               checked={done}
               aria-label={done ? `Put back “${todo.title}”` : `Done: “${todo.title}”`}
               onCheckedChange={() => {
-                void setDone({ key, id: todo.id, done: !done }).catch(() => {});
+                void setDone({ key, id: todo.id, done: !done }).catch(fail);
                 if (!done) onDone?.(todo);
               }}
               className="size-[18px] cursor-pointer rounded-full border-[1.5px] border-muted-foreground/45 hover:border-primary hover:bg-primary/10 data-checked:hover:bg-primary [&_[data-slot=checkbox-indicator]>svg]:size-3 [&_svg]:stroke-3"
@@ -117,7 +131,7 @@ export function TodoRows({ todos, now, compact, onDone }: { todos: TodoView[]; n
                 {dueLabel(todo.dueAt, now)}
               </span>
             )}
-            <Button variant="ghost" size="icon-xs" aria-label={`Remove “${todo.title}”`} onClick={() => void remove({ key, id: todo.id }).catch(() => {})}
+            <Button variant="ghost" size="icon-xs" aria-label={`Remove “${todo.title}”`} onClick={() => removeTodo(todo)}
               className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100">
               <XIcon className="size-3.5" />
             </Button>
