@@ -95,10 +95,10 @@ export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: 
   const key = useDashboardKey();
   const setDone = useMutation(api.todos.setDone);
   const remove = useMutation(api.todos.remove);
-  const add = useMutation(api.todos.add);
+  const restore = useMutation(api.todos.restore);
   const fail = (cause: unknown) => { if (onProblem) onProblem(errorText(cause)); else toast.error(errorText(cause)); };
   const removeTodo = (todo: TodoView) => void remove({ key, id: todo.id }).then(() => {
-    const undo = () => void add({ key, title: todo.title, ...(todo.dueAt !== undefined ? { dueAt: todo.dueAt } : {}), ...(todo.repeat ? { repeat: todo.repeat } : {}) }).catch(fail);
+    const undo = () => void restore({ key, title: todo.title, by: todo.by, ...(todo.dueAt !== undefined ? { dueAt: todo.dueAt } : {}), ...(todo.repeat ? { repeat: todo.repeat } : {}), ...(todo.doneAt ? { doneAt: todo.doneAt } : {}) }).catch(fail);
     if (onRemoved) onRemoved(todo, undo);
     else toast(`Removed “${todo.title}”`, { action: { label: "Undo", onClick: undo } });
   }, fail);

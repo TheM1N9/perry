@@ -345,7 +345,7 @@ function Pet() {
 
   const say = useCallback((title: string, detail?: string, ms = 3500, onOpen?: () => void, more?: Pick<Said, "undo" | "ambient">) => setSaid({ title, detail, until: Date.now() + ms, onOpen, ...more }), []);
   const remarked = useRef<Partial<Record<keyof typeof REMARK_EVERY_MS, number>>>({});
-  const awaySeen = useRef<{ id: string; since: number } | null>(null);
+  const [awaySeen, setAwaySeen] = useState<{ id: string; since: number } | null>(null);
   /** Whether a passing remark of this kind may be made now; it counts as made if so. */
   const mayRemark = useCallback((kind: keyof typeof REMARK_EVERY_MS) => {
     const at = Date.now();
@@ -746,9 +746,9 @@ function Pet() {
   const away = !petChat?.isRunning && elsewhere?.running && elsewhere.conversationId !== chatId ? elsewhere : undefined;
   const awayStep = shownStep(away, now);
   // Only so long for each stretch of work elsewhere: it is the owner's attention, and the work is not waiting on it.
-  if (!away) awaySeen.current = null;
-  else if (awaySeen.current?.id !== away.conversationId) awaySeen.current = { id: away.conversationId, since: now };
-  const awayShowing = Boolean(awaySeen.current && now - awaySeen.current.since < AWAY_SHOWS_MS);
+  const awayId = away?.conversationId ?? null;
+  useEffect(() => { setAwaySeen(awayId ? { id: awayId, since: Date.now() } : null); }, [awayId]);
+  const awayShowing = Boolean(awaySeen && awaySeen.id === awayId && now - awaySeen.since < AWAY_SHOWS_MS);
   // How long the step has taken, once that is worth saying.
   const took = (since?: number) => since !== undefined && now - since >= STEP_TIMER_MS ? countdown(now - since) : undefined;
   let bubble: ReactNode = null;
@@ -933,7 +933,7 @@ function Pet() {
           shot={shot} onShot={setShot} onLook={window.perryPet?.look ? () => void lookNow() : undefined} lookKeys={lookKey.hotkey} />
       )
         : tab === "needs" ? <PetNeedsYou now={now} onChat={openChat} open={openPath} />
-          : <PetTodos board={board} now={now} onDone={done} onProblem={(message) => say("That didn't go through", message, 6000)} onAdded={(title, dueAt) => say(`Got it: ${title}`, dueAt ? dueLabel(dueAt) : undefined, 2500)} />}
+          : <PetTodos board={board} now={now} onDone={done} onAdded={(title, dueAt) => say(`Got it: ${title}`, dueAt ? dueLabel(dueAt) : undefined, 2500)} />}
     </Panel>
   );
   return (
@@ -1354,12 +1354,11 @@ function PetMenu({ voice, onVoice, quiet, onQuiet }: { voice: LocalVoice; onVoic
   );
 }
 
-function PetTodos({ board, now, onDone, onAdded, onProblem }: {
+function PetTodos({ board, now, onDone, onAdded }: {
   board: Board | undefined;
   now: number;
   onDone: (todo: TodoView) => void;
   onAdded: (title: string, dueAt?: number) => void;
-  onProblem: (message: string) => void;
 }) {
   /** The to-do just removed, for a few seconds, with a way to bring it back. */
   const [removed, setRemoved] = useState<{ title: string; undo: () => void } | null>(null);
@@ -1368,6 +1367,14 @@ function PetTodos({ board, now, onDone, onAdded, onProblem }: {
     const timer = window.setTimeout(() => setRemoved(null), 6_000);
     return () => window.clearTimeout(timer);
   }, [removed]);
+  /** What did not go through: said here, since his bubbles wait behind an open panel. */
+  const [problem, setProblem] = useState("");
+  const onProblem = setProblem;
+  useEffect(() => {
+    if (!problem) return;
+    const timer = window.setTimeout(() => setProblem(""), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [problem]);
   const key = useDashboardKey();
   const endDay = useMutation(api.todos.endDay);
   const [ending, setEnding] = useState(false);
@@ -1403,6 +1410,7 @@ function PetTodos({ board, now, onDone, onAdded, onProblem }: {
         )}
       </div>
       </ScrollArea>
+      {problem && <p className="px-3.5 pb-2 text-xs text-destructive" role="alert">{problem}</p>}
       {removed && (
         <p className="truncate px-3.5 pb-2 text-xs text-muted-foreground" role="status">
           Removed “{removed.title}”.{" "}

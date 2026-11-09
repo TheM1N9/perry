@@ -511,6 +511,17 @@ app.whenReady().then(() => {
   await check("removeOffersUndo", async () => /Removed/.test(await text()), 5, text);
   await clickText("Undo");
   await check("undoBringsItBack", async () => (await call<{ open: Array<{ title: string }> }>("todos:board", { key: KEY })).open.some((todo) => todo.title === "Sweep the porch"), 10);
+  // Done today, removed, and undone: it comes back done, not as something still to do.
+  const board = () => call<{ open: Array<{ id: string; title: string }>; doneToday: Array<{ title: string }> }>("todos:board", { key: KEY });
+  await until(async () => (await board()).open.some((todo) => todo.title === "Sweep the porch"), "the to-do back", 10);
+  await call("todos:setDone", { key: KEY, id: (await board()).open.find((todo) => todo.title === "Sweep the porch")!.id, done: true });
+  await until(async () => /1 done today/.test(await text()), "the done count", 10);
+  await page.evaluate(`[...document.querySelectorAll("button")].find((item) => /1 done today/.test(item.textContent)).click(); true`);
+  await until(() => page!.evaluate(`Boolean(document.querySelector('button[aria-label^="Remove"]'))`) as Promise<boolean>, "the done row", 5);
+  await page.evaluate(`document.querySelector('button[aria-label^="Remove"]').click(); true`);
+  await until(async () => /Removed/.test(await text()), "the offer to undo", 5);
+  await clickText("Undo");
+  await check("undoKeepsADoneToDoDone", async () => { const now = await board(); return now.doneToday.some((todo) => todo.title === "Sweep the porch") && !now.open.some((todo) => todo.title === "Sweep the porch"); }, 10);
   await clickText("Chat");
 
   // 21. Pasting reports what it did, without touching the clipboard here.

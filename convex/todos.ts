@@ -316,6 +316,18 @@ export const add = mutation({
   },
 });
 
+/** Undo of a removal: it comes back as it was, done or not, and a done one does not repeat again. */
+export const restore = mutation({
+  args: { key: v.string(), title: v.string(), dueAt: v.optional(v.number()), repeat: v.optional(v.string()), doneAt: v.optional(v.number()), by: v.union(v.literal("owner"), v.literal("assistant")) },
+  returns: v.id("todos"),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const id = await insert(ctx, { title: args.title, dueAt: args.dueAt, repeat: args.repeat, by: args.by });
+    if (args.doneAt) await ctx.db.patch(id, { doneAt: args.doneAt, nextNagAt: undefined });
+    return id;
+  },
+});
+
 async function mine(ctx: QueryCtx, key: string, id: Id<"todos">): Promise<Doc<"todos">> {
   assertDashboardKey(key);
   const todo = await ctx.db.get(id);

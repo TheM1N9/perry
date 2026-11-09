@@ -32,6 +32,7 @@ const fixtureClock = async () => {
   const hearing = webContents.getAllWebContents().find((contents) => contents.session === session.fromPartition("perry-listening"));
   if (!hearing || hearing.isDestroyed()) return;
   heard.fixture.push(await hearing.executeJavaScript("({ started: window.ciMicrophoneStarted ?? null, state: window.ciMicrophone?.context.state ?? 'closed', at: window.ciMicrophone?.context.currentTime ?? null })").catch((error) => String(error)));
+  save();
 };
 const deadline = setTimeout(() => { void finish(new Error("Native capture exceeded its deadline.")); }, process.env.PERRY_MEETING_LARGE_PROBE === "1" ? 660_000 : 480_000);
 async function finish(error) {
@@ -126,6 +127,7 @@ app.whenReady().then(async () => {
       if (report.states.length > 30) report.states.shift();
       save();
     } });
+    report.heard = heard;
     ipcMain.on("meeting:status", hearReport);
     report.phase = "opening-capture";
     save();
