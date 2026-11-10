@@ -3,11 +3,12 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { TableKit } from "@tiptap/extension-table";
 import { MarkdownManager } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
+import Image from "@tiptap/extension-image";
 
 /**
  * What a note can hold in the editor: GitHub-flavoured Markdown's everyday
  * blocks (headings, lists, checklists, quotes, code, tables, links). A note
- * with anything else (an image, HTML, footnotes, front matter) opens as its
+ * with anything else (HTML, footnotes, front matter) opens as its
  * Markdown instead, so nothing in it is lost on the way through the editor.
  */
 export const documentExtensions = () => [
@@ -19,6 +20,7 @@ export const documentExtensions = () => [
   TableKit.configure({ table: { resizable: false } }),
   TaskList,
   TaskItem.configure({ nested: true }),
+  Image.configure({ HTMLAttributes: { loading: "lazy", referrerpolicy: "no-referrer" } }),
 ];
 
 let manager: MarkdownManager | null = null;
@@ -26,7 +28,7 @@ const markdownManager = () => (manager ??= new MarkdownManager({ extensions: doc
 
 const ALLOWED = new Set([
   "space", "code", "heading", "table", "hr", "blockquote", "list", "list_item", "paragraph", "text", "escape",
-  "strong", "em", "codespan", "br", "del", "link", "taskList", "taskItem",
+  "strong", "em", "codespan", "br", "del", "link", "image", "taskList", "taskItem",
 ]);
 
 /** Whether the editor can show this Markdown and give it back unchanged in meaning; why not, when not. */
@@ -47,7 +49,7 @@ export function inspectMarkdown(source: string): { supported: boolean; reason?: 
       }
       pending.push(...Object.values(value));
     }
-    if (unsupported) return { supported: false, reason: "It has images, HTML or small headings the editor doesn't show." };
+    if (unsupported) return { supported: false, reason: "It has HTML or small headings the editor doesn't show." };
     const parsed = markdownManager().parse(source);
     const restored = markdownManager().parse(markdownManager().serialize(parsed));
     if (JSON.stringify(parsed) !== JSON.stringify(restored)) return { supported: false, reason: "Some of its formatting wouldn't survive the editor." };

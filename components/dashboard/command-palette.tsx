@@ -23,6 +23,7 @@ export const PaletteContext = createContext<{ open: () => void }>({ open: () => 
 export const usePalette = () => useContext(PaletteContext);
 
 const PAGES = [
+  { href: "/live", label: "Riff", icon: FileTextIcon },
   { href: "/meetings", label: "Meetings", icon: HeadphonesIcon },
   { href: "/inbox", label: "Needs you", icon: InboxIcon },
   { href: "/todos", label: "To-dos", icon: CheckCircle2Icon },
