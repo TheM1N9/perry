@@ -470,6 +470,7 @@ export const tokenAuthOptions = internalAction({
 export const connectWithToken = internalAction({
   args: { toolkit: v.string(), mode: v.string(), credentials: v.record(v.string(), v.string()) },
   handler: async (ctx, args): Promise<{ status?: string; error?: string }> => {
+    const credentials = Object.fromEntries(Object.entries(args.credentials).map(([name, value]) => [name, value.trim()]));
     let apiKey: string | null = null;
     try {
       const slug = args.toolkit.toLowerCase().trim();
@@ -477,10 +478,10 @@ export const connectWithToken = internalAction({
       const option = available.options.find((item) => item.mode === args.mode);
       if (!option) return { error: available.error ?? "This token authentication method isn't supported for GitHub." };
       if (Object.keys(args.credentials).some((name) => !option.fields.some((field) => field.name === name))) return { error: "Only the requested credential fields can be supplied." };
-      if (option.fields.some((field) => field.required && !args.credentials[field.name]?.trim())) return { error: "Fill in each required credential field." };
+      if (option.fields.some((field) => field.required && !credentials[field.name])) return { error: "Fill in each required credential field." };
       if (Object.values(args.credentials).some((value) => value.length > 4_096)) return { error: "A credential field is too long." };
       const mode = AuthSchemeEnum.parse(option.mode);
-      const config = ConnectionDataSchema.safeParse({ authScheme: mode, val: { ...args.credentials, status: "ACTIVE" } });
+      const config = ConnectionDataSchema.safeParse({ authScheme: mode, val: { ...credentials, status: "ACTIVE" } });
       if (!config.success) return { error: "The token credential fields are incomplete or invalid." };
       apiKey = await ctx.runQuery(internal.secrets.get, {
         name: "COMPOSIO_API_KEY",
@@ -525,7 +526,7 @@ export const connectWithToken = internalAction({
       recheckInternetConnections();
       return { status: request.status };
     } catch (error) {
-      return { error: hide(message(error), [...Object.values(args.credentials), ...(apiKey ? [apiKey] : [])]) };
+      return { error: hide(message(error), [...Object.values(args.credentials), ...Object.values(credentials), ...(apiKey ? [apiKey] : [])]) };
     }
   },
 });
