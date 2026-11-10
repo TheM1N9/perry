@@ -3,9 +3,9 @@
  * One command to install Perry: `pnpm run setup`, run by `perry setup`.
  *
  * Everything this touches belongs to whoever runs it: your bot, your keys,
- * your data, all on this computer. Nothing is shared with anyone, including
- * whoever handed you this repo, and no account is needed but the one of the
- * engine you choose.
+ * your data, all on this computer. Anonymous setup analytics exclude all
+ * credentials and content; PERRY_TELEMETRY_DISABLED=1 disables them. No account
+ * is needed but the one of the engine you choose.
  *
  * Safe to re-run. It keeps what is already configured and only asks for what
  * is missing.
@@ -19,7 +19,8 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { accessSync, constants, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { trackInstallation } from "./telemetry";
+import { accessSync, chmodSync, constants, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { delimiter, join, resolve } from "node:path";
 import { ENGINE_LABELS, isRunnable, RUNNABLE_ENGINES, updateOf, type EngineKind } from "../convex/lib/engines";
@@ -101,7 +102,10 @@ function writeEnvFile(values: Record<string, string | undefined>) {
   for (const [key, value] of Object.entries(values)) {
     if (value !== undefined && value !== "") lines.push(`${key}=${value}`);
   }
-  writeFileSync(ENV_FILE, lines.join("\n") + "\n", "utf8");
+  // Restrict an existing file before placing any new key in it.
+  if (existsSync(ENV_FILE)) chmodSync(ENV_FILE, 0o600);
+  writeFileSync(ENV_FILE, lines.join("\n") + "\n", { encoding: "utf8", mode: 0o600 });
+  chmodSync(ENV_FILE, 0o600);
 }
 
 // --- Engines --------------------------------------------------------------------
@@ -368,9 +372,15 @@ async function main() {
   // --- Saving it, without a word unless it fails --------------------------------
 
   const dashboardKey = env.DASHBOARD_KEY || randomBytes(24).toString("base64url");
+  // Only new installs generate here. Existing installs recover/migrate at backend startup.
+  // Never replace a missing key while encrypted data or its backup may still exist.
+  const credentialKey = env.PERRY_CREDENTIAL_KEY || process.env.PERRY_CREDENTIAL_KEY || (
+    !existsSync(process.env.PERRY_DB ?? join(HOME, "perry.sqlite")) &&
+    !existsSync(join(HOME, "credential-key")) && !existsSync(join(HOME, "backups"))
+      ? randomBytes(32).toString("hex") : undefined);
   // A Convex install's settings stay until `perry migrate` has brought its data over; these three are gone for good.
   const { TELEGRAM_WEBHOOK_SECRET: _webhook, NEXT_PUBLIC_CONVEX_URL: _url, CONVEX_SITE_URL: _site, ...kept } = env;
-  writeEnvFile({ ...kept, TELEGRAM_BOT_TOKEN: token, DASHBOARD_KEY: dashboardKey });
+  writeEnvFile({ ...kept, TELEGRAM_BOT_TOKEN: token, DASHBOARD_KEY: dashboardKey, PERRY_CREDENTIAL_KEY: credentialKey });
   ensureHome();
   // A new choice goes to the running server, or waits in Perry's home for it to start (server/index.ts).
   // Once the running server has the choice, one left waiting from before would only undo it at the next start.
@@ -379,6 +389,7 @@ async function main() {
   else if (choice.chosen) writeFileSync(PATHS.engineChoice, JSON.stringify({ engine: choice.engine }), "utf8");
 
   input.close();
+  await trackInstallation("Setup configured");
   // `perry setup` goes on to start Perry, pair the bot and open the dashboard.
   if (process.argv.includes("--from-perry")) return;
 

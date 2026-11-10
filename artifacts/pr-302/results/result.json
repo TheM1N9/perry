@@ -1,0 +1,48 @@
+{
+  "results": [
+    {
+      "check": "Unlearned default stays with OpenCode; no invented efforts",
+      "pass": true
+    },
+    {
+      "check": "supervised command: native plugin + ACP permission routing",
+      "pass": true
+    },
+    {
+      "check": "supervised edit: native plugin + ACP permission routing",
+      "pass": true
+    },
+    {
+      "check": "auto command: native plugin + ACP permission routing",
+      "pass": true
+    },
+    {
+      "check": "auto edit: native plugin + ACP permission routing",
+      "pass": true
+    },
+    {
+      "check": "full command: native plugin + ACP permission routing",
+      "pass": true
+    },
+    {
+      "check": "full edit: native plugin + ACP permission routing",
+      "pass": true
+    },
+    {
+      "check": "Learned configured default survives status merge",
+      "pass": true
+    },
+    {
+      "check": "All stored credentials removed noninteractively; no-account models remain",
+      "pass": true
+    },
+    {
+      "check": "Failed logout and environment authentication never report success",
+      "pass": true
+    },
+    {
+      "check": "Failed model listing uses learned fallback",
+      "pass": true
+    }
+  ]
+}

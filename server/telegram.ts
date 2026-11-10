@@ -1,4 +1,6 @@
+import { TELEGRAM_COMMANDS } from "../convex/lib/commands";
 import type { Runtime } from "./runtime";
+import { setTimeout as delay } from "node:timers/promises";
 
 /**
  * Telegram, by long polling: this process asks Telegram for new updates, so no
@@ -18,17 +20,15 @@ const OFFSET_KEY = "telegram.offset";
 type Update = { update_id: number } & Record<string, unknown>;
 type Reply<T> = { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
 
-const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => {
-  const timer = setTimeout(resolve, ms);
-  signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
-});
+const sleep = (ms: number, signal: AbortSignal) => delay(ms, undefined, { signal })
+  .catch((error) => { if (!signal.aborted) throw error; });
 
 async function call<T>(token: string, method: string, body: object, signal?: AbortSignal): Promise<Reply<T>> {
   const response = await fetch(`${api()}/bot${token}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-    signal,
+    signal: AbortSignal.any([AbortSignal.timeout(method === "getUpdates" ? (POLL_SECONDS + 15) * 1000 : 15_000), ...(signal ? [signal] : [])]),
   });
   return await response.json() as Reply<T>;
 }
@@ -54,12 +54,16 @@ export function pollTelegram(runtime: Runtime): () => void {
           if (!removed.ok) throw new Error(removed.description ?? "Telegram refused to remove the old webhook.");
           cleared = token;
           console.log("[perry] Telegram: polling for messages");
+          // The list Telegram shows on typing "/"; a refusal or a stall costs only the menu, never the messages.
+          const listed = await call<boolean>(token, "setMyCommands", { commands: TELEGRAM_COMMANDS }, AbortSignal.any([stop.signal, AbortSignal.timeout(10_000)]))
+            .catch((error): Reply<boolean> => ({ ok: false, description: error instanceof Error ? error.message : String(error) }));
+          if (!listed.ok) console.error(`[perry] Telegram: could not list the commands: ${listed.description ?? "refused"}`);
         }
         const offset = Number(await runtime.kv.get(OFFSET_KEY) ?? 0) || undefined;
         const reply = await call<Update[]>(token, "getUpdates", {
           offset,
           timeout: POLL_SECONDS,
-          allowed_updates: ["message", "edited_message", "callback_query"],
+            allowed_updates: ["message", "edited_message", "callback_query", "message_reaction"],
         }, AbortSignal.any([stop.signal, AbortSignal.timeout((POLL_SECONDS + 15) * 1000)]));
         if (!reply.ok) {
           if (reply.error_code === 409) { cleared = null; continue; }

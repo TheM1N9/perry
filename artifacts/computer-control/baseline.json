@@ -1,0 +1,135 @@
+{
+  "passed": false,
+  "checks": {
+    "manual ArrowLeft moves the editing caret": false,
+    "manual Delete edits the focused field": false,
+    "manual Ctrl+A selects all before text replacement": false,
+    "fresh look invalidates old element references": false,
+    "Stop prevents a previously requested browser action after late approval": false,
+    "cancelled browser releases its action lock": true
+  },
+  "evidence": {
+    "browser": {
+      "protocolVersion": "1.3",
+      "product": "Chrome/155.0.8059.86",
+      "revision": "@804d6b05f089b27af8342622a36558c49401a1d4",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+      "jsVersion": "15.5.35.25"
+    },
+    "arrowSelection": 2,
+    "deleteValue": "abcd",
+    "shortcutValue": "areplacementbcd",
+    "firstLook": {
+      "url": "http://127.0.0.1:52723/",
+      "title": "Control fixture",
+      "text": "First Second Send",
+      "elements": [
+        {
+          "ref": 1,
+          "kind": "text box",
+          "label": "Edit"
+        },
+        {
+          "ref": 2,
+          "kind": "button",
+          "label": "First"
+        },
+        {
+          "ref": 3,
+          "kind": "button",
+          "label": "Second"
+        },
+        {
+          "ref": 4,
+          "kind": "button",
+          "label": "Send"
+        }
+      ],
+      "identity": {
+        "sessionId": "94dd1e4c-2f7a-47c1-a5e7-a5c2e19d0273",
+        "tabId": "ED1A5C61AFDEE1B0EC859A8C81B86D88",
+        "revision": 3
+      }
+    },
+    "staleClick": {
+      "clicked": "two",
+      "firstIdentity": {
+        "sessionId": "94dd1e4c-2f7a-47c1-a5e7-a5c2e19d0273",
+        "tabId": "ED1A5C61AFDEE1B0EC859A8C81B86D88",
+        "revision": 3
+      },
+      "secondIdentity": {
+        "sessionId": "94dd1e4c-2f7a-47c1-a5e7-a5c2e19d0273",
+        "tabId": "ED1A5C61AFDEE1B0EC859A8C81B86D88",
+        "revision": 3
+      },
+      "result": {
+        "url": "http://127.0.0.1:52723/",
+        "title": "Control fixture",
+        "text": "SecondFirst Send",
+        "elements": [
+          {
+            "ref": 1,
+            "kind": "text box",
+            "label": "Edit"
+          },
+          {
+            "ref": 2,
+            "kind": "button",
+            "label": "Second"
+          },
+          {
+            "ref": 3,
+            "kind": "button",
+            "label": "First"
+          },
+          {
+            "ref": 4,
+            "kind": "button",
+            "label": "Send"
+          }
+        ],
+        "identity": {
+          "sessionId": "94dd1e4c-2f7a-47c1-a5e7-a5c2e19d0273",
+          "tabId": "ED1A5C61AFDEE1B0EC859A8C81B86D88",
+          "revision": 3
+        }
+      }
+    },
+    "stopped": {
+      "sent": 1,
+      "result": {
+        "url": "http://127.0.0.1:52723/",
+        "title": "Control fixture",
+        "text": "SecondFirst Send",
+        "elements": [
+          {
+            "ref": 1,
+            "kind": "text box",
+            "label": "Edit"
+          },
+          {
+            "ref": 2,
+            "kind": "button",
+            "label": "Second"
+          },
+          {
+            "ref": 3,
+            "kind": "button",
+            "label": "First"
+          },
+          {
+            "ref": 4,
+            "kind": "button",
+            "label": "Send"
+          }
+        ],
+        "identity": {
+          "sessionId": "94dd1e4c-2f7a-47c1-a5e7-a5c2e19d0273",
+          "tabId": "ED1A5C61AFDEE1B0EC859A8C81B86D88",
+          "revision": 3
+        }
+      }
+    }
+  }
+}

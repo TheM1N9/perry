@@ -6,9 +6,9 @@ import {
   type ItemEvent, type RateLimitSnapshot, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
 } from "../codex";
 import {
-  optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
+  FULL_ACCESS_INSTRUCTIONS, optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
   type ItemStatus, type LoginFlow, type NamedSkill, type PlanLimits, type PlanWindow, type QuickTurn, type TokenUsage, type TurnHandle,
-  type TurnInput, type TurnResult, type TurnSink,
+  type TurnInput, type TurnResult, type TurnSink, type ProviderAgentUpdate,
 } from "../engine";
 import { windowLabel } from "../../convex/lib/usage";
 import { HOME, PATHS } from "../home";
@@ -43,6 +43,7 @@ type ModelChoice = { model?: string; effort?: string };
 const PINNED: Record<QuickTurn["purpose"], () => string | undefined> = {
   review: () => process.env.PERRY_REVIEW_MODEL,
   title: () => process.env.PERRY_TITLE_MODEL,
+  meeting: () => process.env.PERRY_MEETING_MODEL,
 };
 
 /** Codex's item statuses: CommandExecutionStatus, PatchApplyStatus, McpToolCallStatus. */
@@ -61,6 +62,19 @@ export function toItem(item: TurnItem, phase: "started" | "completed"): EngineIt
   const status = (value: unknown) => STATUS[String(value)] ?? done;
   const base = { id: item.id, raw: item, ...(typeof item.durationMs === "number" ? { durationMs: item.durationMs } : {}) };
   switch (item.type) {
+    case "collabAgentToolCall": {
+      const states = item.agentsStates ?? {};
+      const ids: string[] = [...new Set<string>([...(item.receiverThreadIds ?? []), ...Object.keys(states)])];
+      const agents = ids.map((id) => {
+        const state = states[id] ?? {};
+        const status = state.status === "completed" ? "done" as const : state.status === "errored" || state.status === "notFound" ? "failed" as const
+          : state.status === "shutdown" ? "cancelled" as const : "running" as const;
+        return { id, status, ...(typeof state.message === "string" ? { text: state.message } : {}),
+          ...(item.tool === "spawnAgent" && item.prompt ? { prompt: String(item.prompt), title: String(item.prompt).split(/[\n.!?]/)[0].slice(0, 80) } : {}),
+          ...(typeof item.model === "string" ? { model: item.model } : {}) };
+      });
+      return { ...base, type: "unknown", title: "Agents", status: done, agents };
+    }
     case "agentMessage":
     case "userMessage":
       return null;
@@ -154,8 +168,19 @@ export function limitsOf(buckets: Map<string, RateLimitSnapshot>, at: number): P
       });
     }
   }
-  const plan = buckets.get("codex")?.planType ?? [...buckets.values()].find((bucket) => bucket.planType)?.planType;
+  const plan = planName(buckets.get("codex")?.planType ?? [...buckets.values()].find((bucket) => bucket.planType)?.planType);
   return { windows, ...(plan ? { plan } : {}), at };
+}
+
+/** A ChatGPT plan as ChatGPT names it now ("prolite" is Pro 100), as T3 Code does; one not listed reads as sent. */
+function planName(plan?: string | null): string | undefined {
+  if (!plan || plan === "unknown") return undefined;
+  const names: Record<string, string> = {
+    pro: "Pro 200", prolite: "Pro 100", promax: "Pro 500",
+    self_serve_business_prolite: "Business Premium", team: "Business", business: "Business", self_serve_business_usage_based: "Business",
+    enterprise: "Enterprise", ent26: "Enterprise", enterprise_cbp_automation: "Enterprise", enterprise_cbp_usage_based: "Enterprise", edu: "Edu", edu_plus: "Edu", edu_pro: "Edu",
+  };
+  return names[plan] ?? plan.replaceAll("_", " ");
 }
 
 /** A thread started before any chat asked for it; its id, or null if it failed to start. */
@@ -186,10 +211,30 @@ export class CodexEngine implements Engine {
   };
 
   private app: CodexAppServer | null = null;
+  private agents = new Map<string, { app: CodexAppServer; sink: TurnSink; update: ProviderAgentUpdate; itemId?: string; text: string; flush?: ReturnType<typeof setTimeout>; timer: ReturnType<typeof setTimeout> }>();
+
+  private finishAgent(id: string, update: Partial<ProviderAgentUpdate>) {
+    const agent = this.agents.get(id);
+    if (!agent) return;
+    clearTimeout(agent.timer);
+    if (agent.flush) clearTimeout(agent.flush);
+    this.agents.delete(id);
+    agent.sink.onAgents?.([{ ...agent.update, ...update, id, updatedAt: Date.now() }]);
+  }
+
+  private trackAgent(app: CodexAppServer, update: ProviderAgentUpdate, sink: TurnSink) {
+    if (update.status !== "running") { this.finishAgent(update.id, update); return; }
+    if (this.agents.has(update.id)) return;
+    if (this.agents.size >= 100) this.finishAgent(this.agents.keys().next().value!, { status: "failed", text: "Agent progress is no longer available." });
+    const timer = setTimeout(() => this.finishAgent(update.id, { status: "failed", text: "Agent progress stopped after an hour." }), 3_600_000);
+    timer.unref();
+    this.agents.set(update.id, { app, sink, update, text: update.text ?? "", timer });
+  }
+
   private starting: Promise<CodexAppServer> | null = null;
   private lastAttempt = 0;
   /** Running chat turns by thread, and where their approval requests go. */
-  private turns = new Map<string, { sink: TurnSink; cwd: string }>();
+  private turns = new Map<string, { sink: TurnSink; cwd: string; turnId?: string; interrupted?: boolean }>();
   /** Threads quick turns started. Any request Codex makes from one is refused. */
   private quickThreads = new Set<string>();
   /** Threads started ahead of a new chat's first message, by what they were started with (takeSpare). */
@@ -214,7 +259,32 @@ export class CodexEngine implements Engine {
         app.on("serverRequest", (request: RpcMessage) => {
           void this.answer(app, request).catch((error) => app.rejectRequest(request.id, message(error)));
         });
-        app.on("closed", () => { if (this.app === app) this.app = null; });
+        app.on("item/agentMessage/delta", (event: { threadId?: string; itemId?: string; delta?: string }) => {
+          const agent = event.threadId ? this.agents.get(event.threadId) : undefined;
+          if (!agent || agent.app !== app || !event.delta) return;
+          agent.text = ((agent.itemId === event.itemId ? agent.text : "") + event.delta).slice(0, 100_000);
+          agent.itemId = event.itemId;
+          agent.flush ??= setTimeout(() => {
+            agent.flush = undefined;
+            if (this.agents.get(event.threadId!) === agent) agent.sink.onAgents?.([{ ...agent.update, text: agent.text, updatedAt: Date.now() }]);
+          }, 160);
+          agent.flush.unref();
+        });
+        app.on("item/completed", (event: ItemEvent) => {
+          const agent = event.threadId ? this.agents.get(event.threadId) : undefined;
+          if (agent?.app === app && event.item.type === "agentMessage" && typeof event.item.text === "string") agent.text = event.item.text;
+        });
+        app.on("turn/completed", (event: { threadId?: string; turn?: { status?: string; items?: TurnItem[] } }) => {
+          const agent = event.threadId ? this.agents.get(event.threadId) : undefined;
+          if (!agent || agent.app !== app) return;
+          const text = event.turn?.items?.filter((item) => item.type === "agentMessage").at(-1)?.text;
+          this.finishAgent(event.threadId!, { status: event.turn?.status === "failed" ? "failed" : event.turn?.status === "interrupted" ? "cancelled" : "done",
+            text: typeof text === "string" ? text : agent.text });
+        });
+        app.on("closed", () => {
+          for (const [id, agent] of this.agents) if (agent.app === app) this.finishAgent(id, { status: "failed", text: "Codex disconnected before the agent finished." });
+          if (this.app === app) this.app = null;
+        });
         this.app = app;
         return app;
       } catch (error) {
@@ -235,7 +305,7 @@ export class CodexEngine implements Engine {
         installed: true,
         version: app.version,
         signedIn,
-        auth: { type: account.authMode, label: signedIn ? "ChatGPT" : account.authMode, email: account.email, plan: account.planType },
+        auth: { type: account.authMode, label: signedIn ? "ChatGPT" : account.authMode, email: account.email, plan: planName(account.planType) },
         models: signedIn ? await app.models().catch(() => []) : [],
       };
       await this.followUpdates(app);
@@ -259,7 +329,7 @@ export class CodexEngine implements Engine {
    * PATH every five minutes, and started again between turns once it differs.
    */
   private async followUpdates(app: CodexAppServer) {
-    if (this.turns.size) return;
+    if (this.turns.size || this.agents.size) return;
     let restart = updateOf({ kind: "codex", version: app.version })?.need === "required";
     if (!restart && Date.now() - this.comparedAt > 5 * 60_000) {
       this.comparedAt = Date.now();
@@ -267,7 +337,7 @@ export class CodexEngine implements Engine {
       const installed = printed?.code === 0 ? versionIn(printed.stdout) : undefined;
       restart = Boolean(installed && app.version && installed !== app.version);
     }
-    if (!restart || this.turns.size || this.app !== app) return;
+    if (!restart || this.turns.size || this.agents.size || this.app !== app) return;
     this.app = null;
     this.lastAttempt = 0;
     app.close();
@@ -325,7 +395,8 @@ export class CodexEngine implements Engine {
       app.respond(request.id, { action: "accept", content: {}, _meta: null });
       return;
     }
-    const turn = this.turns.get(params.threadId);
+    const tracked = this.turns.get(params.threadId);
+    const turn = tracked && !tracked.interrupted && (!tracked.turnId || !params.turnId || tracked.turnId === params.turnId) ? tracked : undefined;
     const decisions = [
       { id: "accept", kind: "accept" as const, label: "Allow once" },
       { id: "acceptForSession", kind: "acceptForSession" as const, label: "Allow for this session" },
@@ -357,7 +428,7 @@ export class CodexEngine implements Engine {
     } else if (method === "item/permissions/requestApproval") {
       normalized = {
         type: "permission_approval",
-        detail: { cwd: params.cwd ?? undefined, reason: params.reason ?? undefined },
+        detail: { cwd: params.cwd ?? undefined, reason: params.reason ?? undefined, permissionSummary: JSON.stringify(params.permissions ?? {}) },
         options: [
           { id: "turn", kind: "accept", label: "Allow for this turn" },
           { id: "session", kind: "acceptForSession", label: "Allow for this session" },
@@ -365,20 +436,45 @@ export class CodexEngine implements Engine {
         ],
         raw: params,
       };
-      // Declining grants nothing.
-      reply = (option) => app.respond(request.id, option === "none"
-        ? { permissions: {} }
-        : { permissions: { ...(params.permissions?.network ? { network: params.permissions.network } : {}), ...(params.permissions?.fileSystem ? { fileSystem: params.permissions.fileSystem } : {}) }, scope: option });
+      // A grant belongs only to the still-running turn; never keep it for a session.
+      reply = (option) => {
+        const active = turn && !turn.interrupted && this.turns.get(params.threadId) === turn && (!turn.turnId || !params.turnId || turn.turnId === params.turnId);
+        app.respond(request.id, { permissions: active && option === "turn"
+          ? { ...(params.permissions?.network ? { network: params.permissions.network } : {}), ...(params.permissions?.fileSystem ? { fileSystem: params.permissions.fileSystem } : {}) }
+          : {}, scope: "turn" });
+      };
     } else if (method === "mcpServer/elicitation/request") {
+      if (tracked?.turnId && params.turnId && tracked.turnId !== params.turnId) {
+        app.respond(request.id, { action: "cancel", content: null, _meta: null });
+        return;
+      }
+      // Approve/Decline supplies consent, not arbitrary user data. Accept only
+      // schemas for an empty confirmation; a form, URL or identity challenge
+      // needs its own input flow and must never receive fabricated content.
+      const schema = params.requestedSchema;
+      const allowedKeys = ["$schema", "type", "properties", "required", "additionalProperties", "title", "description"];
+      const confirmation = [undefined, "form", "openai/form", "openaiForm"].includes(params.mode)
+        && schema && typeof schema === "object" && !Array.isArray(schema) && schema.type === "object"
+        && schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+        && Object.keys(schema.properties).length === 0
+        && (schema.required === undefined || (Array.isArray(schema.required) && schema.required.length === 0))
+        && (schema.additionalProperties === undefined || typeof schema.additionalProperties === "boolean")
+        && Object.keys(schema).every((key) => allowedKeys.includes(key));
+      if (!confirmation) {
+        app.rejectRequest(request.id, "This tool requires input or verification that Perry cannot collect yet. Confirmation-only tool requests are supported.");
+        return;
+      }
       normalized = {
         type: "tool_user_input",
         detail: { server: params.serverName, message: params.message },
         options: [{ id: "accept", kind: "accept", label: "Accept" }, { id: "decline", kind: "decline", label: "Decline" }],
         raw: params,
       };
-      reply = (option) => option === "accept"
-        ? app.respond(request.id, { action: "accept", content: {}, _meta: null })
-        : app.rejectRequest(request.id, "Declined.");
+      reply = (option) => {
+        const active = turn && !turn.interrupted && this.turns.get(params.threadId) === turn && (!turn.turnId || !params.turnId || turn.turnId === params.turnId);
+        const action = !tracked ? "decline" : !active ? "cancel" : option === "accept" ? "accept" : "decline";
+        app.respond(request.id, { action, content: action === "accept" ? {} : null, _meta: null });
+      };
     } else {
       app.rejectRequest(request.id, `Assistant does not support ${method}.`);
       return;
@@ -418,7 +514,7 @@ export class CodexEngine implements Engine {
     // every command that is not plainly read-only to (approvals.ts, review.ts). A sandbox would
     // only make commands fail quietly, since Codex does not reliably ask to leave it.
     const auto = access === "auto";
-    const sandboxed = full ? "" : auto
+    const sandboxed = full ? `\n\n${FULL_ACCESS_INSTRUCTIONS}` : auto
       ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
       // Sandboxed, Codex tends to give up when a command is blocked (no network, a folder outside
       // the workspace) rather than ask; the owner's access setting is what should decide, so it asks.
@@ -494,6 +590,7 @@ export class CodexEngine implements Engine {
     const item = (phase: "started" | "completed") => ofTurn((event: ItemEvent) => {
       const normalized = toItem(event.item, phase);
       const atMs = (phase === "started" ? event.startedAtMs : event.completedAtMs) ?? Date.now();
+      for (const agent of normalized?.agents ?? []) this.trackAgent(app, agent, sink);
       if (normalized) sink.onEvent?.({ type: "item", phase, item: normalized, atMs });
     });
     const onItemStarted = item("started");
@@ -501,11 +598,17 @@ export class CodexEngine implements Engine {
     const onTokens = ofTurn((event: TokenUsageEvent) => {
       if (event.tokenUsage?.last) sink.onEvent?.({ type: "usage", state: "complete", usage: usageOf(event.tokenUsage.last), ...(event.tokenUsage.modelContextWindow ? { contextWindow: event.tokenUsage.modelContextWindow } : {}) });
     });
+    const onPlan = ofTurn((event: { threadId?: string; turnId?: string; plan: Array<{ step: string; status: string }> }) => {
+      const output = event.plan.map((step) => `- [${step.status === "completed" ? "x" : step.status === "inProgress" ? "~" : " "}] ${step.step}`).join("\n");
+      sink.onEvent?.({ type: "item", phase: "updated", atMs: Date.now(), item: { id: `${event.turnId}:plan`, type: "plan", title: "Plan", status: "running", output, raw: event } });
+    });
     app.on("item/agentMessage/delta", onDelta);
     app.on("item/started", onItemStarted);
     app.on("item/completed", onItemCompleted);
     app.on("thread/tokenUsage/updated", onTokens);
-    this.turns.set(id, { sink, cwd });
+    app.on("turn/plan/updated", onPlan);
+    const running: { sink: TurnSink; cwd: string; turnId?: string; interrupted?: boolean } = { sink, cwd };
+    this.turns.set(id, running);
     try {
       // turn/start's overrides hold "for this turn and subsequent turns", and
       // thread/resume of a thread this app-server still has loaded just rejoins
@@ -522,6 +625,7 @@ export class CodexEngine implements Engine {
       }, 30_000);
       if (!started.turn?.id) throw new Error("Codex did not start a turn.");
       turnId = started.turn.id;
+      running.turnId = turnId;
       // Taken with the message, the change is in the thread's history now.
       if (untold) gave(id, current);
       for (const replay of early.splice(0)) replay();
@@ -546,6 +650,7 @@ export class CodexEngine implements Engine {
       app.off("item/started", onItemStarted);
       app.off("item/completed", onItemCompleted);
       app.off("thread/tokenUsage/updated", onTokens);
+      app.off("turn/plan/updated", onPlan);
     }
   }
 
@@ -559,6 +664,8 @@ export class CodexEngine implements Engine {
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {
+    const turn = this.turns.get(handle.cursor);
+    if (turn?.turnId === handle.turnId) turn.interrupted = true;
     if (this.app && !this.app.closed) await this.app.interrupt(handle.cursor, handle.turnId);
   }
 

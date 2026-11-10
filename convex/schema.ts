@@ -1,5 +1,8 @@
+import { TURN_ERROR_CODES } from "../lib/turn-errors";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+
+export const vTurnErrorCode = v.union(...TURN_ERROR_CODES.map((code) => v.literal(code)));
 
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"), v.literal("whatsapp"));
 /** The messaging apps the owner can pair; the web dashboard is always there. */
@@ -39,7 +42,7 @@ export const vUsage = v.object({
 /** The engine items a run's trace records (runner/trace.ts maps each engine's canonical items to these). See runSpans. */
 export const vSpanKind = v.union(
   v.literal("command"), v.literal("fileChange"), v.literal("mcpToolCall"), v.literal("dynamicToolCall"),
-  v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"),
+  v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"), v.literal("commentary"), v.literal("plan"),
 );
 export const vSpanStatus = v.union(v.literal("running"), v.literal("ok"), v.literal("error"), v.literal("declined"));
 /** Where a memory came from: the owner, tool output such as a web page or email, or a scheduled job. */
@@ -90,7 +93,7 @@ export const vCodexModel = v.object({
   defaultEffort: v.optional(v.string()),
 });
 /** The engine a chat, turn or job runs on (lib/engines.ts). */
-export const vEngine = v.union(v.literal("codex"), v.literal("claude"), v.literal("grok"), v.literal("cursor"), v.literal("antigravity"));
+export const vEngine = v.union(v.literal("codex"), v.literal("claude"), v.literal("grok"), v.literal("cursor"), v.literal("antigravity"), v.literal("opencode"));
 /** What the owner does to finish signing an engine in (lib/engines.ts, LoginInteraction). */
 export const vLoginInteraction = v.union(
   v.object({ type: v.literal("browser"), url: v.string() }),
@@ -149,7 +152,7 @@ export const vRoute = v.object({
   by: v.union(v.literal("owner"), v.literal("perry"), v.literal("auto")),
   why: v.string(),
   movedFrom: v.optional(vMoved),
-  /** Its first engine refused it part-way for a limit, and it ran again on this one. */
+  /** The run continued after a usage limit, on another engine or after its reset. */
   retried: v.optional(v.boolean()),
 });
 /** Work waiting for an engine's plan to reset: until when, and why. */
@@ -179,6 +182,16 @@ export const vEngineAuth = v.object({
  * message. Everything below is scoped to that one owner.
  */
 export default defineSchema({
+  interactiveAnswers: defineTable({
+    conversationId: v.id("conversations"), requestId: v.string(), creationHash: v.string(), schemaVersion: v.literal(1), revision: v.number(),
+    definition: v.string(), values: v.string(), previous: v.optional(v.string()), lastRequest: v.optional(v.string()), lastHash: v.optional(v.string()),
+    answeredAt: v.optional(v.number()),
+    createdAt: v.number(), updatedAt: v.number(), lastTurnAt: v.number(), generationRunId: v.id("runs"), firstRenderedAt: v.optional(v.number()),
+    revisions: v.number(), saves: v.number(), conflicts: v.number(), restorations: v.number(), errors: v.number(),
+  }).index("by_conversation", ["conversationId"]),
+  interactiveSources: defineTable({
+    conversationId: v.id("conversations"), label: v.string(), url: v.optional(v.string()), fetchedAt: v.string(),
+  }).index("by_conversation", ["conversationId"]),
   /**
    * Exactly one row, describing this install and who owns it.
    *
@@ -261,6 +274,12 @@ export default defineSchema({
     dailyLimit: v.optional(v.number()),
     /** False when the owner turned off Perry looking at the screen on his own (screen.ts). Unset: on. */
     screenLook: v.optional(v.boolean()),
+    /** False once the owner turned off the pet's heads-up as a calendar meeting starts (meetings.ts). */
+    meetingHeadsUp: v.optional(v.boolean()),
+    /** False once the owner turned off the pet asking when an app starts using the microphone (pet/listen.js). */
+    meetingNotice: v.optional(v.boolean()),
+    meetingSpeech: v.optional(v.object({ provider: v.union(v.literal("local"), v.literal("groq")), model: v.union(v.literal("small"), v.literal("large-v3-turbo")), language: v.string(), vocabulary: v.string() })),
+    meetingCalendar: v.optional(v.object({ at: v.number(), sources: v.array(v.string()), error: v.optional(v.string()) })),
     /** When the owner last wrote to Perry anywhere, so what goes unanswered can be told apart. */
     ownerWroteAt: v.optional(v.number()),
     /** False stops Perry updating himself at night (updates.ts). Unset means on. */
@@ -339,6 +358,11 @@ export default defineSchema({
     turns: v.optional(v.number()),
     /** The owner's answer to its question, for its next turn. */
     answer: v.optional(v.string()),
+    /** Owner update receipts only; codexSteers/codexTurns own delivery and acknowledgement. */
+    steering: v.optional(v.array(v.object({
+      requestId: v.string(), text: v.string(), createdAt: v.number(),
+      deliveryId: v.union(v.id("codexSteers"), v.id("codexTurns")),
+    }))),
     /** The agent's own checklist. Rewritten wholesale by `plan`. */
     plan: v.array(
       v.object({
@@ -372,6 +396,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
+    .index("by_origin", ["origin", "updatedAt"])
+    .index("by_conversation", ["conversationId"])
     .index("by_updated", ["updatedAt"]),
 
   /**
@@ -447,6 +473,8 @@ export default defineSchema({
    */
   petPresence: defineTable({
     device: v.optional(v.id("petDevices")),
+    /** The owner is talking to it, until about then: an update waits. */
+    talkingUntil: v.optional(v.number()),
     seenAt: v.number(),
     activeAt: v.number(),
     /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
@@ -487,6 +515,9 @@ export default defineSchema({
    * One row: the pet being turned on or off from the dashboard (pet.ts), the
    * step it is on, and how it ended.
    */
+  /** The first time the owner talked to the desktop pet, which the welcome page waits for. */
+  petFirstWords: defineTable({ at: v.number() }),
+
   petSetup: defineTable({
     action: v.union(v.literal("on"), v.literal("off")),
     state: v.union(v.literal("working"), v.literal("failed"), v.literal("done")),
@@ -508,10 +539,13 @@ export default defineSchema({
     latest: v.optional(v.object({ sha: v.string(), title: v.string() })),
     /** Why no update can be offered (changes of the owner's, no network, not a git checkout). */
     problem: v.optional(v.string()),
+    downloading: v.optional(v.object({ id: v.string(), at: v.number() })),
+    downloaded: v.optional(v.object({ sha: v.string(), at: v.number() })),
     /** The owner asked while Perry was busy: he updates once he isn't. */
     wantedAt: v.optional(v.number()),
+    wantedTarget: v.optional(v.string()),
     /** Handed to `perry run` (update-request.json), which stops the dashboard's server to do it. */
-    requested: v.optional(v.object({ id: v.string(), at: v.number(), by: vUpdateBy })),
+    requested: v.optional(v.object({ id: v.string(), at: v.number(), by: vUpdateBy, target: v.optional(v.string()) })),
     /** The owner's day the night's update was last asked for, so it is asked once a night. */
     nightOf: v.optional(v.string()),
     last: v.optional(v.object({
@@ -608,13 +642,15 @@ export default defineSchema({
     /** ask: the owner decides; review: a Codex reviewer clears routine actions first; trust: run. */
     policy: v.optional(vPolicy),
     lastSeenAt: v.optional(v.number()),
+    /** Latest check-in explicitly lists active turns; omitted by older runners. */
+    turnHeartbeats: v.optional(v.boolean()),
     revoked: v.boolean(),
     /** Each engine on this computer, as its runner last reported it (engines.ts). */
     engines: v.optional(v.array(v.object({ ...vEngineStatus.fields, updatedAt: v.number() }))),
     /** Sign-ins and sign-outs asked for from Settings, by engine. */
     engineAuth: v.optional(v.record(v.string(), vEngineAuth)),
     /** How much of each engine's plan is used, by engine, as this computer last read it (usage.ts). */
-    usage: v.optional(v.record(v.string(), v.object({ limits: v.optional(vPlanLimits), hit: v.optional(vLimitHit) }))),
+    usage: v.optional(v.record(v.string(), v.object({ limits: v.optional(vPlanLimits), hit: v.optional(vLimitHit), unread: v.optional(vLimitHit) }))),
     /** When this computer last read any engine's plan limits (usage.ts report), for the Usage page's refresh. */
     usageReadAt: v.optional(v.number()),
     /**
@@ -824,7 +860,74 @@ export default defineSchema({
     .index("by_person", ["person"])
     .searchIndex("search_text", { searchField: "search" }),
 
+  /**
+   * A call the desktop pet listened to (meetings.ts): its page of notes, which is an ordinary note, and how far it
+   * has got. Asked for from the dashboard, then listening on one pet, then being written up by a runner, then done.
+   */
+  meetings: defineTable({
+    speech: v.optional(v.object({ provider: v.union(v.literal("local"), v.literal("groq")), model: v.union(v.literal("small"), v.literal("large-v3-turbo")), language: v.string(), vocabulary: v.string() })),
+    title: v.string(),
+    status: v.union(v.literal("asked"), v.literal("listening"), v.literal("writing"), v.literal("done"), v.literal("failed")),
+    /** The pet listening: one on another computer, or none for the one on Perry's own. */
+    device: v.optional(v.id("petDevices")),
+    /** The owner's page: what they type during the call, then the write-up too. May be deleted from Brain. */
+    noteId: v.optional(v.id("notes")),
+    startedAt: v.number(),
+    endedAt: v.optional(v.number()),
+    /** When its pet last said it is still listening; long past, it was cut off (sweep). */
+    aliveAt: v.number(),
+    /** The owner pressed Stop in the dashboard; the pet closes up when it sees this. */
+    stopAsked: v.optional(v.boolean()),
+    /** Which sides it could hear. */
+    heard: v.optional(v.object({ mic: v.boolean(), system: v.boolean() })),
+    segments: v.number(),
+    /** Sound that went unwritten because the computer could not keep up. */
+    droppedMs: v.optional(v.number()),
+    eventId: v.optional(v.string()),
+    joinUrl: v.optional(v.string()),
+    attendees: v.optional(v.array(v.string())),
+    template: v.optional(v.string()),
+    /** Whether the owner or a calendar gave the title; otherwise the write-up may suggest one. */
+    named: v.optional(v.boolean()),
+    /** What the owner typed before the first write-up, kept for regenerating from. */
+    typed: v.optional(v.string()),
+    claim: v.optional(v.string()),
+    claimedAt: v.optional(v.number()),
+    attempts: v.optional(v.number()),
+    /** The page's revision after the last write-up: the owner has edited it since if it moved on. */
+    writtenRevision: v.optional(v.number()),
+    writtenAt: v.optional(v.number()),
+    actions: v.optional(v.array(v.object({ text: v.string(), owner: v.optional(v.string()), todoId: v.optional(v.id("todos")) }))),
+    error: v.optional(v.string()),
+  })
+    .index("by_started", ["startedAt"])
+    .index("by_status", ["status", "startedAt"]),
+
+  /** What was said in a meeting, a row for each chunk Whisper wrote; `seq` makes sending it again harmless. */
+  meetingSegments: defineTable({
+    meetingId: v.id("meetings"),
+    seq: v.number(),
+    source: v.union(v.literal("you"), v.literal("them")),
+    startMs: v.number(),
+    endMs: v.number(),
+    text: v.string(),
+  }).index("by_meeting", ["meetingId", "seq"]),
+
+  /** The owner's next few meetings, from a connected calendar, for the pet's heads-up. Replaced by each read. */
+  upcomingMeetings: defineTable({
+    eventId: v.string(),
+    title: v.string(),
+    startsAt: v.number(),
+    endsAt: v.number(),
+    joinUrl: v.optional(v.string()),
+    attendees: v.optional(v.array(v.string())),
+    /** The owner said not now, or already started it: no more heads-ups for this one. */
+    dismissedAt: v.optional(v.number()),
+  }).index("by_event", ["eventId"]),
+
   conversations: defineTable({
+    /** Idempotency key of the last atomic edit/resend. */
+    lastRewindRequest: v.optional(v.string()),
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
     threadId: v.string(),
@@ -852,9 +955,9 @@ export default defineSchema({
     codexThreadId: v.optional(v.string()),
     /** The runner (computer) this chat's turns run on; its engine sessions are on that disk. */
     codexRunnerId: v.optional(v.id("runners")),
-    /** The model picked for this chat, one of its engine's. Unset means the engine's default. */
+    /** The chat's model. Task chats inherit while unset; "" deliberately selects the engine default. */
     model: v.optional(v.string()),
-    /** Reasoning effort picked for this chat (/think). Unset means the model's default. */
+    /** Thinking pick (/think). Task chats inherit while unset; "" deliberately selects the model default. */
     effort: v.optional(v.string()),
     /** Set when the chat is created, from installation.defaultAccess. Unset means supervised. */
     access: v.optional(vAccess),
@@ -864,6 +967,10 @@ export default defineSchema({
     /** Set on the chat a background task works in (tasks.ts). */
     taskId: v.optional(v.id("tasks")),
     parentConversationId: v.optional(v.id("conversations")),
+    providerAgent: v.optional(v.object({
+      id: v.string(), runId: v.id("runs"), status: v.union(v.literal("running"), v.literal("done"), v.literal("failed"), v.literal("cancelled")),
+      startedAt: v.number(), updatedAt: v.optional(v.number()), finishedAt: v.optional(v.number()), prompt: v.optional(v.string()), text: v.optional(v.string()),
+    })),
     branchedFromMessageId: v.optional(v.string()),
     pendingTurns: v.optional(v.number()),
     /** Digest of the recalled memory this chat's Codex thread last saw, so an unchanged block is not sent again. */
@@ -906,7 +1013,8 @@ export default defineSchema({
   })
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_channel_last", ["channel", "lastMessageAt"])
-    .index("by_project", ["projectId", "lastMessageAt"]),
+    .index("by_project", ["projectId", "lastMessageAt"])
+    .index("by_parent", ["parentConversationId", "lastMessageAt"]),
 
   /**
    * Files attached to a chat turn. The bytes live either in the server's file
@@ -915,6 +1023,9 @@ export default defineSchema({
    * there. See app/api/media.
    */
   chatAttachments: defineTable({
+    /** Upload staged for editing this immutable message revision. */
+    editOf: v.optional(v.id("agentMessages")),
+    position: v.optional(v.number()),
     conversationId: v.id("conversations"),
     messageKey: v.string(),
     storageId: v.optional(v.id("_storage")),
@@ -962,11 +1073,49 @@ export default defineSchema({
     /** Its name, lowercased, for search. */
     search: v.string(),
     createdAt: v.number(),
+    versionOf: v.optional(v.id("library")),
+    versionRoot: v.optional(v.id("library")),
+    versionLabel: v.optional(v.string()),
+    role: v.optional(v.union(v.literal("input"), v.literal("output"), v.literal("working"))),
   })
     .index("by_created", ["createdAt"])
     .index("by_path", ["localPath"])
     .index("by_storage", ["storageId"])
+    .index("by_version", ["versionOf"])
     .index("by_conversation", ["conversationId"]),
+
+  /** Explicit membership, independent of the Library item's original attribution. */
+  workspaceFiles: defineTable({
+    conversationId: v.id("conversations"),
+    sourceConversationId: v.id("conversations"),
+    projectId: v.optional(v.id("projects")),
+    libraryId: v.id("library"),
+    kind: vLibraryKind,
+    role: v.union(v.literal("input"), v.literal("output"), v.literal("working")),
+    provenance: v.union(v.literal("uploaded"), v.literal("produced"), v.literal("attached")),
+    messageKey: v.optional(v.string()),
+    runId: v.optional(v.id("runs")),
+    taskId: v.optional(v.id("tasks")),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId", "createdAt"])
+    .index("by_project", ["projectId", "createdAt"])
+    .index("by_conversation_role", ["conversationId", "role", "createdAt"])
+    .index("by_project_role", ["projectId", "role", "createdAt"])
+    .index("by_conversation_kind", ["conversationId", "kind", "createdAt"])
+    .index("by_project_kind", ["projectId", "kind", "createdAt"])
+    .index("by_item", ["conversationId", "libraryId"])
+    .index("by_task", ["taskId"])
+    .index("by_run", ["runId"])
+    .index("by_library", ["libraryId"]),
+
+  /** Hiding and pinning affect this view only, never the file or another scope. */
+  workspaceViews: defineTable({
+    scope: v.string(),
+    libraryId: v.id("library"),
+    hidden: v.boolean(),
+    pinned: v.boolean(),
+  }).index("by_item", ["scope", "libraryId"]),
 
   /**
    * Layered like OpenClaw's workspace memory. `profile` is USER.md: standing
@@ -978,6 +1127,9 @@ export default defineSchema({
    */
   memories: defineTable({
     text: v.string(),
+    /** Server-owned Undo deadline; the durable scheduler settles it even with no browser open. */
+    forgetAt: v.optional(v.number()),
+    forgetError: v.optional(v.string()),
     tags: v.array(v.string()),
     source: v.string(),
     createdAt: v.number(),
@@ -1159,6 +1311,9 @@ export default defineSchema({
     route: v.optional(vRoute),
     usage: v.optional(vUsage),
     error: v.optional(v.string()),
+    errorCode: v.optional(vTurnErrorCode),
+    /** What it did, in a sentence ("Ran 2 commands and changed 3 files"), written when it ends (codex.markFinalized). */
+    summary: v.optional(v.string()),
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
   })
@@ -1179,11 +1334,16 @@ export default defineSchema({
     name: v.string(),
     callId: v.string(),
     status: vSpanStatus,
+    /** When this step ended; absent on running steps and legacy traces. */
+    endedAt: v.optional(v.number()),
     startedAt: v.number(),
     durationMs: v.optional(v.number()),
     input: v.optional(v.string()),
     output: v.optional(v.string()),
-  }).index("by_run", ["runId", "callId"]),
+  })
+    .index("by_run", ["runId", "callId"])
+    /** A run's steps in the order they started, so the newest are read first (dashboard.getRunSteps). */
+    .index("by_run_started", ["runId", "startedAt"]),
 
   /** Scheduled prompts, run as Codex turns. See jobs.ts. */
   jobs: defineTable({
@@ -1231,6 +1391,14 @@ export default defineSchema({
     createdAt: v.number(),
   }),
 
+  /** Local explicit auth failures that the provider account status has not caught up with. */
+  connectorHealth: defineTable({
+    accountId: v.string(),
+    toolkit: v.string(),
+    observedAt: v.number(),
+    authExpiredAt: v.optional(v.number()),
+  }).index("by_account", ["accountId", "toolkit"]),
+
   /**
    * Which account a Composio connection is signed in to (an email, a handle),
    * asked of the service once through a read-only "who am I" action, since
@@ -1242,6 +1410,12 @@ export default defineSchema({
     toolkit: v.string(),
     /** Unset when the service would not say; asked again after a day. */
     identity: v.optional(v.string()),
+    profile: v.optional(v.object({
+      email: v.optional(v.string()),
+      username: v.optional(v.string()),
+      displayName: v.optional(v.string()),
+      workspace: v.optional(v.string()),
+    })),
     checkedAt: v.number(),
   }).index("by_account", ["accountId"]),
 
@@ -1299,8 +1473,9 @@ export default defineSchema({
    */
   whatsappOutbox: defineTable({
     to: v.string(),
-    kind: v.union(v.literal("text"), v.literal("typing"), v.literal("file")),
+    kind: v.union(v.literal("text"), v.literal("typing"), v.literal("file"), v.literal("reaction")),
     text: v.optional(v.string()),
+    reaction: v.optional(v.object({ id: v.string(), fromMe: v.boolean(), remoteJid: v.optional(v.string()), participant: v.optional(v.string()), emoji: v.string() })),
     /** A file to send: in Perry's storage, or on this machine. */
     file: v.optional(v.object({ storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string() })),
     state: v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
@@ -1318,8 +1493,9 @@ export default defineSchema({
      * "browser": a step in Perry's own browser that buys, sends or posts (lib/browser.ts, tools.ts).
      * "contact": someone new wrote to Perry, or added it to a group; "message": Perry wants to write to
      * someone for the first time (contacts.ts). Allowing either lets Perry talk with them from then on.
+     * "permission": a native computer permission grant, scoped to its current turn; Full access allows it.
      */
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain")),
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain"), v.literal("tool"), v.literal("permission")),
     /** For "contact" and "message": who. */
     contactId: v.optional(v.id("contacts")),
     /** For "brain": the change to Brain it asks about (compaction.ts). */
@@ -1380,6 +1556,14 @@ export default defineSchema({
 
   /** Subscription turns are queued for the owner's outbound local runner. */
   codexTurns: defineTable({
+    /** This turn's native session, retained if the chat switches engines while it runs. */
+    sessionCursor: v.optional(v.string()),
+    /** Accepted web send awaiting brain preparation. It already owns its queue position and can be stopped/removed. */
+    preparing: v.optional(v.boolean()),
+    /** Only this reply may receive the follow-up. Unset means a separate turn. */
+    steerTarget: v.optional(v.id("codexTurns")),
+    /** Where the owner moved it in the chat's queue (queue.reorder, sendNow); unset, it waits by createdAt (queue.queuePosition). */
+    queueOrder: v.optional(v.number()),
     /** Unset only on turns from before Perry ran on this computer, answered without a runner. */
     runnerId: v.optional(v.id("runners")),
     conversationId: v.id("conversations"),
@@ -1436,16 +1620,28 @@ export default defineSchema({
     patienceWhy: v.optional(v.string()),
     /** The turn ended because the owner stopped it. */
     stopped: v.optional(v.boolean()),
-    /** Its engine refused it for a limit before it did anything: it is being tried once on another (routing.retryTurn). */
+    /** Its engine hit a limit: routing is handing the turn to an untried eligible engine. */
     retrying: v.optional(v.boolean()),
     /** The turn this one tries again, on another engine. */
     retryOf: v.optional(v.id("codexTurns")),
+    /** Durable wait for a provider-reported reset; no engine turn runs meanwhile. */
+    waiting: v.optional(vWaiting),
+    /** Bound automatic same-engine resumptions within one owner request. */
+    resetResumes: v.optional(v.number()),
     /** Finalizing steps already done, so a retried finalize never repeats one. */
     reportedAt: v.optional(v.number()),
     savedAt: v.optional(v.number()),
     deliveredAt: v.optional(v.number()),
+    reactionAt: v.optional(v.number()),
+    reactionEvent: v.optional(v.boolean()),
+    reactionOnly: v.optional(v.boolean()),
+    webReaction: v.optional(v.string()),
     /** When a finalize last started, so the recovery sweep does not run a second one beside it. */
     finalizingAt: v.optional(v.number()),
+    /** Server-observed runner ownership of this running turn, independent of output. */
+    lastHeartbeatAt: v.optional(v.number()),
+    /** Recovery's reactive liveness warning; cleared only by genuine liveness. */
+    unresponsiveAt: v.optional(v.number()),
     /** The reply so far, while Codex is still writing it. */
     partial: v.optional(v.string()),
     /** Telegram: the message that shows the reply as it streams, edited as it grows. */
@@ -1456,6 +1652,7 @@ export default defineSchema({
     status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
     response: v.optional(v.string()),
     error: v.optional(v.string()),
+    errorCode: v.optional(vTurnErrorCode),
     model: v.optional(v.string()),
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
@@ -1463,7 +1660,27 @@ export default defineSchema({
     finalizedAt: v.optional(v.number()),
   })
     .index("by_runner_status", ["runnerId", "status"])
-    .index("by_conversation_status", ["conversationId", "status"]),
+    .index("by_run", ["runId"])
+    .index("by_conversation_status", ["conversationId", "status"])
+    .index("by_reset_wait", ["waiting.until"]),
+
+  /** Bounded stream bookkeeping; reply text is stored as append-only deltas. */
+  turnStreams: defineTable({
+    turnId: v.id("codexTurns"),
+    /** Source UTF-16 length, unaffected by display redaction. */
+    length: v.number(),
+    /** Last reset request ID, for retries after commit/redaction. */
+    resetKey: v.optional(v.string()),
+    telegramMessageId: v.optional(v.number()),
+    telegramEditedAt: v.optional(v.number()),
+    telegramEditing: v.optional(v.boolean()),
+  }).index("by_turn", ["turnId"]),
+
+  turnStreamChunks: defineTable({
+    turnId: v.id("codexTurns"),
+    offset: v.number(),
+    text: v.string(),
+  }).index("by_turn_offset", ["turnId", "offset"]),
 
   /** A call on the linked WhatsApp, from its first ring to its end (whatsapp.callEvent). */
   calls: defineTable({
@@ -1515,7 +1732,10 @@ export default defineSchema({
     createdAt: v.number(),
     appliedAt: v.optional(v.number()),
   })
+    .index("by_runner_status", ["runnerId", "status"])
     .index("by_turn_status", ["turnId", "status"])
+    .index("by_conversation_status", ["conversationId", "status"])
+    .index("by_run", ["runId"])
     .index("by_status", ["status"]),
 
   /**
@@ -1540,12 +1760,33 @@ export default defineSchema({
    * chats share a userId ("web:dashboard", "telegram:<chat>"), which is what
    * search_chats searches within. See agentStore.ts.
    */
+  /** Native message receipts let reactions refer to the exact phone message, including before a turn finishes. */
+  channelMessages: defineTable({
+    channel: v.union(v.literal("telegram"), v.literal("whatsapp")),
+    externalId: v.string(),
+    messageId: v.string(),
+    text: v.string(),
+    isPerry: v.optional(v.boolean()),
+    fromMe: v.optional(v.boolean()),
+    remoteJid: v.optional(v.string()),
+    participant: v.optional(v.string()),
+    perryReaction: v.optional(v.string()),
+    ownerReaction: v.optional(v.array(v.string())),
+    ownerReactionAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_message", ["channel", "externalId", "messageId"])
+    .index("by_chat", ["channel", "externalId", "createdAt"])
+    .index("by_created", ["createdAt"]),
+
   agentThreads: defineTable({
     userId: v.optional(v.string()),
     title: v.optional(v.string()),
   }),
 
   agentMessages: defineTable({
+    ownerReaction: v.optional(v.string()),
+    perryReaction: v.optional(v.string()),
+    runId: v.optional(v.id("runs")),
     threadId: v.id("agentThreads"),
     userId: v.optional(v.string()),
     /** Position in the thread; later messages have higher numbers. */

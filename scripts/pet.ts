@@ -136,7 +136,7 @@ export function launch(program: string, args: string[] = [], app = PET) {
     spawn("open", opening, { cwd: app, env, detached: true, stdio: "ignore" }).unref();
     return;
   }
-  spawn(program, [app, ...args], { cwd: app, env, detached: true, stdio: "ignore", windowsHide: false }).unref();
+  spawn(program, [app, ...args], { cwd: app, env, detached: true, stdio: "ignore", windowsHide: true }).unref();
 }
 
 /**
@@ -210,7 +210,7 @@ async function on(): Promise<boolean> {
   } else {
     starting.fail(yellow("started, but he hasn't shown up yet; his tray icon, or perry pet again, will say more"));
   }
-  say(dim(`  Click him for your chats, to-dos and what needs you; drag him anywhere. Ctrl+Shift+Space talks to him.`));
+  say(dim(`  Click him for your chats, to-dos and what needs you; drag him anywhere. ${process.platform === "darwin" ? "Cmd" : "Ctrl"}+Shift+Space talks to him.`));
   if (atLogin) say(dim(`  He starts with your computer from now on; ${bold("perry pet off")} stops that.`));
   if (process.platform === "darwin") say(dim(`  The first time he looks at your screen, macOS asks you to allow ${bold("Electron")} (the app he runs in) to record it; restart him from his tray icon after.`));
   say("");

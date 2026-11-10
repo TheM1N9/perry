@@ -13,7 +13,7 @@ import {
 import {
   type Access, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineKind, type EngineModel,
   type EngineRequest, type EngineStatus, type ItemStatus, type ItemType, type LoginFlow, type PerryTools, type RequestOption,
-  type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink, type TurnState, toolsOfChat,
+  type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink, type TurnState, FULL_ACCESS_INSTRUCTIONS, toolsOfChat,
 } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
@@ -467,13 +467,19 @@ ${line}`.slice(-4000); this.onText(line); });
     const efforts = effort?.type === "select" ? this.values(effort) : [];
     const known = this.learnedModels();
     const knownDefault = fresh ? undefined : known.find((item) => item.isDefault)?.id;
-    const knownEffort = fresh ? undefined : known.find((item) => item.defaultEffort)?.defaultEffort;
-    const models = this.values(model).map((value): EngineModel => ({
-      id: value.value,
-      name: value.name,
-      isDefault: value.value === (knownDefault ?? model.currentValue),
-      ...(efforts.length ? { efforts: efforts.map((item) => item.value), ...(effort?.type === "select" ? { defaultEffort: knownEffort ?? String(effort.currentValue) } : {}) } : {}),
-    }));
+    const models = this.values(model).map((value): EngineModel => {
+      const previous = known.find((item) => item.id === value.value);
+      const selected = value.value === model.currentValue;
+      // Session effort options describe the selected model only. Retain other
+      // models' previously learned options instead of copying these onto them.
+      const levels = selected ? efforts.map((item) => item.value) : previous?.efforts;
+      const defaultEffort = selected && effort?.type === "select"
+        ? (!fresh && previous?.defaultEffort) || String(effort.currentValue) : previous?.defaultEffort;
+      return {
+        id: value.value, name: value.name, isDefault: value.value === (knownDefault ?? model.currentValue),
+        ...(levels?.length ? { efforts: levels, ...(defaultEffort ? { defaultEffort } : {}) } : {}),
+      };
+    });
     if (!models.length || json(models) === json(this.learned)) return;
     this.learned = models;
     try {
@@ -620,7 +626,7 @@ ${line}`.slice(-4000); this.onText(line); });
     const machine = describeMachine();
     const home = `Your own folder for files you make is ${PATHS.files}; use it unless the owner or the task calls for somewhere else. Your skills folder is ${PATHS.skills}.` +
       ` This machine runs ${machine.os}, and your commands run in ${machine.shell}; write commands, paths and quoting for that, and open files or apps with ${machine.open}.`;
-    const access = input.access === "full" ? ""
+    const access = input.access === "full" ? `\n\n${FULL_ACCESS_INSTRUCTIONS}`
       : input.access === "auto" ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
       : "\n\nThe owner approves your commands and edits before they run. If one is declined, say what you wanted to do and why, and do not work around it.";
     return `${input.instructions}\n\n## This computer\n\n${home}${access}`;
@@ -717,7 +723,7 @@ ${line}`.slice(-4000); this.onText(line); });
       sink.onEvent?.({ type: "usage", state: "unavailable" });
     }
     const result = (state: TurnState, error?: string): TurnResult => ({ state, cursor: session.id, text: turn.reply, images: [], ...(error ? { error } : {}) });
-    if (turn.stalled) return result("failed", `${this.label} stopped responding, so Perry stopped it. Send another message to carry on; the chat's session is kept.`);
+    if (turn.stalled) return { ...result("failed", `${this.label} stopped responding, so Perry stopped it. Send another message to carry on; the chat's session is kept.`), errorCode: "idle_timeout" };
     if (turn.interrupted) return result("interrupted");
     if (failure && !last) return result("failed", this.explain(failure).message);
     switch (last?.stopReason) {

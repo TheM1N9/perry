@@ -43,8 +43,9 @@ export const listMessages = internalQuery({
 export const saveMessages = internalMutation({
   args: {
     threadId: v.string(),
+    runId: v.optional(v.id("runs")),
     userId: v.optional(v.string()),
-    messages: v.array(v.object({ role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system"), v.literal("tool")), content: v.string() })),
+    messages: v.array(v.object({ role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system"), v.literal("tool")), content: v.string(), perryReaction: v.optional(v.string()) })),
     metadata: v.optional(v.array(v.object({ provider: v.optional(v.string()), model: v.optional(v.string()) }))),
   },
   handler: async (ctx, args): Promise<{ messages: Array<Id<"agentMessages">> }> => {
@@ -58,9 +59,11 @@ export const saveMessages = internalMutation({
       const meta = args.metadata?.[index] ?? {};
       ids.push(await ctx.db.insert("agentMessages", {
         threadId,
+        ...(args.runId ? { runId: args.runId } : {}),
         userId: args.userId ?? thread?.userId,
         order: order++,
-        message,
+        message: { role: message.role, content: message.content },
+        ...(message.perryReaction ? { perryReaction: message.perryReaction } : {}),
         text: message.content,
         ...(meta.provider ? { provider: meta.provider } : {}),
         ...(meta.model ? { model: meta.model } : {}),

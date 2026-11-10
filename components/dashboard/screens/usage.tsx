@@ -67,6 +67,7 @@ export function Usage() {
 /** One engine's plan: each of its windows, how full, when it resets, and Perry's part of it. */
 function PlanRow({ engine, now }: { engine: EngineOverview; now: number }) {
   const limits = engine.usage?.limits;
+  const unread = engine.usage?.unread;
   const { level, hit } = standing(engine.usage, now);
   // Only a plan running out says so; one with room left needs no word.
   const state: { tone: Tone; label: string } | null = level === "out" ? { tone: "danger", label: "Used up" }
@@ -86,9 +87,14 @@ function PlanRow({ engine, now }: { engine: EngineOverview; now: number }) {
           {limits.windows.map((window) => <WindowRow key={window.id} window={window} share={engine.share.windows[window.id]} now={now} />)}
         </div>
       )}
-      {engine.reportsLimits && !limits?.windows.length && (
+      {engine.reportsLimits && !limits?.windows.length && !(engine.signedIn && unread) && (
         <p className="mt-1 text-sm text-muted-foreground">
           {engine.signedIn ? `Waiting for ${engine.label} to report its limits…` : <Link href="/settings/engines" className="link">{engine.installed ? "Sign in" : "Set it up"}</Link>}
+        </p>
+      )}
+      {engine.reportsLimits && engine.signedIn && unread && (
+        <p className="mt-1 text-sm text-pretty text-muted-foreground">
+          Couldn&apos;t read {engine.label}&apos;s limits: “{unread.message.slice(0, 300)}” If it keeps happening, <Link href="/settings/engines" className="link">sign in again</Link>.
         </p>
       )}
       {hit && (

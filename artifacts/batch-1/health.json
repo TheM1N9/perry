@@ -1,0 +1,181 @@
+{
+  "issue": 243,
+  "ok": true,
+  "mode": "in-process real SQLite/runtime; fake clock and runner; no models",
+  "checks": [
+    "quiet hour-old execution remains healthy on explicit heartbeat",
+    "90-second gap warns through dashboard and activity while retaining running status",
+    "genuine ownership beat immediately clears warning without losing partial text",
+    "15-minute grace uses last beat; repeated sweep and late beat/stream/result preserve terminal error",
+    "late heartbeat/stream/completion never reopen finalized done turn",
+    "healthy machine with explicit empty active list cannot prolong an orphaned turn",
+    "ownership and authentication reject foreign/invalid heartbeat attempts",
+    "legacy omission stays compatible; modern empty list freezes prior liveness and later genuine beat restores it",
+    "old queued turn receives ten-minute offline grace from last machine liveness",
+    "global sweep finds active turn behind more than 300 newer terminal records",
+    "revoked machine cannot restore liveness",
+    "pending retry rejects recovery finalization, direct begin and direct mark after sixty seconds",
+    "exact ten-minute retry deadline revokes execution before finalization; competing claims and late retry lose",
+    "retry-first transaction prevents stale finalizer and leaves replacement run and traces active",
+    "finalize-first transaction after explicit give-up blocks stale retry before and after delivery",
+    "legacy finalizingAt evidence permanently blocks execution and permits delivery recovery",
+    "legacy reportedAt evidence permanently blocks execution and permits delivery recovery",
+    "legacy savedAt evidence permanently blocks execution and permits delivery recovery",
+    "legacy deliveredAt evidence permanently blocks execution and permits delivery recovery",
+    "ended parent run cannot acquire replacement execution",
+    "nonterminal turns cannot acquire finalization ownership",
+    "durable targeted callback recovers an abandoned retry hidden behind more than 300 completed turns"
+  ],
+  "retryEvidence": {
+    "expiry": {
+      "refusedAt": 1800002850320,
+      "graceMs": 600000,
+      "claimedAt": 1800003450320,
+      "turn": {
+        "_id": "722pmkysa2z0adfbt1hbcc4sr2",
+        "_creationTime": 1800002850320.002,
+        "runnerId": "6qn756wq96czax63e8t1sds739",
+        "conversationId": "kz2yj0q2xzjd5fr227xr7exfjt",
+        "runId": "vx5q2s6tkscwfcmt0ppv1xnf4y",
+        "engine": "codex",
+        "prompt": "Fake long task",
+        "instructions": "",
+        "createdAt": 1799999250320,
+        "startedAt": 1799999250320,
+        "lastHeartbeatAt": 1800002850320,
+        "status": "error",
+        "error": "Synthetic plan limit",
+        "errorCode": "limit",
+        "finishedAt": 1800002850320,
+        "finalizingAt": 1800003450320,
+        "finalizedAt": 1800003450320
+      },
+      "run": {
+        "_id": "vx5q2s6tkscwfcmt0ppv1xnf4y",
+        "_creationTime": 1800002850320.001,
+        "conversationId": "kz2yj0q2xzjd5fr227xr7exfjt",
+        "prompt": "Fake long task",
+        "status": "error",
+        "startedAt": 1799999250320,
+        "model": "codex subscription",
+        "error": "Synthetic plan limit",
+        "errorCode": "limit",
+        "finishedAt": 1800002850320
+      }
+    },
+    "retryWins": {
+      "ordering": [
+        true,
+        false
+      ],
+      "original": {
+        "_id": "8bzrgtet9r36d56cs11yms6d6b",
+        "_creationTime": 1800003450320.002,
+        "runnerId": "6qn756wq96czax63e8t1sds739",
+        "conversationId": "vetavhyh9pae3re7j7ms7szbm2",
+        "runId": "atmgc7w2gdwa46ndxj00c80hhb",
+        "engine": "codex",
+        "prompt": "Fake long task",
+        "instructions": "",
+        "createdAt": 1799999850320,
+        "startedAt": 1799999850320,
+        "lastHeartbeatAt": 1800003450320,
+        "status": "error",
+        "error": "Synthetic plan limit",
+        "errorCode": "limit",
+        "finishedAt": 1800003450320,
+        "finalizedAt": 1800003450320
+      },
+      "replacement": {
+        "_id": "sqser5j51qw0pq1q701rynpzrd",
+        "_creationTime": 1800003450320.003,
+        "engine": "claude",
+        "runnerId": "6qn756wq96czax63e8t1sds739",
+        "conversationId": "vetavhyh9pae3re7j7ms7szbm2",
+        "runId": "atmgc7w2gdwa46ndxj00c80hhb",
+        "prompt": "Fake long task",
+        "instructions": "",
+        "retryOf": "8bzrgtet9r36d56cs11yms6d6b",
+        "status": "running",
+        "createdAt": 1800003450320,
+        "startedAt": 1800003450320,
+        "lastHeartbeatAt": 1800003450320
+      },
+      "span": {
+        "_id": "m5wft64qp1dgbqj1pbzgb1s02e",
+        "_creationTime": 1800003450320.004,
+        "runId": "atmgc7w2gdwa46ndxj00c80hhb",
+        "callId": "retry-open",
+        "kind": "command",
+        "name": "Synthetic replacement step",
+        "status": "running",
+        "startedAt": 1800003450320
+      }
+    },
+    "finalizeWins": {
+      "ordering": [
+        true,
+        false
+      ],
+      "turn": {
+        "_id": "53n7xjc30zdbmyjxhnfw3jwmfk",
+        "_creationTime": 1800003450320.0068,
+        "runnerId": "6qn756wq96czax63e8t1sds739",
+        "conversationId": "90dyrdqd8wgnrybh4kxd9yahpj",
+        "runId": "q62qtsk0zydbemeqwzwx796evk",
+        "engine": "codex",
+        "prompt": "Fake long task",
+        "instructions": "",
+        "createdAt": 1799999850320,
+        "startedAt": 1799999850320,
+        "lastHeartbeatAt": 1800003450320,
+        "status": "error",
+        "error": "Synthetic plan limit",
+        "errorCode": "limit",
+        "finishedAt": 1800003450320,
+        "finalizingAt": 1800003450320,
+        "deliveredAt": 1800003450320,
+        "finalizedAt": 1800003450320
+      },
+      "run": {
+        "_id": "q62qtsk0zydbemeqwzwx796evk",
+        "_creationTime": 1800003450320.0059,
+        "conversationId": "90dyrdqd8wgnrybh4kxd9yahpj",
+        "prompt": "Fake long task",
+        "status": "error",
+        "startedAt": 1799999850320,
+        "model": "codex subscription",
+        "error": "Synthetic plan limit",
+        "errorCode": "limit",
+        "finishedAt": 1800003450320
+      }
+    },
+    "targetedRecovery": {
+      "callback": {
+        "name": "recovery:sweep",
+        "args": "{\"only\":\"ef41kez04p2z2ktmgs876hy4em\"}",
+        "runAt": 1800004050320
+      },
+      "expiredAt": 1800004050320,
+      "turn": {
+        "_id": "3zy08skw9rrm3j7ra5rttjxzm9",
+        "_creationTime": 1800003450320.0303,
+        "runnerId": "6qn756wq96czax63e8t1sds739",
+        "conversationId": "ef41kez04p2z2ktmgs876hy4em",
+        "runId": "k4bv2dtx89y5q6mnxd24xhshrs",
+        "engine": "codex",
+        "prompt": "Fake long task",
+        "instructions": "",
+        "createdAt": 1799999850320,
+        "startedAt": 1799999850320,
+        "lastHeartbeatAt": 1800003450320,
+        "status": "error",
+        "error": "Synthetic plan limit",
+        "errorCode": "limit",
+        "finishedAt": 1800003450320,
+        "finalizingAt": 1800004050320,
+        "finalizedAt": 1800004050320
+      }
+    }
+  }
+}

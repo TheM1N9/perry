@@ -1,0 +1,498 @@
+﻿{
+  "actions": [],
+  "advisories": {
+    "1242595": {
+      "findings": [
+        {
+          "version": "4.13.9",
+          "paths": [
+            ".>@anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>hono"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/honojs/hono/security/advisories/GHSA-5r4p-p66f-jhc7\n- https://nvd.nist.gov/vuln/detail/CVE-2026-111757\n- https://github.com/honojs/hono/commit/8b05c774ef1555c70f5ba5e2991b7e77cc3635cc\n- https://github.com/honojs/hono/releases/tag/v4.13.11\n- https://github.com/advisories/GHSA-5r4p-p66f-jhc7",
+      "created": "2026-10-20T14:36:11.000Z",
+      "id": 1242595,
+      "npm_advisory_id": null,
+      "overview": "### Summary\n\n`serveStatic` decodes the request path a second time after Hono has already decoded it for routing. A crafted request can be routed as one path and served as another, so middleware mounted on a static prefix does not run for a file under that prefix.\n\n### Details\n\nHono decodes the request path once before routing. `serveStatic` decoded it again before resolving the file. With a malformed percent-encoded sequence, the first decode leaves part of the path encoded, the router matches the encoded form, and the second decode resolves the real directory. The file is still resolved inside the configured root; this is not a traversal outside it.\n\n### Impact\n\nAn unauthenticated attacker may reach static files without the middleware on their prefix running, for example an authentication check. This affects applications that mount middleware on part of the directory served by `serveStatic`. Applications that serve only public files are not affected.",
+      "reported_by": null,
+      "title": "Hono: `serveStatic` decodes the request path a second time, leading to bypass of middleware on static paths",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-111757"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "hono",
+      "vulnerable_versions": ">=4.12.4 <4.13.11",
+      "github_advisory_id": "GHSA-5r4p-p66f-jhc7",
+      "recommendation": "Upgrade to version 4.13.11 or later",
+      "patched_versions": ">=4.13.11",
+      "updated": "2026-10-20T14:36:13.000Z",
+      "cvss": {
+        "score": 5.3,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+      },
+      "cwe": [
+        "CWE-174"
+      ],
+      "url": "https://github.com/advisories/GHSA-5r4p-p66f-jhc7"
+    },
+    "1242883": {
+      "findings": [
+        {
+          "version": "10.7.2",
+          "paths": [
+            ".>@anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>express-rate-limit>ip-address"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/beaugunderson/ip-address/security/advisories/GHSA-rxp7-6hxx-x8q5\n- https://nvd.nist.gov/vuln/detail/CVE-2026-111997\n- https://github.com/beaugunderson/ip-address/commit/ec80fcd5d7b97defecfd39717d782a9f9f8b89dd\n- https://github.com/beaugunderson/ip-address/releases/tag/v10.7.4\n- https://github.com/advisories/GHSA-rxp7-6hxx-x8q5",
+      "created": "2026-10-22T16:19:39.000Z",
+      "id": 1242883,
+      "npm_advisory_id": null,
+      "overview": "### Summary\n\n`new Address6()` and `Address6.isValid()` strip a zone identifier with the pattern `/%.*$/` before they apply the 45-character length limit. When the string holds many `%` characters followed by a line terminator, the pattern is retried from every `%` and each attempt scans to the line terminator before failing, so rejecting the string takes time proportional to the square of its length. 10,000 `%` characters and a newline take 41 ms, 40,000 take 632 ms and 100,000 take 3.9 s of synchronous work. The same strings without the newline are rejected in under a millisecond.\n\nAn application that validates an attacker-supplied string with these methods can be stalled by a single long request. The input is rejected with the correct `AddressError`; the cost of reaching that rejection is the defect.\n\n### Details\n\nThe constructor in `src/ipv6.ts` removes the CIDR suffix, then the zone, then checks the length of what is left:\n\n```ts\nconst zone = constants6.RE_ZONE_STRING.exec(address);\n\nif (zone) {\n  this.zone = zone[0];\n\n  address = address.replace(constants6.RE_ZONE_STRING, '');\n}\n\nconst longest = this.groups * 5 + 5;\n\nif (address.length > longest) {\n  throw new AddressError(`IPv6 addresses are at most ${longest} characters.`);\n}\n```\n\n`RE_ZONE_STRING` is `/%.*$/`. It has no anchor at its start, `.` does not match a line terminator (`\\n`, `\\r`, U+2028 or U+2029), and without the `m` flag `$` matches only at the end of the input. For `%` repeated N times and then `\\n`, the engine starts a match at the first `%`, `.*` consumes the remaining `%` characters up to the newline, `$` fails there, and backtracking through every shorter `.*` fails too. The engine then starts again at the second `%`, and so on: N starts, each proportional to N. The length limit that follows rejects the string in constant time, after the scan has already run.\n\nThe line terminator need not be last. Any string in which many `%` characters precede a line terminator behaves the same way.\n\nEvery entry point that passes a caller's string to the `Address6` constructor is affected: `new Address6()`, `isValid()`, both arguments of `fromAddressAndMask()` and `fromAddressAndWildcardMask()`, and the prefix argument of `fromAddress4Nat64()` and `toAddress4Nat64()`. `fromWildcard()` rejects a `%` before it constructs anything, `fromURL()` admits only hex digits, colons and dots in a host, and `fromArpa()` checks the nibble grammar first, so those three are unaffected. `Address4` has no zone and is unaffected.\n\n### Affected versions\n\n`<= 10.7.3`. The zone pattern has been in the constructor since 1.0.0; 5.9.4, 9.0.5 and 10.7.0 show the same timings as 10.7.3.\n\n### Impact\n\n`Address6.isValid()` on N `%` characters and a newline, measured on ip-address 10.7.3 and node 24.21.0:\n\n| Input | Wall time | Same length of `!` |\n|---|---|---|\n| 5,461 characters | 13 ms | 0.1 ms |\n| 16 KiB | 108 ms | 0.1 ms |\n| 100 KB | 3.9 s | 0.1 ms |\n| 256 KiB | 27 s | 0.2 ms |\n\nThe parse is synchronous, so the event loop is blocked for the whole of the wall time and nothing else on that process is served. No memory is retained and the process resumes when the call returns.\n\n### Reachability\n\nThe input needs a line terminator after the `%` characters, which decides where it can arrive. An HTTP header value cannot carry a carriage return or a line feed, so a host or address taken from a header does not reach this. A URL can carry both characters percent-encoded at three bytes each, and Node's default 16 KB limit on the request line and headers admits about 5,461 of them: 13 ms. A request body is where the larger sizes come from. Common body parsers default to between 100 KB and 1 MB, and at 100 KB one field passed to the parser unchecked blocks the process for 3.9 s.\n\n### Proof of concept\n\n`npm i ip-address@10.7.3`, then:\n\n```js\nconst { Address6 } = require('ip-address');\n\nfunction time(input) {\n  const start = process.hrtime.bigint();\n\n  Address6.isValid(input);\n\n  return `${(Number(process.hrtime.bigint() - start) / 1e6).toFixed(1)} ms`;\n}\n\nfor (const n of [10000, 20000, 40000, 100000]) {\n  console.log(`${n}: ${time(`${'%'.repeat(n)}\\n`)}, without the newline ${time('%'.repeat(n))}`);\n}\n```\n\nOn affected versions (node 24.21.0):\n\n```\n10000: 41.0 ms, without the newline 0.0 ms\n20000: 161.1 ms, without the newline 0.0 ms\n40000: 632.4 ms, without the newline 0.1 ms\n100000: 3899.8 ms, without the newline 0.1 ms\n```\n\nEach doubling of the input multiplies the time by four.\n\n### Remediation\n\nUpgrade to the patched release. In the fix, the constructor finds the zone by the index of the first `%` and accepts the remainder as a zone only when it holds no line terminator, which reads the input once. 1 MiB of the input above is rejected in about a millisecond. Every address that parsed before parses to the same result, and a string with a line terminator after a `%` is rejected as it was.\n\n`RE_ZONE_STRING` stays exported from `v6/constants` for code that imports it directly and is marked `@deprecated`; the library itself does not call it.\n\nIf you cannot upgrade immediately, reject a candidate longer than an address with a zone identifier can be before you parse it:\n\n```js\nif (host.length > 64) throw new Error('not an IP address');\n```",
+      "reported_by": null,
+      "title": "ip-address: Address6 matches a zone identifier in quadratic time ahead of its length limit, allowing a single long string to stall the process",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-111997"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "ip-address",
+      "vulnerable_versions": "<=10.7.3",
+      "github_advisory_id": "GHSA-rxp7-6hxx-x8q5",
+      "recommendation": "Upgrade to version 10.7.4 or later",
+      "patched_versions": ">=10.7.4",
+      "updated": "2026-10-22T16:19:41.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-1333"
+      ],
+      "url": "https://github.com/advisories/GHSA-rxp7-6hxx-x8q5"
+    },
+    "1243066": {
+      "findings": [
+        {
+          "version": "3.25.76",
+          "paths": [
+            ".>shadcn>zod"
+          ]
+        },
+        {
+          "version": "4.6.5",
+          "paths": [
+            ".>zod"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://nvd.nist.gov/vuln/detail/CVE-2023-54404\n- https://github.com/colinhacks/zod/issues/1872\n- https://github.com/colinhacks/zod/pull/6475\n- https://www.vulncheck.com/advisories/zod-uncontrolled-resource-consumption-via-array-validation\n- https://github.com/colinhacks/zod/pull/6652\n- https://github.com/colinhacks/zod/commit/a0ebf970f2d752e5f58527cd2942ff48be4f46bd\n- https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+      "created": "2026-10-01T18:32:46.000Z",
+      "id": 1243066,
+      "npm_advisory_id": null,
+      "overview": "Zod schema-validation library through 4.6.5 contains an uncontrolled resource consumption vulnerability that allows attackers to exhaust memory by submitting a large array to an application using an array schema without a length constraint. Attackers can exploit the handleArrayResult parse logic in $ZodArray, which accumulates every validation issue for each failing element with no cap or early termination, causing the process to allocate excessive issue objects and crash due to out-of-memory conditions.",
+      "reported_by": null,
+      "title": "Zod can exhaust memory while validating oversized constrained collections",
+      "metadata": null,
+      "cves": [
+        "CVE-2023-54404"
+      ],
+      "access": "public",
+      "severity": "high",
+      "module_name": "zod",
+      "vulnerable_versions": "<4.6.6",
+      "github_advisory_id": "GHSA-mrhx-c7xc-m3w5",
+      "recommendation": "Upgrade to version 4.6.6 or later",
+      "patched_versions": ">=4.6.6",
+      "updated": "2026-10-23T18:26:52.000Z",
+      "cvss": {
+        "score": 7.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cwe": [
+        "CWE-770"
+      ],
+      "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+    },
+    "1243074": {
+      "findings": [
+        {
+          "version": "2.3.0",
+          "paths": [
+            ".>@anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>express>body-parser"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/expressjs/body-parser/security/advisories/GHSA-27r3-jxmh-p828\n- https://nvd.nist.gov/vuln/detail/CVE-2026-111181\n- https://github.com/expressjs/body-parser/commit/1260c3845f54502a05a87594f09a334786bb34d7\n- https://github.com/expressjs/body-parser/commit/f7075eae3a84c3473ab4bf0a777da28db208e916\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/expressjs/body-parser/releases/tag/1.20.9\n- https://github.com/expressjs/body-parser/releases/tag/v2.4.0\n- https://github.com/advisories/GHSA-27r3-jxmh-p828",
+      "created": "2026-10-23T20:53:11.000Z",
+      "id": 1243074,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\nA single request can crash any application using `body-parser` with default options. When a request carries a `Content-Encoding` (for example `gzip`), `body-parser` pipes it into a decompression stream and, after reading the body, leaves that stream piped with no error listener. A payload of one valid compressed frame followed by trailing bytes decodes and the application responds normally, but the trailing bytes then reach the already-finished decoder, which emits an error that is re-thrown as an uncaught exception and terminates the process. No authentication or matching route is required, since parsing runs before routing.\n\n### Patches\n\nFixed in body-parser 2.4.0 and 1.20.9. Upgrade to one of these versions.\n\n### Workarounds\n\nPass `inflate: false` to the body-parser middleware if the application does not need to accept compressed request bodies. This rejects encoded requests before any decompression stream is created.",
+      "reported_by": null,
+      "title": "body-parser vulnerable to Denial of Service via trailing bytes after a compressed request body",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-111181"
+      ],
+      "access": "public",
+      "severity": "high",
+      "module_name": "body-parser",
+      "vulnerable_versions": ">=2.0.0 <2.4.0",
+      "github_advisory_id": "GHSA-27r3-jxmh-p828",
+      "recommendation": "Upgrade to version 2.4.0 or later",
+      "patched_versions": ">=2.4.0",
+      "updated": "2026-10-23T20:53:12.000Z",
+      "cvss": {
+        "score": 7.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cwe": [
+        "CWE-248"
+      ],
+      "url": "https://github.com/advisories/GHSA-27r3-jxmh-p828"
+    },
+    "1243078": {
+      "findings": [
+        {
+          "version": "7.29.1",
+          "paths": [
+            ".>undici"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/nodejs/undici/security/advisories/GHSA-4qv8-2p9j-2685\n- https://nvd.nist.gov/vuln/detail/CVE-2026-109924\n- https://github.com/nodejs/undici/commit/299162740d5f39120092277e70efacb4d151c1c6\n- https://github.com/nodejs/undici/commit/789ef26461c648480433846607154f52d74ec9ab\n- https://github.com/nodejs/undici/commit/c43b23fdc6b37e1283d4347408bb16800f867d9e\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/nodejs/undici/releases/tag/v6.29.1\n- https://github.com/nodejs/undici/releases/tag/v7.30.1\n- https://github.com/nodejs/undici/releases/tag/v8.12.2\n- https://github.com/advisories/GHSA-4qv8-2p9j-2685",
+      "created": "2026-10-23T22:13:29.000Z",
+      "id": 1243078,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\nundici's `EventSource` client can be driven to exhaust process memory by a malicious or compromised Server-Sent Events peer. By sending millions of tiny completed `data:` fields with no blank event separator, or a single unfinished line split across many chunks, the parser retains a growing amount of per-field and per-chunk state. The byte-based `maxEventSize` and `maxResponseSize` limits do not bound that retained state, and `maxResponseSize` is enforced on the compressed body before decompression, so a small compressed response can expand into enough retained memory to terminate the process. The application only needs to maintain an `EventSource` connection to an untrusted peer, which controls only the response. Availability is the only impact.\n\n### Patches\n\nUpgrade to `6.29.1`, `7.30.1`, or `8.12.2`, which bound the retained EventSource parser state (the number of `data` fields and buffered chunks, the unfinished-line length, and per-field byte totals) independently of the byte limits.\n\n### Workarounds\n\nNone.",
+      "reported_by": null,
+      "title": "undici vulnerable to Denial of Service via unbounded memory in the EventSource parser",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-109924"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "undici",
+      "vulnerable_versions": ">=7.0.0 <7.30.1",
+      "github_advisory_id": "GHSA-4qv8-2p9j-2685",
+      "recommendation": "Upgrade to version 7.30.1 or later",
+      "patched_versions": ">=7.30.1",
+      "updated": "2026-10-23T22:13:31.000Z",
+      "cvss": {
+        "score": 5.9,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cwe": [
+        "CWE-770"
+      ],
+      "url": "https://github.com/advisories/GHSA-4qv8-2p9j-2685"
+    },
+    "1243081": {
+      "findings": [
+        {
+          "version": "7.29.1",
+          "paths": [
+            ".>undici"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/nodejs/undici/security/advisories/GHSA-f72v-6w45-q472\n- https://nvd.nist.gov/vuln/detail/CVE-2026-109841\n- https://github.com/nodejs/undici/commit/18bc8a1e09d15bc45815154a289dcf6fd5254d00\n- https://github.com/nodejs/undici/commit/4f7ef6806e532ab9e29ccd6229b1b9d241e1b1f0\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/nodejs/undici/releases/tag/v7.30.1\n- https://github.com/nodejs/undici/releases/tag/v8.12.2\n- https://github.com/advisories/GHSA-f72v-6w45-q472",
+      "created": "2026-10-23T22:12:57.000Z",
+      "id": 1243081,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\nundici's `fetch()` verifies Subresource Integrity (SRI) metadata by looking up the algorithm token in a lowercase-only set, but the SRI specification defines a valid token by its ASCII-lowercase form. A correct but non-lowercase token such as `SHA256-...` or `Sha256-...` is therefore treated as unknown and skipped. When no recognized algorithm remains, undici treats the integrity list as empty and accepts the response, so a server that returns a body different from the pinned digest passes the check.\n\nAn application that pins a response with a valid uppercase or mixed-case SRI token receives attacker-controlled bytes with no integrity error. The attacker needs only to control the response body, not the application's integrity metadata. The issue affects response integrity only. The regression was introduced in undici 7.15.0; releases 7.14.0 and earlier lowercase the token and are not affected.\n\n### Patches\n\nUpgrade to `7.30.1` or `8.12.2`. undici now normalizes the algorithm token to ASCII lowercase before validating it and before selecting the strongest algorithm, so case variants of SHA-256, SHA-384, and SHA-512 are verified correctly.\n\n### Workarounds\n\nUse lowercase algorithm tokens (`sha256`, `sha384`, `sha512`) in `integrity` metadata.",
+      "reported_by": null,
+      "title": "undici vulnerable to Subresource Integrity bypass via non-lowercase algorithm tokens",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-109841"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "undici",
+      "vulnerable_versions": ">=7.15.0 <7.30.1",
+      "github_advisory_id": "GHSA-f72v-6w45-q472",
+      "recommendation": "Upgrade to version 7.30.1 or later",
+      "patched_versions": ">=7.30.1",
+      "updated": "2026-10-23T22:13:18.000Z",
+      "cvss": {
+        "score": 5.9,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:N"
+      },
+      "cwe": [
+        "CWE-178"
+      ],
+      "url": "https://github.com/advisories/GHSA-f72v-6w45-q472"
+    },
+    "1243098": {
+      "findings": [
+        {
+          "version": "3.1.8",
+          "paths": [
+            ".>@anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>ajv>fast-uri"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/fastify/fast-uri/security/advisories/GHSA-w74x-v6f9-j3xg\n- https://nvd.nist.gov/vuln/detail/CVE-2026-110306\n- https://github.com/fastify/fast-uri/commit/39933a1f1422986f14e2d844f552238feb40f5d4\n- https://github.com/fastify/fast-uri/commit/597f254c86d151568511eeb9a1df761fd12520b3\n- https://github.com/fastify/fast-uri/commit/e60e716f41d1d73717e2d803d20b68d2c6d20a0f\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/fastify/fast-uri/releases/tag/v2.4.8\n- https://github.com/fastify/fast-uri/releases/tag/v3.1.9\n- https://github.com/fastify/fast-uri/releases/tag/v4.2.3\n- https://github.com/advisories/GHSA-w74x-v6f9-j3xg",
+      "created": "2026-10-23T21:41:36.000Z",
+      "id": 1243098,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\n`fast-uri` percent-decodes the scheme component with the legacy global `unescape()` before validating it, so an input whose decoded scheme is a valid but dangerous token is emitted as a live scheme. RFC 3986 section 3.1 does not allow percent-encoding in a scheme, so no RFC or WHATWG parser treats such input as having that scheme, but `fast-uri` does.\n\nFor example, `normalize('%6Aavascript:alert(1)')` returns `javascript:alert(1)`, `resolve('https://a.example/', '%6Aavascript:alert(1)')` returns `javascript:alert(1)`, and `parse('%6Aavascript:alert(1)').scheme` returns `javascript`. The `%uXXXX` form (`%u006Aavascript:`) produces the same result, and `equal('%68ttp://a/', 'http://a/')` returns `true`.\n\nAn application that screens dangerous schemes on the raw input and then stores or renders `normalize(input)` or `resolve(base, input)` turns an inert string into an executable `javascript:`, `data:`, or `vbscript:` URL, a stored or reflected cross-site scripting vector in the consuming application. `equal()` also treats an encoded and a plain scheme as the same, which can bypass equality-based allowlists.\n\n### Patches\n\nUpgrade to `fast-uri` `2.4.8`, `3.1.9`, or `4.2.3`.\n\n### Workarounds\n\nReject input whose scheme part (before the first `:`, and before any `/`, `?`, or `#`) contains `%`. Alternatively, check `parse(x).scheme` against an allowlist after normalization and use that same parsed result rather than the raw string.",
+      "reported_by": null,
+      "title": "fast-uri vulnerable to URI scheme spoofing via percent-encoded scheme decoding",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-110306"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "fast-uri",
+      "vulnerable_versions": ">=3.0.0 <3.1.9",
+      "github_advisory_id": "GHSA-w74x-v6f9-j3xg",
+      "recommendation": "Upgrade to version 3.1.9 or later",
+      "patched_versions": ">=3.1.9",
+      "updated": "2026-10-23T21:41:38.000Z",
+      "cvss": {
+        "score": 6.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+      },
+      "cwe": [
+        "CWE-172",
+        "CWE-180"
+      ],
+      "url": "https://github.com/advisories/GHSA-w74x-v6f9-j3xg"
+    },
+    "1243101": {
+      "findings": [
+        {
+          "version": "3.1.8",
+          "paths": [
+            ".>@anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>ajv>fast-uri"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/fastify/fast-uri/security/advisories/GHSA-xhq7-xmqj-769h\n- https://nvd.nist.gov/vuln/detail/CVE-2026-110095\n- https://github.com/fastify/fast-uri/commit/048bbd0a252971be86d6579f0dfc87f8de5b9c47\n- https://github.com/fastify/fast-uri/commit/52774a5c35df36b0bbe439cd4c12c3dc0e50e3b9\n- https://github.com/fastify/fast-uri/commit/7c19f8b97ec51f1f20b4e3d9d5820cb8d5176058\n- https://github.com/fastify/fast-uri/commit/9eb8759a9825c046f57f7f695f1944bc39b88abd\n- https://github.com/fastify/fast-uri/commit/acc5c5d60c4209571789496e1732468911c7e12a\n- https://github.com/fastify/fast-uri/commit/b110a3571c37dfcf9d1c72ce2e2e178c78d1a424\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/fastify/fast-uri/releases/tag/v2.4.8\n- https://github.com/fastify/fast-uri/releases/tag/v3.1.9\n- https://github.com/fastify/fast-uri/releases/tag/v4.2.3\n- https://github.com/advisories/GHSA-xhq7-xmqj-769h",
+      "created": "2026-10-23T21:39:34.000Z",
+      "id": 1243101,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\n`fast-uri`'s `normalize()` and `serialize()` apply RFC 3986 dot-segment removal (`remove_dot_segments`) to the path of a relative-path reference. RFC 3986 section 5.2.4 defines that algorithm only for the merged target path during resolution, not for the reference itself, so applied to the reference it drops leading `..` segments and can turn a document-relative reference into a root-relative one.\n\nFor example, `normalize('a/../b')` returns `/b` and `normalize('../x')` returns `x`, so `resolve(base, normalize(ref))` points at a different resource than `resolve(base, ref)`, and `equal()` treats distinct references as the same.\n\nApplications that normalize attacker-supplied or user-supplied relative references and then resolve them, or use them as cache, deduplication, or authorization keys, can have a reference escape its intended directory and point at a different resource.\n\n### Patches\n\nUpgrade to `fast-uri` `2.4.8`, `3.1.9`, or `4.2.3`.\n\n### Workarounds\n\nDo not normalize a relative reference before resolving it. Resolve it against the absolute base first, then normalize the absolute result.",
+      "reported_by": null,
+      "title": "fast-uri vulnerable to improper path equivalence in relative reference normalization",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-110095"
+      ],
+      "access": "public",
+      "severity": "low",
+      "module_name": "fast-uri",
+      "vulnerable_versions": ">=3.0.0 <3.1.9",
+      "github_advisory_id": "GHSA-xhq7-xmqj-769h",
+      "recommendation": "Upgrade to version 3.1.9 or later",
+      "patched_versions": ">=3.1.9",
+      "updated": "2026-10-23T21:39:38.000Z",
+      "cvss": {
+        "score": 3.7,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+      },
+      "cwe": [
+        "CWE-41"
+      ],
+      "url": "https://github.com/advisories/GHSA-xhq7-xmqj-769h"
+    },
+    "1243104": {
+      "findings": [
+        {
+          "version": "3.1.8",
+          "paths": [
+            ".>@anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>ajv>fast-uri"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/fastify/fast-uri/security/advisories/GHSA-wjr9-j795-jxcr\n- https://nvd.nist.gov/vuln/detail/CVE-2026-110180\n- https://github.com/fastify/fast-uri/commit/58c183d0b168ad87f98773266444ce1f6375803a\n- https://github.com/fastify/fast-uri/commit/ddfc6a51122dfce0365655f04479fc3adb7f6b3c\n- https://github.com/fastify/fast-uri/commit/f6d46dfeab025d0c440485f4ae29fa4f14707646\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/fastify/fast-uri/releases/tag/v2.4.8\n- https://github.com/fastify/fast-uri/releases/tag/v3.1.9\n- https://github.com/fastify/fast-uri/releases/tag/v4.2.3\n- https://github.com/advisories/GHSA-wjr9-j795-jxcr",
+      "created": "2026-10-23T21:37:59.000Z",
+      "id": 1243104,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\n`fast-uri` versions `>= 2.4.2, <= 2.4.7`, `>= 3.1.3, <= 3.1.8`, and `>= 4.0.1, <= 4.2.2` can silently rewrite the host of an HTTP-family URL (`http`, `https`, `ws`, `wss`, or any scheme with `domainHost: true`). For those schemes `canonicalizeHost()` passes the parsed host to the WHATWG `URL` parser and adopts its `.hostname` without checking that the parser read the whole input as a host. RFC 3986 permits `@` inside the host group and the WHATWG parser strips TAB, LF, and CR, so the authority `fast-uri` reports is rewritten by that second parser with no `error` set: data before an `@` is dropped and whitespace is removed.\n\nFor example, `fast-uri` parses `http://a@b@evil.example/` to host `evil.example` (dropping the `b` segment), and a host containing a raw TAB, CR, or LF has those characters stripped. `equal()` then treats a whitespace-smuggled host as the same as the clean one, and `resolve()` rewrites the authority the same way.\n\nApplications that use `fast-uri` to enforce host-based policy (denylists, loopback filtering, redirect validation, outbound proxy routing) on one representation, such as the raw input, see a policy/use desync: the canonical host `fast-uri` returns differs from what was checked, and traffic can be steered to an unintended destination.\n\n### Patches\n\nUpgrade to `fast-uri` `2.4.8`, `3.1.9`, or `4.2.3`.\n\n### Workarounds\n\nReject URIs whose authority contains more than one `@`, or contains TAB, CR, or LF, before calling `fast-uri`. Alternatively, treat any non-empty `parse(x).error` as fatal, and compare hosts only from the same `parse()` result.",
+      "reported_by": null,
+      "title": "fast-uri vulnerable to host confusion via unchecked WHATWG host canonicalization",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-110180"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "fast-uri",
+      "vulnerable_versions": ">=3.1.3 <3.1.9",
+      "github_advisory_id": "GHSA-wjr9-j795-jxcr",
+      "recommendation": "Upgrade to version 3.1.9 or later",
+      "patched_versions": ">=3.1.9",
+      "updated": "2026-10-23T21:38:02.000Z",
+      "cvss": {
+        "score": 4.8,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+      },
+      "cwe": [
+        "CWE-20",
+        "CWE-436"
+      ],
+      "url": "https://github.com/advisories/GHSA-wjr9-j795-jxcr"
+    },
+    "1243107": {
+      "findings": [
+        {
+          "version": "3.1.8",
+          "paths": [
+            ".>@anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>ajv>fast-uri"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/fastify/fast-uri/security/advisories/GHSA-333x-w4r6-6crp\n- https://nvd.nist.gov/vuln/detail/CVE-2026-110725\n- https://github.com/fastify/fast-uri/commit/39e6493c1356f30a0084171627eb266786e1620e\n- https://github.com/fastify/fast-uri/commit/a9b8d67353630aab053cd727cf629023dd018d2b\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/fastify/fast-uri/releases/tag/v2.4.8\n- https://github.com/fastify/fast-uri/releases/tag/v3.1.9\n- https://github.com/fastify/fast-uri/releases/tag/v4.2.3\n- https://github.com/advisories/GHSA-333x-w4r6-6crp",
+      "created": "2026-10-23T21:36:40.000Z",
+      "id": 1243107,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\n`fast-uri`'s `serialize()`, `normalize()`, and `resolve()`, when called with the non-default option `reference: 'suffix'` on a reference that has no authority, emit a relative reference whose first path segment contains a bare colon without escaping it. RFC 3986 section 3.3 requires the first segment of a `path-noscheme` reference not to contain a colon, precisely because a bare colon makes the string reparse as an absolute URI with a scheme. `fast-uri`'s default serialization escapes that colon, but the suffix path does not.\n\nFor example, `normalize('javascript:alert(1)', { reference: 'suffix' })` returns `javascript:alert(1)`, which reparses as a live `javascript:` scheme; `data:` and `vbscript:` behave the same.\n\nApplications that serialize or normalize a relative reference with `reference: 'suffix'` and then treat the result as a URI can turn inert input into a live `javascript:`, `data:`, or `vbscript:` URL (a cross-site scripting vector), and `equal()` can conflate a scheme-bearing reference with a relative one. Exposure is limited to applications that use the non-default `reference: 'suffix'` option.\n\n### Patches\n\nUpgrade to `fast-uri` `2.4.8`, `3.1.9`, or `4.2.3`.\n\n### Workarounds\n\nDo not use the `reference: 'suffix'` option on untrusted input. If suffix output is required, percent-encode a colon in the first path segment of the result before treating it as a URI.",
+      "reported_by": null,
+      "title": "fast-uri vulnerable to scheme injection via an unescaped first-segment colon in suffix references",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-110725"
+      ],
+      "access": "public",
+      "severity": "low",
+      "module_name": "fast-uri",
+      "vulnerable_versions": ">=3.0.0 <3.1.9",
+      "github_advisory_id": "GHSA-333x-w4r6-6crp",
+      "recommendation": "Upgrade to version 3.1.9 or later",
+      "patched_versions": ">=3.1.9",
+      "updated": "2026-10-23T21:36:41.000Z",
+      "cvss": {
+        "score": 3.7,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+      },
+      "cwe": [
+        "CWE-41",
+        "CWE-116"
+      ],
+      "url": "https://github.com/advisories/GHSA-333x-w4r6-6crp"
+    },
+    "1243113": {
+      "findings": [
+        {
+          "version": "7.29.1",
+          "paths": [
+            ".>undici"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/nodejs/undici/security/advisories/GHSA-xjj6-f33q-929c\n- https://nvd.nist.gov/vuln/detail/CVE-2026-109869\n- https://github.com/nodejs/undici/commit/07ded4941b1e72afec862958c3b8ddf468f3b429\n- https://github.com/nodejs/undici/commit/1325a87dfb3492f8e87e6b0a84b3bda4e82e3436\n- https://github.com/nodejs/undici/commit/b5084c7dc239172d75c336b1cd51ddac023938a5\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/nodejs/undici/releases/tag/v6.29.1\n- https://github.com/nodejs/undici/releases/tag/v7.30.1\n- https://github.com/nodejs/undici/releases/tag/v8.12.2\n- https://github.com/advisories/GHSA-xjj6-f33q-929c",
+      "created": "2026-10-23T22:14:31.000Z",
+      "id": 1243113,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\nundici's `fetch()` crashes the Node.js process when a malicious server returns a response with more than five content codings and closes the connection before sending the body. undici rejects such responses (a content-encoding limit), but it created the internal response stream before that check and returned without attaching an error listener or aborting the request. The early close then surfaces a content-length mismatch on that orphaned internal stream, which Node.js treats as an unhandled `error` and terminates the process. A remote, unauthenticated server can trigger this with a single response, even when the application correctly catches the `fetch()` rejection. undici 6.x, 7.x, and 8.x are affected.\n\n### Patches\n\nUpgrade to `6.29.1`, `7.30.1`, or `8.12.2`. undici now validates the content-encoding chain before creating the internal body stream and aborts the response when the limit is exceeded, so no error can surface on an orphaned stream.\n\n### Workarounds\n\nNone.",
+      "reported_by": null,
+      "title": "undici vulnerable to Denial of Service via unhandled error on excessive content-encodings",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-109869"
+      ],
+      "access": "public",
+      "severity": "high",
+      "module_name": "undici",
+      "vulnerable_versions": ">=7.18.0 <7.30.1",
+      "github_advisory_id": "GHSA-xjj6-f33q-929c",
+      "recommendation": "Upgrade to version 7.30.1 or later",
+      "patched_versions": ">=7.30.1",
+      "updated": "2026-10-23T22:14:32.000Z",
+      "cvss": {
+        "score": 7.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cwe": [
+        "CWE-248",
+        "CWE-459"
+      ],
+      "url": "https://github.com/advisories/GHSA-xjj6-f33q-929c"
+    },
+    "1243452": {
+      "findings": [
+        {
+          "version": "6.16.0",
+          "paths": [
+            ".>@anthropic-ai/claude-agent-sdk>@modelcontextprotocol/sdk>express>qs"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/ljharb/qs/security/advisories/GHSA-6pq8-jhm2-2vcw\n- https://nvd.nist.gov/vuln/detail/CVE-2026-110816\n- https://github.com/ljharb/qs/commit/a952e7519338ef0cfb25694a2988848f93333727\n- https://github.com/ljharb/qs/releases/tag/v6.16.1\n- https://github.com/advisories/GHSA-6pq8-jhm2-2vcw",
+      "created": "2026-10-27T16:10:55.000Z",
+      "id": 1243452,
+      "npm_advisory_id": null,
+      "overview": "## Summary\n\n`qs.stringify(obj, { arrayFormat: 'comma' })` throws an uncaught `TypeError: Cannot convert object to primitive value` when an array in `obj` contains an element that carries an own, non-callable `toString` property (for example `{ a: [ { toString: 'x' } ] }`). A remote, unauthenticated attacker who can influence an object that the application later re-serializes with the comma array format triggers the throw. In a service that lacks a synchronous error boundary around the serialization call, the uncaught exception crashes the worker process, producing a denial of service.\n\n## Root Cause\n\nWhen `arrayFormat: 'comma'` is selected, the comma branch collapses the whole array into a single value via `Array.prototype.join`, or, under `encodeValuesOnly: true`, maps each element through the value encoder before joining. Both paths perform an implicit string coercion (`ToPrimitive` with hint `\"string\"`) on each element. For an object whose own `toString` is a non-callable value, coercion skips the shadowed non-callable `toString`, falls through to `Object.prototype.valueOf` (which returns the object rather than a primitive), and throws. The comma branch runs this coercion before the per-element null and skip handling in the main loop, so nothing downstream can neutralize the hostile element, and the throw is never caught inside the library.\n\n```text\nlib/stringify.js  (comma-array branch)\n  line 152-154: obj = utils.maybeMap(obj, function (v) { return v == null ? v : encoder(v); });  // encodeValuesOnly path\n  line 156:     objKeys = [{ value: obj.length > 0 ? obj.join(',') || null : void undefined }];   // default comma path\nlib/utils.js\n  line 292:     string = String(str);   // value encoder coercion reached via the encodeValuesOnly path\n```\n\n## Impact\n\nPrerequisites: the application calls `qs.stringify` with `arrayFormat: 'comma'` (a documented, supported option) on an object whose shape can be influenced by attacker input. Attacker-controllable sources include `qs.parse(input, { allowPrototypes: true })`, which retains a `toString` segment (Express 4's default query parser, Express 5's `extended` query parser, and body-parser's `extended` urlencoded parser all set it), `qs.parse(input, { plainObjects: true })`, whose null-prototype elements throw even without a `toString` key (eg, `a[][b]=c`), and `JSON.parse` of a request body, which needs no qs parse option at all. No authentication or user interaction is required. Demonstrated capability: a single request forces an uncaught synchronous `TypeError` in the serialization call. In a naive single-process Node service with no synchronous error boundary, this crashes the process and takes the service offline (availability impact). Under a framework such as Express that traps synchronous handler throws, the plausible outcome is a per-request 500 rather than a full outage; that lower-impact case is noted but not the worst credible supported deployment. There is no confidentiality or integrity impact, no memory unsafety, and no prototype pollution.\n\n## Proof of Concept\n\n`Install qs at the affected version (for example 6.16.0) and run the following script with Node.js. No network setup is required; it demonstrates the throw in isolation.`\n\n```js\nvar qs = require('qs');\n\n// Source A: qs.parse with allowPrototypes retains the hostile toString segment\nqs.stringify(qs.parse('a[0][toString]=x', { allowPrototypes: true }), { arrayFormat: 'comma' });\n\n// Source B: a JSON request body, no qs parse option needed\nqs.stringify(JSON.parse('{\"a\":[{\"toString\":\"x\"}]}'), { arrayFormat: 'comma' });\n\n// Also affected: the encodeValuesOnly sub-path\nqs.stringify(JSON.parse('{\"a\":[{\"toString\":\"x\"}]}'), { arrayFormat: 'comma', encodeValuesOnly: true });\n```\n\n```text\nA default-join (allowPrototypes) => THREW: TypeError: Cannot convert object to primitive value\nB default-join (JSON.parse) => THREW: TypeError: Cannot convert object to primitive value\nC encodeValuesOnly path => THREW: TypeError: Cannot convert object to primitive value\nN2 callable toString => NO THROW; output=\"a=z\"\nN3 isBuffer vector (CVE-2026-82417) => NO THROW; output=\"a%5Bconstructor%5D%5BisBuffer%5D=x\"\nqs version: 6.16.0\n```\n\n## Attack Chain\n\n1. **Exposure:** A remote, unauthenticated request reaches an endpoint whose handler eventually serializes attacker-influenced data with `qs.stringify(obj, { arrayFormat: 'comma' })`.\n2. **Control:** The attacker supplies data that becomes `{ a: [ { toString: <non-callable value> } ] }`, either via `a[0][toString]=x` parsed with `allowPrototypes`, or via a JSON body `{\"a\":[{\"toString\":\"x\"}]}`.\n3. **Path:** In `stringify`, the primitive/buffer guard at `lib/stringify.js:134` is false for an array, so control reaches the comma branch at `lib/stringify.js:149`.\n4. **Guard:** On the `encodeValuesOnly` path, the closure `v == null ? v : encoder(v)` at `lib/stringify.js:152-154` passes only `null`/`undefined` through; a non-null object still reaches the encoder. The default path skips that closure entirely and reaches `obj.join(',')` at `lib/stringify.js:156` with no guard at all.\n5. **Primitive:** The element is coerced to a string (`Array.prototype.join`, or `String(str)` at `lib/utils.js:292`). `ToPrimitive` skips the non-callable own `toString`, `valueOf` returns the object, and a `TypeError` is thrown.\n6. **Result:** The uncaught synchronous exception propagates out of the serialization call, failing the request and, in a service without a synchronous error boundary, crashing the process (denial of service).\n\n## Bypass Evidence\n\nThis is a different element type on the code path CVE-2026-8723 (GHSA-q8mj-m7cp-5q26) patched, plus the default comma path, which that fix never covered. CVE-2026-8723 addressed a `TypeError` crash on `null`/`undefined` entries in the comma plus `encodeValuesOnly` path. Its fix (commit 21f80b3) wraps the encoder in `function (v) { return v == null ? v : encoder(v); }`, so it only passes `null` and `undefined` through. A non-null element with a hostile own `toString` fails the `v == null` test, so the encoder still runs and still throws; the encodeValuesOnly case (case C above) throws on the exact fixed code. The default comma path (`encodeValuesOnly` unset, the library default) never entered that fix at all: `git log -S \"obj.join(','\" -- lib/stringify.js` shows no security fix has ever touched the `obj.join(',')` line, and cases A and B throw with `encodeValuesOnly` unset. The related isBuffer hardening for CVE-2026-82417 (commit e83d321) is a different sink at the `lib/stringify.js:134` guard, which is never entered for the array element; the negative control `{a:{constructor:{isBuffer:'x'}}}` serializes cleanly. Disproof attempts that failed: a `valueOf`-only object does not throw (it serializes to `[object Object]`), confirming the trigger is an element with no callable `toString` (an own non-callable `toString`, or a null-prototype object with no `toString` at all, as `qs.parse` produces under `plainObjects`); nested arrays (`{\"a\":[[{\"toString\":\"x\"}]]}`) throw the same way; a callable `toString` serializes cleanly; and the default (non-comma) array format serializes cleanly, confirming the comma format is required. All positive and negative cases were reproduced on the exact published 6.16.0 artifact.\n\n## Affected Versions\n\n- `Ecosystem: npm`\n- `Package: qs`\n- `Confirmed affected range: >= 6.7.0, <= 6.16.0`\n- `Latest release checked: 6.16.0 (npm latest; git tag v6.16.0)`\n- `Fix status: fixed in 6.16.1 (a952e75)`\n\nThe `arrayFormat: 'comma'` join sink was introduced in qs 6.7.0, so 6.7.0 is the lower boundary; releases before 6.7.0 lack the sink. No released version fixes this vector, and the latest published release (6.16.0) reproduces the throw, so the closed upper bound `<= 6.16.0` covers every affected release. The `encodeValuesOnly` sub-path was added later, but the default comma-join vector already affects 6.7.0, so 6.7.0 governs the lower boundary.\n\n## Suggested Fix\n\nThe comma array serialization must not allow an implicit string coercion of an array element to throw an uncaught exception. Coercion of each comma element should be performed defensively (for example by wrapping the join and per-element encode so that a coercion failure is caught and handled), and this protection must cover both the default `obj.join(',')` path and the `encodeValuesOnly` encoder path, not only the previously patched `null`/`undefined` case. As an interim mitigation without a code change, applications can avoid `arrayFormat: 'comma'` when serializing data derived from untrusted input, sanitize parsed objects (avoid `allowPrototypes`/`plainObjects` on untrusted input and strip unexpected own properties), or wrap `qs.stringify` calls in a synchronous error boundary so a coercion failure cannot crash the process.\n\nReported by zx (GitHub: @manus-pi).\n\n---\n\n## Independent report by @Lucidsec\n\nThe following was reported separately, after this advisory, and is merged here as a duplicate.\n\n### Summary\n\nIn project [qs](https://github.com/ljharb/qs), in versions `>= 6.7.0, <= 6.16.0` (every version that supports `arrayFormat: 'comma'`), `qs.stringify` with `arrayFormat: 'comma'` can throw an uncaught `TypeError: Cannot convert object to primitive value` when an array element has a non-callable own `toString`. It is fixed in 6.16.1. Related: CWE-248 and CWE-704.\n\n### Technical Details\n\n`qs.stringify` with `arrayFormat: 'comma'` joins an array at `lib/stringify.js:156` via `obj.join(',')`. An element whose own `toString` is not callable makes `Array.prototype.join` throw. There is no type check and no catch on that path.\n\nA second path exists with `encodeValuesOnly`: at `lib/stringify.js:151-154`, `maybeMap` only skips `v == null`, then `lib/utils.js:292` does `String(str)` and throws the same `TypeError` (this second site exists since v6.11.1; before that, the same input throws at `join`).\n\nWho can trigger: someone who can shape an array element passed to `stringify`. The host must use non-default `arrayFormat: 'comma'`. Default `arrayFormat` `indices` does not fold arrays and is not affected. A parse-then-stringify path also needs `plainObjects: true` (null-prototype elements from `lib/parse.js:200`) or `allowPrototypes: true` (which Express 4's default query parser, Express 5's `extended` query parser, and body-parser's `extended` urlencoded parser all set). Default `qs.parse('a[0][toString]=x')` returns `{}` because the prototype guard drops `toString`. Direct JSON handed to `stringify` can supply `{\"a\":[{\"toString\":\"x\"}]}`.\n\nCause: the comma fold at `lib/stringify.js:149-156` collapses the array into a single value before the main loop at `lib/stringify.js:172-212`, so `skipNulls` and `strictNullHandling` only ever see the joined value, never individual elements. `isNonNullishPrimitive` / `isBuffer` at `lib/stringify.js:134` inspect the whole value, not each element. A normal object uses `Object.prototype.toString` and becomes `[object Object]`. An own non-callable `toString` is skipped, `valueOf` returns the object, and `join` throws. (The skipped TODO test at `test/stringify.js:684-689` uses a plain `{ b: 1 }` element, which does not throw; it covers the separate question of what comma format should output for object elements, not this crash.) Earlier comma crash fixes did not cover object elements.\n\n### Impact\n\nOne small input makes that serialization path throw a synchronous, catchable `TypeError`. Behind a framework error boundary (eg, a synchronous Express handler), the request fails with a 500 and the process survives. In a host with no error boundary (eg, a bare `http.createServer` handler), the uncaught exception exits the process (the client sees `ECONNRESET`). Availability only.\n\n### Proof of Concept\n\n<details>\n<summary>Show the proof of concept</summary>\n\nChecked on the latest commit that was checked: `07b1d4d82c8f9301c105ea4b94fa2302cfd6e8b4`. Still present. Demonstrated.\n\n- Payload `{\"a\":[{\"toString\":\"x\"}]}` throws at `lib/stringify.js:156`.\n- Baseline `{\"a\":[\"x\",\"y\"]}` returns 200 with body `a=x%2Cy`.\n- A plain object element stringifies to `a=%5Bobject%20Object%5D` and does not throw.\n- `encodeValuesOnly: true` throws via `utils.js:292`.\n- `plainObjects` parse plus comma throws.\n\n</details>\n\n### Suggested Fix\n\nBefore `join`, map elements with the existing primitive check; skip or replace non-primitives so `join` cannot throw. On the `encodeValuesOnly` path, do not send non-primitives into `String()`. Optionally guard `lib/utils.js:292`. Add new regression tests.",
+      "reported_by": null,
+      "title": "qs : qs.stringify with arrayFormat 'comma' throws an uncaught TypeError on array elements carrying a non-callable own toString (DoS)",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-110816"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "qs",
+      "vulnerable_versions": ">=6.7.0 <=6.16.0",
+      "github_advisory_id": "GHSA-6pq8-jhm2-2vcw",
+      "recommendation": "Upgrade to version 6.16.1 or later",
+      "patched_versions": ">=6.16.1",
+      "updated": "2026-10-27T16:10:58.000Z",
+      "cvss": {
+        "score": 5.3,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+      },
+      "cwe": [
+        "CWE-248",
+        "CWE-704"
+      ],
+      "url": "https://github.com/advisories/GHSA-6pq8-jhm2-2vcw"
+    }
+  },
+  "muted": [],
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 2,
+      "moderate": 7,
+      "high": 4,
+      "critical": 0
+    },
+    "dependencies": 833,
+    "devDependencies": 0,
+    "optionalDependencies": 0,
+    "totalDependencies": 833
+  }
+}

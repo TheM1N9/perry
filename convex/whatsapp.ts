@@ -224,6 +224,25 @@ export const send = internalMutation({
   handler: async (ctx, args) => await queueText(ctx, args.to, args.text),
 });
 
+export const react = internalMutation({
+  args: { turnId: v.id("codexTurns"), to: v.string(), reaction: v.object({ id: v.string(), fromMe: v.boolean(), remoteJid: v.optional(v.string()), participant: v.optional(v.string()), emoji: v.string() }) },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const owner = await install(ctx);
+    if (!owner?.whatsappOwner || bareJid(args.to) !== owner.whatsappOwner || !(await linkRow(ctx))?.wanted) return false;
+    const message = await ctx.runQuery(internal.reactions.target, { turnId: args.turnId, messageId: args.reaction.id });
+    if (!message || message.channel !== "whatsapp" || message.externalId !== args.to) return false;
+    const old = await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", "pending"))
+      .filter(q => q.and(q.eq(q.field("to"), args.to), q.eq(q.field("reaction.id"), args.reaction.id))).collect();
+    for (const row of old) await ctx.db.delete(row._id);
+    await ctx.db.insert("whatsappOutbox", { to: args.to, kind: "reaction", reaction: args.reaction, state: "pending", createdAt: Date.now(), attempts: 0 });
+    // Commit echo suppression with the outbox row: Baileys may echo before sendMessage resolves.
+    await ctx.db.patch(message._id, { perryReaction: args.reaction.emoji });
+    await ctx.db.patch(args.turnId, { reactionAt: Date.now() });
+    return true;
+  },
+});
+
 /** A file for the owner: a picture, video or voice note shows as one, anything else as a document. Only ever the owner's. */
 export const sendFile = internalMutation({
   args: { to: v.string(), storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string() },
@@ -262,7 +281,13 @@ export const sent = internalMutation({
     const row = await ctx.db.get(args.id);
     if (!row) return null;
     if (!args.error) await ctx.db.patch(row._id, { state: "sent", sentAt: Date.now() });
-    else if (row.attempts + 1 >= 3) await ctx.db.patch(row._id, { state: "failed", attempts: row.attempts + 1, error: args.error.slice(0, 500) });
+    else if (row.attempts + 1 >= 3) {
+      await ctx.db.patch(row._id, { state: "failed", attempts: row.attempts + 1, error: args.error.slice(0, 500) });
+      if (row.reaction) {
+        const message = await ctx.db.query("channelMessages").withIndex("by_message", q => q.eq("channel", "whatsapp").eq("externalId", row.to).eq("messageId", row.reaction!.id)).unique();
+        if (message?.perryReaction === row.reaction.emoji) await ctx.db.patch(message._id, { perryReaction: undefined });
+      }
+    }
     else await ctx.db.patch(row._id, { attempts: row.attempts + 1, error: args.error.slice(0, 500) });
     // Sent messages are not kept: the chat's own history has them.
     const old = await ctx.db.query("whatsappOutbox").withIndex("by_state", (q) => q.eq("state", "sent").lt("createdAt", Date.now() - 86_400_000)).take(100);
@@ -353,7 +378,7 @@ export const otherState = internalQuery({
  * a claim; an answer to an approval waiting in this chat; or a turn.
  */
 export const receive = internalAction({
-  args: { chatId: v.string(), text: v.string(), name: v.optional(v.string()), media: v.optional(v.array(vIncomingMedia)) },
+  args: { chatId: v.string(), text: v.string(), name: v.optional(v.string()), media: v.optional(v.array(vIncomingMedia)), messageId: v.optional(v.string()), fromMe: v.optional(v.boolean()), remoteJid: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const who: "owner" | "claimed" | "ignore" = await ctx.runMutation(internal.whatsapp.authorize, { chatId: args.chatId, text: args.text });
@@ -370,6 +395,7 @@ export const receive = internalAction({
     }
     if (who !== "owner") return null;
     const chatId = bareJid(args.chatId);
+    if (args.messageId) await ctx.runMutation(internal.reactions.record, { channel: "whatsapp", externalId: chatId, messageId: args.messageId, text: args.text || "(attachment)", isPerry: false, fromMe: args.fromMe, remoteJid: args.remoteJid });
     // "1", "2" or "3" (or yes, no, always) answers an approval asked in this chat.
     if (!args.media?.length) {
       const note: string | null = await ctx.runMutation(internal.approvals.answerFromWhatsApp, { chatId, text: args.text });

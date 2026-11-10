@@ -1,11 +1,6 @@
 /**
- * Talking to Perry: speech to text on this computer, and the hotkey.
- *
- * Speech becomes text with Whisper (base, 8-bit, about 80 MB), run by
- * transformers.js on ONNX Runtime in this process. The model is downloaded
- * from Hugging Face the first time and kept in ~/.perry/models; after that,
- * nothing leaves the computer. Adapted from how OpenWhispr (MIT) does it,
- * with a library in place of its native whisper.cpp server.
+ * Talking to Perry: speech to text on this computer (whisper.js, in this
+ * process), and the hotkey.
  *
  * The hotkey (Ctrl+Shift+Space, Cmd+Shift+Space on a Mac) works from
  * anywhere. Tap it to start listening and tap again to send; or hold it while
@@ -15,58 +10,26 @@
  * it, tapping still works, and the pet and Settings say so.
  */
 
-import { app, globalShortcut, systemPreferences } from "electron";
+import { app, clipboard, globalShortcut, systemPreferences } from "electron";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+
+export { transcribe, warmUp } from "./whisper.js";
 
 const require = createRequire(import.meta.url);
-const MODEL = process.env.PERRY_VOICE_MODEL ?? "onnx-community/whisper-base";
-/** Whisper guesses English when not told; set this to speak another language ("spanish", "hindi"). */
-const LANGUAGE = process.env.PERRY_VOICE_LANGUAGE ?? "english";
 /** Held longer than this, letting go sends; a shorter press is a tap. */
 const HOLD_MS = 400;
 /** Presses closer together than this are the key repeating while held, not new presses (where the key hook cannot hear them). */
 const REPEAT_MS = 600;
 /** The key hook and Electron's shortcut report the same press, either first, within this of each other. */
 const HEAR_MS = 250;
+/** Pasting waits this long at most for the keys of its own shortcut to come up, or the app would see those instead. */
+const PASTE_WAITS_MS = 1_500;
+/** The clipboard is put back this long after pasting, once the app has read it. */
+const PASTE_RESTORE_MS = 600;
 
 /** As convex/lib/shortcuts.ts has it, until the dashboard says otherwise. */
 export const DEFAULT_HOTKEY = "CommandOrControl+Shift+Space";
-
-let recognizer = null;
-
-/** Whisper, loaded once; `progress` hears how the first download goes. */
-function load(modelsDir, progress) {
-  recognizer ??= (async () => {
-    const { pipeline, env } = await import("@huggingface/transformers");
-    env.cacheDir = modelsDir;
-    return await pipeline("automatic-speech-recognition", MODEL, {
-      dtype: "q8",
-      progress_callback: (event) => {
-        if (event.status === "progress" && event.total) progress?.({ file: event.file, loaded: event.loaded, total: event.total });
-      },
-    });
-  })().catch((error) => {
-    recognizer = null;
-    throw error;
-  });
-  return recognizer;
-}
-
-/** Load it in the background when it is already downloaded, so the first words need not wait. */
-export function warmUp(modelsDir) {
-  if (existsSync(join(modelsDir, ...MODEL.split("/")))) void load(modelsDir).catch(() => {});
-}
-
-/** 16 kHz mono samples in, what was said out. */
-export async function transcribe(modelsDir, samples, progress) {
-  const whisper = await load(modelsDir, progress);
-  const { text } = await whisper(samples, { language: LANGUAGE, task: "transcribe" });
-  // Whisper names silence and noise rather than leaving them out.
-  return text.replace(/\[(BLANK_AUDIO|MUSIC|NOISE|SILENCE)\]|\((silence|music|noise)\)/gi, "").trim();
-}
 
 /** Electron's name for a key, as uiohook names it, for hearing it go down and come up. */
 const HOOK_NAMES = {
@@ -138,6 +101,9 @@ export function hotkeys(send) {
   /** The shortcut, fired before the hook heard its key go down: waiting a moment for it to. */
   let waiting = null;
   let lastUnheard = 0;
+  /** Whether a modifier was down at the last key event, so pasting can wait for its shortcut to be let go. */
+  let modifiersDown = false;
+  let hookApi = null;
   const fake = FAKE_KEYS ? fakeKeys() : null;
   const escape = fake
     ? { on: (cancel) => { fake.controls.escape = cancel; }, off: () => { fake.controls.escape = () => {}; } }
@@ -147,6 +113,9 @@ export function hotkeys(send) {
   const finish = (type) => {
     listening = false;
     holding = false;
+    // A press still waiting to be heard would start listening again after this.
+    clearTimeout(waiting);
+    waiting = null;
     escape.off();
     send(type);
   };
@@ -224,8 +193,12 @@ export function hotkeys(send) {
     try {
       if (FAKE_KEYS === "off") throw new Error("there is no key hook (PERRY_PET_FAKE_KEYS=off)");
       const { uIOhook, UiohookKey } = fake?.hook ?? require("uiohook-napi");
+      const watch = (event) => { modifiersDown = Boolean(event.ctrlKey || event.altKey || event.shiftKey || event.metaKey); };
+      uIOhook.on("keydown", watch);
+      uIOhook.on("keyup", watch);
       uIOhook.on("keydown", keyDown);
       uIOhook.on("keyup", keyUp);
+      hookApi = { uIOhook, UiohookKey };
       uIOhook.start();
       app.on("will-quit", () => uIOhook.stop());
       names = UiohookKey;
@@ -258,10 +231,30 @@ export function hotkeys(send) {
   const done = () => {
     listening = false;
     holding = false;
+    clearTimeout(waiting);
+    waiting = null;
     escape.off();
   };
+  /** Put text into whatever app has the keyboard: "pasted", or "copied" where keys cannot be pressed for the owner. */
+  const paste = async (text) => {
+    // The end-to-end check must not touch the owner's clipboard.
+    if (fake) return "copied";
+    const before = clipboard.readText();
+    const image = clipboard.availableFormats().some((format) => format.startsWith("image/")) ? clipboard.readImage() : null;
+    clipboard.writeText(text);
+    if (!hookApi) return "copied";
+    for (const until = Date.now() + PASTE_WAITS_MS; modifiersDown && Date.now() < until;) await new Promise((resolve) => setTimeout(resolve, 25));
+    const { uIOhook, UiohookKey } = hookApi;
+    uIOhook.keyTap(UiohookKey.V, [process.platform === "darwin" ? UiohookKey.Meta : UiohookKey.Ctrl]);
+    setTimeout(() => {
+      if (clipboard.readText() !== text) return;
+      if (image) clipboard.writeImage(image);
+      else clipboard.writeText(before);
+    }, PASTE_RESTORE_MS);
+    return "pasted";
+  };
   return {
-    change, done,
+    change, done, paste,
     current: () => hotkey,
     // A key the hook has no name for cannot be heard coming up either.
     hold: () => hold ?? (hotkey && key === null ? "off" : null),

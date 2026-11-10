@@ -1,0 +1,93 @@
+{
+  "suite": "voice hook fake-media lifecycle E2E",
+  "source": "components/pet/voice.tsx",
+  "network": "blocked in VM; no project bootstrap or real media/model calls",
+  "scenarios": 20,
+  "results": [
+    {
+      "name": "silent, muted, below-floor, DC audio rejected without decode or transcription",
+      "passed": true
+    },
+    {
+      "name": "valid recording resamples, transcribes and cleans resources",
+      "passed": true
+    },
+    {
+      "name": "waveform draws different FFT bands with zero meter-driven React state writes",
+      "passed": true
+    },
+    {
+      "name": "five-minute limit delivers one completion and immediately resets hotkey",
+      "passed": true
+    },
+    {
+      "name": "background media-event duration backstop and decoded sample ceiling",
+      "passed": true
+    },
+    {
+      "name": "short taps and decoded silence/DC/stereo cancellation are dropped",
+      "passed": true
+    },
+    {
+      "name": "permission, recorder, analyser, source, resume and start failures release partial resources",
+      "passed": true
+    },
+    {
+      "name": "cancel and unmount while permission pending release late streams",
+      "passed": true
+    },
+    {
+      "name": "cancel while AudioContext resumes releases late context",
+      "passed": true
+    },
+    {
+      "name": "rapid cancel/start does not attach stale stream or stop the new recording",
+      "passed": true
+    },
+    {
+      "name": "duplicate start and stop during opening claim recording once",
+      "passed": true
+    },
+    {
+      "name": "cancel and unmount during decoding suppress bridge calls and late state",
+      "passed": true
+    },
+    {
+      "name": "cancel and unmount during transcription suppress late text and state",
+      "passed": true
+    },
+    {
+      "name": "overlapping recording and transcription keep independent resources/state",
+      "passed": true
+    },
+    {
+      "name": "decode, bridge and recorder failures show feedback and close all contexts",
+      "passed": true
+    },
+    {
+      "name": "native unexpected stop/error completes once with useful feedback",
+      "passed": true
+    },
+    {
+      "name": "cancel tolerates stop throwing and cleanup unsubscribes progress",
+      "passed": true
+    },
+    {
+      "name": "cancel before final recorder event suppresses transcription",
+      "passed": true
+    },
+    {
+      "name": "absent bridge and empty chunks release hardware without transcription",
+      "passed": true
+    },
+    {
+      "name": "idle progress is ignored and unmounted hook cannot reopen media",
+      "passed": true
+    }
+  ],
+  "limitations": [
+    "Synthetic React dispatcher, not browser React profiler",
+    "Native codec, Electron bridge and actual microphone behavior unrun",
+    "Consumer integration.patch not applied; coordinator acceptance required"
+  ]
+}

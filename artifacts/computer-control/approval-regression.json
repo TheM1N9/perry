@@ -1,0 +1,92 @@
+{
+  "results": [
+    {
+      "name": "confirmation appears and cannot execute before the owner approves",
+      "passed": true
+    },
+    {
+      "name": "decline returns a protocol decline without executing",
+      "passed": true
+    },
+    {
+      "name": "timeout returns a protocol decline without executing",
+      "passed": true
+    },
+    {
+      "name": "full access still requires this external confirmation",
+      "passed": true
+    },
+    {
+      "name": "auto access still requires this external confirmation",
+      "passed": true
+    },
+    {
+      "name": "changing access does not grant a pending tool request",
+      "passed": true
+    },
+    {
+      "name": "tool approvals never create an Always allow rule",
+      "passed": true
+    },
+    {
+      "name": "unsupported form request has an explicit error instead of fake consent",
+      "passed": true
+    },
+    {
+      "name": "unsupported url request has an explicit error instead of fake consent",
+      "passed": true
+    },
+    {
+      "name": "unsupported openai/userVerification request has an explicit error instead of fake consent",
+      "passed": true
+    },
+    {
+      "name": "orphan requests decline without asking the owner",
+      "passed": true
+    },
+    {
+      "name": "quick reviewer threads cannot request tool consent",
+      "passed": true
+    },
+    {
+      "name": "a stopped or replaced turn cannot accept a late approval",
+      "passed": true
+    },
+    {
+      "name": "a request from an earlier turn cannot ask for consent in the new turn",
+      "passed": true
+    },
+    {
+      "name": "concurrent requests keep independent owner decisions",
+      "passed": true
+    },
+    {
+      "name": "Perry own gated MCP flow remains supported",
+      "passed": true
+    },
+    {
+      "name": "a guest cannot create a tool approval for the owner",
+      "passed": true
+    },
+    {
+      "name": "runner wait loop handles backend expiration and cleans its listener",
+      "passed": true
+    },
+    {
+      "name": "existing exec_command_approval still routes through normal approvals",
+      "passed": true
+    },
+    {
+      "name": "existing file_change_approval still routes through normal approvals",
+      "passed": true
+    },
+    {
+      "name": "another runner cannot settle this tool approval",
+      "passed": true
+    },
+    {
+      "name": "saved file rules cannot grant external tool consent",
+      "passed": true
+    }
+  ]
+}

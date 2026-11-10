@@ -1,0 +1,9 @@
+{
+  "checks": {
+    "systemAndUserDpapiFixture": true,
+    "appBoundPasswordMigrated": true,
+    "nativeDestinationEncryption": true
+  },
+  "passed": true,
+  "ownerCredentialsRead": false
+}

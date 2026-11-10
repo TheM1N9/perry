@@ -1,0 +1,147 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "code": "offline",
+      "turn": "error",
+      "run": "error",
+      "linkedMessages": 2,
+      "title": "The computer is offline"
+    },
+    {
+      "code": "engine_old",
+      "turn": "error",
+      "run": "error",
+      "linkedMessages": 2,
+      "title": "The engine needs an update"
+    },
+    {
+      "code": "limit",
+      "turn": "error",
+      "run": "error",
+      "linkedMessages": 2,
+      "title": "The engine reached a limit"
+    },
+    {
+      "code": "idle_timeout",
+      "turn": "error",
+      "run": "error",
+      "linkedMessages": 2,
+      "title": "The engine stopped responding"
+    },
+    {
+      "code": "max_time",
+      "turn": "error",
+      "run": "error",
+      "linkedMessages": 2,
+      "title": "The reply reached its time limit"
+    },
+    {
+      "code": "empty_reply",
+      "turn": "error",
+      "run": "error",
+      "linkedMessages": 2,
+      "title": "The engine returned no reply"
+    },
+    {
+      "code": "restarted",
+      "turn": "error",
+      "run": "error",
+      "linkedMessages": 2,
+      "title": "Perry restarted during this reply"
+    },
+    {
+      "code": "engine_failed",
+      "turn": "error",
+      "run": "error",
+      "linkedMessages": 2,
+      "title": "The engine couldn't finish this reply"
+    },
+    {
+      "code": "offline",
+      "telegram": true
+    },
+    {
+      "code": "engine_old",
+      "telegram": true
+    },
+    {
+      "code": "limit",
+      "telegram": true
+    },
+    {
+      "code": "idle_timeout",
+      "telegram": true
+    },
+    {
+      "code": "max_time",
+      "telegram": true
+    },
+    {
+      "code": "empty_reply",
+      "telegram": true
+    },
+    {
+      "code": "restarted",
+      "telegram": true
+    },
+    {
+      "code": "engine_failed",
+      "telegram": true
+    },
+    {
+      "scenario": "empty",
+      "code": "empty_reply"
+    },
+    {
+      "scenario": "stopped",
+      "code": null
+    },
+    {
+      "scenario": "legacy-runner",
+      "code": "engine_failed"
+    },
+    {
+      "scenario": "code-only",
+      "code": "max_time"
+    },
+    {
+      "scenario": "legacy-and-offline-admission",
+      "passed": true
+    }
+  ],
+  "telegram": [
+    {
+      "method": "sendMessage",
+      "text": "A partial answer\n\nThe computer is offline. Start Perry on that computer, then try again.\n\nDetail mentions offline runner, too old for Perry and limit; ignore those words. [saved in Logins &amp; secrets]"
+    },
+    {
+      "method": "sendMessage",
+      "text": "A partial answer\n\nThe engine needs an update. Update the engine in Settings → Engines, then try again.\n\nDetail mentions offline runner, too old for Perry and limit; ignore those words. [saved in Logins &amp; secrets]"
+    },
+    {
+      "method": "sendMessage",
+      "text": "A partial answer\n\nThe engine reached a limit. Wait for the limit to reset, or choose another engine or model, then try again.\n\nDetail mentions offline runner, too old for Perry and limit; ignore those words. [saved in Logins &amp; secrets]"
+    },
+    {
+      "method": "sendMessage",
+      "text": "A partial answer\n\nThe engine stopped responding. Perry stopped this reply after it went quiet. Try again to continue the chat.\n\nDetail mentions offline runner, too old for Perry and limit; ignore those words. [saved in Logins &amp; secrets]"
+    },
+    {
+      "method": "sendMessage",
+      "text": "A partial answer\n\nThe reply reached its time limit. Try again with a smaller request, or ask the engine to take longer.\n\nDetail mentions offline runner, too old for Perry and limit; ignore those words. [saved in Logins &amp; secrets]"
+    },
+    {
+      "method": "sendMessage",
+      "text": "A partial answer\n\nThe engine returned no reply. Try again. The chat's session has been kept.\n\nDetail mentions offline runner, too old for Perry and limit; ignore those words. [saved in Logins &amp; secrets]"
+    },
+    {
+      "method": "sendMessage",
+      "text": "A partial answer\n\nPerry restarted during this reply. Try again to finish the reply. Anything already written has been kept.\n\nDetail mentions offline runner, too old for Perry and limit; ignore those words. [saved in Logins &amp; secrets]"
+    },
+    {
+      "method": "sendMessage",
+      "text": "A partial answer\n\nThe engine couldn't finish this reply. Review the details, then try again.\n\nDetail mentions offline runner, too old for Perry and limit; ignore those words. [saved in Logins &amp; secrets]"
+    }
+  ]
+}

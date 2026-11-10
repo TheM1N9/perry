@@ -1,0 +1,19 @@
+{
+  "build": "Next.js 16.3.6 production build",
+  "passed": [
+    "Shared Files/Work/Browser sidebar renders the real selected browser page",
+    "Expanded desktop view preserves the chat composer",
+    "URL navigation submits with Enter",
+    "New browser starts paused with agent capture blocked",
+    "390px mobile drawer uses the full viewport width",
+    "Return to chat restores the composer and workspace-toggle focus",
+    "Panel reopen and reload retain the selected page without resuming automation"
+  ],
+  "screenshots": [
+    "dashboard-desktop.png",
+    "dashboard-mobile.png"
+  ],
+  "blocked": {
+    "realFirefoxProfile": "Official portable Firefox exits before profile creation: sandbox_extension_issue_file_to_process Operation not permitted; also fails from /private/tmp cwd. No OS protections changed."
+  }
+}

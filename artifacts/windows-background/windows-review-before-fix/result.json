@@ -1,0 +1,19 @@
+{
+  "platform": "win32",
+  "scratch": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry O'Neil ü % & $ QMRDwN",
+  "GUI PE subsystem": true,
+  "second launch exits cleanly": true,
+  "child failure reaches Task Scheduler": true,
+  "one child for repeated launches": true,
+  "cwd survives special characters": true,
+  "arguments survive special characters": true,
+  "carried environment survives": true,
+  "console child has no console": true,
+  "three rotated logs retained": true,
+  "each log bounded to 1 MiB": true,
+  "logs have UTC timestamps": true,
+  "startup failure exits nonzero": true,
+  "startup failure leaves a log": true,
+  "pass": false,
+  "error": "Error: supervisor exit drains logs without waiting for orphan pipes"
+}

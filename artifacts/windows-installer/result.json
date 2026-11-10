@@ -1,5 +1,5 @@
 ﻿{
-    "ranAt":  "2026-10-09T13:45:44.4167417+05:30",
+    "ranAt":  "2026-10-10T22:08:12.5704188+05:30",
     "line":  "powershell -c \"irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex\"",
     "policy":  "Restricted",
     "checks":  {
@@ -14,7 +14,9 @@
                    "petSetFromPowerShell":  true,
                    "missingGitAsksWingetOnce":  true,
                    "missingGitDoesNotLoop":  true,
-                   "missingGitStillInstalls":  true
+                   "missingGitStillInstalls":  true,
+                   "linkedInTestHome":  true,
+                   "ownerLauncherUntouched":  true
                },
     "oldLineInCmd":  "\u0027iwr\u0027 is not recognized as an internal or external command,\r\noperable program or batch file.",
     "installs":  {
@@ -23,14 +25,14 @@
                                  "installedMessage":  true,
                                  "noPolicyRefusal":  true,
                                  "packages":  true,
-                                 "output":  "Installing Perry\n  git 2.47.0.windows.2, node v25.8.2, pnpm 10.33.0, bun 1.3.8\n  downloading Perry...\r                      \r  installing packages...\r                        \r  Perry in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-windows-installer-37240\\perry-cmd\n\n  Installed. Run \u0027perry setup\u0027 to finish."
+                                 "output":  "Installing Perry\n  git 2.47.0.windows.2, node v25.8.2, pnpm 10.33.0, bun 1.3.8\n  downloading Perry...\r                      \r  installing packages...\r                        \r  Perry in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-windows-installer-84704\\perry-cmd\n\n  Installed. Run \u0027perry setup\u0027 to finish."
                              },
                      "powershell":  {
                                         "exit":  0,
                                         "installedMessage":  true,
                                         "noPolicyRefusal":  true,
                                         "packages":  true,
-                                        "output":  "Installing Perry\r\n  git 2.47.0.windows.2, node v25.8.2, pnpm 10.33.0, bun 1.3.8\r\n  downloading Perry...\r\n                      \r\n  installing packages...\r\n                        \r\n  Perry in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-windows-installer-37240\\perry-powershell\r\n\r\n  Installed. Run \u0027perry setup\u0027 to finish."
+                                        "output":  "Installing Perry\r\n  git 2.47.0.windows.2, node v25.8.2, pnpm 10.33.0, bun 1.3.8\r\n  downloading Perry...\r\n                      \r\n  installing packages...\r\n                        \r\n  Perry in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-windows-installer-84704\\perry-powershell\r\n\r\n  Installed. Run \u0027perry setup\u0027 to finish."
                                     }
                  },
     "variables":  {
@@ -47,7 +49,7 @@
                        "wingetAsked":  [
                                            "install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements --silent"
                                        ],
-                       "output":  "Installing Perry\r\n  installing Git...\r\n                   \r\n  git 2.47.0.windows.2 (new), node v25.8.2, pnpm 10.33.0, bun 1.3.8\r\n  updating Perry...\r\n                   \r\n  installing packages...\r\n                        \r\n  Perry in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-windows-installer-37240\\perry-powershell\r\n\r\n  Installed. Run \u0027perry setup\u0027 to finish."
+                       "output":  "Installing Perry\r\n  installing Git...\r\n                   \r\n  git 2.47.0.windows.2 (new), node v25.8.2, pnpm 10.33.0, bun 1.3.8\r\n  updating Perry...\r\n                   \r\n  installing packages...\r\n                        \r\n  Perry in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-windows-installer-84704\\perry-powershell\r\n\r\n  Installed. Run \u0027perry setup\u0027 to finish."
                    },
     "passed":  true
 }

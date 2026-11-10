@@ -1,0 +1,34 @@
+﻿{
+    "verifiedAt":  "2026-10-25T21:08:11.0205426Z",
+    "baseCommit":  "a483dc7eb66624254bbaf209300403af2656fa16",
+    "computerControl":  {
+                            "checks":  19,
+                            "passed":  true
+                        },
+    "parallelSessions":  {
+                             "checks":  39,
+                             "passed":  true
+                         },
+    "approvalRouting":  {
+                            "checks":  22,
+                            "passed":  true
+                        },
+    "applicationTypecheck":  "passed",
+    "backendTypecheck":  "passed",
+    "finalProductionBuild":  "passed",
+    "buildWarnings":  [
+                          "Existing filesystem tracing in convex/pet.ts",
+                          "Existing filesystem tracing in server/wake.ts"
+                      ],
+    "realModelsOrPersonalProfilesUsed":  false,
+    "fullReactPanelMounted":  false,
+    "sourceSha256":  {
+                         "components/dashboard/chat/browser-panel.tsx":  "0b2ccb2617cd637270c93530896ba3ceb8729779e334ebafa35120ef434269cd",
+                         "convex/approvals.ts":  "f1563c1d055966d4ba5f781fadffde4c9999d03037c6be4a536de447ea603a0b",
+                         "convex/lib/browser.ts":  "1e967c186b6b31b6b1cdc73ec5a3fa6a636d087b9cb4ab9e9eed6e6e7733c535",
+                         "convex/mcp.ts":  "1efa12bc5ed7f6b578141feca61f3493872b5a9582f906985a98e84664cb9e8f",
+                         "convex/tools.ts":  "1215365fee4a98d85e4827857caa2df31dd4d4d05f0b09f1146706be4855a457",
+                         "lib/browser-protocol.ts":  "3b689569d85b2f8b00d2459f20bf629a149cbd62f8a8f6fe9f1255574a624200",
+                         "server/browser-host.ts":  "12c6720d3aa3e1609d6272b048481e98faf0bb25c23080fcbe96aa3e626e6b87"
+                     }
+}

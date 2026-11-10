@@ -1,0 +1,100 @@
+{
+  "passed": false,
+  "checks": {
+    "manual ArrowLeft moves the editing caret": true,
+    "manual Delete edits the focused field": true,
+    "manual Ctrl+A selects all before text replacement": true,
+    "queued owner typing never retargets a newly selected tab": true,
+    "fresh look invalidates old element references": true,
+    "fresh references still click the intended control": true,
+    "Stop prevents a previously requested browser action after late approval": true,
+    "cancelled browser releases its action lock": true,
+    "stopped browser approval is dismissed and cannot be approved": true,
+    "Stop leaves a separate chat browser usable": true,
+    "request abort cancels approval without touching the page": true,
+    "aborted request does not poison subsequent browser calls": true,
+    "takeover invalidates an approval and releases the agent": true,
+    "takeover remains paused until explicit resume": true,
+    "explicit resume restores browser use": true,
+    "unresponsive Stop cleanup promptly releases the browser lock": false,
+    "unresponsive Stop cleanup invalidates its old host before new input": false,
+    "browser recovery uses a new generation after stalled cleanup": false,
+    "Stop cancels a browser navigation before the page responds": true,
+    "cancelled navigation releases pending CDP commands": true,
+    "global Pause cancels an in-flight browser approval": true,
+    "Resume cannot revive the stopped browser call": true
+  },
+  "evidence": {
+    "browser": {
+      "protocolVersion": "1.3",
+      "product": "Chrome/155.0.8059.86",
+      "revision": "@804d6b05f089b27af8342622a36558c49401a1d4",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+      "jsVersion": "15.5.35.25"
+    },
+    "arrowSelection": 1,
+    "deleteValue": "acd",
+    "shortcutValue": "replacement",
+    "queuedTyping": "abcd",
+    "firstLook": {
+      "url": "http://127.0.0.1:60185/",
+      "title": "Control fixture",
+      "text": "First Second Send",
+      "elements": [
+        {
+          "ref": 1,
+          "kind": "text box",
+          "label": "Edit"
+        },
+        {
+          "ref": 2,
+          "kind": "button",
+          "label": "First"
+        },
+        {
+          "ref": 3,
+          "kind": "button",
+          "label": "Second"
+        },
+        {
+          "ref": 4,
+          "kind": "button",
+          "label": "Send"
+        }
+      ],
+      "identity": {
+        "sessionId": "c97ff409-8c0c-4781-bc08-98821e549280",
+        "tabId": "5FC0508EE9D8B8CE71D2593D93175692",
+        "revision": 8
+      }
+    },
+    "staleClick": {
+      "clicked": null,
+      "firstIdentity": {
+        "sessionId": "c97ff409-8c0c-4781-bc08-98821e549280",
+        "tabId": "5FC0508EE9D8B8CE71D2593D93175692",
+        "revision": 8
+      },
+      "secondIdentity": {
+        "sessionId": "c97ff409-8c0c-4781-bc08-98821e549280",
+        "tabId": "5FC0508EE9D8B8CE71D2593D93175692",
+        "revision": 9
+      },
+      "result": {
+        "error": "The browser page changed. Look again before acting."
+      }
+    },
+    "stopped": {
+      "sent": 0,
+      "result": {
+        "error": "The operation was aborted"
+      }
+    },
+    "navigation": {
+      "result": {
+        "error": "This operation was aborted"
+      },
+      "cancelMs": 455
+    }
+  }
+}

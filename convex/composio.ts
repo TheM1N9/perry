@@ -1,9 +1,15 @@
 "use node";
 
-import { Composio } from "@composio/core";
+import { AuthSchemeEnum, Composio, ConnectionDataSchema, ToolRouterSession, type AuthConfigRetrieveResponse } from "@composio/core";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
+import type { ToolCtx } from "./lib/agent";
+import { z } from "zod";
+import { hide } from "./vault";
+import { expiredConnection, reconnectMessage } from "./lib/connection-health";
+import { connectedDiagnostic, type ConnectedDiagnostic } from "./lib/connected-error";
+import { DEADLINE_MS, InternetError, publicUrl, type ConnectedRead, type InternetFailure, type InternetRequest, type Platform } from "./lib/internet";
 
 /**
  * Assistant's hands on your accounts, through Composio.
@@ -157,7 +163,7 @@ export const catalog = internalAction({
 
 /**
  * A read-only "who am I" per service: Composio keeps no account name, so the
- * service is asked, once per connection. Services not listed show when they
+ * service is asked, with the answer cached for a day. Services not listed show when they
  * were connected instead.
  */
 const WHO_AM_I: Record<string, [action: string, args: Record<string, unknown>]> = {
@@ -175,6 +181,36 @@ const WHO_AM_I: Record<string, [action: string, args: Record<string, unknown>]> 
 /** The fields that name an account, best first: an address, then a handle, then a display name. */
 const IDENTITY_FIELDS = ["emailAddress", "email", "mail", "userPrincipalName", "login", "username", "screen_name", "handle", "user", "name", "title", "summary"];
 
+export type AccountProfile = { email?: string; username?: string; displayName?: string; workspace?: string };
+
+/** Only public identity fields from the read-only profile reply, never auth data. */
+function profileOf(data: unknown, toolkit: string): AccountProfile {
+  const fields: Record<string, string> = {};
+  const queue: Array<[unknown, number]> = [[data, 0]];
+  for (let index = 0; index < queue.length && index < 100; index++) {
+    const [value, depth] = queue[index];
+    if (!value || typeof value !== "object" || depth > 5) continue;
+    for (const [key, inner] of Object.entries(value).slice(0, 100)) {
+      if (typeof inner === "string" && inner.trim() && !(key in fields)) fields[key] = inner.trim();
+      else if (inner && typeof inner === "object" && queue.length < 100) queue.push([inner, depth + 1]);
+    }
+  }
+  const first = (...keys: string[]) => keys.map((key) => fields[key]).find(Boolean);
+  const profile = {
+    email: first("emailAddress", "email", "mail", "userPrincipalName"),
+    username: first("login", "username", "screen_name", "handle", "user"),
+    displayName: first("display_name", "displayName", "real_name", "name", "title"),
+    workspace: first("workspace_name", "team_name", "team"),
+  };
+  // Notion's root name belongs to the integration bot; the person is its owner.
+  if (toolkit === "notion") {
+    const reply = data as { bot?: { owner?: { user?: { name?: string } } } } | null;
+    const name = reply?.bot?.owner?.user?.name;
+    profile.displayName = typeof name === "string" && name.trim() ? name.trim() : undefined;
+  }
+  return Object.fromEntries(Object.entries(profile).filter(([, value]) => value !== undefined));
+}
+
 /** The best identity in a "who am I" reply, however deep the service put it. */
 export function identityOf(data: unknown): string | undefined {
   const found: Record<string, string> = {};
@@ -188,7 +224,7 @@ export function identityOf(data: unknown): string | undefined {
     }
   }
   const best = IDENTITY_FIELDS.find((key) => found[key]);
-  return best ? found[best].slice(0, 80) : undefined;
+  return best ? found[best] : undefined;
 }
 
 export type ConnectedAccount = {
@@ -198,8 +234,10 @@ export type ConnectedAccount = {
   logo?: string;
   status: string;
   createdAt?: string;
+  authExpiredAt?: number;
   /** The account it is signed in to, when the service says. */
   account?: string;
+  profile?: AccountProfile;
 };
 
 /**
@@ -222,18 +260,26 @@ export const accounts = internalAction({
         cursor = page.nextCursor ?? undefined;
       } while (cursor);
 
+      const health: Record<string, number> = await ctx.runQuery(internal.connectorHealth.read, { accounts: items.map((item) => ({ accountId: item.id, toolkit: item.toolkit.slug })) });
       const apps = await catalogOf(apiKey).catch(() => [] as CatalogApp[]);
-      const known: Record<string, { identity?: string; checkedAt: number }> = await ctx.runQuery(internal.connectorAccounts.identities, { accountIds: items.map((item) => item.id) });
-      // Ask each active account without a name yet (or whose service would not say, a day ago).
+      const known: Record<string, { identity?: string; profile?: AccountProfile; checkedAt: number }> = await ctx.runQuery(internal.connectorAccounts.identities, { accountIds: items.map((item) => item.id) });
+      // Upgrade older cached identities once; refresh profiles at most daily.
       const ask = items.filter((item) => item.status === "ACTIVE" && WHO_AM_I[item.toolkit.slug]
-        && (!known[item.id] || (!known[item.id].identity && Date.now() - known[item.id].checkedAt > 86_400_000)));
+        && (health[item.id] !== undefined || !known[item.id] || !known[item.id].profile || Date.now() - known[item.id].checkedAt > 86_400_000));
       await Promise.all(ask.map(async (item) => {
         const [action, args] = WHO_AM_I[item.toolkit.slug];
+        const startedAt = Date.now();
         const result = await composio.tools.execute(action, { userId: USER_ID, connectedAccountId: item.id, arguments: args, dangerouslySkipVersionCheck: true } as never)
-          .catch(() => null) as { successful?: boolean; data?: unknown } | null;
-        const identity = result?.successful ? identityOf(result.data) : undefined;
-        await ctx.runMutation(internal.connectorAccounts.remember, { accountId: item.id, toolkit: item.toolkit.slug, identity });
-        known[item.id] = { identity, checkedAt: Date.now() };
+          .catch((error: unknown) => ({ successful: false, error })) as { successful?: boolean; data?: unknown; error?: unknown } | null;
+        if (result?.successful || expiredConnection(result?.error)) {
+          await ctx.runMutation(internal.connectorHealth.observe, { accountId: item.id, toolkit: item.toolkit.slug, startedAt, expired: !result?.successful }).catch(() => null);
+          if (result?.successful) delete health[item.id];
+          else health[item.id] = startedAt;
+        }
+        const profile = { ...known[item.id]?.profile, ...(result?.successful ? profileOf(result.data, item.toolkit.slug) : {}) };
+        const identity = (result?.successful ? identityOf(result.data) : undefined) ?? known[item.id]?.identity;
+        await ctx.runMutation(internal.connectorAccounts.remember, { accountId: item.id, toolkit: item.toolkit.slug, identity, profile });
+        known[item.id] = { identity, profile, checkedAt: Date.now() };
       }));
 
       return {
@@ -245,9 +291,11 @@ export const accounts = internalAction({
             toolkit: item.toolkit.slug,
             name: app?.name ?? item.toolkit.slug,
             logo: app?.logo,
-            status: item.status,
+            status: health[item.id] !== undefined ? "EXPIRED" : item.status,
+            authExpiredAt: health[item.id],
             createdAt: item.createdAt,
             account: item.alias || known[item.id]?.identity,
+            profile: known[item.id]?.profile,
           };
         }),
       };
@@ -263,7 +311,11 @@ export const disconnect = internalAction({
   handler: async (ctx, args): Promise<{ error?: string }> => {
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
-      await client(apiKey).connectedAccounts.delete(args.accountId);
+      const composio = client(apiKey);
+      const account = await composio.connectedAccounts.get(args.accountId);
+      await composio.connectedAccounts.delete(args.accountId);
+      await ctx.runMutation(internal.connectorHealth.forget, { accountId: args.accountId, toolkit: account.toolkit.slug });
+      recheckInternetConnections();
       await ctx.runMutation(internal.connectorAccounts.forget, { accountId: args.accountId });
       return {};
     } catch (error) {
@@ -280,7 +332,7 @@ export const disconnect = internalAction({
  * hosted page ends the flow on its own screen instead of sending you back.
  */
 export const authorize = internalAction({
-  args: { toolkit: v.string(), callbackUrl: v.optional(v.string()) },
+  args: { toolkit: v.string(), callbackUrl: v.optional(v.string()), accountId: v.optional(v.string()) },
   handler: async (
     ctx,
     args,
@@ -289,6 +341,27 @@ export const authorize = internalAction({
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
         name: "COMPOSIO_API_KEY",
       });
+      if (args.accountId) {
+        const startedAt = Date.now();
+        const composio = client(apiKey);
+        // Listing by owner prevents refreshing an unrelated account ID.
+        let cursor: string | undefined;
+        let owned = false;
+        do {
+          const page = await composio.connectedAccounts.list({ userIds: [USER_ID], toolkitSlugs: [args.toolkit], limit: 100, ...(cursor ? { cursor } : {}) });
+          owned = page.items.some((item) => item.id === args.accountId && item.toolkit.slug === args.toolkit);
+          cursor = page.nextCursor ?? undefined;
+        } while (!owned && cursor);
+        if (!owned) return { error: "That account is no longer connected to this toolkit. Refresh the list." };
+        const refreshed = await composio.connectedAccounts.refresh(args.accountId, { redirectUrl: args.callbackUrl, validateCredentials: true });
+        if (refreshed.id === args.accountId && refreshed.status === "ACTIVE" && !refreshed.redirect_url) {
+          await ctx.runMutation(internal.connectorHealth.observe, { accountId: args.accountId, toolkit: args.toolkit, startedAt, expired: false }).catch(() => null);
+          recheckInternetConnections();
+          return { status: "ACTIVE" };
+        }
+        return { redirectUrl: refreshed.redirect_url ?? undefined, status: refreshed.status,
+          ...(!refreshed.redirect_url ? { error: "Sign-in is not active yet. Refresh or try reconnecting again." } : {}) };
+      }
       const s = await session(apiKey);
       const request = await s.authorize(
         args.toolkit.toLowerCase().trim(),
@@ -310,8 +383,8 @@ export const authorize = internalAction({
           ? {}
           : { error: "Composio did not return a link to open." }),
       };
-    } catch (error) {
-      return { error: message(error) };
+    } catch {
+      return { error: "Could not start or verify sign-in. Check Composio and try reconnecting this account again." };
     }
   },
 });
@@ -351,20 +424,21 @@ const UNCATALOGUED_TOKEN_OPTIONS: Record<string, TokenAuthOption> = {
 /**
  * Ways to connect a toolkit by pasting a credential (a token you already
  * have) instead of signing in through OAuth, when the toolkit offers one.
- * GitHub, for example, also takes a personal access token: no org approval
- * screen, and it carries whatever access the token already has.
+ * GitHub also takes a personal access token, using the access already granted
+ * to that token.
  */
 export const tokenAuthOptions = internalAction({
   args: { toolkit: v.string() },
   handler: async (ctx, args): Promise<{ options: TokenAuthOption[]; error?: string }> => {
     const slug = args.toolkit.toLowerCase().trim();
+    if (slug !== "github") return { options: [], error: "Token connections are currently supported only for GitHub." };
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
         name: "COMPOSIO_API_KEY",
       });
-      const toolkit = await client(apiKey).toolkits.get(slug);
+      const toolkit = await client(apiKey).toolkits.get(slug, { signal: AbortSignal.timeout(15_000) });
       const options: TokenAuthOption[] = (toolkit.authConfigDetails ?? [])
-        .filter((detail) => detail.mode !== "OAUTH2" && detail.mode !== "OAUTH1")
+        .filter((detail) => ["API_KEY", "BASIC", "BEARER_TOKEN"].includes(detail.mode))
         .map((detail) => ({
           mode: detail.mode,
           name: detail.name,
@@ -383,40 +457,53 @@ export const tokenAuthOptions = internalAction({
       if (options.length === 0 && UNCATALOGUED_TOKEN_OPTIONS[slug]) options.push(UNCATALOGUED_TOKEN_OPTIONS[slug]);
       return { options };
     } catch (error) {
-      const fallback = UNCATALOGUED_TOKEN_OPTIONS[slug];
-      return fallback ? { options: [fallback] } : { options: [], error: message(error) };
+      return { options: [], error: message(error) };
     }
   },
 });
 
 /**
  * Connect a toolkit with a pasted credential instead of OAuth. Reuses an
- * existing custom auth config for that toolkit and auth mode when there is
- * one, since Composio keeps the credential fields on the auth config itself
- * for everything except API-key-style schemes.
+ * enabled custom auth config made by this flow; the credential itself goes
+ * only to connected-account initiation.
  */
 export const connectWithToken = internalAction({
   args: { toolkit: v.string(), mode: v.string(), credentials: v.record(v.string(), v.string()) },
   handler: async (ctx, args): Promise<{ status?: string; error?: string }> => {
+    let apiKey: string | null = null;
     try {
-      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
+      const slug = args.toolkit.toLowerCase().trim();
+      const available: { options: TokenAuthOption[]; error?: string } = await ctx.runAction(internal.composio.tokenAuthOptions, { toolkit: slug });
+      const option = available.options.find((item) => item.mode === args.mode);
+      if (!option) return { error: available.error ?? "This token authentication method isn't supported for GitHub." };
+      if (Object.keys(args.credentials).some((name) => !option.fields.some((field) => field.name === name))) return { error: "Only the requested credential fields can be supplied." };
+      if (option.fields.some((field) => field.required && !args.credentials[field.name]?.trim())) return { error: "Fill in each required credential field." };
+      if (Object.values(args.credentials).some((value) => value.length > 4_096)) return { error: "A credential field is too long." };
+      const mode = AuthSchemeEnum.parse(option.mode);
+      const config = ConnectionDataSchema.safeParse({ authScheme: mode, val: { ...args.credentials, status: "ACTIVE" } });
+      if (!config.success) return { error: "The token credential fields are incomplete or invalid." };
+      apiKey = await ctx.runQuery(internal.secrets.get, {
         name: "COMPOSIO_API_KEY",
       });
       const composio = client(apiKey);
-      const slug = args.toolkit.toLowerCase().trim();
+      const requestOptions = { signal: AbortSignal.timeout(25_000) };
 
       // Matched on name too, not just authScheme: otherwise an unrelated auth
       // config the owner made by hand (or Composio's own) that happens to
       // share the scheme would get silently reused and mutated.
-      const existing = (await composio.authConfigs.list({ toolkit: slug })).items.find(
-        (config) => config.authScheme === args.mode && config.name === `${slug} (token)`,
-      );
+      let existing: AuthConfigRetrieveResponse | undefined;
+      let cursor: string | undefined;
+      do {
+        const page = await composio.authConfigs.list({ toolkit: slug, isComposioManaged: false, ...(cursor ? { cursor } : {}) }, requestOptions);
+        existing = page.items.find((config) => config.toolkit.slug === slug && config.authScheme === mode && config.name === `${slug} (token)` && config.isComposioManaged === false && config.status === "ENABLED");
+        cursor = page.nextCursor ?? undefined;
+      } while (!existing && cursor);
       // A custom auth config the agent's tool-router session can't see is
       // connected only on paper: the dashboard shows it, but search/execute
       // (which run through that session) keep reporting the toolkit as not
       // connected. isEnabledForToolRouter is what actually turns it on there.
       if (existing && !existing.isEnabledForToolRouter) {
-        await composio.authConfigs.update(existing.id, { type: "custom", isEnabledForToolRouter: true });
+        await composio.authConfigs.update(existing.id, { type: "custom", isEnabledForToolRouter: true }, requestOptions);
       }
       const authConfigId = existing
         ? existing.id
@@ -424,19 +511,21 @@ export const connectWithToken = internalAction({
             await composio.authConfigs.create(slug, {
               type: "use_custom_auth",
               name: `${slug} (token)`,
-              authScheme: args.mode as never,
+              authScheme: mode,
               credentials: {},
               isEnabledForToolRouter: true,
-            })
+            }, requestOptions)
           ).id;
 
       const request = await composio.connectedAccounts.initiate(USER_ID, authConfigId, {
         allowMultiple: true,
-        config: { authScheme: args.mode, val: { status: "ACTIVE", ...args.credentials } } as never,
-      });
-      return { status: (request as unknown as { status?: string }).status };
+        config: config.data,
+      }, requestOptions);
+      if (request.status !== "ACTIVE") return { status: request.status, error: "GitHub hasn't confirmed this connection. Refresh connected accounts before trying again." };
+      recheckInternetConnections();
+      return { status: request.status };
     } catch (error) {
-      return { error: message(error) };
+      return { error: hide(message(error), [...Object.values(args.credentials), ...(apiKey ? [apiKey] : [])]) };
     }
   },
 });
@@ -515,23 +604,190 @@ export const execute = internalAction({
   handler: async (
     ctx,
     input,
-  ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
+  ): Promise<{ ok: boolean; data?: unknown; error?: string; diagnostic?: ConnectedDiagnostic }> => {
+    let selected: { accountId: string; toolkit: string } | undefined;
+    let stage = "credentials";
+    const startedAt = Date.now();
+    const failed = async (error: unknown) => {
+      const diagnostic = connectedDiagnostic(error, stage, input.slug);
+      if (selected && diagnostic.category === "expired_auth") {
+        await ctx.runMutation(internal.connectorHealth.observe, { ...selected, startedAt, expired: true }).catch(() => null);
+        recheckInternetConnections();
+      }
+      console.error("[composio] execution failed", diagnostic);
+      return { ok: false, error: `${diagnostic.reason} ${diagnostic.repair}`, diagnostic };
+    };
     try {
-      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
-        name: "COMPOSIO_API_KEY",
-      });
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+      const composio = client(apiKey);
+      stage = "tool_metadata";
+      // Resolve metadata from the SDK, never infer the toolkit from a slug prefix.
+      const tool = await composio.tools.getRawComposioToolBySlug(input.slug).catch(() => null);
+      // Router helper tools may not have standalone metadata. They still execute,
+      // but without an exact account we do not infer or persist account health.
+      const toolkit = tool?.toolkit?.slug;
+      stage = "session";
       const s = await session(apiKey);
-      const result = await s.execute(
-        input.slug,
-        (input.args ?? {}) as Record<string, unknown>,
-      );
-      if (result.error) return { ok: false, error: result.error, data: result.data };
+      if (toolkit) {
+        stage = "account_selection";
+        const state = await s.toolkits({ toolkits: [toolkit] });
+        const account = state.items.find((item) => item.slug === toolkit)?.connection?.connectedAccount;
+        if (account) selected = { accountId: account.id, toolkit };
+        if (account && ["EXPIRED", "REVOKED"].includes(account.status)) {
+          await ctx.runMutation(internal.connectorHealth.observe, { ...selected!, startedAt, expired: true }).catch(() => null);
+          return { ok: false, error: reconnectMessage };
+        }
+      }
+      // Standalone app tools use the native account-specific execution API.
+      // The router's `account` option returns HTTP 400/code 4300 on projects
+      // without multi-account selection. Native execution pins the account
+      // without requiring that project feature. Router helpers stay on s.execute.
+      stage = "execution";
+      const result = selected
+        ? await composio.tools.execute(input.slug, {
+          userId: USER_ID,
+          connectedAccountId: selected.accountId,
+          arguments: (input.args ?? {}) as Record<string, unknown>,
+          dangerouslySkipVersionCheck: true,
+        }).then((reply) => ({ data: reply.data, error: reply.successful ? null : (reply.error ?? "execution_failed") }))
+        : await s.execute(input.slug, (input.args ?? {}) as Record<string, unknown>);
+      if (result.error) {
+        return await failed(result.error);
+      }
+      if (selected) await ctx.runMutation(internal.connectorHealth.observe, { ...selected, startedAt, expired: false }).catch(() => null);
       return { ok: true, data: result.data };
     } catch (error) {
-      return { ok: false, error: message(error) };
+      return await failed(error);
     }
   },
 });
+
+const INTERNET_TOOLKITS: Partial<Record<Platform, string>> = { github: "github", youtube: "youtube", reddit: "reddit", x: "twitter", instagram: "instagram", linkedin: "linkedin" };
+const READ_OPERATION = /_(GET|LIST|FETCH|SEARCH|FIND|READ|RETRIEVE|QUERY|COUNT|CHECK|DESCRIBE|VIEW|LOOKUP)(_|$)/i;
+const UNSAFE_OPERATION = /(?:SECRET|TOKEN|COOKIE|PASSWORD|CREDENTIAL|EXPORT|DOWNLOAD|EXECUTE|PROXY|INSTALL|PURCHASE|CREATE|UPDATE|DELETE|SEND|PUBLISH)(?:_|$)/i;
+const accountCache = new Map<string, { at: number; accounts: ConnectedRead["accounts"]; truncated: boolean }>();
+export function recheckInternetConnections() { accountCache.clear(); }
+
+/** SDK models share this native client; internet reads own retries, deadlines and sanitized diagnostics. */
+class InternetClient extends Composio {
+  constructor(apiKey: string) {
+    super({ apiKey, allowTracking: false, disableVersionCheck: true });
+    this.client.maxRetries = 0;
+    this.client.timeout = DEADLINE_MS;
+    this.client.logLevel = "off";
+  }
+}
+
+/** SDK errors may wrap the HTTP error; classify it without exposing provider messages or headers. */
+function internetFailure(error: unknown): InternetFailure {
+  if (error instanceof InternetError) return error.failure;
+  let cause = error;
+  let status: number | undefined;
+  let retryAfter: string | null = null;
+  for (let depth = 0; cause && typeof cause === "object" && depth < 4; depth++) {
+    const http = z.object({ status: z.number().optional(), statusCode: z.number().optional() }).safeParse(cause);
+    if (http.success) status ??= http.data.status ?? http.data.statusCode;
+    if ("headers" in cause && cause.headers instanceof Headers) retryAfter ??= cause.headers.get("retry-after");
+    cause = "cause" in cause ? cause.cause : undefined;
+  }
+  const text = error instanceof Error ? error.message : String(error);
+  const code = status === 429 || /\b429\b|rate.?limit/i.test(text) ? "rate_limited" : expiredConnection(error) ? "expired_auth" : status === 403 || /\b403\b|forbidden/i.test(text) ? "forbidden" : status === 401 || /\b401\b|unauthori[sz]ed/i.test(text) ? "auth_required" : error instanceof z.ZodError ? "malformed" : "unavailable";
+  const retryTime = retryAfter ? Number.isFinite(Number(retryAfter)) ? Date.now() + Math.max(0, Number(retryAfter)) * 1000 : Date.parse(retryAfter) : NaN;
+  return { code, message: "The selected connected read failed; no other account or public substitute was tried.", repair: code === "expired_auth" || code === "auth_required" ? "Reconnect the affected account in Apps & skills." : code === "rate_limited" ? "Wait for the provider's rate limit to reset." : "Check the selected account's permission or the current discovered input schema.", ...(Number.isFinite(retryTime) ? { retryAt: new Date(retryTime).toISOString() } : {}) };
+}
+
+/** Read-only discovery and execution, pinned to an explicitly selected account. No connection setup or fallback. */
+export async function internetRead(ctx: ToolCtx, request: InternetRequest, platform: Platform, signal: AbortSignal): Promise<ConnectedRead> {
+  const toolkit = INTERNET_TOOLKITS[platform];
+  const empty: ConnectedRead = { state: "setup_required", actions: [], accounts: [], repair: "Use a public supported operation, or connect the relevant account in Apps & skills." };
+  if (!toolkit) return empty;
+  const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+  if (!apiKey) return empty;
+  let executionStartedAt: number | undefined;
+  try {
+    const composio = new InternetClient(apiKey);
+    let cached = accountCache.get(toolkit);
+    if (!cached || Date.now() - cached.at > 60_000 || request.connector) {
+      const accounts: ConnectedRead["accounts"] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 3; page++) {
+        const listed = await composio.connectedAccounts.list({ userIds: [USER_ID], toolkitSlugs: [toolkit], limit: 100, ...(cursor ? { cursor } : {}) }, { signal });
+        accounts.push(...listed.items.map((item) => ({ id: item.id, status: item.status })));
+        cursor = listed.nextCursor ?? undefined;
+        if (!cursor) break;
+      }
+      cached = { at: Date.now(), accounts, truncated: Boolean(cursor) }; accountCache.set(toolkit, cached);
+    }
+    const checked = { accounts: cached.accounts, accountsTruncated: cached.truncated, checkedAt: new Date(cached.at).toISOString(), cacheAgeMs: Date.now() - cached.at };
+    if (request.connector && !cached.accounts.some((a) => a.id === request.connector?.accountId && a.status === "ACTIVE")) {
+      accountCache.delete(toolkit);
+      const absent = !cached.accounts.some((a) => a.id === request.connector?.accountId);
+      return { ...empty, ...checked, state: absent && cached.truncated ? "degraded" : "expired_auth", repair: absent && cached.truncated ? "The selected account was not in the first 300 accounts. Account coverage is incomplete; inspect it in Apps & skills." : "The selected account is unavailable or no longer active. Recheck that account in Apps & skills; do not switch accounts automatically." };
+    }
+    if (!cached.accounts.some((a) => a.status === "ACTIVE")) return { ...empty, ...checked, state: cached.truncated ? "degraded" : cached.accounts.length ? "expired_auth" : "setup_required", repair: cached.truncated ? "Account coverage is incomplete; inspect accounts in Apps & skills." : cached.accounts.length ? "Reconnect the affected account in Apps & skills." : empty.repair };
+    const s = await composio.sessions.create(USER_ID, {
+      toolkits: [toolkit], tags: ["readOnlyHint"], manageConnections: false,
+      workbench: { enable: false },
+      multiAccount: { enable: true, requireExplicitSelection: true },
+      ...(request.connector ? { connectedAccounts: { [toolkit]: request.connector.accountId } } : {}),
+    }, { signal });
+    // The SDK's Session interface omits trailing cancellation options; its concrete public class supports them.
+    if (!(s instanceof ToolRouterSession)) throw new Error("Unsupported connected session implementation.");
+    const query = `Read-only ${request.operation}: ${"query" in request ? request.query : request.url}`;
+    const found = await s.search({ query, toolkits: [toolkit] }, { signal });
+    if (!found.success || found.error) {
+      accountCache.delete(toolkit);
+      return { ...empty, ...checked, state: "degraded", error: internetFailure(new Error(found.error ?? "Discovery failed")), repair: "Connected operation discovery failed. Recheck later; this is not evidence that the account has no such operation." };
+    }
+    if (JSON.stringify(found.toolSchemas).length > 200_000) return { ...empty, ...checked, state: "degraded", error: { code: "malformed", message: "Discovered schemas exceeded the 200 KB limit.", repair: "Narrow the requested operation." } };
+    const slugs = [...new Set(found.results.flatMap((r) => r.primaryToolSlugs))].sort();
+    const matchesOperation = (slug: string) => request.operation === "comments" ? /COMMENT|REPL(Y|IES)|THREAD/i.test(slug)
+      : request.operation === "transcript" ? /TRANSCRIPT|CAPTION/i.test(slug)
+      : request.operation === "search" ? /SEARCH|QUERY|FIND/i.test(slug) : true;
+    const actions = slugs.filter((slug) => READ_OPERATION.test(slug) && !UNSAFE_OPERATION.test(slug) && matchesOperation(slug) && found.toolSchemas[slug]?.toolkit?.toLowerCase() === toolkit)
+      .slice(0, 10).map((slug) => ({ slug, description: found.toolSchemas[slug]?.description?.slice(0, 400), inputSchema: found.toolSchemas[slug]?.inputSchema }));
+    const discovery: ConnectedRead = { state: "available", ...checked, actions };
+    if (!request.connector) return { ...discovery, repair: "Select the intended account ID, then call again with an exact discovered slug and arguments matching its schema. Existing configured-plan usage applies." };
+    const selected = actions.find((a) => a.slug === request.connector?.slug);
+    if (!selected) return { ...discovery, error: { code: "policy", message: "That operation is not in current read-only discovery for this request.", repair: "Use a returned read operation and the same account; writes and secret access use their existing approval boundary." } };
+    const schema = z.object({ type: z.literal("object") }).loose().parse(selected.inputSchema);
+    // Zod 4's native JSON Schema reader validates current provider arguments, rather than a hand-written validator.
+    const input = z.fromJSONSchema(schema);
+    const args = z.record(z.string(), z.unknown()).parse(input.parse(request.connector.args));
+    const serialized = JSON.stringify(args);
+    if (serialized.length > 12_000 || /"[^"\n]*(?:token|password|cookie|secret|credential|authorization|api[_-]?key|connected_account|account_id)[^"\n]*"\s*:/i.test(serialized)) {
+      return { ...discovery, error: { code: "policy", message: "Credentials and account overrides are not accepted as adapter arguments.", repair: "Use the selected connected account and its discovered read schema." } };
+    }
+    for (const [key, value] of Object.entries(args)) {
+      if (/^(limit|max_results|maxResults|page_size|per_page)$/i.test(key) && typeof value === "number") args[key] = Math.min(request.limit, Math.max(1, value));
+    }
+    input.parse(args);
+    for (const value of serialized.matchAll(/https?:[^"\s]+/g)) {
+      const url = publicUrl(value[0]);
+      const host = new URL(url).hostname.replace(/^www\./, "");
+      const allowed = platform === "x" ? ["x.com", "twitter.com"] : platform === "github" ? ["github.com", "api.github.com"] : [`${platform}.com`];
+      if (!allowed.includes(host)) return { ...discovery, error: { code: "policy", message: "An adapter argument points outside the selected platform.", repair: "Use a source on the selected platform." } };
+    }
+    executionStartedAt = Date.now();
+    const executed = await composio.tools.execute(selected.slug, {
+      userId: USER_ID, connectedAccountId: request.connector.accountId,
+      arguments: args, dangerouslySkipVersionCheck: true,
+    }, { signal });
+    if (!executed.successful) {
+      accountCache.delete(toolkit);
+      if (expiredConnection(executed.error)) await ctx.runMutation(internal.connectorHealth.observe, { accountId: request.connector.accountId, toolkit, startedAt: executionStartedAt, expired: true }).catch(() => null);
+      return { ...discovery, error: internetFailure(executed.error ?? new Error("Connected execution failed")) };
+    }
+    await ctx.runMutation(internal.connectorHealth.observe, { accountId: request.connector.accountId, toolkit, startedAt: executionStartedAt, expired: false }).catch(() => null);
+    if (JSON.stringify(executed.data).length > 1_000_000) return { ...discovery, error: { code: "malformed", message: "The connected response exceeded the 1 MB adapter limit.", repair: "Request fewer results." } };
+    return { ...discovery, data: executed.data, backend: `connected:${toolkit}:${selected.slug}` };
+  } catch (error) {
+    if (signal.aborted) throw error;
+    if (executionStartedAt !== undefined && request.connector && expiredConnection(error)) await ctx.runMutation(internal.connectorHealth.observe, { accountId: request.connector.accountId, toolkit, startedAt: executionStartedAt, expired: true }).catch(() => null);
+    accountCache.delete(toolkit);
+    return { ...empty, state: "degraded", error: internetFailure(error) };
+  }
+}
 
 // --- Triggers: events that start jobs (jobs.ts, server/triggers.ts) ---------------
 

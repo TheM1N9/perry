@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+import { turnErrorCode, type TurnErrorCode } from "../lib/turn-errors";
+import { createSteerDelivery, steerRunningTurn, type SteerDelivery } from "./task-steering";
+import { createReplyStream, streamFlushMs } from "./stream-reply";
 /**
  * Assistant's runner: the piece that lets Assistant work on this machine.
  *
@@ -48,6 +51,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { hostname, platform } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
+import { approvalPath } from "./approval-path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { BackendClient } from "../client/backend";
@@ -56,7 +60,7 @@ import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { ACCESS_LABELS, runLabel } from "../convex/lib/commands";
 import { ENGINE_LABELS, ENGINES, refusal, updateOf, versionIn } from "../convex/lib/engines";
-import { effortFor, modelFor } from "../convex/lib/routing";
+import { effortFor, modelFor, tierOf } from "../convex/lib/routing";
 import { skillsNamedIn } from "../convex/lib/skills";
 import {
   defuse, optionOf, skillNote, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type NamedSkill, type PerryTools,
@@ -64,6 +68,7 @@ import {
 } from "./engine";
 import { createEngines } from "./engines";
 import { review } from "./review";
+import { writeUpMeeting } from "./meeting-notes";
 import { nameChat } from "./title";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
 import { TurnTrace } from "./trace";
@@ -110,7 +115,7 @@ type Policy = "ask" | "review" | "trust";
 /** The policy lives on the runner's record in Convex; `auto` in runner.json is from before policies. */
 type Flags = RunnerConfig & { policy?: Policy; help?: boolean };
 const POLICIES: Policy[] = ["ask", "review", "trust"];
-type TurnRecord = { response?: string; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
+type TurnRecord = { response?: string; errorCode?: TurnErrorCode; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
 
 /**
  * Commands that are never a good idea from an agent, regardless of approval.
@@ -219,10 +224,13 @@ async function main() {
 
   const client = new BackendClient(url);
 
+  // Available to startup and regular check-ins; the Active type is declared below.
+  const active = new Map<string, Active>();
   const checkIn = async (policy?: Policy) => {
     try {
       return await client.mutation(api.runner.checkIn, {
         token,
+        activeTurnIds: [...active.values()].map((turn) => turn.jobId),
         platform: platform(),
         hostname: hostname(),
         workdir,
@@ -331,26 +339,39 @@ async function main() {
   };
   /** When each engine's plan limits were last read, those being read, and reads waiting their minute. */
   const limitsRead = new Map<EngineKind, number>();
-  const readingLimits = new Set<EngineKind>();
+  const readingLimits = new Map<EngineKind, Promise<void>>();
   const limitsLater = new Map<EngineKind, ReturnType<typeof setTimeout>>();
   /**
    * Read how much of an engine's plan is used and report it (convex/usage.ts):
    * every LIMITS_EVERY_MS while it is signed in, or now (`fresh`), for an
    * engine that can say. None of the plan is spent reading it.
    */
-  const readLimits = async (engine: Engine, fresh = false) => {
-    if (!engine.limits || !statuses.get(engine.kind)?.signedIn || readingLimits.has(engine.kind) || replacing.has(engine.kind)) return;
-    if (!fresh && Date.now() - (limitsRead.get(engine.kind) ?? 0) < LIMITS_EVERY_MS) return;
-    readingLimits.add(engine.kind);
+  const readLimits = (engine: Engine, fresh = false): Promise<void> => {
+    const reading = readingLimits.get(engine.kind);
+    if (reading) return reading;
+    if (!engine.limits || !statuses.get(engine.kind)?.signedIn || replacing.has(engine.kind)) return Promise.resolve();
+    if (!fresh && Date.now() - (limitsRead.get(engine.kind) ?? 0) < LIMITS_EVERY_MS) return Promise.resolve();
     limitsRead.set(engine.kind, Date.now());
-    try {
-      const limits = await engine.limits(fresh);
-      if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
-    } catch (error) {
-      console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
-    } finally {
-      readingLimits.delete(engine.kind);
-    }
+    const done = (async () => {
+      try {
+        let limits;
+        try {
+          limits = await engine.limits!(fresh);
+        } catch (error) {
+          console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
+          // Said on the Usage page too, which would otherwise wait for limits that are not coming (an expired sign-in).
+          await client.mutation(api.usage.report, { token, engine: engine.kind, unread: { at: Date.now(), message: message(error) } }).catch(() => {});
+          return;
+        }
+        // Read but not reported (the backend away): tried again on the next read, never shown as a failed read.
+        if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits })
+          .catch((error) => console.log(dim(`  could not report ${engine.label}'s plan limits: ${message(error)}`)));
+      } finally {
+        readingLimits.delete(engine.kind);
+      }
+    })();
+    readingLimits.set(engine.kind, done);
+    return done;
   };
   /** After a turn, its engine's limits are read again: at once, or when a minute has passed since the last read. */
   const readLimitsSoon = (engine: Engine) => {
@@ -399,6 +420,13 @@ async function main() {
     const effort = effortFor(model, "quick");
     return { ...(model ? { model: model.id } : {}), ...(effort ? { effort } : {}) };
   };
+  /** The standard tier's, for what is worth more than a quick answer: a call's write-up (convex/lib/routing.ts). */
+  const standardPick = (engine: Engine): { model?: string; effort?: string } => {
+    const { tier } = tierOf({ kind: "meeting" });
+    const model = modelFor((statuses.get(engine.kind)?.models ?? []).map((item) => ({ ...item, engine: engine.kind })), engine.kind, tier);
+    const effort = effortFor(model, tier);
+    return { ...(model ? { model: model.id } : {}), ...(effort ? { effort } : {}) };
+  };
   /** A quick turn on an engine, counted while it runs. */
   const quickly = async <T,>(engine: Engine | undefined, work: () => Promise<T>): Promise<T> => {
     if (!engine) return work();
@@ -424,10 +452,12 @@ async function main() {
     let lastActive = started;
     let grantedUntil = 0;
     let why: string | null = null;
+    let errorCode: "idle_timeout" | "max_time" | undefined;
     let kill: ReturnType<typeof setTimeout> | undefined;
     const span = (ms: number) => ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : `${Math.round(ms / 1000)} seconds`;
-    const stop = (reason: string, log: string) => {
+    const stop = (code: "idle_timeout" | "max_time", reason: string, log: string) => {
       why = reason;
+      errorCode = code;
       const running = handle();
       console.log(yellow(`  ${engine.label} ${log}; stopping it`));
       if (running) void engine.interrupt(running).catch(() => {});
@@ -445,14 +475,15 @@ async function main() {
         lastActive = now;
         return;
       }
-      if (idleMs && now - lastActive > idleMs) stop(`It went quiet for more than ${span(idleMs)}, so it was stopped.`, `was quiet for ${span(idleMs)}`);
+      if (idleMs && now - lastActive > idleMs) stop("idle_timeout", `It went quiet for more than ${span(idleMs)}, so it was stopped.`, `was quiet for ${span(idleMs)}`);
       // Past the time it asked for, it still has the usual quiet allowance before the cap.
-      else if (now > Math.max(started + maxMs, grantedUntil + (idleMs ?? 0))) stop(`It ran for more than ${span(grantedUntil ? now - started : maxMs)}, so it was stopped.`, `ran past ${span(maxMs)}`);
+      else if (now > Math.max(started + maxMs, grantedUntil + (idleMs ?? 0))) stop("max_time", `It ran for more than ${span(grantedUntil ? now - started : maxMs)}, so it was stopped.`, `ran past ${span(maxMs)}`);
     }, WATCHDOG_TICK_MS);
     return {
       active: () => { lastActive = Date.now(); },
       expired: () => why !== null,
       why: () => why ?? "",
+      code: () => errorCode,
       done: () => { clearInterval(timer); clearTimeout(kill); },
     };
   };
@@ -460,7 +491,7 @@ async function main() {
   // --- Approvals -------------------------------------------------------------
 
   type Request = {
-    kind: "command" | "file";
+    kind: "command" | "file" | "tool" | "permission";
     what: string;
     detail: string | null;
     cwd?: string;
@@ -478,13 +509,18 @@ async function main() {
    * `conversationId` is the chat that asked, whose access decides.
    */
   const approve = async (request: Request, conversationId?: Id<"conversations">, engine?: EngineKind): Promise<boolean> => {
+    const cwd = request.cwd ? approvalPath(request.cwd) : undefined;
+    const paths = request.paths?.map(path => approvalPath(path, request.cwd ? cwd : workdir));
+    const pathsVerified = Boolean(paths?.length && paths.every(path => path !== undefined));
     const { id, next } = await client.mutation(api.approvals.request, {
       token,
       kind: request.kind,
       title: request.what,
       detail: request.detail ?? undefined,
-      cwd: request.cwd,
-      paths: request.paths,
+      cwd: cwd ?? request.cwd,
+      paths: pathsVerified ? paths as string[] : request.paths,
+      cwdVerified: Boolean(cwd),
+      pathsVerified,
       amendment: request.amendment,
       conversationId,
     });
@@ -492,11 +528,12 @@ async function main() {
       console.log(`${cyan("  allowed")} ${request.what}`);
       return true;
     }
-    if (next === "review") {
+    if (next === "review" && request.kind !== "tool" && request.kind !== "permission") {
+      const kind = request.kind;
       // The chat's own engine reviews when it can; with none here that can, the owner is asked.
       const reviewer = quickEngine(engine);
       const verdict = await quickly(reviewer, () => review(reviewer, {
-        kind: request.kind,
+        kind,
         title: request.what,
         cwd: request.cwd,
         workdir,
@@ -546,7 +583,7 @@ async function main() {
       const timer = setTimeout(() => settle(false, "timeout"), APPROVAL_TIMEOUT_MS);
       unsubscribe = client.onUpdate(api.approvals.decision, { token, id }, (status) => {
         // "auto": the chat was put on Full access while this waited.
-        if (status === "approved" || status === "auto" || status === "declined") settle(status !== "declined", "elsewhere");
+        if (status === "approved" || status === "auto" || status === "declined" || status === "expired") settle(status === "approved" || status === "auto", "elsewhere");
       }, (error) => console.error(red(`  could not follow the dashboard's answer: ${message(error)}`)));
       terminal?.question(`  ${bold("run it?")} [y/N/a = always] `, { signal: abort.signal })
         .then((answer) => {
@@ -588,7 +625,28 @@ async function main() {
       }, conversationId, engine);
       return optionOf(request, approved ? "accept" : "decline");
     }
-    // Wider permissions, and questions from other tools, have no place to be asked yet.
+    if (request.type === "tool_user_input") {
+      const approved = await approve({
+        kind: "tool",
+        what: `Confirm request from ${detail.server ?? "an external tool"}`,
+        detail: detail.message ?? "This tool is waiting for your confirmation.",
+      }, conversationId, engine);
+      return optionOf(request, approved ? "accept" : "decline");
+    }
+    if (request.type === "permission_approval") {
+      // Phone prompts display 800 detail characters. Keep the whole scope
+      // first, shorten only the reason, and never approve an invisible tail.
+      const scope = detail.permissionSummary;
+      if (!scope || scope.length > 800) return optionOf(request, "decline");
+      const reason = detail.reason?.slice(0, Math.max(0, 800 - scope.length - 2));
+      const approved = await approve({
+        kind: "permission",
+        what: "Grant additional computer access for this turn",
+        detail: [scope, reason].filter(Boolean).join("\n\n"),
+        cwd: detail.cwd,
+      }, conversationId, engine);
+      return optionOf(request, approved ? "accept" : "decline");
+    }
     return optionOf(request, "decline");
   };
 
@@ -610,15 +668,34 @@ async function main() {
     renameSync(temporary, target);
     console.log(dim(`  saved turn ${id}`));
   };
+  // Process-local engine outcomes survive uncertain acknowledgement and final-result retries.
+  const steered = new Map<string, { turnId: string; delivery: SteerDelivery }>();
+  const settleSteers = async (turnId: string) => {
+    await Promise.all([...steered.values()].filter((steer) => steer.turnId === turnId).map((steer) => steer.delivery.settle()));
+  };
+  const clearSteers = (turnId: string) => {
+    for (const [id, steer] of steered) if (steer.turnId === turnId) steered.delete(id);
+  };
   const recoverTurns = async (markIncomplete: boolean) => {
     const running = await client.query(api.codex.runningTurns, { token });
+    const runningIds = new Set<string>(running.map((job) => job._id));
+    for (const [id, steer] of steered) {
+      if (!active.has(steer.turnId) && !runningIds.has(steer.turnId)) steered.delete(id);
+    }
     for (const job of running) {
       const result = savedResult(job._id);
       if (result || markIncomplete) {
+        // Do not let finishTurn queue a steer the engine already accepted but has not acknowledged.
+        try { await settleSteers(job._id); }
+        catch (error) {
+          console.error(red(`  A steer acknowledgement is still pending; keeping its saved result for retry: ${message(error)}`));
+          continue;
+        }
         await client.mutation(api.codex.finishTurn, {
           token, id: job._id,
-          ...(result ?? { error: "Perry restarted during this reply, so it ended early. Send the message again to finish it." }),
+          ...(result ?? { errorCode: "restarted" as const, error: "Perry restarted during this reply, so it ended early. Send the message again to finish it." }),
         });
+        clearSteers(job._id);
       }
     }
   };
@@ -802,6 +879,7 @@ async function main() {
   type Active = {
     jobId: Id<"codexTurns">;
     conversationId: Id<"conversations">;
+    /** Held while engine work is starting/running, released before result delivery. */
     engine: Engine | undefined;
     /** The engine's handle, while the turn runs there. */
     handle?: TurnHandle;
@@ -811,10 +889,11 @@ async function main() {
     access?: Access;
     /** Stop waiting for the turn, which its engine may still be running. */
     abandon?: () => void;
+    /** Stop's grace timer belongs to this turn and is cleared when it ends. */
+    stopTimer?: ReturnType<typeof setTimeout>;
     /** A chat with someone else, whose messages name none of the owner's skills. */
     guest?: boolean;
   };
-  const active = new Map<string, Active>();
   let turnQueue: Doc<"codexTurns">[] = [];
   // The turns the owner asked to stop, those being stopped, and those whose engine had to be ended for it.
   let stopRequested = new Set<string>();
@@ -828,18 +907,20 @@ async function main() {
   const endTurn = (jobId: string) => {
     const turn = active.get(jobId);
     if (!turn?.engine) return;
-    const shared = [...active.values()].some((other) => other.jobId !== jobId && other.engine === turn.engine && other.handle);
+    const shared = [...active.values()].some((other) => other.jobId !== jobId && other.engine === turn.engine);
     if (shared && turn.abandon) turn.abandon();
     else turn.engine.kill();
   };
   const interruptIfAsked = () => {
-    for (const { jobId, engine, handle } of active.values()) {
+    for (const turn of active.values()) {
+      const { jobId, engine, handle } = turn;
       if (!engine || !handle || !stopRequested.has(jobId) || stopping.has(jobId)) continue;
       stopping.add(jobId);
       console.log(yellow(`  stopping the ${engine.label} turn, as asked`));
       void engine.interrupt(handle).catch((error) => console.error(red(`  Could not stop the ${engine.label} turn: ${message(error)}`)));
       // An engine too stuck to hear it is ended, as the watchdog does, and the turn counts as stopped.
-      setTimeout(() => {
+      turn.stopTimer = setTimeout(() => {
+        turn.stopTimer = undefined;
         if (!active.get(jobId)?.handle) return;
         console.log(yellow(`  ${engine.label} did not stop; ending it`));
         endedOnStop.add(jobId);
@@ -864,7 +945,6 @@ async function main() {
   };
   // Messages the owner sent while a turn runs, and those already handed to its engine, by steer.
   let pendingSteers: Array<{ _id: Id<"codexSteers">; turnId: Id<"codexTurns">; prompt: string; attachments?: Doc<"codexTurns">["attachments"] }> = [];
-  const steered = new Map<string, { turnId: string; done: Promise<unknown> }>();
   /**
    * Hand each new message for a running turn to its engine, then tell Convex
    * whether it took it. One it refused ("no active turn to steer", a turn id
@@ -874,31 +954,40 @@ async function main() {
   const steerIfAsked = () => {
     for (const steer of pendingSteers) {
       const turn = active.get(steer.turnId);
-      if (!turn?.engine || !turn.handle || steered.has(steer._id)) continue;
+      if (!turn?.engine || !turn.handle || stopRequested.has(steer.turnId) || stopping.has(steer.turnId) || steered.has(steer._id)) continue;
       const { engine, handle } = turn;
-      steered.set(steer._id, { turnId: steer.turnId, done: (async () => {
-        try {
-          const mode = engine.capabilities.steer;
-          if (!engine.steer || (mode !== "native" && mode !== "concurrent-prompt")) throw new Error(`${engine.label} takes one message at a time`);
-          await engine.steer(handle, { ...withSkills(engine, steer.prompt, turn.guest), attachments: guestFiles(await localise(steer.attachments), turn.guest) });
-          console.log(dim(`  steered the ${engine.label} turn with a new message`));
-          await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: true });
-        } catch (error) {
-          console.log(yellow(`  could not steer the ${engine.label} turn, so the message waits its turn: ${message(error)}`));
-          await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: false, error: message(error) });
-        }
-      })().catch((error) => console.error(red(`  Could not report a steer: ${message(error)}`))) });
+      const delivery = createSteerDelivery(async () => {
+        await steerRunningTurn(engine, handle, async () => {
+          const attachments = guestFiles(await localise(steer.attachments), turn.guest);
+          if (stopRequested.has(steer.turnId) || stopping.has(steer.turnId)) throw new Error("The reply was stopped before this message could join it.");
+          return { ...withSkills(engine, steer.prompt, turn.guest), attachments };
+        });
+        console.log(dim(`  steered the ${engine.label} turn with a new message`));
+      }, async (outcome) => {
+        await client.mutation(api.codex.ackSteer, { token, id: steer._id, ...outcome });
+      });
+      steered.set(steer._id, { turnId: steer.turnId, delivery });
+      void delivery.settle().catch((error) => console.error(red(`  Could not report a steer; its outcome is retained for retry: ${message(error)}`)));
     }
   };
 
   /** Run a claimed turn on its engine, or deliver the result a runner saved before it stopped. */
   const runJob = async (job: NonNullable<FunctionReturnType<typeof api.codex.claimTurn>>, turn: Active) => {
+    const releaseEngine = () => {
+      turn.engine = undefined;
+      clearTimeout(turn.stopTimer);
+      turn.stopTimer = undefined;
+      turn.handle = undefined;
+      turn.abandon = undefined;
+    };
     let result = savedResult(job._id);
+    if (result) releaseEngine();
     if (!result) {
-      // The reply so far, and the trace of what the engine is doing, go to Convex
-      // about three times a second while the turn runs; the first words go at once.
+      // Send acknowledged deltas; the first words go at once, later flushes adapt.
       let latest = "";
-      let sent = "";
+      const stream = createReplyStream((packet) => client.mutation(api.turnStreams.append, { token, id: job._id, ...packet }));
+      let streamStarted = false;
+      let streamClosed = false;
       let streamTimer: ReturnType<typeof setTimeout> | null = null;
       const trace = new TurnTrace();
       // One report at a time: one still on its way when the turn ends would arrive after it, and be dropped.
@@ -911,13 +1000,14 @@ async function main() {
       const flush = () => {
         streamTimer = null;
         void report();
-        if (latest === sent) return;
-        sent = latest;
-        void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
+        void stream.flush().catch(() => {}); // The next flush retries unacknowledged text.
       };
       const schedule = () => {
-        if (sent || !latest) streamTimer ??= setTimeout(flush, 300);
-        else { if (streamTimer) clearTimeout(streamTimer); flush(); }
+        if (!streamStarted && latest) {
+          streamStarted = true;
+          if (streamTimer) clearTimeout(streamTimer);
+          flush();
+        } else streamTimer ??= setTimeout(flush, streamFlushMs(latest.length));
       };
       const kind = job.engine;
       const engine = engines.get(kind);
@@ -942,7 +1032,7 @@ async function main() {
         if (!engine) throw new Error(`${ENGINE_LABELS[kind]} is not on this computer's runner. Update Perry here, or pick another engine's model.`);
         // Refused before it starts, rather than failing half-way in ways an old CLI would.
         const update = tooOld(kind);
-        if (update) throw new Error(refusal(engine.label, update));
+        if (update) throw Object.assign(new Error(refusal(engine.label, update)), { errorCode: "engine_old" });
         // Someone else's words never reach an engine that cannot be locked down for them, whatever the server asked.
         if (job.guest && !engine.capabilities.guestLockdown) throw new Error(`${engine.label} can't be locked down for a chat with someone else, so it doesn't run one.`);
         // Stopped between its claim and its start (/stop, or Perry paused): it never reaches the engine.
@@ -953,11 +1043,15 @@ async function main() {
           if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
           console.log(dim(`  compacting a chat's ${engine.label} session`));
           dog = watchdog(engine, { maxMs: COMPACT_TIMEOUT_MS }, () => undefined, { end: () => endTurn(job._id) });
-          await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel, job.guest)).finally(dog.done);
+          await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel, job.guest)).finally(() => { dog?.done(); releaseEngine(); });
           result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
         } else {
           const sink: TurnSink = {
             onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
+            onAgents: (agents) => {
+              void client.mutation(api.codex.agentProgress, { token, id: job._id, agents })
+                .catch((error) => console.error(`Could not save agent progress: ${String(error)}`));
+            },
             onStarted: (handle) => {
               dog?.active();
               turn.handle = handle;
@@ -967,10 +1061,13 @@ async function main() {
               applyAccess();
             },
             onEvent: (event) => {
+              if (streamClosed) return;
               dog?.active();
               if (event.type === "text") {
                 if (event.stream !== "assistant") return;
+                trace.text(event.itemId, event.text, Date.now());
                 latest = event.text;
+                stream.update(latest);
                 schedule();
               } else if (event.type === "item") {
                 if (trace.item(event.phase, event.item, event.atMs)) schedule();
@@ -1007,13 +1104,13 @@ async function main() {
             // What it wrote before it was given up on is kept, as for a failed turn.
             if (!dog?.expired() && !endedOnStop.has(job._id)) throw error;
             return { state: "failed", cursor: job.resumeCursor ?? "", text: latest, images: [], error: message(error) } satisfies TurnResult;
-          }).finally(dog.done);
+          }).finally(() => { dog?.done(); releaseEngine(); });
           const media = await keepMedia(job._id, job.channel, outcome.images);
           // A late failure keeps what the turn had already produced.
           const ended = endedOnStop.has(job._id);
           const failed = (outcome.state === "failed" && !ended) || dog.expired();
           result = {
-            ...(failed ? { error: dog.expired() ? dog.why() : outcome.error ?? `The ${engine.label} turn failed.` } : {}),
+            ...(failed ? { error: dog.expired() ? dog.why() : outcome.error ?? `The ${engine.label} turn failed.`, errorCode: dog.expired() ? dog.code() : outcome.errorCode ?? (outcome.error && LIMIT_HIT.test(outcome.error) ? "limit" : "engine_failed") } : {}),
             ...(outcome.text || !failed ? { response: outcome.text } : {}),
             ...(ended || (!failed && outcome.state !== "completed") ? { stopped: true } : {}),
             ...(outcome.compacted ? { compacted: true } : {}),
@@ -1022,32 +1119,38 @@ async function main() {
           };
         }
       } catch (error) {
-        result = endedOnStop.has(job._id) ? { stopped: true, model: label } : { error: dog?.expired() ? dog.why() : message(error), model: label };
+        result = endedOnStop.has(job._id) ? { stopped: true, model: label } : { error: dog?.expired() ? dog.why() : message(error), errorCode: dog?.expired() ? dog.code() : turnErrorCode(error, LIMIT_HIT.test(message(error)) ? "limit" : "engine_failed"), model: label };
       } finally {
-        turn.handle = undefined;
-        turn.abandon = undefined;
+        releaseEngine();
         stopping.delete(job._id);
         endedOnStop.delete(job._id);
       }
+      streamClosed = true;
       if (streamTimer) clearTimeout(streamTimer);
-      // A steer still being answered must be recorded as applied or not
-      // before finishTurn queues whatever the turn did not take.
-      const steers = [...steered].filter(([, steer]) => steer.turnId === job._id);
-      await Promise.all(steers.map(([, steer]) => steer.done));
-      for (const [id] of steers) steered.delete(id);
+      // Persist the last words even when cancellation or transport failure omitted
+      // the engine's final text; replay must not depend on an unfinished flush.
+      if ((result.error || result.stopped) && !result.response?.trim() && latest) result = { ...result, response: latest.slice(0, 100_000) };
+      // Keep the engine result even if acknowledgement delivery is temporarily unavailable.
       saveResult(job._id, result);
+      await stream.flush().catch(() => {});
       // Where the engine's plan stands after the turn: a limit it refused the turn for, or, as it went through, none.
       if (engine && job.kind !== "compact") {
-        const hit = result.error && LIMIT_HIT.test(result.error) ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;
-        if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
+        const hit = result.errorCode === "limit" && result.error ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;
+        if (hit) {
+          await client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
+          await readLimits(engine, true);
+        } else if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
         if (hit) console.log(yellow(`  ${engine.label} refused the turn for your plan's limit`));
         readLimitsSoon(engine);
       }
       // The trace's last report goes before the turn ends; Convex takes reports only while it runs.
-      trace.drain(Date.now());
+      trace.drain(Date.now(), kind === "claude");
       await report();
     }
+    // A bounded failed ack batch withholds finish; recoverTurns retries only the saved outcome/result.
+    await settleSteers(job._id);
     await client.mutation(api.codex.finishTurn, { token, id: job._id, ...result });
+    clearSteers(job._id);
   };
 
   /** How many turns run at once on this computer (PERRY_MAX_TURNS). */
@@ -1244,8 +1347,51 @@ async function main() {
     }
   });
 
+  // Calls the desktop pet listened to, written up as they end (convex/meetings.ts). Any runner with a quick-turn
+  // engine may; what it reads comes with the claim, so the watch itself stays small.
+  let writingMeeting = false;
+  let meetingLease: ReturnType<typeof setInterval> | undefined;
+  const writeMeetings = async () => {
+    if (writingMeeting) return;
+    const writer = quickEngine();
+    if (!writer) return;
+    writingMeeting = true;
+    try {
+      const requests = await client.query(api.meetings.pendingNotes, { token });
+      for (const request of requests) await quickly(writer, async () => {
+        const meeting = await client.mutation(api.meetings.claimNotes, { token, id: request.id });
+        if (!meeting) return;
+        const checkpoint = join(HOME, "meeting-writeups", `${request.id}.json`);
+        meetingLease = setInterval(() => {
+          void client.mutation(api.meetings.renewNotes, { token, id: request.id, claim: meeting.claim }).catch(() => {});
+        }, 60_000);
+        try {
+          const written = await writeUpMeeting(writer, meeting, standardPick(writer), checkpoint);
+          console.log(dim(`  wrote up a call (${written.model ?? `${writer.label} default`})`));
+          await client.mutation(api.meetings.finishNotes, { token, id: request.id, claim: meeting.claim, title: written.title, markdown: written.markdown, actions: written.actions });
+          if (existsSync(checkpoint)) unlinkSync(checkpoint);
+        } catch (error) {
+          console.log(yellow(`  could not write up a call: ${message(error)}`));
+          await client.mutation(api.meetings.finishNotes, { token, id: request.id, claim: meeting.claim, error: message(error) });
+        } finally {
+          clearInterval(meetingLease);
+          meetingLease = undefined;
+        }
+      });
+    } catch (error) {
+      console.error(red(`  Could not save a call's write-up: ${message(error)}`));
+    } finally {
+      writingMeeting = false;
+    }
+  };
+  watch(api.meetings.pendingNotes, { token }, () => { void writeMeetings(); });
+  // Also retry when an engine signed in after the pending query last changed.
+  const meetingPoll = setInterval(() => { void writeMeetings(); }, 60_000);
+
   const stop = async () => {
     clearInterval(heartbeat);
+    clearInterval(meetingPoll);
+    clearInterval(meetingLease);
     for (const engine of engines.values()) engine.kill();
     rl?.close();
     client.close();

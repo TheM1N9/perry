@@ -1,0 +1,8 @@
+{
+  "checks": {
+    "productionHelperRejectsFixtureRoots": true,
+    "productionHelperRedactsOwnedCredentials": true
+  },
+  "passed": true,
+  "ownerCredentialsRead": false
+}

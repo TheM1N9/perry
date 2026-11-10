@@ -103,7 +103,7 @@ const cleanTitle = (title: string) => {
   return text;
 };
 
-async function insert(ctx: MutationCtx, todo: { title: string; dueAt?: number; repeat?: string; by: "owner" | "assistant" }): Promise<Id<"todos">> {
+export async function insert(ctx: MutationCtx, todo: { title: string; dueAt?: number; repeat?: string; by: "owner" | "assistant" }): Promise<Id<"todos">> {
   const now = Date.now();
   const timezone = await timezoneOf(ctx);
   const repeat = checkRepeat(todo.repeat, timezone);
@@ -316,6 +316,18 @@ export const add = mutation({
   },
 });
 
+/** Undo of a removal: it comes back as it was, done or not, and a done one does not repeat again. */
+export const restore = mutation({
+  args: { key: v.string(), title: v.string(), dueAt: v.optional(v.number()), repeat: v.optional(v.string()), doneAt: v.optional(v.number()), by: v.union(v.literal("owner"), v.literal("assistant")) },
+  returns: v.id("todos"),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const id = await insert(ctx, { title: args.title, dueAt: args.dueAt, repeat: args.repeat, by: args.by });
+    if (args.doneAt) await ctx.db.patch(id, { doneAt: args.doneAt, nextNagAt: undefined });
+    return id;
+  },
+});
+
 async function mine(ctx: QueryCtx, key: string, id: Id<"todos">): Promise<Doc<"todos">> {
   assertDashboardKey(key);
   const todo = await ctx.db.get(id);
@@ -404,6 +416,9 @@ export const endDay = mutation({
   },
 });
 
+/** A recording is five minutes at most: a pet that stops saying so is not holding up an update for long. */
+const TALKING_MS = 6 * 60_000;
+
 /**
  * Each pet checks in every minute, saying how long since the owner last
  * touched its computer, whether its Talk hotkey (and its others, `keys`)
@@ -416,12 +431,14 @@ export const presence = mutation({
     key: v.string(), idleSeconds: v.number(), hotkey: v.optional(v.string()), hotkeyError: v.optional(v.string()), hotkeyHold: v.optional(v.string()),
     keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
     device: v.optional(v.id("petDevices")),
+    /** The owner is talking to him right now, which an update must not interrupt. */
+    talking: v.optional(v.boolean()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const now = Date.now();
-    const row = { seenAt: now, activeAt: now - Math.max(0, args.idleSeconds) * 1000, hotkey: args.hotkey, hotkeyError: args.hotkeyError, hotkeyHold: args.hotkeyHold, keys: args.keys };
+    const row = { seenAt: now, activeAt: now - Math.max(0, args.idleSeconds) * 1000, hotkey: args.hotkey, hotkeyError: args.hotkeyError, hotkeyHold: args.hotkeyHold, keys: args.keys, talkingUntil: args.talking ? now + TALKING_MS : undefined };
     const existing = (await ctx.db.query("petPresence").collect()).find((pet) => pet.device === args.device);
     if (existing) await ctx.db.patch(existing._id, row);
     else await ctx.db.insert("petPresence", { ...row, device: args.device });

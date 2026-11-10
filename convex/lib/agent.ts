@@ -47,7 +47,8 @@ export async function saveMessages(
     threadId: string;
     userId?: string;
     order?: "next";
-    messages: Array<{ role: "user" | "assistant" | "system" | "tool"; content: string }>;
+    runId?: Id<"runs">;
+    messages: Array<{ role: "user" | "assistant" | "system" | "tool"; content: string; perryReaction?: string }>;
     metadata?: Array<{ provider?: string; model?: string }>;
   },
 ) {
@@ -55,6 +56,7 @@ export async function saveMessages(
     threadId: args.threadId,
     userId: args.userId,
     messages: args.messages,
+    ...(args.runId ? { runId: args.runId } : {}),
     metadata: args.metadata?.map((item) => ({ provider: item.provider, model: item.model })),
   });
 }
@@ -78,7 +80,7 @@ export async function deleteMessages(ctx: Writer, messageIds: string[]): Promise
  * the turn read something from outside before it (a web page, an app's data, someone else's message), so what it
  * writes to Brain is marked as from outside and cannot instruct later turns (issue #136).
  */
-export type ToolCtx = ActionCtx & { userId?: string; threadId?: string; fromJob?: boolean; conversationId?: Id<"conversations">; outside?: boolean };
+export type ToolCtx = ActionCtx & { userId?: string; threadId?: string; fromJob?: boolean; conversationId?: Id<"conversations">; turnId?: Id<"codexTurns">; outside?: boolean; signal?: AbortSignal };
 
 /**
  * A tool the assistant can call: a description, a zod input schema and an

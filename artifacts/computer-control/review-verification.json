@@ -1,0 +1,46 @@
+{
+  "verifiedAt": "2026-10-26T00:50:03.225Z",
+  "baseCommit": "0cb73861509186e638ad587123f05f134316bcd9",
+  "browserChecks": {
+    "checks": 22,
+    "passed": true,
+    "artifact": "result.json"
+  },
+  "approvalChecks": {
+    "checks": 41,
+    "passed": true,
+    "artifact": "review-permission-result.json"
+  },
+  "parallelSessionChecks": {
+    "checks": 39,
+    "passed": true,
+    "artifact": "../parallel-sessions/result.json"
+  },
+  "setupFailureChecks": {
+    "imports": {
+      "exitCode": 1,
+      "serverClosed": true,
+      "artifact": "setup-failure-imports.json"
+    },
+    "runtime": {
+      "exitCode": 1,
+      "serverClosed": true,
+      "artifact": "setup-failure-runtime.json"
+    }
+  },
+  "backendTypecheck": "passed",
+  "applicationTypecheck": "passed",
+  "productionBuild": "passed",
+  "buildWarnings": [
+    "Existing filesystem tracing warnings in convex/pet.ts and server/wake.ts"
+  ],
+  "liveModelBehaviorTested": false,
+  "installedPerryUpdated": false,
+  "sourceSha256": {
+    "convex/lib/browser.ts": "6a83b71fb73939d572c29edf14895a725416281c7abdd36a2182016ad6411750",
+    "convex/approvals.ts": "2d4d84b4f8812ac683c6cd63f19b559e50913872d402414b22a3681b2e56ecb9",
+    "runner/index.ts": "6c7882ab1c592da605f11947dd57b1ec918b594c06331bbc94c8f9670a164a9c",
+    "artifacts/computer-control/run.ts": "54913b37aaa4a767625fc0d67bf7cd87d34cb7d9da71cb2b6fe7e5aefcd1f15e",
+    "artifacts/tool-approval-routing/e2e.ts": "7d99299af25fbea90b13c80c0fe5af9ec81fcbce354feebfbc286b46aa62b3e9"
+  }
+}

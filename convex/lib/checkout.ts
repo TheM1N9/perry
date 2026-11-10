@@ -22,7 +22,7 @@ export type Standing = {
 };
 
 /** An update the dashboard asks `perry run` for, in update-request.json. */
-export type UpdateRequest = { id: string; at: number; by: "owner" | "nightly" };
+export type UpdateRequest = { id: string; at: number; by: "owner" | "nightly"; target?: string };
 
 /** How it went, in update-result.json, for the dashboard to show. */
 export type UpdateResult = {

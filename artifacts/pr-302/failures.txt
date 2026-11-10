@@ -1,0 +1,9 @@
+Failure inventory before verification harness:
+- Owner allow rules, per-agent overrides, saved grants or resumed sessions bypass Ask/Auto.
+- Denied command/edit executes, or Auto receives no approval request.
+- Alphabetical model list overrides engine default; learned ACP default is discarded.
+- Unsupported efforts are offered for a model.
+- Failed CLI output becomes a model; failed/partial logout reports success.
+- Logout omits provider/credential IDs, removes environment credentials, or leaves ACP alive.
+- No-account models become unavailable after logout.
+- Configured CLI command/arguments are ignored.

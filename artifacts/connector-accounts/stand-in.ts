@@ -11,7 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
  * call the page starts making shows in the result instead of passing quietly.
  */
 
-export type Connection = { id: string; toolkit: string; status: string; createdAt: string; identity?: string };
+export type Connection = { id: string; toolkit: string; status: string; createdAt: string; identity?: string; workspace?: string };
 
 const APPS: Record<string, { name: string; color: string; description: string; category: string }> = {
   gmail: { name: "Gmail", color: "#ea4335", description: "Email by Google.", category: "Email" },
@@ -26,7 +26,7 @@ const APPS: Record<string, { name: string; color: string; description: string; c
 
 /** The "who am I" actions Perry asks (convex/composio.ts WHO_AM_I), answered per connection. */
 const WHO_AM_I: Record<string, (identity: string) => unknown> = {
-  GMAIL_GET_PROFILE: (identity) => ({ emailAddress: identity, messagesTotal: 12 }),
+  GMAIL_GET_PROFILE: (identity) => ({ emailAddress: identity, name: identity.startsWith("sam") ? "Sam Taylor" : "Alex Morgan", username: identity.split("@")[0], messagesTotal: 12, access_token: "fixture-token-never-display" }),
   GOOGLECALENDAR_GET_CALENDAR_PROFILE: (identity) => ({ calendar: { id: identity, summary: identity } }),
   SLACK_TEST_AUTH: (identity) => ({ ok: true, user: identity, team: "Stand-in team" }),
 };
@@ -131,7 +131,7 @@ export async function startStandIn() {
       const item = connections.find((entry) => entry.id === body.connected_account_id);
       const answer = WHO_AM_I[match[1]];
       if (!item || !answer || item.status !== "ACTIVE" || !item.identity) return json(res, 200, { data: {}, error: "Not available", successful: false, log_id: "log_stand_in" });
-      return json(res, 200, { data: answer(item.identity), error: null, successful: true, log_id: "log_stand_in" });
+      return json(res, 200, { data: { ...answer(item.identity) as object, ...(item.workspace ? { team: item.workspace } : {}) }, error: null, successful: true, log_id: "log_stand_in" });
     }
     if (req.method === "POST" && path === "/tool_router/session") {
       return json(res, 200, { session_id: "trs_stand_in", mcp: { type: "http", url: `${base}/mcp` }, tool_router_tools: [], config: { user_id: "owner", manage_connections: { enable: true } }, config_version: 1 });

@@ -41,14 +41,40 @@ can run their own copy, and every copy is separate.
   your files, asking before anything outside its sandbox.
 - **"What's on my calendar? Draft a reply to that email."** Connects to Gmail,
   Google Calendar, Notion and more through [Composio](https://composio.dev).
+- **Notices things without a prompt.** Every half hour from 8am to 10:30pm,
+  Perry checks recent activity in connected email and calendars against your
+  plans. If a reply gets a meeting date wrong, he can read the original thread
+  and alert you. He stays quiet when there is nothing new worth saying and
+  asks before sending a correction. Pause or reschedule Heartbeat under
+  Work → Schedules; quiet hours and your notification limit still apply.
 - **"From now on, keep replies short."** Remembers who you are, what you like
   and what you told it last week.
+- **"Send this to me on WhatsApp. I'll continue there."** Sends to your own
+  paired WhatsApp or Telegram, with a short recap. Your reply there continues
+  in that app's existing Perry chat, with its earlier messages and the recap.
+- **Reactions can be replies.** In web chat, WhatsApp and Telegram, Perry can acknowledge
+  a message, express a feeling, or change a reaction as work progresses. The
+  emoji choices are open to what each app supports. He can also understand
+  your reaction changes and removals against the original message. Telegram
+  only delivers reaction updates where the bot has the required administrator
+  permissions; private-chat reaction feedback is not guaranteed.
 - **"Note this: passport renewal by May."** Keeps notes you both edit: packing
   lists, trip plans, meeting notes, a weekly review a schedule adds to. A
   project's notes are shared with its chats. `/note` from your phone adds a line.
 - **Hold a hotkey and talk.** An optional desktop companion sits in a corner
   of your screen with your chats, to-dos and approvals, and takes voice input
   transcribed on your machine.
+- **Take notes on calls.** Open Meetings or press Ctrl/Cmd+Shift+L with the desktop
+  pet running. On Windows and macOS, microphone activity can bring up a
+  Start Notetaker prompt. Connect Google Calendar or Outlook under Apps & skills,
+  then use Refresh calendars in Meetings to see the next 24 hours. Perry checks
+  calendars every five minutes and suggests taking notes two minutes before a
+  meeting. You choose when recording starts; change the prompts in Settings →
+  Desktop pet. Calendar reads use Composio's selected account for each service.
+  Transcription stays local by default. In Settings → Desktop pet, choose
+  Whisper Small for balanced speed or Whisper Large v3 Turbo for higher accuracy,
+  and select your spoken language. Models download once. Groq cloud transcription
+  is an optional mode with its own key; selecting it sends audio to Groq.
 - **"What's this error?"** Another hotkey shows the companion the window
   you're in, so you can ask about it. You see the picture before it's sent.
   Perry can also look for himself when a question is about your screen, and

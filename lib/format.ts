@@ -24,6 +24,39 @@ export function useNow(intervalMs = 30_000) {
   return now;
 }
 
+/** What the shared second writes, and the one interval that writes it, running only while something listens. */
+const ticking = new Set<() => void>();
+let clock: number | undefined;
+
+function onSecond(write: () => void): () => void {
+  ticking.add(write);
+  clock ??= window.setInterval(() => { for (const each of ticking) each(); }, 1000);
+  return () => {
+    ticking.delete(write);
+    if (ticking.size === 0 && clock !== undefined) { window.clearInterval(clock); clock = undefined; }
+  };
+}
+
+/**
+ * A ref for an element whose text is a time that runs ("12s"): it writes
+ * `format(now)` into the element, and while `live`, again each second from
+ * one shared clock, so nothing around it renders again as the time goes.
+ * The element must have no children of its own. Unmounting it (React 19
+ * calls the cleanup a ref returns) stops its writes, and the clock with the
+ * last of them.
+ */
+export function tickText(format: (now: number) => string, live = true) {
+  return (node: HTMLElement | null) => {
+    if (!node) return;
+    const write = () => {
+      const text = format(Date.now());
+      if (node.textContent !== text) node.textContent = text;
+    };
+    write();
+    return live ? onSecond(write) : undefined;
+  };
+}
+
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" });
 const UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
   ["year", 31_536_000_000], ["month", 2_592_000_000], ["week", 604_800_000],

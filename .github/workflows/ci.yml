@@ -23,10 +23,48 @@ jobs:
           cache: pnpm
       - uses: oven-sh/setup-bun@v2
       - run: pnpm install --frozen-lockfile
+      - run: pnpm exec node artifacts/macos-git-preflight/run.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-git-preflight-${{ runner.os }}
+          path: artifacts/macos-git-preflight/result.json
+          if-no-files-found: ignore
       - run: pnpm exec tsc --noEmit -p convex
       - run: pnpm exec tsc --noEmit
+      - run: pnpm exec node --experimental-strip-types artifacts/pr-300/stream-integration.mjs
+      - run: pnpm exec node artifacts/pr-300/file-render-integration.mjs
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/run.mjs
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/client-replay.mjs
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/lifecycle-replay.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-remediation-${{ runner.os }}
+          path: |
+            artifacts/security-audit-20261028/result.json
+            artifacts/security-audit-20261028/client-result.json
+            artifacts/security-audit-20261028/lifecycle-result.json
+            artifacts/security-audit-20261028/function-inventory-result.json
+            artifacts/security-audit-20261028/indexes-result.json
+          if-no-files-found: ignore
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/orphan-tasks/run.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orphan-tasks-${{ runner.os }}
+          path: artifacts/orphan-tasks/result.json
+          if-no-files-found: ignore
       # On Windows the runner is disposable, so the smoke test also has Task Scheduler read the task it would install.
       - run: bun scripts/smoke.ts ${{ runner.os == 'Windows' && '--register' || '' }}
+      - if: runner.os == 'Windows'
+        run: bun artifacts/windows-background/run.ts "${{ runner.temp }}/windows-background"
+      - if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-background
+          path: ${{ runner.temp }}/windows-background
+          if-no-files-found: ignore
       # perry setup never picks the default engine (issue #190): it refuses with no one to answer and no --engine,
       # takes --engine or PERRY_ENGINE without asking, and asks with scripted answers. Stand-in CLIs only, nothing
       # installed for real (artifacts/choose-engine).

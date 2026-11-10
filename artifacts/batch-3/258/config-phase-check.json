@@ -1,0 +1,12 @@
+{
+  "kind": "in-memory focused config-phase evaluation; no config loader, dotenv, build or server",
+  "patchHunks": 1,
+  "syntaxDiagnostics": 0,
+  "repeatedParentSame": true,
+  "inheritedWorkerSame": true,
+  "nativeBuildIdSame": true,
+  "startVersionEmpty": true,
+  "startDoesNotSeed": true,
+  "devVersionEmpty": true,
+  "devDoesNotSeed": true
+}

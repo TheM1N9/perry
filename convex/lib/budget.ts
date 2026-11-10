@@ -23,6 +23,7 @@ export const CONTEXT_WINDOWS: Record<EngineKind, number> = {
   grok: 256_000,
   cursor: 200_000,
   antigravity: 1_000_000,
+  opencode: 200_000,
 };
 /** An engine not named, or none yet. */
 const DEFAULT_WINDOW = 200_000;

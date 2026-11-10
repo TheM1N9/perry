@@ -1,0 +1,229 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { z } from "zod";
+import { ArrowLeftIcon, ChevronRightIcon, DownloadIcon, EyeOffIcon, FileAudioIcon, FileIcon, FileImageIcon, FileTextIcon, FileVideoIcon, FolderOpenIcon, Grid2X2Icon, ListTreeIcon, MoreHorizontalIcon, PinIcon, PlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
+import { useConvex, useMutation, useQuery } from "@/client/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import type { WorkspaceFile } from "@/convex/workspace";
+import { useSession } from "@/lib/session";
+import { bytes, errorText } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AudioPlayer, VideoPlayer } from "@/components/ui/media-player";
+import { Markdown } from "../markdown";
+import { useFilePrefs } from "./store";
+
+export type Scope = "chat" | "project";
+
+const fileKind = z.enum(["", "image", "media", "document", "other"]);
+const fileTypes = [{ value: "", label: "All types" }, { value: "image", label: "Images" }, { value: "media", label: "Audio & video" }, { value: "document", label: "Documents & source" }, { value: "other", label: "Other" }];
+
+function groupFiles(files: WorkspaceFile[], key: (file: WorkspaceFile) => string) {
+  const groups = new Map<string, WorkspaceFile[]>();
+  for (const file of files) { const name = key(file); const group = groups.get(name) ?? []; group.push(file); groups.set(name, group); }
+  return groups;
+}
+
+/** The group Perry's working files are listed under: what a run wrote on its way, not yet shared as a result. */
+const WORKING = "Working files";
+const roleLabel = (role: WorkspaceFile["role"]) => role === "working" ? "Working" : role === "input" ? "Input" : "Result";
+
+function KindIcon({ item }: { item: WorkspaceFile }) {
+  const Icon = item.preview === "image" ? FileImageIcon : item.preview === "video" ? FileVideoIcon : item.preview === "audio" ? FileAudioIcon : item.preview === "markdown" || item.preview === "text" || item.preview === "pdf" ? FileTextIcon : FileIcon;
+  return <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground"><Icon className="size-4" /></span>;
+}
+
+/** Where a scope's Files keeps how it is shown (store.ts), shared with Work so an output it names opens here. */
+export const filesId = (scope: Scope, scopeId: string) => `${scope}:${scopeId}`;
+
+/** A scope picker, for a chat in a project: this chat's files and work, or the whole project's. */
+export function ScopePicker({ project, scope, onScope }: { project?: { id: Id<"projects">; name: string }; scope: Scope; onScope: (scope: Scope) => void }) {
+  if (!project) return null;
+  const scopes = [{ value: "chat", label: "This chat" }, { value: "project", label: project.name }];
+  return <div className="shrink-0 px-2 pt-2">
+    <Select items={scopes} value={scope} onValueChange={(value) => onScope(value === "project" ? "project" : "chat")}>
+      <SelectTrigger aria-label="Scope" className="h-7 max-w-full border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>{scopes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+    </Select>
+  </div>;
+}
+
+/** The Files surface: the chat's (or its project's) files, as a tree or a gallery, and one at a time in a preview. */
+export function FilesSurface({ conversationId, project, scope, onScope }: {
+  conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; scope: Scope; onScope: (scope: Scope) => void;
+}) {
+  const actual = project ? scope : "chat";
+  return <div className="flex min-h-0 flex-1 flex-col" data-surface="files">
+    <ScopePicker project={project} scope={actual} onScope={onScope} />
+    {!conversationId ? <p className="px-4 py-4 text-sm text-muted-foreground">Files you send here, and the ones Perry makes, show up here.</p>
+      : <Files key={`${conversationId}:${actual}`} conversationId={conversationId} scope={actual} scopeId={actual === "project" ? project?.id ?? conversationId : conversationId} />}
+  </div>;
+}
+
+function Files({ conversationId, scope, scopeId }: { conversationId: Id<"conversations">; scope: Scope; scopeId: string }) {
+  const { dashboardKey: key } = useSession();
+  const [prefs, save] = useFilePrefs(filesId(scope, scopeId));
+  const [hidden, setHidden] = useState(false);
+  const [kind, setKind] = useState<z.infer<typeof fileKind>>("");
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [cursors, setCursors] = useState<Array<string | null>>([]);
+  const [attaching, setAttaching] = useState(false);
+  const [error, setError] = useState("");
+  const args = { key, conversationId, scope };
+  const latest = useQuery(api.workspace.latest, args);
+  // What a run writes is registered as working; it is listed too, in its own group, since often it is all a chat has.
+  const page = useQuery(api.workspace.files, { ...args, working: true, hidden, kind: kind || undefined, paginationOpts: { numItems: 50, cursor } });
+  const chosen = page?.page.find((item) => item.id === prefs.selected);
+  const selected = useQuery(api.workspace.get, prefs.selected ? { ...args, id: prefs.selected } : "skip");
+  const view = useMutation(api.workspace.setView);
+  const items = page?.page ?? [];
+  const results = items.filter((item) => item.role !== "working");
+  const groups = groupFiles(results, (item) => item.group);
+  const working = items.filter((item) => item.role === "working");
+  if (working.length) groups.set(WORKING, working);
+  const select = (item: WorkspaceFile) => save({ selected: item.id });
+  const resetPage = () => { setCursor(null); setCursors([]); };
+  function metadata(item: WorkspaceFile, patch: { hidden?: boolean; pinned?: boolean }) {
+    void view({ ...args, id: item.id, ...patch }).catch((error: unknown) => setError(errorText(error)));
+  }
+  return <div className="flex min-h-0 flex-1 flex-col">
+    {prefs.selected ? <FilePreview item={chosen ?? selected} onBack={() => save({ selected: undefined })} /> : <>
+      {latest && <Button size="sm" variant="ghost" className="mx-3 mt-3 justify-start overflow-hidden bg-primary/5 text-primary hover:bg-primary/10" onClick={() => select(latest)}><FileIcon /><span className="truncate">Latest result: {latest.name}</span></Button>}
+      <div className="flex shrink-0 items-center gap-1 px-3 py-2">
+        <ToggleGroup aria-label="File view" value={[prefs.mode]} spacing={0} onValueChange={(values) => { const value = values[0]; if (value === "tree" || value === "gallery") save({ mode: value }); }}>
+          <ToggleGroupItem value="tree" size="sm" aria-label="Tree view" className="size-7 p-0"><ListTreeIcon className="size-4" /></ToggleGroupItem>
+          <ToggleGroupItem value="gallery" size="sm" aria-label="Gallery view" className="size-7 p-0"><Grid2X2Icon className="size-4" /></ToggleGroupItem>
+        </ToggleGroup>
+        <Select items={fileTypes} value={kind} onValueChange={(value) => { const next = fileKind.safeParse(value); if (next.success) { setKind(next.data); resetPage(); } }}>
+          <SelectTrigger aria-label="File type" className="mr-auto h-7 w-auto min-w-0 border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>{fileTypes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+        </Select>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="icon-sm" variant={hidden ? "secondary" : "ghost"} aria-label="File filters" />}><SlidersHorizontalIcon /></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-40">
+            <DropdownMenuCheckboxItem checked={hidden} onCheckedChange={(value) => { setHidden(value); resetPage(); }}>Show hidden</DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button size="icon-sm" variant="ghost" aria-label="Attach from Library" onClick={() => setAttaching(true)}><PlusIcon /></Button>
+      </div>
+      {error && <p role="alert" className="px-3 text-xs text-destructive">{error}</p>}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-busy={!page}>
+        {!page ? <p role="status" className="py-4 text-sm text-muted-foreground">Loading files…</p> : !items.length ? <div className="flex flex-col items-center px-4 py-12 text-center" data-files-empty>
+            <span className="grid size-10 place-items-center rounded-full bg-muted text-muted-foreground"><FolderOpenIcon className="size-5" /></span>
+            <p className="mt-3 text-sm font-medium">{kind || hidden ? "No files match" : "No files yet"}</p>
+            <p className="mt-1 max-w-60 text-xs text-muted-foreground">{kind || hidden ? "Try another type, or clear the filters." : "Files Perry makes, and the ones you send in this chat, show up here."}</p>
+          </div>
+          : prefs.mode === "gallery" ? <div className="grid grid-cols-2 gap-x-3 gap-y-4">{items.map((item) => <div key={item.id} className={cn("group/file relative min-w-0", item.hidden && "opacity-50")}>
+            <Button variant="ghost" className="block h-auto w-full overflow-hidden p-0 text-left hover:bg-transparent" onClick={() => select(item)}>
+              <div className="overflow-hidden rounded-lg"><Thumbnail item={item} /></div>
+              <p className="mt-2 truncate pr-6 text-xs font-medium">{item.name}</p>
+              <p className="mt-0.5 truncate text-2xs font-normal text-muted-foreground">{item.versionLabel ?? roleLabel(item.role)} · {item.status === "ready" ? bytes(item.size) : "Unavailable"}{item.pinned ? " · Pinned" : ""}</p>
+            </Button>
+            <div className="absolute top-1 right-1 rounded-md bg-background/90"><FileActions item={item} onChange={(patch) => metadata(item, patch)} /></div>
+          </div>)}</div>
+          : [...groups].map(([group, files]) => <Collapsible key={group} open={prefs.expanded[group] ?? (group !== WORKING || !results.length)} onOpenChange={(open) => save({ expanded: { ...prefs.expanded, [group]: open } })} className="mb-2" data-file-group={group === WORKING ? "working" : "results"}>
+            <CollapsibleTrigger render={<Button variant="ghost" size="sm" className="group h-7 w-full justify-start gap-1 px-1 text-xs font-medium text-muted-foreground" />}><ChevronRightIcon className="size-3 transition-transform group-data-panel-open:rotate-90" /><span className="truncate">{group}</span><span className="nums ml-auto font-normal">{files.length}</span></CollapsibleTrigger>
+            <CollapsibleContent className="pt-0.5">
+              {[...groupFiles(files, (item) => item.versionRoot ?? item.id)].map(([root, versions]) => <div key={root} className={cn(versions.length > 1 && "ml-3 border-l pl-1")}>
+                {versions.map((item) => <div key={item.id} className={cn("group/file flex items-center gap-1 rounded-lg pr-1 hover:bg-muted/60", item.hidden && "opacity-50")}>
+                  <Button variant="ghost" className="h-auto min-w-0 flex-1 justify-start gap-2.5 px-2 py-1.5 text-left hover:bg-transparent" onClick={() => select(item)}>
+                    <KindIcon item={item} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-normal">{item.name}{item.pinned && <PinIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Pinned" />}</span><span className="block truncate text-xs font-normal text-muted-foreground">{[item.versionLabel ?? roleLabel(item.role), versions.length > 1 && item.latest ? "Latest version" : "", item.status === "ready" ? bytes(item.size) : "Unavailable"].filter(Boolean).join(" · ")}</span></span>
+                  </Button>
+                  <FileActions item={item} onChange={(patch) => metadata(item, patch)} />
+                </div>)}
+              </div>)}
+            </CollapsibleContent>
+          </Collapsible>)}
+        {page && (cursors.length > 0 || !page.isDone) && <div className="mt-3 flex items-center justify-between gap-2">
+          {cursors.length > 0 && <Button size="sm" variant="outline" onClick={() => { setCursor(cursors.at(-1) ?? null); setCursors((was) => was.slice(0, -1)); }}>Previous files</Button>}
+          {!page.isDone && <Button size="sm" variant="outline" onClick={() => { setCursors((was) => [...was, cursor]); setCursor(page.continueCursor); }}>Next files</Button>}
+        </div>}
+      </div>
+    </>}
+    {attaching && <AttachLibrary conversationId={conversationId} onClose={() => setAttaching(false)} />}
+  </div>;
+}
+
+function FileActions({ item, onChange }: { item: WorkspaceFile; onChange: (patch: { pinned?: boolean; hidden?: boolean }) => void }) {
+  return <DropdownMenu>
+    <DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" className="text-muted-foreground transition-opacity [@media(hover:hover)]:opacity-0 group-hover/file:opacity-100 group-focus-within/file:opacity-100 aria-expanded:opacity-100" aria-label={`Actions for ${item.name}`} />}><MoreHorizontalIcon /></DropdownMenuTrigger>
+    <DropdownMenuContent align="end" className="min-w-32">
+      <DropdownMenuItem onClick={() => onChange({ pinned: !item.pinned })}><PinIcon />{item.pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onChange({ hidden: !item.hidden })}><EyeOffIcon />{item.hidden ? "Show in workspace" : "Hide from workspace"}</DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>;
+}
+
+function Thumbnail({ item }: { item: WorkspaceFile }) {
+  const [unavailable, setUnavailable] = useState(false);
+  const [duration, setDuration] = useState("");
+  if (item.status !== "ready" || unavailable) return <div className="grid aspect-video place-items-center bg-muted text-xs text-muted-foreground">Preview unavailable</div>;
+  if (item.preview === "image") return <img src={item.url} alt={item.name} loading="lazy" onError={() => setUnavailable(true)} className="aspect-video w-full bg-muted object-cover" />;
+  if (item.preview === "video") return <div className="relative"><video src={item.url} muted playsInline preload="metadata" onError={() => setUnavailable(true)} onLoadedMetadata={(event) => { const seconds = event.currentTarget.duration; if (Number.isFinite(seconds)) setDuration(`${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`); }} className="aspect-video w-full bg-muted object-cover" aria-label={item.name} />{duration && <span className="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white">{duration}</span>}</div>;
+  return <div className="flex aspect-video items-center justify-center gap-2 bg-muted text-xs text-muted-foreground"><FileIcon className="size-6" />{item.preview === "audio" ? "Audio" : "Document"}</div>;
+}
+
+function FilePreview({ item, onBack }: { item: WorkspaceFile | null | undefined; onBack: () => void }) {
+  const client = useConvex();
+  const [text, setText] = useState<string>();
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    setText(undefined); setError("");
+    if (!item || (item.preview !== "text" && item.preview !== "markdown")) return;
+    const controller = new AbortController();
+    void fetch(item.url, { headers: { Range: "bytes=0-196607" }, signal: controller.signal }).then(async (response) => { if (!response.ok) throw new Error("This file is unavailable. Restore it on the host and retry."); const content = await response.text(); setText(content + (item.size > 196608 ? "\n\n[Preview truncated; download to read the full file.]" : "")); }).catch((error: unknown) => { if (!controller.signal.aborted) setError(errorText(error)); });
+    return () => controller.abort();
+  }, [item?.url, item?.preview, retry]);
+  return <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex shrink-0 items-center gap-1 border-b px-2 py-1.5">
+      <Button size="icon-sm" variant="ghost" aria-label="All files" onClick={onBack}><ArrowLeftIcon /></Button>
+      <h3 className="min-w-0 flex-1 truncate text-sm font-medium" title={item?.name}>{item?.name ?? "File"}</h3>
+      {item && item.status === "ready" && <Button size="icon-sm" variant="ghost" aria-label="Download" nativeButton={false} render={<a href={`${item.url}&download=1`} download />}><DownloadIcon /></Button>}
+    </div>
+    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+    {item === undefined ? <p role="status" className="py-3 text-sm text-muted-foreground">Loading file…</p> : !item ? <p className="py-3 text-sm text-muted-foreground">This file is no longer in this workspace.</p> : <>
+      <p className="text-xs text-muted-foreground">
+        {[item.provenance === "uploaded" ? "Sent here" : item.provenance === "attached" ? "Attached from Library" : "Made by Perry", item.versionLabel ?? roleLabel(item.role), item.status === "ready" ? bytes(item.size) : "Unavailable"].join(" · ")}
+        {" · "}<Link href={`/chat/${item.source.conversationId}${item.source.messageKey ? `?message=${encodeURIComponent(item.source.messageKey)}` : item.source.runId ? `?run=${item.source.runId}` : ""}`} className="link">{item.source.title}</Link>
+        {item.source.taskId && <>{" · "}<Link href={`/work#task-${item.source.taskId}`} className="link">Task</Link></>}
+      </p>
+      <div className="my-3">
+        {item.status !== "ready" ? <p className="text-sm text-muted-foreground">The registered file is missing or its storage is unavailable. Restore it on the host, then retry.</p>
+          : item.preview === "image" ? <img key={retry} src={item.url} alt={item.name} className="w-full rounded-lg" onError={() => setError("This image is unavailable. Retry after restoring the file.")} />
+          : item.preview === "video" ? <VideoPlayer key={retry} src={item.url} name={item.name} download={`${item.url}&download=1`} />
+          : item.preview === "audio" ? <AudioPlayer key={retry} src={item.url} name={item.name} download={`${item.url}&download=1`} />
+          : item.preview === "pdf" ? <iframe key={retry} title={item.name} src={item.url} sandbox="" className="h-[60vh] w-full rounded-lg border" />
+          : item.preview === "markdown" && text !== undefined ? <div className="rounded-lg border p-4" data-file-text><Markdown text={text} /></div>
+          : item.preview === "text" || item.preview === "markdown" ? <pre className="overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words" data-file-text>{text ?? "Loading preview…"}</pre>
+          : <p className="text-sm text-muted-foreground">Preview is unavailable for this format. Download it to open it.</p>}
+      </div>
+      {error && <p role="alert" className="mb-3 text-xs text-destructive">{error}</p>}
+      {(error || item.status !== "ready") && <Button size="sm" variant="outline" onClick={() => { void client.refresh(["library", "workspaceFiles"]); setRetry((was) => was + 1); setError(""); }}>Retry preview</Button>}
+    </>}
+    </div>
+  </div>;
+}
+
+function AttachLibrary({ conversationId, onClose }: { conversationId: Id<"conversations">; onClose: () => void }) {
+  const { dashboardKey: key } = useSession();
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState<string>();
+  const library = useQuery(api.library.list, { key, query });
+  const attach = useMutation(api.workspace.attach);
+  return <div className="flex min-h-0 flex-1 flex-col border-t p-3">
+    <div className="flex items-center justify-between"><h3 className="text-sm font-medium">Attach from Library</h3><Button size="icon-sm" variant="ghost" aria-label="Close Library picker" onClick={onClose}><XIcon /></Button></div>
+    <Input autoFocus aria-label="Find a Library file" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Library" className="my-3" />
+    {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+    <div className="min-h-0 max-h-64 overflow-y-auto">{library === undefined ? <p role="status">Loading Library…</p> : library.items.slice(0, 50).map((item) => <Button variant="ghost" key={item.id} disabled={!!pending} className="block w-full truncate text-left text-xs" onClick={() => { setPending(item.id); void attach({ key, conversationId, id: item.id }).then(onClose).catch((error: unknown) => setError(errorText(error))).finally(() => setPending(undefined)); }}>{pending === item.id ? "Attaching… " : ""}{item.name}</Button>)}</div>
+  </div>;
+}

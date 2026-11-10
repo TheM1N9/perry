@@ -1,0 +1,58 @@
+﻿{
+  "actions": [],
+  "advisories": {
+    "1243066": {
+      "findings": [
+        {
+          "version": "3.25.76",
+          "paths": [
+            ".>puppeteer-core>chromium-bidi>zod"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://nvd.nist.gov/vuln/detail/CVE-2023-54404\n- https://github.com/colinhacks/zod/issues/1872\n- https://github.com/colinhacks/zod/pull/6475\n- https://www.vulncheck.com/advisories/zod-uncontrolled-resource-consumption-via-array-validation\n- https://github.com/colinhacks/zod/pull/6652\n- https://github.com/colinhacks/zod/commit/a0ebf970f2d752e5f58527cd2942ff48be4f46bd\n- https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+      "created": "2026-10-01T18:32:46.000Z",
+      "id": 1243066,
+      "npm_advisory_id": null,
+      "overview": "Zod schema-validation library through 4.6.5 contains an uncontrolled resource consumption vulnerability that allows attackers to exhaust memory by submitting a large array to an application using an array schema without a length constraint. Attackers can exploit the handleArrayResult parse logic in $ZodArray, which accumulates every validation issue for each failing element with no cap or early termination, causing the process to allocate excessive issue objects and crash due to out-of-memory conditions.",
+      "reported_by": null,
+      "title": "Zod can exhaust memory while validating oversized constrained collections",
+      "metadata": null,
+      "cves": [
+        "CVE-2023-54404"
+      ],
+      "access": "public",
+      "severity": "high",
+      "module_name": "zod",
+      "vulnerable_versions": "<4.6.6",
+      "github_advisory_id": "GHSA-mrhx-c7xc-m3w5",
+      "recommendation": "Upgrade to version 4.6.6 or later",
+      "patched_versions": ">=4.6.6",
+      "updated": "2026-10-23T18:26:52.000Z",
+      "cvss": {
+        "score": 7.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cwe": [
+        "CWE-770"
+      ],
+      "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+    }
+  },
+  "muted": [],
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 1,
+      "critical": 0
+    },
+    "dependencies": 25,
+    "devDependencies": 0,
+    "optionalDependencies": 0,
+    "totalDependencies": 25
+  }
+}

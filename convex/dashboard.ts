@@ -1,9 +1,12 @@
+import { streamState } from "./lib/turn-stream";
+import { turnErrorCode, type TurnFailure, type TurnErrorCode } from "../lib/turn-errors";
+import { hide, savedValues } from "./vault";
 import { createThread, deleteMessages, deleteThread, listMessages, saveMessages, searchMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { problemWith, resolve as resolveShortcuts, SHORTCUT_IDS, SHORTCUTS, type ShortcutId, type Shortcuts } from "./lib/shortcuts";
 import { ABSOLUTE_PATH, stepsKey } from "./media";
@@ -15,16 +18,25 @@ import { assertRunning } from "./pause";
 import type { EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount, TokenAuthOption } from "./composio";
 import { policyOf, type Policy } from "./runner";
+import { turnHealth } from "./lib/turn-health";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
 import { pickPatch } from "./engines";
 import { APPROVAL_TTL_MS, accessChanged } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
+import { assertQueueRoom, byQueuePosition, queuePosition, steerable } from "./queue";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
-import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
+import { describeStep, spansOfCalls, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
+import { STOPPED } from "./codex";
 import { pictureOf, stepCard, type StepCard } from "./lib/steps";
+import { diagnostics } from "./lib/internet";
+import { choiceForChat } from "./routing";
+import { questionAnswerText } from "../lib/interactive";
+import { citedMemories } from "../lib/reply-text";
+import { recheckInternetConnections } from "./composio";
+import { findBrowser } from "./lib/browser";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -43,15 +55,32 @@ const vKey = v.string();
 
 export type ChatMessage = {
   id: string;
+  attachmentKey?: string;
+  runId?: Id<"runs">;
+  failure?: TurnFailure;
   role: string;
   text: string;
   createdAt: number;
   /** Its files; one deleted from the Library is `removed`, with no address. */
-  attachments: Array<{ url: string; fileName: string; contentType: string; removed?: true }>;
+  attachments: Array<{ id?: Id<"chatAttachments">; url: string; fileName: string; contentType: string; removed?: true }>;
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
+  queued?: QueuedTurn;
   /** The memories a reply said it relied on (codex.finishTurn). */
   memories?: Array<{ id: string; text: string }>;
+  reactions?: { owner?: string; perry?: string };
+};
+
+/**
+ * A message sent and waiting its turn in the chat's queue (queue.ts). `now`: it is not waiting behind anything,
+ * so it stays with the conversation rather than under Up next: it is being prepared to join the reply running,
+ * or with nothing running it is the first to start. `action`: what sending it early does:
+ * "steer" joins the reply running; "send" moves it to the front, to start next. `retry`: another engine's try
+ * at an earlier message, which keeps its words. `held`: it waits for its engine's limit to reset (routing.ts).
+ */
+export type QueuedTurn = {
+  id: Id<"codexTurns">; conversationId: Id<"conversations">; position: number; action: "steer" | "send";
+  preparing?: true; now?: true; retry?: true; held?: true;
 };
 
 /** Where a saved reply keeps the memories it relied on. */
@@ -133,9 +162,15 @@ export type ChatSummary = {
   parentConversationId?: Id<"conversations">;
   branchedFromMessageId?: string;
   status: ChatStatus;
+  replyCompleted?: boolean;
   pinned: boolean;
   /** Set on the chat where a scheduled job's results collect. */
   jobId?: Id<"jobs">;
+  systemJob?: boolean;
+  taskId?: Id<"tasks">;
+  isAgent?: boolean;
+  engine?: EngineKind;
+  agent?: { status: Doc<"tasks">["status"]; startedAt: number; finishedAt?: number };
   /** A reply came after the owner last had the chat open. */
   unseen: boolean;
   /** A runner is naming it; its title is the first message until then (titles.ts). */
@@ -164,6 +199,7 @@ export const listChats = query({
       .collect()).map((row) => row.conversationId));
     const jobs = new Map((await ctx.db.query("jobs").collect()).map((job) => [job._id, job]));
     const naming = await beingNamed(ctx);
+    const tasks = new Map((await ctx.db.query("tasks").collect()).map((task) => [task._id, task]));
     const summaries = await Promise.all(chats.map(async (chat): Promise<ChatSummary> => {
       const running = await isBusy(ctx, chat);
       const latestRun = running || asking.has(chat._id) ? null : await ctx.db.query("runs")
@@ -175,11 +211,19 @@ export const listChats = query({
         channel: chat.channel,
         title: titleOf(chat),
         lastMessageAt: chat.lastMessageAt,
-        parentConversationId: chat.parentConversationId,
+        parentConversationId: chat.parentConversationId ?? (chat.taskId ? tasks.get(chat.taskId)?.origin : undefined),
         branchedFromMessageId: chat.branchedFromMessageId,
-        status: asking.has(chat._id) ? "needs-approval" : running ? "running" : latestRun?.status === "error" ? "error" : "idle",
+        status: chat.providerAgent ? (chat.providerAgent.status === "running" ? "running" : chat.providerAgent.status === "failed" ? "error" : "idle") : asking.has(chat._id) ? "needs-approval" : running ? "running" : latestRun?.status === "error" && latestRun.error !== STOPPED ? "error" : "idle",
+        replyCompleted: chat.providerAgent ? chat.providerAgent.status === "done" : latestRun?.status === "ok",
         pinned: chat.pinnedAt !== undefined,
         jobId: chat.jobId,
+        systemJob: Boolean(chat.jobId && jobs.get(chat.jobId)?.builtin),
+        taskId: chat.taskId,
+        isAgent: Boolean(chat.taskId || chat.providerAgent),
+        engine: (chat.taskId ? tasks.get(chat.taskId)?.route?.engine : undefined) ?? chat.engine,
+        ...(chat.providerAgent ? { agent: { status: chat.providerAgent.status, startedAt: chat.providerAgent.startedAt, finishedAt: chat.providerAgent.finishedAt } }
+          : chat.taskId && tasks.has(chat.taskId) ? { agent: { status: tasks.get(chat.taskId)!.status, startedAt: tasks.get(chat.taskId)!.createdAt,
+            ...(["done", "failed", "cancelled"].includes(tasks.get(chat.taskId)!.status) ? { finishedAt: tasks.get(chat.taskId)!.updatedAt } : {}) } } : {}),
         unseen: isUnseen(chat, chat.jobId ? jobs.get(chat.jobId) : undefined),
         naming: naming.has(chat._id),
         ...(chat.projectId ? { projectId: chat.projectId } : {}),
@@ -191,6 +235,33 @@ export const listChats = query({
       ...summaries.filter((chat) => chat.pinned).sort((a, b) => pinnedAt.get(b.id)! - pinnedAt.get(a.id)!),
       ...summaries.filter((chat) => !chat.pinned),
     ];
+  },
+});
+
+export type ChatAgent = {
+  id: string; runId?: Id<"runs">; conversationId?: Id<"conversations">; parentId: Id<"conversations">; title: string;
+  status: Doc<"tasks">["status"]; engine?: EngineKind; text?: string; startedAt: number; finishedAt?: number;
+  plan?: Doc<"tasks">["plan"];
+};
+
+export const getChatAgents = query({
+  args: { key: vKey, id: v.id("conversations") },
+  handler: async (ctx, args): Promise<ChatAgent[]> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    const tasks = await ctx.db.query("tasks").withIndex("by_origin", (q) => q.eq("origin", args.id)).collect();
+    const native = (await ctx.db.query("conversations").withIndex("by_parent", (q) => q.eq("parentConversationId", args.id)).collect())
+      .filter((chat) => chat.providerAgent).map((chat): ChatAgent => ({
+        id: chat._id, runId: chat.providerAgent!.runId, conversationId: chat._id, parentId: args.id, title: chat.title ?? "Agent", status: chat.providerAgent!.status,
+        engine: chat.engine, text: chat.providerAgent!.text, startedAt: chat.providerAgent!.startedAt, finishedAt: chat.providerAgent!.finishedAt,
+      }));
+    return [...native, ...tasks.map((task) => ({
+      id: task._id, conversationId: task.conversationId, parentId: args.id, title: task.title,
+      status: task.status, engine: task.route?.engine ?? task.pick?.engine, text: task.result ?? task.question ?? task.error,
+      plan: task.plan,
+      startedAt: task.createdAt,
+      ...(["done", "failed", "cancelled"].includes(task.status) ? { finishedAt: task.updatedAt } : {}),
+    }))].sort((a, b) => a.startedAt - b.startedAt);
   },
 });
 
@@ -268,6 +339,10 @@ export const deleteChat = mutation({
     if (runs.some((run) => run.status === "running")) {
       throw new Error("Wait for this chat to finish before deleting it.");
     }
+    const task = chat.taskId ? await ctx.db.get(chat.taskId) : null;
+    if (task && ["queued", "running", "blocked"].includes(task.status)) {
+      await ctx.db.patch(task._id, { status: "cancelled", question: undefined, waiting: undefined, updatedAt: Date.now() });
+    }
     for (const run of runs) {
       const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect();
       for (const span of spans) await ctx.db.delete(span._id);
@@ -286,6 +361,8 @@ export const deleteChat = mutation({
     }
     await ctx.runMutation(internal.codex.pruneOrphans, { conversationId: args.id });
     await cancelTitle(ctx, args.id);
+    for (const artifact of await ctx.db.query("interactiveAnswers").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(artifact._id);
+    for (const source of await ctx.db.query("interactiveSources").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(source._id);
     await ctx.db.delete(args.id);
     await deleteThread(ctx, chat.threadId);
     return null;
@@ -374,12 +451,11 @@ export const searchChats = action({
     const snippets = new Map<string, string>(messages.map((message) => [message.threadId, message.text ?? ""]));
     return chats.filter((chat) =>
       titleOf(chat).toLocaleLowerCase().includes(needle) || snippets.has(chat.threadId),
-    ).slice(0, 30).map((chat) => ({
-      id: chat._id,
-      title: titleOf(chat),
-      snippet: snippets.get(chat.threadId)?.slice(0, 160) ?? "",
-      lastMessageAt: chat.lastMessageAt,
-    }));
+    ).slice(0, 30).map((chat) => {
+      const text = questionAnswerText(snippets.get(chat.threadId) ?? "");
+      const start = Math.max(0, text.toLocaleLowerCase().indexOf(needle) - 50);
+      return { id: chat._id, title: titleOf(chat), snippet: text.slice(start, start + 160), lastMessageAt: chat.lastMessageAt };
+    });
   },
 });
 
@@ -388,12 +464,12 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; waiting?: { until: number; why: string }; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean }; context?: { fill: number; window: number }; taskPlan?: Pick<Doc<"tasks">, "status" | "plan"> }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
     const contact = conversation.contactId ? await ctx.db.get(conversation.contactId) : null;
-    const isRunning = await isBusy(ctx, conversation);
+    const isRunning = conversation.providerAgent ? conversation.providerAgent.status === "running" : await isBusy(ctx, conversation);
     const latestRun = await ctx.db.query("runs")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .order("desc")
@@ -403,23 +479,35 @@ export const getChat = query({
         .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", "running"))
         .first()
       : null;
+    const runner = running?.runnerId ? await ctx.db.get(running.runnerId) : null;
+    const health = running ? turnHealth(running, runner, Date.now()) : null;
+    const waiting = running ? undefined : (await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", args.id)).collect())
+      .filter(turn => turn.finalizedAt === undefined && (turn.status === "queued" || turn.status === "error" && turn.retrying))
+      .sort(byQueuePosition)[0]?.waiting;
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
+    const taskChoice = conversation.taskId ? await choiceForChat(ctx, conversation) : null;
+    const task = conversation.taskId ? await ctx.db.get(conversation.taskId) : null;
     return {
+      ...(task ? { taskPlan: { status: task.status, plan: task.plan } } : {}),
       channel: conversation.channel,
       // Its own, else the default it follows; unset while there is neither.
-      engine: await engineFor(ctx, conversation),
+      engine: taskChoice?.engine ?? await engineFor(ctx, conversation),
       // Perry moved it to this engine because its own had no room (routing.moveChat).
       ...(conversation.moved ? { moved: conversation.moved } : {}),
       ...(project ? { project: { id: project._id, name: project.name } } : {}),
-      model: conversation.model,
-      effort: conversation.effort,
+      model: taskChoice?.model ?? conversation.model,
+      effort: taskChoice ? taskChoice.effort : conversation.effort,
       access: conversation.access ?? "supervised",
       title: titleOf(conversation),
       isRunning,
-      // The flush before /reset works quietly.
-      streaming: running?.flush || running?.checkpoint ? undefined : running?.partial,
-      lastError: latestRun?.status === "error" ? latestRun.error : undefined,
+      ...(waiting ? { waiting } : {}),
+      ...(health ? { unresponsive: health.unresponsive, lastAliveAt: health.lastAliveAt } : {}),
+      lastError: latestRun?.status === "error" && latestRun.error ? hide(latestRun.error, await savedValues(ctx)) : undefined,
+      lastErrorCode: latestRun?.status === "error" ? turnErrorCode(latestRun) : undefined,
+      lastErrorRunId: latestRun?.status === "error" ? latestRun._id : undefined,
       ...(contact ? { contact: { name: contact.name, group: contact.kind === "group" } } : {}),
+      // How full its engine's context is, as its last turn said (codex.ts, recordTrace): unset until one has.
+      ...(conversation.contextWindow && conversation.contextFill !== undefined ? { context: { fill: conversation.contextFill, window: conversation.contextWindow } } : {}),
     };
   },
 });
@@ -458,6 +546,7 @@ export const getActivity = query({
     if (!run) return null;
     const running = run.status === "running";
     const spans = (await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect())
+      .filter((span) => span.kind !== "commentary")
       .sort((a, b) => a.startedAt - b.startedAt);
     let step: Activity["step"];
     let recent: Activity["recent"];
@@ -469,9 +558,12 @@ export const getActivity = query({
       const last = spans.at(-1);
       const turn = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", run.conversationId).eq("status", "running")).first();
       const ended = last ? last.startedAt + (last.durationMs ?? 0) : run.startedAt;
-      if (asking) step = { ...WAITING, since: asking.createdAt, live: true };
+      const runner = turn?.runnerId ? await ctx.db.get(turn.runnerId) : null;
+      const health = turn ? turnHealth(turn, runner, Date.now()) : null;
+      if (health?.unresponsive) step = { label: "Computer unresponsive", pose: "waiting", since: health.lastAliveAt, live: false };
+      else if (asking) step = { ...WAITING, since: asking.createdAt, live: true };
       else if (live) step = { ...describeStep(live), since: live.startedAt, live: true };
-      else step = { ...(turn?.partial ? WRITING : STARTING), since: ended, live: false };
+      else step = { ...(turn && (turn.partial || (await streamState(ctx, turn._id))?.length) ? WRITING : STARTING), since: ended, live: false };
       if (last && last.status !== "running" && last.kind !== "reasoning") recent = { ...describeStep(last), since: last.startedAt, endedAt: ended };
     }
     const chat = args.id ? null : await ctx.db.get(run.conversationId);
@@ -487,37 +579,89 @@ export const getActivity = query({
   },
 });
 
-/** A step of a run, as the chat lists it under "Worked for…". */
-export type WorkStep = Step & { id: Id<"runSpans">; kind: Doc<"runSpans">["kind"]; status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
-/** One run of a chat and every step it took, in order. */
-export type Work = { runId: Id<"runs">; status: Doc<"runs">["status"]; startedAt: number; finishedAt?: number; steps: WorkStep[] };
-/** The runs a chat lists the steps of: its latest, which covers the replies it shows. */
+/**
+ * One run of a chat, without its steps: how it went, how many steps it took
+ * and, once it is over, what they came to ("Ran 2 commands and changed 3
+ * files"). The steps are read only for the run going on and for a fold the
+ * owner opens (getRunSteps).
+ */
+export type Work = {
+  runId: Id<"runs">; status: Doc<"runs">["status"]; startedAt: number; finishedAt?: number; stepCount: number; summary?: string;
+  /** The owner stopped it (codex.STOPPED). */
+  stopped?: true;
+  /** A /compact, not a reply: the chat says "Compacting context", then "Context compacted". */
+  compact?: true;
+};
+/** A step of a run, as the chat lists it: `label` while it runs ("Running git status"), `done` once it is over ("Ran git status"). */
+export type WorkStep = Step & { id: Id<"runSpans">; name: string; text?: string; done: string; kind: Doc<"runSpans">["kind"]; status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
+/** The runs a chat pairs with its replies: its latest, which covers the replies it shows. */
 const WORK_RUNS = 50;
+/** The most steps a fold lists for a run: its newest, so the one going on is always among them. */
+const RUN_STEPS = 500;
 
 /**
- * What each of a chat's latest runs did, step by step, oldest first, for the
- * chat to show with its reply: as a list that grows while the run goes, and
- * folded into "Worked for 46s" once the reply is in. Reasoning is left out;
- * its time is in the run's.
+ * A chat's latest runs, oldest first, for the chat to pair with its replies
+ * ("Worked for 46s" above each) and to show the one going on. Only the runs'
+ * own rows are read, so a step written while a reply runs costs this one
+ * small read, not every step of fifty runs.
  */
-export const getChatWork = query({
+export const getChatRuns = query({
   args: { key: vKey, id: v.id("conversations") },
   handler: async (ctx, args): Promise<Work[]> => {
     assertDashboardKey(args.key);
     ownerChat(await ctx.db.get(args.id));
     const runs = await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).order("desc").take(WORK_RUNS);
-    return await Promise.all(runs.reverse().map(async (run): Promise<Work> => {
-      const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).take(500);
-      const steps = spans.filter((span) => span.kind !== "reasoning").sort((a, b) => a.startedAt - b.startedAt).map((span): WorkStep => ({
-        ...describeStep(span),
-        id: span._id,
-        kind: span.kind,
-        status: span.status,
-        startedAt: span.startedAt,
-        ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
-      }));
-      return { runId: run._id, status: run.status, startedAt: run.startedAt, ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}), steps };
-    }));
+    return runs.reverse().map((run): Work => {
+      // Each step but reasoning is a tool call (codex.ts, recordTrace); a run that ended before summaries were kept is summed up from those.
+      const calls = run.toolCalls ?? [];
+      const summary = run.summary ?? (run.status !== "running" && calls.length ? summarize(spansOfCalls(calls), { sentence: true }) : "");
+      return {
+        runId: run._id, status: run.status, startedAt: run.startedAt, stepCount: calls.length,
+        ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}),
+        ...(summary ? { summary } : {}),
+        ...(run.status === "error" && run.error === STOPPED ? { stopped: true as const } : {}),
+        // Commands never become messages, so only requestCompact's run carries this prompt.
+        ...(run.prompt === "/compact" ? { compact: true as const } : {}),
+      };
+    });
+  },
+});
+
+/**
+ * The steps of one or more runs of a chat (the runs that went as one turn),
+ * in the order they started, including commentary and reasoning.
+ * `limit`: only the newest, for the one line a reply in progress shows.
+ * Only runs of one of the owner's chats, and of the same one, are read.
+ */
+export const getRunSteps = query({
+  args: { key: vKey, runIds: v.array(v.id("runs")), limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<WorkStep[]> => {
+    assertDashboardKey(args.key);
+    const limit = Math.max(1, Math.min(args.limit ?? RUN_STEPS, RUN_STEPS));
+    const steps: WorkStep[] = [];
+    let chat: Id<"conversations"> | undefined;
+    for (const runId of args.runIds.slice(0, 10)) {
+      const run = await ctx.db.get(runId);
+      if (!run || (chat ??= run.conversationId) !== run.conversationId) continue;
+      ownerChat(await ctx.db.get(run.conversationId));
+      // Newest first, so a long run keeps its latest activity.
+      let taken = 0;
+      for await (const span of ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", runId)).order("desc")) {
+        steps.push({
+          ...describeStep(span),
+          done: describeStep(span, { done: true }).label,
+          id: span._id,
+          kind: span.kind,
+          name: span.name,
+          ...(span.kind === "commentary" || span.kind === "reasoning" || span.kind === "plan" ? { text: span.kind === "commentary" ? citedMemories(span.output).text : span.output } : {}),
+          status: span.status,
+          startedAt: span.startedAt,
+          ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
+        });
+        if (++taken >= limit) break;
+      }
+    }
+    return steps.sort((a, b) => a.startedAt - b.startedAt).slice(-limit);
   },
 });
 
@@ -551,11 +695,38 @@ export const getStep = query({
   },
 });
 
+/**
+ * The files on this computer a chat can open, by where they are: the ones its
+ * runs changed (codex.ts, linkFiles) and the ones sent in it, each with the
+ * address the media server gives it. A reply's link to one of these paths
+ * opens the file (components/dashboard/chat/markdown.tsx); a path not here
+ * is never served.
+ */
+export const getChatFiles = query({
+  args: { key: vKey, id: v.id("conversations") },
+  handler: async (ctx, args): Promise<Array<{ path: string; url: string }>> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    const rows = await ctx.db.query("chatAttachments")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
+      .order("desc")
+      .take(1000);
+    return rows.flatMap((row) => row.localPath && !row.removedAt ? [{ path: row.localPath, url: `/api/media/${row._id}?preview` }] : []);
+  },
+});
+
 export const getChatMessages = query({
   args: { key: vKey, id: v.id("conversations"), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
+    if (conversation.providerAgent) {
+      const agent = conversation.providerAgent;
+      const page: ChatMessage[] = args.paginationOpts.cursor !== null ? [] : [
+        ...(agent.text ? [{ id: `agent-${conversation._id}-reply`, role: "assistant", text: agent.text, createdAt: agent.finishedAt ?? conversation.lastMessageAt, attachments: [] }] : []),
+      ];
+      return { page, isDone: true, continueCursor: "" };
+    }
     const page = await listMessages(ctx, {
       threadId: conversation.threadId,
       excludeToolMessages: true,
@@ -564,12 +735,13 @@ export const getChatMessages = query({
     const attachments = await ctx.db.query("chatAttachments")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .collect();
-    const attachmentMap = new Map<string, Array<{ url: string; fileName: string; contentType: string; removed?: true }>>();
+    const attachmentMap = new Map<string, ChatMessage["attachments"]>();
+    attachments.sort((a, b) => (a.position ?? a.createdAt) - (b.position ?? b.createdAt));
     for (const attachment of attachments) {
       // Deleted from the Library: the chat says so where the file was.
       if (attachment.removedAt) {
         const list = attachmentMap.get(attachment.messageKey) ?? [];
-        list.push({ url: "", fileName: attachment.fileName, contentType: attachment.contentType, removed: true });
+        list.push({ id: attachment._id, url: "", fileName: attachment.fileName, contentType: attachment.contentType, removed: true });
         attachmentMap.set(attachment.messageKey, list);
         continue;
       }
@@ -579,7 +751,7 @@ export const getChatMessages = query({
         : attachment.storageId ? await ctx.storage.getUrl(attachment.storageId) : null;
       if (!url) continue;
       const list = attachmentMap.get(attachment.messageKey) ?? [];
-      list.push({ url, fileName: attachment.fileName, contentType: attachment.contentType });
+      list.push({ id: attachment._id, url, fileName: attachment.fileName, contentType: attachment.contentType });
       attachmentMap.set(attachment.messageKey, list);
     }
     // Earlier Codex turns could finish before their media was uploaded. When
@@ -597,6 +769,12 @@ export const getChatMessages = query({
         if (memory) cited.set(memory._id, { id: memory._id, text: memory.text });
       }
     }
+    const failureRuns = new Map<string, TurnFailure>();
+    const values = await savedValues(ctx);
+    for (const runId of new Set(page.page.flatMap((doc) => doc.runId ? [doc.runId] : []))) {
+      const run = await ctx.db.get(runId);
+      if (run?.conversationId === args.id && run.status === "error") failureRuns.set(runId, { errorCode: turnErrorCode(run), ...(run.error ? { error: hide(run.error, values) } : {}) });
+    }
     const history = page.page.map((doc): ChatMessage => {
         const raw = typeof doc.text === "string" ? doc.text : "";
         const memories = (MEMORIES_MARKER.exec(raw)?.[1]?.split(",") ?? []).flatMap((id) => cited.get(id.trim()) ?? []);
@@ -610,10 +788,15 @@ export const getChatMessages = query({
               attachmentMap.has(`codex-${turn._id}`),
             )
           : undefined;
+        const text = questionAnswerText((marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd());
         return {
           id: doc._id,
+          ...(doc.ownerReaction || doc.perryReaction ? { reactions: { owner: doc.ownerReaction, perry: doc.perryReaction } } : {}),
+          ...(doc.runId ? { runId: doc.runId, failure: failureRuns.get(doc.runId) } : {}),
+          attachmentKey: messageKey ?? (recovered ? `codex-${recovered._id}` : undefined),
           role: doc.message?.role ?? "assistant",
-          text: (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd(),
+          text: doc.message?.role === "assistant" && failureRuns.get(doc.runId ?? "")?.error === STOPPED
+            ? text.replace(/\n*_Stopped\._$/, "").trimEnd() : text,
           createdAt: doc._creationTime,
           ...(memories.length ? { memories } : {}),
           attachments: messageKey
@@ -622,7 +805,8 @@ export const getChatMessages = query({
               ? attachmentMap.get(`codex-${recovered._id}`) ?? []
               : doc.message?.role === "assistant" ? assistantMedia(raw) : [],
         };
-      }).filter((message) => message.text.trim().length > 0 || message.attachments.length > 0);
+      }).filter((message) => (message.text.trim().length > 0 || message.attachments.length > 0)
+        && !(conversation.taskId && message.role === "user" && message.text.startsWith("\u{1F9E9}")));
     // The newest page also carries what was sent and is not in the history yet, from the same read, so
     // a message never shows twice or blinks out between the outbox, its turn and the history.
     const pending = args.paginationOpts.cursor === null ? inFlight(conversation, codexTurns, await steersOf(ctx, codexTurns)) : [];
@@ -639,13 +823,15 @@ export const getChatMessages = query({
         createdAt: entry.at,
         attachments: marker?.[1] ? attachmentMap.get(marker[1].trim()) ?? [] : [],
         pending: true,
+        ...(entry.reaction ? { reactions: { perry: entry.reaction } } : {}),
+        ...(entry.queued ? { queued: entry.queued } : {}),
       }];
     });
     return { ...page, page: [...shown.reverse(), ...history] };
   },
 });
 
-type InFlight = { prompt: string; text: string; at: number };
+type InFlight = { prompt: string; text: string; at: number; reaction?: string; queued?: QueuedTurn };
 
 /** The live turns' steers that joined them, and those still waiting to. */
 async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<"codexSteers">[]> {
@@ -665,13 +851,23 @@ async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<
  * it) until its reply is saved with it.
  */
 function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[], steers: Doc<"codexSteers">[]): InFlight[] {
-  const entry = (prompt: string, at: number): InFlight => ({ prompt, at, text: prompt.replace(ATTACHMENTS_MARKER, "").trimEnd() });
+  const entry = (prompt: string, at: number): InFlight => ({ prompt, at, text: questionAnswerText(prompt.replace(ATTACHMENTS_MARKER, "").trimEnd()) });
+  const running = turns.find((turn) => turn.status === "running") ?? null;
+  const next = running ? undefined : turns.filter((turn) => turn.status === "queued" && !turn.waiting && turn.finalizedAt === undefined).sort(byQueuePosition)[0];
+  const queued = (turn: Doc<"codexTurns">): QueuedTurn => ({
+    id: turn._id, conversationId: turn.conversationId, position: queuePosition(turn),
+    action: turn.engine && steerable(running, turn.engine) ? "steer" : "send",
+    ...(turn.preparing ? { preparing: true as const } : {}),
+    ...((turn.preparing && turn.steerTarget) || turn === next ? { now: true as const } : {}),
+    ...(turn.retryOf ? { retry: true as const } : {}),
+    ...(turn.waiting ? { held: true as const } : {}),
+  });
   const items: InFlight[] = [
     ...(conversation.outbox ?? []).filter((item) => item.at > Date.now() - OUTBOX_TTL_MS).map((item) => entry(item.text, item.at)),
     ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint && !turn.hidden
       // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
-      && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && turn.createdAt > Date.now() - OUTBOX_TTL_MS)))
-      .map((turn) => entry(turn.prompt, turn.createdAt)),
+      && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && (turn.waiting || turn.createdAt > Date.now() - OUTBOX_TTL_MS))))
+      .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.webReaction ? { reaction: turn.webReaction } : {}), ...(turn.status === "queued" ? { queued: queued(turn) } : {}) })),
     ...steers.map((steer) => entry(steer.prompt, steer.createdAt)),
   ];
   return items.sort((a, b) => a.at - b.at);
@@ -697,13 +893,26 @@ export const registerAttachment = mutation({
     fileName: v.string(),
     contentType: v.string(),
     size: v.number(),
+    /** A file staged for an edit, rather than an already sent message. */
+    editOf: v.optional(v.string()),
     /** Sent from the desktop pet, as the Library says where it came from. */
     from: v.optional(v.literal("pet")),
   },
   returns: v.id("chatAttachments"),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    ownerChat(await ctx.db.get(args.conversationId));
+    const chat = ownerChat(await ctx.db.get(args.conversationId));
+    const editOf = args.editOf ? ctx.db.normalizeId("agentMessages", args.editOf) : null;
+    if (args.editOf) {
+      const message = editOf ? await ctx.db.get(editOf) : null;
+      if (chat.channel !== WEB_CHANNEL || message?.threadId !== chat.threadId || message.message.role !== "user") {
+        throw new Error("That message changed. Cancel this edit and open it again.");
+      }
+      const existing = await ctx.db.query("chatAttachments")
+        .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey)).collect();
+      const uploaded = existing.find((item) => item.editOf === args.editOf && item.localPath === args.localPath && item.storageId === args.storageId);
+      if (uploaded) return uploaded._id;
+    }
     if (!args.fileName.trim() || args.size <= 0 || args.size > 50 * 1024 * 1024) {
       throw new Error("Attachments must be between 1 byte and 50 MB.");
     }
@@ -714,6 +923,7 @@ export const registerAttachment = mutation({
     const id = await ctx.db.insert("chatAttachments", {
       conversationId: args.conversationId,
       messageKey: args.messageKey,
+      ...(editOf ? { editOf } : {}),
       storageId: args.storageId,
       localPath: args.localPath,
       fileName: args.fileName.trim().slice(0, 200),
@@ -740,6 +950,7 @@ export const sendChat = mutation({
     /** Picked in the composer before the chat existed; "" is the model's default. Unset keeps the chat's. */
     effort: v.optional(v.string()),
     access: v.optional(vAccess),
+    mode: v.optional(v.union(v.literal("auto"), v.literal("queue"))),
   },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
@@ -753,9 +964,12 @@ export const sendChat = mutation({
     if (chat.contactId) throw new Error("This is Perry's chat with someone else. To have Perry tell them something, ask in your own chat.");
     // Paused, the message is not sent; it stays in the box for when he is back (pause.ts).
     await assertRunning(ctx);
+    // Reserve durable queue capacity before asynchronous preparation.
+    await assertQueueRoom(ctx, chat);
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
-    if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
+    if (attachmentIds.length > 10 || new Set(attachmentIds).size !== attachmentIds.length) throw new Error("A message can have up to 10 different attachments.");
+    if (attachments.some((attachment) => !attachment || attachment.removedAt || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
       throw new Error("One of the attachments is no longer available.");
     }
     const prompt = attachmentIds.length > 0
@@ -773,12 +987,12 @@ export const sendChat = mutation({
       title,
       // A messaging app's chat shows its turns as they run (isBusy), whichever side sent them.
       ...(web ? { pendingTurns: (chat.pendingTurns ?? 0) + 1 } : {}),
-      // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
-      outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
       ...(args.model !== undefined ? pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)) : {}),
-      ...(args.effort !== undefined ? { effort: args.effort.trim() || undefined } : {}),
+      ...(args.effort !== undefined ? { effort: args.effort.trim() || (chat.taskId ? "" : undefined) } : {}),
       ...(args.access !== undefined ? { access: args.access } : {}),
     });
+
+    const preparingId = await ctx.runMutation(internal.codex.prepareTurn, { conversationId: chat._id, prompt, queue: args.mode === "queue" });
 
     // Sent while a reply is running, this joins that reply (see codex.enqueueTurn).
     // Written in a Telegram or WhatsApp chat, it is that chat's turn, so the reply goes to the phone too.
@@ -788,6 +1002,7 @@ export const sendChat = mutation({
       text: prompt,
       title: chat.title,
       attachmentIds,
+      preparingId,
       ...(web ? {} : { fromWeb: true }),
     });
     return null;
@@ -795,59 +1010,79 @@ export const sendChat = mutation({
 });
 
 /**
- * Regenerate a reply, or edit a message you sent. Given an assistant reply,
- * the message you sent before it is sent again as it was; given one of your
- * messages and new text, that is sent instead. Either way the message and
- * everything after it are removed first, attachments are kept, and Codex
- * starts from a fresh thread seeded with the history that remains.
+ * Atomically replace a message and its later replies, then resend on a fresh engine session.
+ * Messages are immutable revisions: an edit's source id must still exist in this transaction.
+ * A running reply must finish (or be stopped) before saving, as for regeneration.
  */
-export const rewindChat = action({
-  args: { key: vKey, id: v.id("conversations"), messageId: v.string(), text: v.optional(v.string()) },
+export const rewindChat = mutation({
+  args: {
+    key: vKey, id: v.id("conversations"), messageId: v.string(), text: v.optional(v.string()),
+    attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
+    requestId: v.optional(v.string()),
+  },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    const chat = await ctx.runQuery(internal.conversations.getWebById, { id: args.id });
-    if (!chat) throw new Error("This chat was deleted.");
-
-    // Newest first, until the target message and the message you sent at or before it.
-    const newest: Array<{ _id: string; order: number; message?: { role: string }; text?: string }> = [];
-    let cursor: string | null = null;
-    let target: (typeof newest)[number] | undefined;
-    let sent: (typeof newest)[number] | undefined;
-    while (!sent) {
-      const page = await listMessages(ctx, { threadId: chat.threadId, paginationOpts: { cursor, numItems: 100 } });
-      for (const message of page.page) {
-        newest.push(message);
-        if (message._id === args.messageId) target = message;
-        if (target && message.message?.role === "user") { sent = message; break; }
+    const chat = ownerChat(await ctx.db.get(args.id));
+    if (chat.channel !== WEB_CHANNEL || chat.contactId) throw new Error("Only your own web messages can be edited.");
+    if (args.requestId && chat.lastRewindRequest === args.requestId) return null;
+    await assertRunning(ctx);
+    const targetId = ctx.db.normalizeId("agentMessages", args.messageId);
+    const target = targetId ? await ctx.db.get(targetId) : null;
+    if (!target || target.threadId !== chat.threadId) throw new Error("That message changed. Cancel this edit and open it again.");
+    if ((args.text !== undefined || args.attachmentIds !== undefined) && target.message.role !== "user") {
+      throw new Error("Only your own messages can be edited.");
+    }
+    const sent = target.message.role === "user" ? target : await ctx.db.query("agentMessages")
+      .withIndex("by_thread_order", (q) => q.eq("threadId", target.threadId).lte("order", target.order))
+      .order("desc").filter((q) => q.eq(q.field("message.role"), "user")).first();
+    if (!sent) throw new Error("That message is no longer in this chat.");
+    const raw = sent.text;
+    const marker = raw.match(ATTACHMENTS_MARKER);
+    const originalKey = marker?.[1]?.trim();
+    const original = originalKey ? await ctx.db.query("chatAttachments")
+      .withIndex("by_message", (q) => q.eq("conversationId", chat._id).eq("messageKey", originalKey)).collect() : [];
+    original.sort((a, b) => (a.position ?? a.createdAt) - (b.position ?? b.createdAt));
+    const originalIds = new Set(original.map((item) => item._id));
+    const text = (args.text ?? (marker ? raw.slice(0, marker.index) : raw)).trim();
+    let attachmentIds = args.attachmentIds ?? original.map((item) => item._id);
+    if (attachmentIds.length > 10 || new Set(attachmentIds).size !== attachmentIds.length) throw new Error("A message can have up to 10 different attachments.");
+    const files = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
+    for (const file of files) {
+      if (!file || file.conversationId !== chat._id || (!originalIds.has(file._id) &&
+        (!args.requestId || file.editOf !== sent._id || file.messageKey !== args.requestId || file.removedAt))) {
+        throw new Error("One of the attachments is no longer available for this edit.");
       }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
     }
-    if (!target || !sent) throw new Error("That message is no longer in this chat.");
-    if (args.text !== undefined && target.message?.role !== "user") throw new Error("Only your own messages can be edited.");
-
-    const raw = typeof sent.text === "string" ? sent.text : "";
-    const marker = raw.match(/\n?<!-- attachments:([^>]+) -->\s*$/);
-    const messageKey = marker?.[1]?.trim();
-    const original = marker ? raw.slice(0, marker.index).trimEnd() : raw;
-    const text = (args.text ?? original).trim();
-    const attachmentIds = messageKey
-      ? await ctx.runQuery(internal.conversations.attachmentIdsFor, { conversationId: chat._id, messageKey })
-      : [];
-    if (!text && attachmentIds.length === 0) throw new Error("The message is empty.");
-
+    if (!text && !files.some((file) => file && !file.removedAt)) throw new Error("The message is empty. Use Delete chat to remove it instead.");
+    // Keep files and other messages' references intact. Each edited set has its own ordered references.
+    let messageKey = originalKey;
+    if (args.attachmentIds !== undefined) {
+      if (!args.requestId) throw new Error("This edit needs a request id.");
+      messageKey = `edit-${args.requestId}`;
+      attachmentIds = [];
+      for (const [position, file] of files.entries()) {
+        if (!file) continue;
+        attachmentIds.push(await ctx.db.insert("chatAttachments", {
+          conversationId: chat._id, messageKey, position,
+          localPath: file.localPath, storageId: file.storageId,
+          fileName: file.fileName, contentType: file.contentType, size: file.size,
+          createdAt: Date.now(), ...(file.removedAt ? { removedAt: file.removedAt } : {}),
+        }));
+      }
+    }
     await ctx.runMutation(internal.conversations.rewind, { id: chat._id });
-    const replaced = newest.filter((message) => message.order >= sent!.order).map((message) => message._id);
-    for (let start = 0; start < replaced.length; start += 100) {
-      await deleteMessages(ctx, replaced.slice(start, start + 100));
-    }
+    const replaced = await ctx.db.query("agentMessages")
+      .withIndex("by_thread_order", (q) => q.eq("threadId", sent.threadId).gte("order", sent.order)).collect();
+    await deleteMessages(ctx, replaced.map((message) => message._id));
+    const prompt = attachmentIds.length ? `${text}\n\n<!-- attachments: ${messageKey} -->`.trim() : text;
+    await ctx.db.patch(chat._id, {
+      recallDigest: undefined,
+      ...(args.requestId ? { lastRewindRequest: args.requestId } : {}),
+      outbox: [{ text: prompt, at: Date.now() }],
+    });
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
-      channel: WEB_CHANNEL,
-      externalId: chat.externalId,
-      text: messageKey ? `${text}\n\n<!-- attachments: ${messageKey} -->`.trim() : text,
-      title: chat.title,
-      attachmentIds,
+      channel: WEB_CHANNEL, externalId: chat.externalId, text: prompt, title: chat.title, attachmentIds,
     });
     return null;
   },
@@ -915,8 +1150,8 @@ export const setChatEffort = mutation({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    ownerChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, { effort: args.effort?.trim().toLowerCase() || undefined });
+    const chat = ownerChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, { effort: args.effort?.trim().toLowerCase() || (chat.taskId ? "" : undefined) });
     return null;
   },
 });
@@ -1071,6 +1306,8 @@ export const setShortcut = mutation({
 
 export type MemoryView = {
   id: string;
+  forgetAt?: number;
+  forgetError?: string;
   text: string;
   tags: string[];
   source: string;
@@ -1103,6 +1340,8 @@ export const listMemories = query({
     }) as MemoryView[];
     // A memory kept to one chat or one project says which.
     return await Promise.all(found.map(async (memory) => {
+      const stored = await ctx.db.get(memory.id as Id<"memories">);
+      memory = { ...memory, forgetAt: stored?.forgetAt, forgetError: stored?.forgetError };
       if (memory.projectId) {
         const project = await ctx.db.get(memory.projectId as Id<"projects">);
         return { ...memory, project: project?.name ?? "a deleted project" };
@@ -1153,6 +1392,50 @@ export const deleteMemory = mutation({
     assertDashboardKey(args.key);
     await ctx.runMutation(internal.memories.removeMany, { ids: [args.id] });
     return null;
+  },
+});
+
+/** The server owns the deadline; a toast only offers the matching Undo action. */
+export const forgetMemory = mutation({
+  args: { key: vKey, id: v.id("memories") },
+  returns: v.number(),
+  handler: async (ctx, args): Promise<number> => {
+    assertDashboardKey(args.key);
+    const memory = await ctx.db.get(args.id);
+    if (!memory || memory.kind === "page") throw new Error("This memory is no longer available.");
+    if (memory.forgetAt !== undefined) return memory.forgetAt;
+    const at = Date.now() + 5_000;
+    await ctx.db.patch(args.id, { forgetAt: at, forgetError: undefined });
+    await ctx.scheduler.runAt(at, internal.dashboard.finishForgettingMemory, { id: args.id, at });
+    return at;
+  },
+});
+
+export const undoForgetMemory = mutation({
+  args: { key: vKey, id: v.id("memories"), at: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, args): Promise<boolean> => {
+    assertDashboardKey(args.key);
+    const memory = await ctx.db.get(args.id);
+    // A stale toast must never undo a later Forget, or extend the deadline.
+    if (!memory || memory.forgetAt !== args.at || Date.now() >= args.at) return false;
+    await ctx.db.patch(args.id, { forgetAt: undefined });
+    return true;
+  },
+});
+
+export const finishForgettingMemory = internalMutation({
+  args: { id: v.id("memories"), at: v.number() },
+  handler: async (ctx, args): Promise<void> => {
+    const memory = await ctx.db.get(args.id);
+    if (!memory || memory.forgetAt !== args.at) return;
+    try {
+      await ctx.runMutation(internal.memories.removeMany, { ids: [args.id] });
+    } catch {
+      // The nested mutation rolls back on failure. Restore the row with an
+      // error that is also visible after a reload, instead of hiding it forever.
+      await ctx.db.patch(args.id, { forgetAt: undefined, forgetError: "Perry could not forget this memory. Try again." });
+    }
   },
 });
 
@@ -1390,7 +1673,7 @@ export const restorePersonaVersion = mutation({
  * userMd, the owner chose to chat instead, and the assistant asks.
  */
 export const finishOnboarding = mutation({
-  args: { key: vKey, name: v.string(), personality: v.string(), userMd: v.optional(v.string()) },
+  args: { key: vKey, name: v.string(), personality: v.string(), userMd: v.optional(v.string()), interview: v.optional(v.object({ name: v.boolean(), help: v.boolean() })) },
   returns: v.id("conversations"),
   handler: async (ctx, args): Promise<Id<"conversations">> => {
     assertDashboardKey(args.key);
@@ -1398,11 +1681,20 @@ export const finishOnboarding = mutation({
     const userMd = args.userMd?.trim();
     if (userMd) await ctx.runMutation(internal.persona.writeUser, { text: userMd, by: "owner" });
     await ctx.runMutation(internal.installation.setOnboarding, { state: "done" });
-    return await startWelcomeChat(ctx, userMd
+    return await startWelcomeChat(ctx, args.interview
+      ? { title: "Getting to know you", prompt: `${INTERVIEW}${alreadySaid(args.interview)}`, label: "Getting to know you" }
+      : userMd
       ? { title: "Welcome", prompt: GREETING, label: "Welcome greeting" }
       : { title: "Getting to know you", prompt: INTERVIEW, label: "Getting to know you" });
   },
 });
+
+/** What the short welcome page already asked, so the first chat does not ask it again, and only that. */
+function alreadySaid(answered: { name: boolean; help: boolean }): string {
+  const known = [answered.name && "what to call them", answered.help && "what they want help with"].filter(Boolean);
+  if (!known.length) return "";
+  return `\n\n(They have already said ${known.join(" and ")}; it is in USER.md. ${answered.name ? "Greet them by name, and do" : "Do"} not ask ${known.length > 1 ? "those" : "that"} again.)`;
+}
 
 /** Not now: the dashboard opens on chat, and About you can start it again. */
 export const skipOnboarding = mutation({
@@ -1730,6 +2022,16 @@ export const revokeRunner = mutation({
 
 // --- Connected accounts --------------------------------------------------
 
+export const getInternetStatus = action({
+  args: { key: vKey, recheck: v.optional(v.boolean()) },
+  handler: async (ctx, args): Promise<ReturnType<typeof diagnostics>> => {
+    assertDashboardKey(args.key);
+    if (args.recheck) recheckInternetConnections();
+    const configured = Boolean(await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" }));
+    return diagnostics(configured, Boolean(findBrowser()));
+  },
+});
+
 export const getConnectors = action({
   args: { key: vKey },
   handler: async (
@@ -1779,7 +2081,7 @@ export const disconnectAccount = action({
 
 /** Returns a URL for the owner to open and finish OAuth in their browser. */
 export const connectToolkit = action({
-  args: { key: vKey, toolkit: v.string(), callbackUrl: v.optional(v.string()) },
+  args: { key: vKey, toolkit: v.string(), callbackUrl: v.optional(v.string()), accountId: v.optional(v.string()) },
   handler: async (
     ctx,
     args,
@@ -1788,6 +2090,7 @@ export const connectToolkit = action({
     return await ctx.runAction(internal.composio.authorize, {
       toolkit: args.toolkit,
       callbackUrl: args.callbackUrl,
+      accountId: args.accountId,
     });
   },
 });

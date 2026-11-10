@@ -2,16 +2,18 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@/client/react";
+import { useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { matches } from "@/convex/lib/shortcuts";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { KEY_STORAGE, SessionContext, useSession, type Session } from "@/lib/session";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
+import { ChatsAnnouncer } from "./chat-announcer";
 import { CommandPalette, PaletteContext } from "./command-palette";
 import { Gate } from "./gate";
 import { PageErrorBoundary } from "./page-error";
+import { trackDashboardEvent } from "@/lib/analytics";
 
 /** How long a hidden tab waits before claiming a page the pet asked for, so a tab in view gets it first. */
 const HIDDEN_TAB_WAITS_MS = 400;
@@ -22,10 +24,12 @@ const HIDDEN_TAB_WAITS_MS = 400;
  * paint is blank rather than briefly the wrong screen.
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
+  const client = useConvex();
   const [dashboardKey, setDashboardKey] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    client.clearChatCache();
     // `perry open` passes the key in the fragment, which never reaches a server; it is kept and taken out of the address.
     const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("key");
     if (fromLink) {
@@ -34,7 +38,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     }
     setDashboardKey(window.localStorage.getItem(KEY_STORAGE));
     setReady(true);
-  }, []);
+    return () => client.clearChatCache();
+  }, [client]);
 
   // Local chat media is served by this app's own server, which reads the key
   // from a cookie scoped to /api/media so it never appears in a media URL.
@@ -46,14 +51,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [ready, dashboardKey]);
 
   const lock = useCallback(() => {
+    client.clearChatCache();
+    trackDashboardEvent("Dashboard locked");
     window.localStorage.removeItem(KEY_STORAGE);
     setDashboardKey(null);
-  }, []);
+  }, [client]);
   const session = useMemo<Session | null>(() => dashboardKey ? { dashboardKey, lock } : null, [dashboardKey, lock]);
 
   if (!ready) return null;
   if (!session) {
-    return <Gate onUnlock={(key) => { window.localStorage.setItem(KEY_STORAGE, key); setDashboardKey(key); }} />;
+    return <Gate onUnlock={(key) => { client.clearChatCache(); trackDashboardEvent("Dashboard unlocked"); window.localStorage.setItem(KEY_STORAGE, key); setDashboardKey(key); }} />;
   }
   return (
     <SessionContext.Provider value={session}>
@@ -63,7 +70,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 }
 
 function Unlocked({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const router = useRouter();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -111,6 +118,7 @@ function Unlocked({ children }: { children: ReactNode }) {
   }, [request, requestPath, dashboardKey, claimOpen, router]);
 
   const palette = useMemo(() => ({ open: () => setPaletteOpen(true) }), []);
+  const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
 
   // The welcome page is full screen, before anything else.
   if (pathname === "/welcome") return <PageErrorBoundary onLock={lock}>{children}</PageErrorBoundary>;
@@ -126,6 +134,7 @@ function Unlocked({ children }: { children: ReactNode }) {
           <PageErrorBoundary onLock={lock}>{children}</PageErrorBoundary>
         </SidebarInset>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <ChatsAnnouncer chats={chats} openId={pathname.match(/^\/chat\/([^/]+)/)?.[1] ?? null} />
       </SidebarProvider>
     </PaletteContext.Provider>
   );

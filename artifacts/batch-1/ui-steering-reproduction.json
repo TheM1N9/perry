@@ -1,0 +1,20 @@
+{
+  "after": [
+    {
+      "requestId": "ui-reproduction-001",
+      "text": "Use a compact table and keep the collected inputs.",
+      "deliveryId": "c8hm2dy41d9rgwprb4m349f3yf",
+      "createdAt": 1792179690996,
+      "state": "applied"
+    }
+  ],
+  "before": [
+    {
+      "requestId": "ui-reproduction-001",
+      "text": "Use a compact table and keep the collected inputs.",
+      "deliveryId": "c8hm2dy41d9rgwprb4m349f3yf",
+      "createdAt": 1792179690996,
+      "state": "pending"
+    }
+  ]
+}

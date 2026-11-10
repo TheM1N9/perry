@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { NextRequest } from "next/server";
 import { ensureHome } from "@/runner/home";
+import { isInlineMedia } from "@/lib/media-content";
 
 /**
  * Local media: chat files that stay on this machine.
@@ -44,7 +45,7 @@ export async function serveFile(request: NextRequest, file: { path: string; file
   if (size === null) return new Response("This file is no longer where it was saved on this computer.", { status: 404 });
 
   const download = request.nextUrl.searchParams.has("download");
-  const media = /^(image|video|audio)\//.test(file.contentType) && file.contentType !== "image/svg+xml";
+  const media = isInlineMedia(file.contentType);
   // Text is sent as plain text, whatever it is: it shows as words and cannot run.
   const text = options.preview && /^(text\/(plain|markdown|csv)|application\/json)$/.test(file.contentType);
   const inline = !download && (media || (options.preview && (file.contentType === "application/pdf" || text)));

@@ -1,0 +1,180 @@
+{
+  "ranAt": "2026-10-27T12:38:10.586Z",
+  "checks": {
+    "oneLiveReply": true,
+    "liveShowsWorkingAndOneStep": true,
+    "timerTicksWithoutChurn": true,
+    "upNextAfterLiveReply": true,
+    "upNextOnComposer": true,
+    "upNextDashedAndLabelled": true,
+    "longQueueCollapses": true,
+    "pillNamesWhatWaits": true,
+    "queueInViewScrolledUp": true,
+    "editOpens": true,
+    "editSavesInPlace": true,
+    "removeClicked": true,
+    "removeStopsIt": true,
+    "reorderMovesIt": true,
+    "reorderKeepsFocus": true,
+    "steerClicked": true,
+    "steerJoinsRunningTurn": true,
+    "foldSaysWhatItDid": true,
+    "foldOpensCappedPastTenseSteps": true,
+    "transcriptInOrder": true,
+    "reorderChangesClaimOrder": true,
+    "steeredMessageSaved": true,
+    "compactionLineWhileRunning": true,
+    "sendNowOfferedWhenNothingToJoin": true,
+    "sendNowGoesFirst": true,
+    "compactionLineWhenDone": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "live": {
+      "work": "working",
+      "head": "Working for 57s",
+      "steps": 1,
+      "step": "Running ping -n 61 127.0.0.1<1s",
+      "list": false,
+      "replies": 1
+    },
+    "timer": {
+      "before": "Working for 57s",
+      "after": "Working for 1m 0s",
+      "churn": 0,
+      "seconds": 0,
+      "churned": []
+    },
+    "upNext": {
+      "layout": {
+        "after": true,
+        "onComposer": true,
+        "said": "4 queued",
+        "showAll": true,
+        "inConversation": false
+      },
+      "shown": [
+        {
+          "text": "Queued A: reply with the single word alpha.",
+          "label": "Queued message 1 of 4, not sent",
+          "dashed": true,
+          "says": "Send now",
+          "action": "steer",
+          "editing": false
+        },
+        {
+          "text": "Queued B: reply with the single word beta.",
+          "label": "Queued message 2 of 4, not sent",
+          "dashed": true,
+          "says": "Send now",
+          "action": "steer",
+          "editing": false
+        }
+      ]
+    },
+    "pill": "Jump to latest · Working",
+    "edit": {
+      "marked": true,
+      "prompt": "Queued C, edited: reply with the single word gamma-two.",
+      "composer": ""
+    },
+    "remove": {
+      "status": "done",
+      "stopped": true,
+      "rows": [
+        "Queued A: reply with the single word alpha.",
+        "Queued B: reply with the single word beta.",
+        "Queued C, edited: reply with the single word gamma-two."
+      ]
+    },
+    "reorder": {
+      "order": [
+        "Queued B: reply with the single word beta.",
+        "Queued A: reply with the single word alpha.",
+        "Queued C, edited: reply with the single word gamma-two."
+      ],
+      "gripFocused": true
+    },
+    "steer": {
+      "label": "steer",
+      "status": "applied",
+      "intoFirst": true
+    },
+    "fold": {
+      "fold": {
+        "label": "Worked for 2m 2s · Ran 2 commands and took 1 other step",
+        "open": "false"
+      },
+      "steps": {
+        "maxHeight": 288,
+        "overflow": "auto",
+        "rows": [
+          {
+            "icon": true,
+            "label": "Used take_longer",
+            "time": "<1s",
+            "height": 24
+          },
+          {
+            "icon": true,
+            "label": "Ran ping -n 61 127.0.0.1",
+            "time": "1m 1s",
+            "height": 24
+          },
+          {
+            "icon": true,
+            "label": "Ran hostname",
+            "time": "<1s",
+            "height": 24
+          }
+        ]
+      }
+    },
+    "transcript": [
+      "You saidUse the shell. First run exactly this command and wait for it to finish: ping -n 61 127.0.0.1 Then run hostname as a second command. Then reply with the single word done.18:06",
+      "You saidQueued A: reply with the single word alpha.18:06",
+      "You saidQueued B: reply with the single word beta.18:05"
+    ],
+    "claims": {
+      "b": 1793104608966,
+      "c": 1793104611630
+    },
+    "sendNow": {
+      "compacting": true,
+      "offered": [
+        "send",
+        "send"
+      ],
+      "clicked": true,
+      "f": 1793104614594,
+      "e": 1793104614599
+    },
+    "pageErrors": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\motionclip-storage-513\\temp\\perry-chat-timeline-yju7Sb\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  steered the Codex turn with a new message\u001b[0m",
+      "\u001b[2m  saved turn ekk4e13cyx4dsqrzwfzmhsgdkj\u001b[0m",
+      "\u001b[2m  saved turn mf4xknjeryga7y7dn7h6wct8fa\u001b[0m",
+      "\u001b[2m  saved turn dzxtamp7kg7npn673j7z17f703\u001b[0m",
+      "\u001b[2m  saved turn 5msv5qe8dvbaavewgz7sb035d1\u001b[0m",
+      "\u001b[2m  saved turn f96s9wtcmq7wwjaq4mpsp6mf1p\u001b[0m",
+      "\u001b[2m  compacting a chat's Codex session\u001b[0m",
+      "\u001b[2m  saved turn axg2n5nxj35xymjx0khgncj189\u001b[0m",
+      "\u001b[2m  saved turn bf0aj6r2fhsqw5cmdzped75yvg\u001b[0m",
+      "\u001b[2m  saved turn vpfp550yf3q2srga4f0s6ztkz0\u001b[0m",
+      "\u001b[2m  compacting a chat's Codex session\u001b[0m",
+      "\u001b[2m  saved turn 6jypsprthtxp0tbfgrs2rqqbef\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { decryptCredential, encryptCredential } from "./lib/credential-encryption";
 
 /**
  * Where Assistant's service keys live.
@@ -19,6 +20,7 @@ export const SECRET_NAMES = [
   "TELEGRAM_BOT_TOKEN",
   "COMPOSIO_API_KEY",
   "GEMINI_API_KEY",
+  "GROQ_API_KEY",
 ] as const;
 
 export type SecretName = (typeof SECRET_NAMES)[number];
@@ -28,6 +30,7 @@ export function isSecretName(value: string): value is SecretName {
 }
 
 export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> = {
+  GROQ_API_KEY: { label: "Groq speech key", hint: "From console.groq.com/keys. Used for cloud meeting transcription when you select Groq." },
   TELEGRAM_BOT_TOKEN: {
     label: "Telegram bot token",
     hint: "From @BotFather.",
@@ -56,7 +59,10 @@ export const get = internalQuery({
       .withIndex("by_name", (q) => q.eq("name", args.name))
       .unique();
 
-    if (row && row.value.length > 0) return row.value;
+    if (row) {
+      const value = decryptCredential("secrets", row.value);
+      if (value.length > 0) return value;
+    }
     return process.env[args.name] ?? null;
   },
 });
@@ -80,8 +86,9 @@ export const status = internalQuery({
 
     return SECRET_NAMES.map((name) => {
       const row = stored.get(name);
-      const fromDb = row && row.value.length > 0;
-      const value = fromDb ? row.value : (process.env[name] ?? "");
+      const saved = row ? decryptCredential("secrets", row.value) : "";
+      const fromDb = saved.length > 0;
+      const value = fromDb ? saved : (process.env[name] ?? "");
 
       return {
         name,
@@ -102,7 +109,7 @@ export const set = internalMutation({
   handler: async (ctx, args) => {
     if (!isSecretName(args.name)) return null;
 
-    const value = args.value.trim();
+    const value = encryptCredential("secrets", args.value.trim());
     const existing = await ctx.db
       .query("secrets")
       .withIndex("by_name", (q) => q.eq("name", args.name))

@@ -24,8 +24,15 @@ import { StepDetail } from "../chat/step-card";
 /** Runs shown at a time; the rest are a click away. */
 const PAGE = 20;
 
-const duration = (ms: number) =>
-  ms < 1000 ? `${Math.round(ms)} ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
+const duration = (ms: number) => {
+  if (ms < 999.5) return `${Math.round(ms)} ms`;
+  if (ms < 59_950) return `${(ms / 1000).toFixed(1)} s`;
+  // Whole seconds first, so 119.7 s reads "2m 0s" and not "1m 60s".
+  const seconds = Math.round(ms / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m ${seconds % 60}s`;
+};
 
 const RUN_STATUS: Record<string, { tone: Tone; label: string }> = {
   ok: { tone: "success", label: "Completed" },
@@ -41,14 +48,14 @@ const STATUS_FILTERS = [
   { value: "rejected", label: "Rejected" },
 ];
 const SPAN_KINDS: Record<SpanView["kind"], string> = {
-  command: "shell", fileChange: "files", mcpToolCall: "tool", dynamicToolCall: "tool", webSearch: "search", imageGeneration: "image", reasoning: "thinking",
+  command: "shell", fileChange: "files", mcpToolCall: "tool", dynamicToolCall: "tool", webSearch: "search", imageGeneration: "image", commentary: "Updates", reasoning: "thinking", plan: "plan",
 };
 
 /** Every run: what it was asked, which tools it used, what it cost, and where it failed. The messages stay in the chat. */
 export function Activity() {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const [session, setSession] = useSearchParam("session", "all");
   const sessionId = session === "all" ? "" : session;
   const [status, setStatus] = useSearchParam("status", "all");
@@ -150,7 +157,7 @@ function RunRow({ run }: { run: RunView }) {
                 <h4 className="mb-1 text-xs font-medium text-muted-foreground">Engine, model and thinking</h4>
                 <p className="text-sm">{routeLabel(run.route)} <span className="text-muted-foreground">· {run.route.tier} tier</span></p>
                 <p className="mt-0.5 max-w-3xl text-sm text-pretty text-muted-foreground">
-                  {PICKED_BY[run.route.by]}. {run.route.why}{run.route.retried ? " It ran there after its first engine refused it for a limit, before doing anything." : ""}
+                  {PICKED_BY[run.route.by]}. {run.route.why}{run.route.retried ? " This run recovered from a usage limit." : ""}
                 </p>
               </div>
             )}

@@ -1,0 +1,623 @@
+{
+  "indexes": [
+    {
+      "name": "_scheduled_by_time",
+      "sql": "CREATE INDEX _scheduled_by_time ON _scheduled (runAt)"
+    },
+    {
+      "name": "i_agentMessages_by_creation_time",
+      "sql": "CREATE INDEX \"i_agentMessages_by_creation_time\" ON \"doc_agentMessages\" (_creationTime)"
+    },
+    {
+      "name": "i_agentMessages_by_thread_order",
+      "sql": "CREATE INDEX \"i_agentMessages_by_thread_order\" ON \"doc_agentMessages\" (json_extract(doc, '$.threadId'), json_extract(doc, '$.order'), _creationTime)"
+    },
+    {
+      "name": "i_agentThreads_by_creation_time",
+      "sql": "CREATE INDEX \"i_agentThreads_by_creation_time\" ON \"doc_agentThreads\" (_creationTime)"
+    },
+    {
+      "name": "i_approvalRules_by_creation_time",
+      "sql": "CREATE INDEX \"i_approvalRules_by_creation_time\" ON \"doc_approvalRules\" (_creationTime)"
+    },
+    {
+      "name": "i_approvalRules_by_runner",
+      "sql": "CREATE INDEX \"i_approvalRules_by_runner\" ON \"doc_approvalRules\" (json_extract(doc, '$.runnerId'), _creationTime)"
+    },
+    {
+      "name": "i_approvals_by_creation_time",
+      "sql": "CREATE INDEX \"i_approvals_by_creation_time\" ON \"doc_approvals\" (_creationTime)"
+    },
+    {
+      "name": "i_approvals_by_status",
+      "sql": "CREATE INDEX \"i_approvals_by_status\" ON \"doc_approvals\" (json_extract(doc, '$.status'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_brainProposals_by_creation_time",
+      "sql": "CREATE INDEX \"i_brainProposals_by_creation_time\" ON \"doc_brainProposals\" (_creationTime)"
+    },
+    {
+      "name": "i_brainProposals_by_key",
+      "sql": "CREATE INDEX \"i_brainProposals_by_key\" ON \"doc_brainProposals\" (json_extract(doc, '$.key'), _creationTime)"
+    },
+    {
+      "name": "i_brainProposals_by_status",
+      "sql": "CREATE INDEX \"i_brainProposals_by_status\" ON \"doc_brainProposals\" (json_extract(doc, '$.status'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_calls_by_conversation",
+      "sql": "CREATE INDEX \"i_calls_by_conversation\" ON \"doc_calls\" (json_extract(doc, '$.conversationId'), json_extract(doc, '$.startedAt'), _creationTime)"
+    },
+    {
+      "name": "i_calls_by_creation_time",
+      "sql": "CREATE INDEX \"i_calls_by_creation_time\" ON \"doc_calls\" (_creationTime)"
+    },
+    {
+      "name": "i_calls_by_waCallId",
+      "sql": "CREATE INDEX \"i_calls_by_waCallId\" ON \"doc_calls\" (json_extract(doc, '$.waCallId'), _creationTime)"
+    },
+    {
+      "name": "i_chatAttachments_by_conversation",
+      "sql": "CREATE INDEX \"i_chatAttachments_by_conversation\" ON \"doc_chatAttachments\" (json_extract(doc, '$.conversationId'), _creationTime)"
+    },
+    {
+      "name": "i_chatAttachments_by_creation_time",
+      "sql": "CREATE INDEX \"i_chatAttachments_by_creation_time\" ON \"doc_chatAttachments\" (_creationTime)"
+    },
+    {
+      "name": "i_chatAttachments_by_message",
+      "sql": "CREATE INDEX \"i_chatAttachments_by_message\" ON \"doc_chatAttachments\" (json_extract(doc, '$.conversationId'), json_extract(doc, '$.messageKey'), _creationTime)"
+    },
+    {
+      "name": "i_chatAttachments_by_path",
+      "sql": "CREATE INDEX \"i_chatAttachments_by_path\" ON \"doc_chatAttachments\" (json_extract(doc, '$.localPath'), _creationTime)"
+    },
+    {
+      "name": "i_chatAttachments_by_storage",
+      "sql": "CREATE INDEX \"i_chatAttachments_by_storage\" ON \"doc_chatAttachments\" (json_extract(doc, '$.storageId'), _creationTime)"
+    },
+    {
+      "name": "i_chatTitles_by_conversation",
+      "sql": "CREATE INDEX \"i_chatTitles_by_conversation\" ON \"doc_chatTitles\" (json_extract(doc, '$.conversationId'), _creationTime)"
+    },
+    {
+      "name": "i_chatTitles_by_creation_time",
+      "sql": "CREATE INDEX \"i_chatTitles_by_creation_time\" ON \"doc_chatTitles\" (_creationTime)"
+    },
+    {
+      "name": "i_codexSteers_by_conversation_status",
+      "sql": "CREATE INDEX \"i_codexSteers_by_conversation_status\" ON \"doc_codexSteers\" (json_extract(doc, '$.conversationId'), json_extract(doc, '$.status'), _creationTime)"
+    },
+    {
+      "name": "i_codexSteers_by_creation_time",
+      "sql": "CREATE INDEX \"i_codexSteers_by_creation_time\" ON \"doc_codexSteers\" (_creationTime)"
+    },
+    {
+      "name": "i_codexSteers_by_run",
+      "sql": "CREATE INDEX \"i_codexSteers_by_run\" ON \"doc_codexSteers\" (json_extract(doc, '$.runId'), _creationTime)"
+    },
+    {
+      "name": "i_codexSteers_by_runner_status",
+      "sql": "CREATE INDEX \"i_codexSteers_by_runner_status\" ON \"doc_codexSteers\" (json_extract(doc, '$.runnerId'), json_extract(doc, '$.status'), _creationTime)"
+    },
+    {
+      "name": "i_codexSteers_by_status",
+      "sql": "CREATE INDEX \"i_codexSteers_by_status\" ON \"doc_codexSteers\" (json_extract(doc, '$.status'), _creationTime)"
+    },
+    {
+      "name": "i_codexSteers_by_turn_status",
+      "sql": "CREATE INDEX \"i_codexSteers_by_turn_status\" ON \"doc_codexSteers\" (json_extract(doc, '$.turnId'), json_extract(doc, '$.status'), _creationTime)"
+    },
+    {
+      "name": "i_codexTurns_by_conversation_status",
+      "sql": "CREATE INDEX \"i_codexTurns_by_conversation_status\" ON \"doc_codexTurns\" (json_extract(doc, '$.conversationId'), json_extract(doc, '$.status'), _creationTime)"
+    },
+    {
+      "name": "i_codexTurns_by_creation_time",
+      "sql": "CREATE INDEX \"i_codexTurns_by_creation_time\" ON \"doc_codexTurns\" (_creationTime)"
+    },
+    {
+      "name": "i_codexTurns_by_reset_wait",
+      "sql": "CREATE INDEX \"i_codexTurns_by_reset_wait\" ON \"doc_codexTurns\" (json_extract(doc, '$.waiting.until'), _creationTime)"
+    },
+    {
+      "name": "i_codexTurns_by_run",
+      "sql": "CREATE INDEX \"i_codexTurns_by_run\" ON \"doc_codexTurns\" (json_extract(doc, '$.runId'), _creationTime)"
+    },
+    {
+      "name": "i_codexTurns_by_runner_status",
+      "sql": "CREATE INDEX \"i_codexTurns_by_runner_status\" ON \"doc_codexTurns\" (json_extract(doc, '$.runnerId'), json_extract(doc, '$.status'), _creationTime)"
+    },
+    {
+      "name": "i_connectorAccounts_by_account",
+      "sql": "CREATE INDEX \"i_connectorAccounts_by_account\" ON \"doc_connectorAccounts\" (json_extract(doc, '$.accountId'), _creationTime)"
+    },
+    {
+      "name": "i_connectorAccounts_by_creation_time",
+      "sql": "CREATE INDEX \"i_connectorAccounts_by_creation_time\" ON \"doc_connectorAccounts\" (_creationTime)"
+    },
+    {
+      "name": "i_connectorHealth_by_account",
+      "sql": "CREATE INDEX \"i_connectorHealth_by_account\" ON \"doc_connectorHealth\" (json_extract(doc, '$.accountId'), json_extract(doc, '$.toolkit'), _creationTime)"
+    },
+    {
+      "name": "i_connectorHealth_by_creation_time",
+      "sql": "CREATE INDEX \"i_connectorHealth_by_creation_time\" ON \"doc_connectorHealth\" (_creationTime)"
+    },
+    {
+      "name": "i_contacts_by_channel_external",
+      "sql": "CREATE INDEX \"i_contacts_by_channel_external\" ON \"doc_contacts\" (json_extract(doc, '$.channel'), json_extract(doc, '$.externalId'), _creationTime)"
+    },
+    {
+      "name": "i_contacts_by_creation_time",
+      "sql": "CREATE INDEX \"i_contacts_by_creation_time\" ON \"doc_contacts\" (_creationTime)"
+    },
+    {
+      "name": "i_contacts_by_status",
+      "sql": "CREATE INDEX \"i_contacts_by_status\" ON \"doc_contacts\" (json_extract(doc, '$.status'), json_extract(doc, '$.updatedAt'), _creationTime)"
+    },
+    {
+      "name": "i_conversations_by_channel_external",
+      "sql": "CREATE INDEX \"i_conversations_by_channel_external\" ON \"doc_conversations\" (json_extract(doc, '$.channel'), json_extract(doc, '$.externalId'), _creationTime)"
+    },
+    {
+      "name": "i_conversations_by_channel_last",
+      "sql": "CREATE INDEX \"i_conversations_by_channel_last\" ON \"doc_conversations\" (json_extract(doc, '$.channel'), json_extract(doc, '$.lastMessageAt'), _creationTime)"
+    },
+    {
+      "name": "i_conversations_by_creation_time",
+      "sql": "CREATE INDEX \"i_conversations_by_creation_time\" ON \"doc_conversations\" (_creationTime)"
+    },
+    {
+      "name": "i_conversations_by_project",
+      "sql": "CREATE INDEX \"i_conversations_by_project\" ON \"doc_conversations\" (json_extract(doc, '$.projectId'), json_extract(doc, '$.lastMessageAt'), _creationTime)"
+    },
+    {
+      "name": "i_engineUpdates_by_creation_time",
+      "sql": "CREATE INDEX \"i_engineUpdates_by_creation_time\" ON \"doc_engineUpdates\" (_creationTime)"
+    },
+    {
+      "name": "i_engineUpdates_by_runner_engine",
+      "sql": "CREATE INDEX \"i_engineUpdates_by_runner_engine\" ON \"doc_engineUpdates\" (json_extract(doc, '$.runnerId'), json_extract(doc, '$.engine'), _creationTime)"
+    },
+    {
+      "name": "i_goals_by_creation_time",
+      "sql": "CREATE INDEX \"i_goals_by_creation_time\" ON \"doc_goals\" (_creationTime)"
+    },
+    {
+      "name": "i_goals_by_status",
+      "sql": "CREATE INDEX \"i_goals_by_status\" ON \"doc_goals\" (json_extract(doc, '$.status'), _creationTime)"
+    },
+    {
+      "name": "i_installation_by_creation_time",
+      "sql": "CREATE INDEX \"i_installation_by_creation_time\" ON \"doc_installation\" (_creationTime)"
+    },
+    {
+      "name": "i_interactiveAnswers_by_conversation",
+      "sql": "CREATE INDEX \"i_interactiveAnswers_by_conversation\" ON \"doc_interactiveAnswers\" (json_extract(doc, '$.conversationId'), _creationTime)"
+    },
+    {
+      "name": "i_interactiveAnswers_by_creation_time",
+      "sql": "CREATE INDEX \"i_interactiveAnswers_by_creation_time\" ON \"doc_interactiveAnswers\" (_creationTime)"
+    },
+    {
+      "name": "i_interactiveSources_by_conversation",
+      "sql": "CREATE INDEX \"i_interactiveSources_by_conversation\" ON \"doc_interactiveSources\" (json_extract(doc, '$.conversationId'), _creationTime)"
+    },
+    {
+      "name": "i_interactiveSources_by_creation_time",
+      "sql": "CREATE INDEX \"i_interactiveSources_by_creation_time\" ON \"doc_interactiveSources\" (_creationTime)"
+    },
+    {
+      "name": "i_jobs_by_creation_time",
+      "sql": "CREATE INDEX \"i_jobs_by_creation_time\" ON \"doc_jobs\" (_creationTime)"
+    },
+    {
+      "name": "i_library_by_conversation",
+      "sql": "CREATE INDEX \"i_library_by_conversation\" ON \"doc_library\" (json_extract(doc, '$.conversationId'), _creationTime)"
+    },
+    {
+      "name": "i_library_by_created",
+      "sql": "CREATE INDEX \"i_library_by_created\" ON \"doc_library\" (json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_library_by_creation_time",
+      "sql": "CREATE INDEX \"i_library_by_creation_time\" ON \"doc_library\" (_creationTime)"
+    },
+    {
+      "name": "i_library_by_path",
+      "sql": "CREATE INDEX \"i_library_by_path\" ON \"doc_library\" (json_extract(doc, '$.localPath'), _creationTime)"
+    },
+    {
+      "name": "i_library_by_storage",
+      "sql": "CREATE INDEX \"i_library_by_storage\" ON \"doc_library\" (json_extract(doc, '$.storageId'), _creationTime)"
+    },
+    {
+      "name": "i_library_by_version",
+      "sql": "CREATE INDEX \"i_library_by_version\" ON \"doc_library\" (json_extract(doc, '$.versionOf'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_about",
+      "sql": "CREATE INDEX \"i_memories_by_about\" ON \"doc_memories\" (json_extract(doc, '$.about'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_archived",
+      "sql": "CREATE INDEX \"i_memories_by_archived\" ON \"doc_memories\" (json_extract(doc, '$.archivedAt'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_created",
+      "sql": "CREATE INDEX \"i_memories_by_created\" ON \"doc_memories\" (json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_creation_time",
+      "sql": "CREATE INDEX \"i_memories_by_creation_time\" ON \"doc_memories\" (_creationTime)"
+    },
+    {
+      "name": "i_memories_by_day",
+      "sql": "CREATE INDEX \"i_memories_by_day\" ON \"doc_memories\" (json_extract(doc, '$.day'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_embedded",
+      "sql": "CREATE INDEX \"i_memories_by_embedded\" ON \"doc_memories\" (json_extract(doc, '$.supersededBy'), json_extract(doc, '$.embeddedWith'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_kind",
+      "sql": "CREATE INDEX \"i_memories_by_kind\" ON \"doc_memories\" (json_extract(doc, '$.kind'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_page",
+      "sql": "CREATE INDEX \"i_memories_by_page\" ON \"doc_memories\" (json_extract(doc, '$.pageId'), json_extract(doc, '$.order'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_project",
+      "sql": "CREATE INDEX \"i_memories_by_project\" ON \"doc_memories\" (json_extract(doc, '$.projectId'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_todo",
+      "sql": "CREATE INDEX \"i_memories_by_todo\" ON \"doc_memories\" (json_extract(doc, '$.todoId'), _creationTime)"
+    },
+    {
+      "name": "i_memories_by_vector_key",
+      "sql": "CREATE INDEX \"i_memories_by_vector_key\" ON \"doc_memories\" (json_extract(doc, '$.vectorKey'), json_extract(doc, '$.embeddedWith'), _creationTime)"
+    },
+    {
+      "name": "i_mentions_by_creation_time",
+      "sql": "CREATE INDEX \"i_mentions_by_creation_time\" ON \"doc_mentions\" (_creationTime)"
+    },
+    {
+      "name": "i_mentions_by_line",
+      "sql": "CREATE INDEX \"i_mentions_by_line\" ON \"doc_mentions\" (json_extract(doc, '$.lineId'), _creationTime)"
+    },
+    {
+      "name": "i_mentions_by_person",
+      "sql": "CREATE INDEX \"i_mentions_by_person\" ON \"doc_mentions\" (json_extract(doc, '$.person'), _creationTime)"
+    },
+    {
+      "name": "i_monitors_by_active",
+      "sql": "CREATE INDEX \"i_monitors_by_active\" ON \"doc_monitors\" (json_extract(doc, '$.active'), _creationTime)"
+    },
+    {
+      "name": "i_monitors_by_creation_time",
+      "sql": "CREATE INDEX \"i_monitors_by_creation_time\" ON \"doc_monitors\" (_creationTime)"
+    },
+    {
+      "name": "i_monitors_by_next_check",
+      "sql": "CREATE INDEX \"i_monitors_by_next_check\" ON \"doc_monitors\" (json_extract(doc, '$.nextCheckAt'), _creationTime)"
+    },
+    {
+      "name": "i_notes_by_creation_time",
+      "sql": "CREATE INDEX \"i_notes_by_creation_time\" ON \"doc_notes\" (_creationTime)"
+    },
+    {
+      "name": "i_notes_by_kind",
+      "sql": "CREATE INDEX \"i_notes_by_kind\" ON \"doc_notes\" (json_extract(doc, '$.kind'), json_extract(doc, '$.day'), _creationTime)"
+    },
+    {
+      "name": "i_notes_by_person",
+      "sql": "CREATE INDEX \"i_notes_by_person\" ON \"doc_notes\" (json_extract(doc, '$.person'), _creationTime)"
+    },
+    {
+      "name": "i_notes_by_pinned",
+      "sql": "CREATE INDEX \"i_notes_by_pinned\" ON \"doc_notes\" (json_extract(doc, '$.pinnedAt'), _creationTime)"
+    },
+    {
+      "name": "i_notes_by_project",
+      "sql": "CREATE INDEX \"i_notes_by_project\" ON \"doc_notes\" (json_extract(doc, '$.projectId'), json_extract(doc, '$.updatedAt'), _creationTime)"
+    },
+    {
+      "name": "i_notes_by_title",
+      "sql": "CREATE INDEX \"i_notes_by_title\" ON \"doc_notes\" (json_extract(doc, '$.title'), _creationTime)"
+    },
+    {
+      "name": "i_notes_by_updated",
+      "sql": "CREATE INDEX \"i_notes_by_updated\" ON \"doc_notes\" (json_extract(doc, '$.updatedAt'), _creationTime)"
+    },
+    {
+      "name": "i_persona_by_creation_time",
+      "sql": "CREATE INDEX \"i_persona_by_creation_time\" ON \"doc_persona\" (_creationTime)"
+    },
+    {
+      "name": "i_persona_by_kind",
+      "sql": "CREATE INDEX \"i_persona_by_kind\" ON \"doc_persona\" (json_extract(doc, '$.kind'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_petDevices_by_creation_time",
+      "sql": "CREATE INDEX \"i_petDevices_by_creation_time\" ON \"doc_petDevices\" (_creationTime)"
+    },
+    {
+      "name": "i_petDevices_by_key_hash",
+      "sql": "CREATE INDEX \"i_petDevices_by_key_hash\" ON \"doc_petDevices\" (json_extract(doc, '$.keyHash'), _creationTime)"
+    },
+    {
+      "name": "i_petOpen_by_creation_time",
+      "sql": "CREATE INDEX \"i_petOpen_by_creation_time\" ON \"doc_petOpen\" (_creationTime)"
+    },
+    {
+      "name": "i_petPairing_by_creation_time",
+      "sql": "CREATE INDEX \"i_petPairing_by_creation_time\" ON \"doc_petPairing\" (_creationTime)"
+    },
+    {
+      "name": "i_petPresence_by_creation_time",
+      "sql": "CREATE INDEX \"i_petPresence_by_creation_time\" ON \"doc_petPresence\" (_creationTime)"
+    },
+    {
+      "name": "i_petSetup_by_creation_time",
+      "sql": "CREATE INDEX \"i_petSetup_by_creation_time\" ON \"doc_petSetup\" (_creationTime)"
+    },
+    {
+      "name": "i_projects_by_creation_time",
+      "sql": "CREATE INDEX \"i_projects_by_creation_time\" ON \"doc_projects\" (_creationTime)"
+    },
+    {
+      "name": "i_runSpans_by_creation_time",
+      "sql": "CREATE INDEX \"i_runSpans_by_creation_time\" ON \"doc_runSpans\" (_creationTime)"
+    },
+    {
+      "name": "i_runSpans_by_run",
+      "sql": "CREATE INDEX \"i_runSpans_by_run\" ON \"doc_runSpans\" (json_extract(doc, '$.runId'), json_extract(doc, '$.callId'), _creationTime)"
+    },
+    {
+      "name": "i_runSpans_by_run_started",
+      "sql": "CREATE INDEX \"i_runSpans_by_run_started\" ON \"doc_runSpans\" (json_extract(doc, '$.runId'), json_extract(doc, '$.startedAt'), _creationTime)"
+    },
+    {
+      "name": "i_runners_by_creation_time",
+      "sql": "CREATE INDEX \"i_runners_by_creation_time\" ON \"doc_runners\" (_creationTime)"
+    },
+    {
+      "name": "i_runners_by_token",
+      "sql": "CREATE INDEX \"i_runners_by_token\" ON \"doc_runners\" (json_extract(doc, '$.token'), _creationTime)"
+    },
+    {
+      "name": "i_runs_by_conversation",
+      "sql": "CREATE INDEX \"i_runs_by_conversation\" ON \"doc_runs\" (json_extract(doc, '$.conversationId'), _creationTime)"
+    },
+    {
+      "name": "i_runs_by_creation_time",
+      "sql": "CREATE INDEX \"i_runs_by_creation_time\" ON \"doc_runs\" (_creationTime)"
+    },
+    {
+      "name": "i_runs_by_started",
+      "sql": "CREATE INDEX \"i_runs_by_started\" ON \"doc_runs\" (json_extract(doc, '$.startedAt'), _creationTime)"
+    },
+    {
+      "name": "i_screenLooks_by_creation_time",
+      "sql": "CREATE INDEX \"i_screenLooks_by_creation_time\" ON \"doc_screenLooks\" (_creationTime)"
+    },
+    {
+      "name": "i_screenLooks_by_status",
+      "sql": "CREATE INDEX \"i_screenLooks_by_status\" ON \"doc_screenLooks\" (json_extract(doc, '$.status'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_secrets_by_creation_time",
+      "sql": "CREATE INDEX \"i_secrets_by_creation_time\" ON \"doc_secrets\" (_creationTime)"
+    },
+    {
+      "name": "i_secrets_by_name",
+      "sql": "CREATE INDEX \"i_secrets_by_name\" ON \"doc_secrets\" (json_extract(doc, '$.name'), _creationTime)"
+    },
+    {
+      "name": "i_sent_by_creation_time",
+      "sql": "CREATE INDEX \"i_sent_by_creation_time\" ON \"doc_sent\" (_creationTime)"
+    },
+    {
+      "name": "i_sent_by_from",
+      "sql": "CREATE INDEX \"i_sent_by_from\" ON \"doc_sent\" (json_extract(doc, '$.fromId'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_sent_by_sent",
+      "sql": "CREATE INDEX \"i_sent_by_sent\" ON \"doc_sent\" (json_extract(doc, '$.sentAt'), _creationTime)"
+    },
+    {
+      "name": "i_taskHandoffs_by_creation_time",
+      "sql": "CREATE INDEX \"i_taskHandoffs_by_creation_time\" ON \"doc_taskHandoffs\" (_creationTime)"
+    },
+    {
+      "name": "i_taskHandoffs_by_state",
+      "sql": "CREATE INDEX \"i_taskHandoffs_by_state\" ON \"doc_taskHandoffs\" (json_extract(doc, '$.state'), _creationTime)"
+    },
+    {
+      "name": "i_taskHandoffs_by_task",
+      "sql": "CREATE INDEX \"i_taskHandoffs_by_task\" ON \"doc_taskHandoffs\" (json_extract(doc, '$.taskId'), _creationTime)"
+    },
+    {
+      "name": "i_tasks_by_conversation",
+      "sql": "CREATE INDEX \"i_tasks_by_conversation\" ON \"doc_tasks\" (json_extract(doc, '$.conversationId'), _creationTime)"
+    },
+    {
+      "name": "i_tasks_by_creation_time",
+      "sql": "CREATE INDEX \"i_tasks_by_creation_time\" ON \"doc_tasks\" (_creationTime)"
+    },
+    {
+      "name": "i_tasks_by_origin",
+      "sql": "CREATE INDEX \"i_tasks_by_origin\" ON \"doc_tasks\" (json_extract(doc, '$.origin'), json_extract(doc, '$.updatedAt'), _creationTime)"
+    },
+    {
+      "name": "i_tasks_by_status",
+      "sql": "CREATE INDEX \"i_tasks_by_status\" ON \"doc_tasks\" (json_extract(doc, '$.status'), _creationTime)"
+    },
+    {
+      "name": "i_tasks_by_updated",
+      "sql": "CREATE INDEX \"i_tasks_by_updated\" ON \"doc_tasks\" (json_extract(doc, '$.updatedAt'), _creationTime)"
+    },
+    {
+      "name": "i_todos_by_creation_time",
+      "sql": "CREATE INDEX \"i_todos_by_creation_time\" ON \"doc_todos\" (_creationTime)"
+    },
+    {
+      "name": "i_todos_by_done",
+      "sql": "CREATE INDEX \"i_todos_by_done\" ON \"doc_todos\" (json_extract(doc, '$.doneAt'), _creationTime)"
+    },
+    {
+      "name": "i_todos_by_next_nag",
+      "sql": "CREATE INDEX \"i_todos_by_next_nag\" ON \"doc_todos\" (json_extract(doc, '$.nextNagAt'), _creationTime)"
+    },
+    {
+      "name": "i_turnStreamChunks_by_creation_time",
+      "sql": "CREATE INDEX \"i_turnStreamChunks_by_creation_time\" ON \"doc_turnStreamChunks\" (_creationTime)"
+    },
+    {
+      "name": "i_turnStreamChunks_by_turn_offset",
+      "sql": "CREATE INDEX \"i_turnStreamChunks_by_turn_offset\" ON \"doc_turnStreamChunks\" (json_extract(doc, '$.turnId'), json_extract(doc, '$.offset'), _creationTime)"
+    },
+    {
+      "name": "i_turnStreams_by_creation_time",
+      "sql": "CREATE INDEX \"i_turnStreams_by_creation_time\" ON \"doc_turnStreams\" (_creationTime)"
+    },
+    {
+      "name": "i_turnStreams_by_turn",
+      "sql": "CREATE INDEX \"i_turnStreams_by_turn\" ON \"doc_turnStreams\" (json_extract(doc, '$.turnId'), _creationTime)"
+    },
+    {
+      "name": "i_updates_by_creation_time",
+      "sql": "CREATE INDEX \"i_updates_by_creation_time\" ON \"doc_updates\" (_creationTime)"
+    },
+    {
+      "name": "i_vault_by_creation_time",
+      "sql": "CREATE INDEX \"i_vault_by_creation_time\" ON \"doc_vault\" (_creationTime)"
+    },
+    {
+      "name": "i_whatsappLink_by_creation_time",
+      "sql": "CREATE INDEX \"i_whatsappLink_by_creation_time\" ON \"doc_whatsappLink\" (_creationTime)"
+    },
+    {
+      "name": "i_whatsappOutbox_by_creation_time",
+      "sql": "CREATE INDEX \"i_whatsappOutbox_by_creation_time\" ON \"doc_whatsappOutbox\" (_creationTime)"
+    },
+    {
+      "name": "i_whatsappOutbox_by_state",
+      "sql": "CREATE INDEX \"i_whatsappOutbox_by_state\" ON \"doc_whatsappOutbox\" (json_extract(doc, '$.state'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_conversation",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_conversation\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.conversationId'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_conversation_kind",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_conversation_kind\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.conversationId'), json_extract(doc, '$.kind'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_conversation_role",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_conversation_role\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.conversationId'), json_extract(doc, '$.role'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_creation_time",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_creation_time\" ON \"doc_workspaceFiles\" (_creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_item",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_item\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.conversationId'), json_extract(doc, '$.libraryId'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_library",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_library\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.libraryId'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_project",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_project\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.projectId'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_project_kind",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_project_kind\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.projectId'), json_extract(doc, '$.kind'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_project_role",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_project_role\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.projectId'), json_extract(doc, '$.role'), json_extract(doc, '$.createdAt'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_run",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_run\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.runId'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceFiles_by_task",
+      "sql": "CREATE INDEX \"i_workspaceFiles_by_task\" ON \"doc_workspaceFiles\" (json_extract(doc, '$.taskId'), _creationTime)"
+    },
+    {
+      "name": "i_workspaceViews_by_creation_time",
+      "sql": "CREATE INDEX \"i_workspaceViews_by_creation_time\" ON \"doc_workspaceViews\" (_creationTime)"
+    },
+    {
+      "name": "i_workspaceViews_by_item",
+      "sql": "CREATE INDEX \"i_workspaceViews_by_item\" ON \"doc_workspaceViews\" (json_extract(doc, '$.scope'), json_extract(doc, '$.libraryId'), _creationTime)"
+    }
+  ],
+  "queries": {
+    "runnerLookup": "SELECT * FROM doc_runners WHERE json_extract(doc, '$.token') IS 'synthetic' ORDER BY json_extract(doc, '$.token'), _creationTime LIMIT 1",
+    "turnQueue": "SELECT * FROM doc_codexTurns WHERE json_extract(doc, '$.runnerId') IS 'synthetic' AND json_extract(doc, '$.status') IS 'queued' ORDER BY json_extract(doc, '$.runnerId'), json_extract(doc, '$.status'), _creationTime LIMIT 20",
+    "scheduler": "SELECT id,name,args FROM _scheduled WHERE runAt <= 0 ORDER BY runAt LIMIT 100"
+  },
+  "plans": {
+    "runnerLookup": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH doc_runners USING INDEX i_runners_by_token (<expr>=?)"
+      },
+      {
+        "id": 23,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
+      }
+    ],
+    "turnQueue": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH doc_codexTurns USING INDEX i_codexTurns_by_runner_status (<expr>=? AND <expr>=?)"
+      },
+      {
+        "id": 25,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
+      }
+    ],
+    "scheduler": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 203,
+        "detail": "SEARCH _scheduled USING INDEX _scheduled_by_time (runAt<?)"
+      }
+    ]
+  },
+  "uploadCleanupPlan": [
+    {
+      "id": 3,
+      "parent": 0,
+      "notused": 216,
+      "detail": "SCAN _uploads"
+    }
+  ],
+  "pragmas": {
+    "journalMode": {
+      "journal_mode": "wal"
+    },
+    "synchronous": {
+      "synchronous": 1
+    }
+  }
+}

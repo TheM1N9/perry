@@ -1,5 +1,8 @@
+import { ORDINARY_NOTES, noteWriteTags } from "../lib/notes-read-dependencies";
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { protectCredential } from "../convex/lib/credential-encryption";
+import { migrateCredentialDatabase } from "./credential-encryption";
 
 /**
  * Perry's documents, in SQLite on this machine.
@@ -137,7 +140,9 @@ export class Store {
   private vectors = new Map<string, VectorIndex>();
 
   constructor(readonly sql: DatabaseSync, readonly tables: Record<string, TableDef>) {
-    sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF; PRAGMA busy_timeout = 5000;");
+    // Before any reads, imports or snapshots; also scrubs old freelist/WAL pages.
+    if (tables.vault || tables.secrets) migrateCredentialDatabase(sql);
+    sql.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF; PRAGMA busy_timeout = 5000; PRAGMA secure_delete = ON;");
     sql.exec(`CREATE TABLE IF NOT EXISTS _ids (id TEXT PRIMARY KEY, tbl TEXT NOT NULL) WITHOUT ROWID`);
     sql.exec(`CREATE TABLE IF NOT EXISTS _indexes (name TEXT PRIMARY KEY, version TEXT NOT NULL)`);
     for (const [table, def] of Object.entries(tables)) {
@@ -303,43 +308,47 @@ export class Store {
     return this.tableOf(id) === table ? (id as string) : null;
   }
 
-  insert(table: string, value: Record<string, unknown>, keep?: { _id: string; _creationTime: number }): string {
+  insert(table: string, value: Record<string, unknown>, keep?: { _id: string; _creationTime: number }, writes?: Set<string>): string {
     this.table(table);
     const id = keep?._id ?? newId();
     const { _id: _ignoredId, _creationTime: _ignoredTime, ...given } = value;
-    const fields = this.takeVectors(table, id, given, false);
+    const fields = this.takeVectors(table, id, protectCredential(table, given), false);
     this.sql.prepare("INSERT INTO _ids (id, tbl) VALUES (?, ?)").run(id, table);
     this.sql.prepare(`INSERT INTO ${docTable(table)} (_id, _creationTime, doc) VALUES (?, ?, ?)`)
       .run(id, keep?._creationTime ?? this.creationTime(), JSON.stringify(fields));
     this.touched(table, id);
+    if (table === "notes") noteWriteTags(writes, fields);
     return id;
   }
 
-  private write(id: string, value: Record<string, unknown>, replacing: boolean): string {
+  private write(id: string, value: Record<string, unknown>, replacing: boolean, writes?: Set<string>): string {
     const table = this.tableOf(id);
     const current = table ? this.row(table, id) : null;
     if (!table || !current) throw new Error(`Document ${id} does not exist.`);
     const { _id, _creationTime, ...fields } = replacing ? value : { ...current, ...value };
     // A field set to undefined is removed, as in Convex.
-    const kept = Object.fromEntries(Object.entries(this.takeVectors(table, id, fields, replacing)).filter(([, field]) => field !== undefined));
+    const kept = Object.fromEntries(Object.entries(this.takeVectors(table, id, protectCredential(table, fields), replacing)).filter(([, field]) => field !== undefined));
     this.sql.prepare(`UPDATE ${docTable(table)} SET doc = ? WHERE _id = ?`).run(JSON.stringify(kept), id);
     this.touched(table, id);
+    if (table === "notes") noteWriteTags(writes, current, kept);
     return table;
   }
 
-  patch(id: string, value: Record<string, unknown>): string {
-    return this.write(id, value, false);
+  patch(id: string, value: Record<string, unknown>, writes?: Set<string>): string {
+    return this.write(id, value, false, writes);
   }
 
-  replace(id: string, value: Record<string, unknown>): string {
-    return this.write(id, value, true);
+  replace(id: string, value: Record<string, unknown>, writes?: Set<string>): string {
+    return this.write(id, value, true, writes);
   }
 
-  delete(id: string): string {
+  delete(id: string, writes?: Set<string>): string {
     const table = this.tableOf(id);
     if (!table) throw new Error(`Document ${id} does not exist.`);
+    const current = table === "notes" ? this.row(table, id) : null;
     this.sql.prepare(`DELETE FROM ${docTable(table)} WHERE _id = ?`).run(id);
     this.sql.prepare("DELETE FROM _ids WHERE id = ?").run(id);
+    if (table === "notes") noteWriteTags(writes, current);
     this.touched(table, id);
     return table;
   }
@@ -423,8 +432,12 @@ export class Query implements AsyncIterable<Doc> {
     return this;
   }
 
-  private *run(limit?: number): Generator<Doc> {
-    this.reads?.add(this.table);
+  private *run(limit?: number, offset = 0): Generator<Doc> {
+    // Only the exact ordinary-note partition is narrower than a table read.
+    // Other queries (including search) keep their conservative table dependency.
+    const ordinary = this.table === "notes" && !this.search && this.indexFields?.[0] === "kind"
+      && this.bounds.some((bound) => bound.field === "kind" && bound.op === "eq" && bound.value === undefined);
+    this.reads?.add(ordinary ? ORDINARY_NOTES : this.table);
     const where: string[] = [];
     const params: SQLInputValue[] = [];
     const bounds = this.search ? this.search.filters : this.bounds;
@@ -437,7 +450,7 @@ export class Query implements AsyncIterable<Doc> {
     const dir = this.direction === "desc" ? "DESC" : "ASC";
     const orderBy = [...fields.map((field) => `${field === "_id" ? "_id" : extract(field)} ${dir}`), `_creationTime ${dir}`].join(", ");
     const pushLimit = !this.search && this.filters.length === 0 && limit !== undefined;
-    const sqlText = `SELECT _id, _creationTime, doc FROM ${docTable(this.table)}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${orderBy}${pushLimit ? ` LIMIT ${Math.max(0, Math.floor(limit))}` : ""}`;
+    const sqlText = `SELECT _id, _creationTime, doc FROM ${docTable(this.table)}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${orderBy}${pushLimit ? ` LIMIT ${Math.max(0, Math.floor(limit))} OFFSET ${Math.max(0, Math.floor(offset))}` : ""}`;
     const matches = (doc: Doc) => this.filters.every((expr) => Boolean(evaluate(expr, doc)));
 
     if (this.search) {
@@ -458,8 +471,10 @@ export class Query implements AsyncIterable<Doc> {
       return;
     }
     let count = 0;
+    let skipped = 0;
     for (const doc of this.store.rows(sqlText, params)) {
       if (!matches(doc)) continue;
+      if (!pushLimit && skipped++ < offset) continue;
       yield doc;
       if (limit !== undefined && ++count >= limit) return;
     }
@@ -483,11 +498,17 @@ export class Query implements AsyncIterable<Doc> {
 
   /** Cursor pagination by position in the ordered results, which is all Perry's callers need. */
   async paginate(options: { numItems: number; cursor: string | null }) {
-    const all = [...this.run()];
-    const start = options.cursor ? Number(options.cursor) || 0 : 0;
-    const page = all.slice(start, start + options.numItems);
-    const end = start + page.length;
-    return { page, isDone: end >= all.length, continueCursor: String(end) };
+    const start = options.cursor ? Math.max(0, Number(options.cursor) || 0) : 0;
+    const count = Math.max(1, Math.floor(options.numItems));
+    // Full-text search has its own bounded ranking window; preserve its cursor semantics.
+    if (this.search) {
+      const all = [...this.run()];
+      const page = all.slice(start, start + count);
+      return { page, isDone: start + page.length >= all.length, continueCursor: String(start + page.length) };
+    }
+    const found = [...this.run(count + 1, start)];
+    const page = found.slice(0, count);
+    return { page, isDone: found.length <= count, continueCursor: String(start + page.length) };
   }
 }
 

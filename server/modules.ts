@@ -13,6 +13,7 @@ import * as codex from "../convex/codex";
 import * as compaction from "../convex/compaction";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
+import * as connectorHealth from "../convex/connectorHealth";
 import * as contacts from "../convex/contacts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
@@ -23,6 +24,8 @@ import * as history from "../convex/history";
 import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
 import * as installation from "../convex/installation";
+import * as interactive from "../convex/interactive";
+import * as internet from "../convex/internet";
 import * as jobs from "../convex/jobs";
 import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
@@ -31,12 +34,17 @@ import * as lib_browser from "../convex/lib/browser";
 import * as lib_budget from "../convex/lib/budget";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_connected_error from "../convex/lib/connected-error";
+import * as lib_connection_health from "../convex/lib/connection-health";
+import * as lib_credential_encryption from "../convex/lib/credential-encryption";
 import * as lib_devices from "../convex/lib/devices";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
 import * as lib_graph from "../convex/lib/graph";
+import * as lib_internet from "../convex/lib/internet";
 import * as lib_library from "../convex/lib/library";
+import * as lib_meetings from "../convex/lib/meetings";
 import * as lib_notes from "../convex/lib/notes";
 import * as lib_pages from "../convex/lib/pages";
 import * as lib_price from "../convex/lib/price";
@@ -44,18 +52,24 @@ import * as lib_provenance from "../convex/lib/provenance";
 import * as lib_recall from "../convex/lib/recall";
 import * as lib_routing from "../convex/lib/routing";
 import * as lib_secrets from "../convex/lib/secrets";
+import * as lib_settle_traces from "../convex/lib/settle-traces";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_skills from "../convex/lib/skills";
 import * as lib_steps from "../convex/lib/steps";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
+import * as lib_turn_delivery from "../convex/lib/turn-delivery";
+import * as lib_turn_health from "../convex/lib/turn-health";
+import * as lib_turn_stream from "../convex/lib/turn-stream";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
 import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
+import * as lib_workspace from "../convex/lib/workspace";
 import * as library from "../convex/library";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
+import * as meetings from "../convex/meetings";
 import * as memories from "../convex/memories";
 import * as models from "../convex/models";
 import * as notes from "../convex/notes";
@@ -65,6 +79,8 @@ import * as pause from "../convex/pause";
 import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
 import * as projects from "../convex/projects";
+import * as queue from "../convex/queue";
+import * as reactions from "../convex/reactions";
 import * as recovery from "../convex/recovery";
 import * as routing from "../convex/routing";
 import * as runner from "../convex/runner";
@@ -72,10 +88,12 @@ import * as runs from "../convex/runs";
 import * as screen from "../convex/screen";
 import * as secrets from "../convex/secrets";
 import * as skills from "../convex/skills";
+import * as speech from "../convex/speech";
 import * as tasks from "../convex/tasks";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
+import * as turnStreams from "../convex/turnStreams";
 import * as updates from "../convex/updates";
 import * as usage from "../convex/usage";
 import * as vault from "../convex/vault";
@@ -83,6 +101,7 @@ import * as wake from "../convex/wake";
 import * as web from "../convex/web";
 import * as whatsapp from "../convex/whatsapp";
 import * as work from "../convex/work";
+import * as workspace from "../convex/workspace";
 
 export const modules: Record<string, Record<string, unknown>> = {
   "agentStore": agentStore,
@@ -96,6 +115,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "compaction": compaction,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
+  "connectorHealth": connectorHealth,
   "contacts": contacts,
   "conversations": conversations,
   "crons": crons,
@@ -106,6 +126,8 @@ export const modules: Record<string, Record<string, unknown>> = {
   "http": http,
   "ingest": ingest,
   "installation": installation,
+  "interactive": interactive,
+  "internet": internet,
   "jobs": jobs,
   "lib/activity": lib_activity,
   "lib/agent": lib_agent,
@@ -114,12 +136,17 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/budget": lib_budget,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
+  "lib/connected-error": lib_connected_error,
+  "lib/connection-health": lib_connection_health,
+  "lib/credential-encryption": lib_credential_encryption,
   "lib/devices": lib_devices,
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,
   "lib/graph": lib_graph,
+  "lib/internet": lib_internet,
   "lib/library": lib_library,
+  "lib/meetings": lib_meetings,
   "lib/notes": lib_notes,
   "lib/pages": lib_pages,
   "lib/price": lib_price,
@@ -127,18 +154,24 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/recall": lib_recall,
   "lib/routing": lib_routing,
   "lib/secrets": lib_secrets,
+  "lib/settle-traces": lib_settle_traces,
   "lib/shortcuts": lib_shortcuts,
   "lib/skills": lib_skills,
   "lib/steps": lib_steps,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
+  "lib/turn-delivery": lib_turn_delivery,
+  "lib/turn-health": lib_turn_health,
+  "lib/turn-stream": lib_turn_stream,
   "lib/turnLimits": lib_turnLimits,
   "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,
+  "lib/workspace": lib_workspace,
   "library": library,
   "mcp": mcp,
   "media": media,
+  "meetings": meetings,
   "memories": memories,
   "models": models,
   "notes": notes,
@@ -148,6 +181,8 @@ export const modules: Record<string, Record<string, unknown>> = {
   "persona": persona,
   "pet": pet,
   "projects": projects,
+  "queue": queue,
+  "reactions": reactions,
   "recovery": recovery,
   "routing": routing,
   "runner": runner,
@@ -155,10 +190,12 @@ export const modules: Record<string, Record<string, unknown>> = {
   "screen": screen,
   "secrets": secrets,
   "skills": skills,
+  "speech": speech,
   "tasks": tasks,
   "titles": titles,
   "todos": todos,
   "tools": tools,
+  "turnStreams": turnStreams,
   "updates": updates,
   "usage": usage,
   "vault": vault,
@@ -166,4 +203,5 @@ export const modules: Record<string, Record<string, unknown>> = {
   "web": web,
   "whatsapp": whatsapp,
   "work": work,
+  "workspace": workspace,
 };

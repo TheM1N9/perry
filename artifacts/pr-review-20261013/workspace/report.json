@@ -1,0 +1,19 @@
+{
+  "passed": [
+    "fresh chat, unrelated neighbours, project scope and credential access isolation",
+    "registered intermediates, explicit Library attachment and non-destructive pin/hide",
+    "background outputs return only to origin and live task state uses the existing lifecycle",
+    "share_file registers stable artifact/run identity and failed files never become ready",
+    "missing local/stored bytes recover, repeated registration/backfill deduplicates and secrets stay hidden",
+    "bounded indexed pagination and type filters visit a large collection without duplicates",
+    "database/runner restart preserves membership and view metadata"
+  ],
+  "fixture": {
+    "home": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-workspace-verification-review-fba8a17b2e5246a1a0ce20f742eb44a7",
+    "chat": "afg6nsfdev9r6b8kgx43nfh70v",
+    "project": "wqgxxbp9j6xnjt6nbrbcaty0vn",
+    "otherChat": "kffqf7rtkvpd1xw7ak3y0xdqyd",
+    "version": "9gx27qdnna3dnkvqjjbqnzgkb0"
+  },
+  "createdAt": "2026-10-13T06:04:33.802Z"
+}

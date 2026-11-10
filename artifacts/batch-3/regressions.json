@@ -1,0 +1,487 @@
+{
+  "queue": {
+    "scope": "Actual Runtime + native SQLite; integrated checkout sources; no source overlay; synthetic homes only; scheduler stopped; no network/engine/bootstrap",
+    "checks": [
+      {
+        "name": "parallel ordinary/background admission admits exactly 10, refuses 11th with clear detail",
+        "passed": true
+      },
+      {
+        "name": "dashboard outbox reserves 10 slots; handoff replaces its slot and duplicate enqueue is idempotent",
+        "passed": true
+      },
+      {
+        "name": "expired identical outbox prompt: handoff keeps waiting/pending at 10; refusal unchanged; removal releases exactly one",
+        "passed": true
+      },
+      {
+        "name": "matching duplicate fresh prompts consumes exactly one reservation and unrelated prompts cannot borrow capacity",
+        "passed": true
+      },
+      {
+        "name": "concurrent same-run durable replay returns one id at capacity including after removal",
+        "passed": true
+      },
+      {
+        "name": "steers reserve fallback capacity; repeated fallback/recovery never duplicates",
+        "passed": true
+      },
+      {
+        "name": "retry and compact cannot bypass full queue, retry remains available after a slot is freed",
+        "passed": true
+      },
+      {
+        "name": "owner/chat authorization, idempotent removal, spans closed, pending count exact and unrelated running turn untouched",
+        "passed": true
+      },
+      {
+        "name": "claim wins removal race without stop; removal wins claim race without running",
+        "passed": true
+      },
+      {
+        "name": "legacy overfull steer fallback terminates only its own message and schedules recovery finalization",
+        "passed": true
+      },
+      {
+        "name": "backend pending messages expose per-message queue identity only before claim and disappear after removal",
+        "passed": true
+      },
+      {
+        "name": "delivered/finalizing queued anomalies cannot be removed",
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "notesMixedEvents": {
+    "passed": true,
+    "checks": [
+      {
+        "case": "240 Brain bodies, two ordinary notes",
+        "decodedRows": 2,
+        "reads": [
+          "projects",
+          "notes:ordinary"
+        ],
+        "indexPlan": [
+          "SEARCH doc_notes USING INDEX i_notes_by_kind (<expr>=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ]
+      },
+      {
+        "case": "real assistant journal append via Runtime, mutation writes and SSE",
+        "listRunsBefore": 7,
+        "listRunsAfter": 7,
+        "journalRevision": 2,
+        "writes": [
+          "notes",
+          "notes:scoped-write",
+          "memories"
+        ]
+      },
+      {
+        "case": "preview, content search, revision conflict, pins, project and owner access",
+        "passed": true
+      },
+      {
+        "case": "empty-list insert, kind transitions, replace, delete, rollback and broad import event",
+        "passed": true
+      },
+      {
+        "case": "merged journal and broad-import event refreshes Notes",
+        "productionCoalescing": false,
+        "separateEvents": [
+          [
+            "notes",
+            "notes:scoped-write",
+            "memories"
+          ],
+          [
+            "notes",
+            "notes:ordinary"
+          ]
+        ],
+        "mergedTags": [
+          "notes",
+          "notes:scoped-write",
+          "memories",
+          "notes:ordinary"
+        ],
+        "listRunsBefore": 26,
+        "listRunsAfterMerged": 27,
+        "cachedAfterMerged": 3,
+        "databaseNotes": 3,
+        "broadOnlyFallbackAlsoPassed": true
+      }
+    ],
+    "listRuns": 28,
+    "events": [
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary",
+        "memories"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary",
+        "memories"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "memories"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary",
+        "memories"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary",
+        "memories"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary"
+      ],
+      [
+        "memories",
+        "notes",
+        "notes:scoped-write",
+        "notes:ordinary"
+      ],
+      [
+        "notes",
+        "notes:ordinary"
+      ],
+      [
+        "notes",
+        "notes:scoped-write",
+        "memories"
+      ],
+      [
+        "notes",
+        "notes:ordinary"
+      ]
+    ],
+    "calls": [
+      "notes:list",
+      "notes:list",
+      "notes:create",
+      "notes:list",
+      "notes:list",
+      "notes:create",
+      "notes:list",
+      "notes:list",
+      "notes:updateForAgent",
+      "notes:save",
+      "notes:list",
+      "notes:list",
+      "notes:pinForAgent",
+      "notes:list",
+      "notes:list",
+      "notes:move",
+      "notes:list",
+      "notes:list",
+      "fixture:kind",
+      "notes:list",
+      "notes:list",
+      "fixture:kind",
+      "notes:list",
+      "notes:list",
+      "fixture:kind",
+      "notes:list",
+      "notes:list",
+      "fixture:replace",
+      "notes:list",
+      "notes:list",
+      "notes:remove",
+      "notes:list",
+      "notes:list",
+      "notes:list",
+      "notes:list"
+    ]
+  },
+  "connections": {
+    "passed": true,
+    "checks": [
+      "never-connected does not create expired health",
+      "router helpers without metadata retain execution and never guess account health",
+      "revocation pins and marks only primary; response sanitized; UI account data distinguishes alternate",
+      "pending reconnect retains health",
+      "ACTIVE with OAuth redirect remains unconfirmed and retains health",
+      "wrong toolkit and foreign account cannot refresh",
+      "successful exact reconnect clears stale health and rejects older failure",
+      "401, 403, 429, 503, cause-chain outage, unrelated expiry never mark auth expired",
+      "thrown explicit invalid_grant persists account health",
+      "successful pinned execution clears old auth health",
+      "successful read-only identity probe clears recovered account",
+      "disconnect removes exact health and preserves alternate",
+      "internetRead records exact account, clears on success, and prioritizes rate limit/outage over expiry prose",
+      "health has no provider payload; network attempts zero"
+    ],
+    "networkAttempts": 0,
+    "sqlite": "memory",
+    "scheduler": "stopped before mutations",
+    "sdk": "fake; installed interface inspected",
+    "schema": "integrated source; no overlay"
+  },
+  "streamLifecycle": {
+    "passed": true,
+    "isolation": {
+      "syntheticHome": "W:\\Developer-w\\m1n9\\perry\\.batch-work\\batch-2\\238\\fixture",
+      "schedulerStopped": true,
+      "normalBootstrap": false,
+      "realNetwork": false,
+      "sourceMode": "actual-integrated-source"
+    },
+    "cases": [
+      "Serialized ambiguous-commit retry with newer text, concurrent flushes, rewrite, gap/negative offsets, ownership/dashboard auth",
+      "Legacy partial fallback and cumulative-snapshot runner compatibility",
+      "Footer and saved-secret redaction across chunks; vault scrubs raw chunks without changing source offset; later saved-value reads hide split secrets",
+      "Cancellation partial fallback, finalization replay/idempotency, terminal delta rejection and trace settlement",
+      "Error partial/code, no stream-driven heartbeat, genuine active-turn check-in, recovery abandoned partial",
+      "Limit refusal preserves retry grace; overdue recovery owns finalization and rejects a late retry",
+      "Terminal finalization removes stream metadata/chunks for stopped, failed, recovered, Telegram, WhatsApp and successful turns; response/history/replay preserved before orphan pruning",
+      "Telegram draft send/edit/finalize preserves message ID without heavy turn writes; redaction/footer; WhatsApp final outbox and finalization replay",
+      "Orphan stream cleanup and 100k body cap",
+      "Held Telegram first-send/edit across finish/finalize, queued terminal draft, ambiguous reset retry after real vault scrub",
+      "SQLite close/reopen preserves append body; restart error fallback and finalization replay"
+    ],
+    "growth": [
+      {
+        "characters": 5000,
+        "deltaCharacters": 5000,
+        "flushes": 25,
+        "metadataReruns": 0,
+        "streamReruns": 25,
+        "bytes": 7939,
+        "writes": [
+          {
+            "tbl": "turnStreamChunks",
+            "writes": 25,
+            "bytes": 6568
+          },
+          {
+            "tbl": "turnStreams",
+            "writes": 26,
+            "bytes": 1371
+          }
+        ],
+        "metadataReadTables": [
+          "conversations",
+          "runs",
+          "codexTurns",
+          "runners"
+        ]
+      },
+      {
+        "characters": 10000,
+        "deltaCharacters": 10000,
+        "flushes": 50,
+        "metadataReruns": 0,
+        "streamReruns": 50,
+        "bytes": 15840,
+        "writes": [
+          {
+            "tbl": "turnStreamChunks",
+            "writes": 50,
+            "bytes": 13143
+          },
+          {
+            "tbl": "turnStreams",
+            "writes": 51,
+            "bytes": 2697
+          }
+        ],
+        "metadataReadTables": [
+          "conversations",
+          "runs",
+          "codexTurns",
+          "runners"
+        ]
+      },
+      {
+        "characters": 20000,
+        "deltaCharacters": 20000,
+        "flushes": 100,
+        "metadataReruns": 0,
+        "streamReruns": 100,
+        "bytes": 31740,
+        "writes": [
+          {
+            "tbl": "turnStreamChunks",
+            "writes": 100,
+            "bytes": 26343
+          },
+          {
+            "tbl": "turnStreams",
+            "writes": 101,
+            "bytes": 5397
+          }
+        ],
+        "metadataReadTables": [
+          "conversations",
+          "runs",
+          "codexTurns",
+          "runners"
+        ]
+      }
+    ],
+    "delivery": [
+      {
+        "method": "sendMessage",
+        "text": "Reply [saved in Logins & secrets]"
+      },
+      {
+        "method": "editMessageText",
+        "text": "Reply [saved in Logins & secrets]",
+        "messageId": 238
+      },
+      {
+        "method": "editMessageText",
+        "text": "Reply [saved in Logins &amp; secrets]\n\n<i>Stopped.</i>",
+        "messageId": 238
+      },
+      {
+        "method": "sendMessage",
+        "text": "Partial draft"
+      },
+      {
+        "method": "editMessageText",
+        "text": "Final answer",
+        "messageId": 238
+      },
+      {
+        "method": "sendMessage",
+        "text": "Partial draft"
+      },
+      {
+        "method": "editMessageText",
+        "text": "Partial draft",
+        "messageId": 238
+      },
+      {
+        "method": "editMessageText",
+        "text": "Final answer",
+        "messageId": 238
+      },
+      {
+        "method": "sendMessage",
+        "text": "Final answer"
+      },
+      {
+        "method": "sendMessage",
+        "text": "Final answer"
+      },
+      {
+        "method": "sendMessage",
+        "text": "Final answer"
+      },
+      {
+        "method": "sendMessage",
+        "text": "Recursive draft"
+      },
+      {
+        "method": "editMessageText",
+        "text": "Final recursive answer",
+        "messageId": 238
+      }
+    ],
+    "byteMetric": "Actual SQLite INSERT/UPDATE JSON BLOB payload bytes via triggers; excludes page/WAL/index amplification and fixture setup.",
+    "intervals": [
+      {
+        "length": 0,
+        "milliseconds": 120
+      },
+      {
+        "length": 5000,
+        "milliseconds": 520
+      },
+      {
+        "length": 10000,
+        "milliseconds": 920
+      },
+      {
+        "length": 20000,
+        "milliseconds": 1720
+      },
+      {
+        "length": 100000,
+        "milliseconds": 1800
+      }
+    ],
+    "telegramRaces": [
+      {
+        "method": "sendMessage",
+        "prematureFinalization": false,
+        "terminalLast": true,
+        "duplicateFirstSend": false
+      },
+      {
+        "method": "editMessageText",
+        "prematureFinalization": false,
+        "terminalLast": true,
+        "duplicateFirstSend": false
+      },
+      {
+        "method": "failedSend",
+        "prematureFinalization": false,
+        "terminalLast": true,
+        "duplicateFirstSend": false
+      },
+      {
+        "method": "hangingSend",
+        "prematureFinalization": false,
+        "terminalLast": true,
+        "duplicateFirstSend": false,
+        "aborted": true,
+        "milliseconds": 15026
+      },
+      {
+        "method": "rateLimitedSend",
+        "prematureFinalization": false,
+        "terminalLast": true,
+        "duplicateFirstSend": false,
+        "aborted": true,
+        "milliseconds": 15042
+      }
+    ],
+    "recursiveDeliveryRejectedWithoutDeadlock": true,
+    "resetAfterScrub": {
+      "visible": "Reset [saved in Logins & secrets] continued",
+      "persistedSecretReintroduced": false
+    },
+    "queryCalls": {
+      "dashboard:getChat": 9,
+      "turnStreams:getChatStream": 184,
+      "turnStreams:append": 175
+    }
+  }
+}

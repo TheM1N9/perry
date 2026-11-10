@@ -161,9 +161,11 @@ export const getDefaultEngine = internalQuery({
  * was routed to, among those that can be locked down for it (routing.forGuest).
  * Unset when there is neither: Perry asks.
  */
-export async function engineFor(ctx: Parameters<typeof read>[0], item?: { engine?: EngineKind; contactId?: unknown } | null): Promise<EngineKind | undefined> {
+export async function engineFor(ctx: QueryCtx, item?: { engine?: EngineKind; contactId?: unknown; taskId?: Doc<"conversations">["taskId"] } | null): Promise<EngineKind | undefined> {
   if (item?.contactId) return item.engine;
-  return item?.engine ?? await defaultEngine(ctx);
+  if (item?.engine) return item.engine;
+  const task = item?.taskId ? await ctx.db.get(item.taskId) : null;
+  return task?.pick?.engine ?? task?.route?.engine ?? await defaultEngine(ctx);
 }
 
 /**

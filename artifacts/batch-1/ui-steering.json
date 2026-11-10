@@ -1,0 +1,20 @@
+{
+  "after": [
+    {
+      "requestId": "957dbf9c-de01-467f-a30c-9cc5daa59d37",
+      "text": "Use a compact table and keep the collected inputs.",
+      "deliveryId": "c95r51hfncjqzakdbchxgkggb3",
+      "createdAt": 1792179273507,
+      "state": "applied"
+    }
+  ],
+  "before": [
+    {
+      "requestId": "957dbf9c-de01-467f-a30c-9cc5daa59d37",
+      "text": "Use a compact table and keep the collected inputs.",
+      "deliveryId": "c95r51hfncjqzakdbchxgkggb3",
+      "createdAt": 1792179273507,
+      "state": "pending"
+    }
+  ]
+}

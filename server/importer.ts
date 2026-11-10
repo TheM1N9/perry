@@ -1,3 +1,4 @@
+import { ORDINARY_NOTES } from "../lib/notes-read-dependencies";
 import { readRunnerConfig } from "../runner/home";
 import type { Doc } from "./db";
 import type { Runtime } from "./runtime";
@@ -128,6 +129,6 @@ export async function importConvexExport(runtime: Runtime, path: string, options
     await runtime.importFile(file._id, entry.read(), typeof file.contentType === "string" ? file.contentType : undefined, file._creationTime);
     summary.files++;
   }
-  runtime.events.emit("change", [...tables, "agentThreads", "agentMessages"]);
+  runtime.events.emit("change", [...tables, "agentThreads", "agentMessages", ...(tables.includes("notes") ? [ORDINARY_NOTES] : [])]);
   return summary;
 }

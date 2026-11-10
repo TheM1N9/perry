@@ -1,0 +1,35 @@
+{
+  "checks": {
+    "slowReaderKeepsLatestFrame": true,
+    "lastReaderStopsCast": true,
+    "cancelDuringStatusStopsPolling": true,
+    "oldFrameNeverGetsNewIdentity": true,
+    "oneCastForConcurrentReaders": true,
+    "oneReaderLeavingKeepsOther": true,
+    "allReadersLeavingStopSharedCast": true,
+    "alreadyAbortedCloses": true
+  },
+  "notes": {
+    "slowReaderKeepsLatestFrame": {
+      "first": "state",
+      "second": "599"
+    },
+    "lastReaderStopsCast": {
+      "listeners": 0,
+      "active": 0
+    },
+    "cancelDuringStatusStopsPolling": {
+      "before": 2,
+      "after": 2
+    },
+    "oldFrameNeverGetsNewIdentity": {
+      "stale": false,
+      "fresh": true
+    },
+    "oneCastForConcurrentReaders": {
+      "maxActive": 1,
+      "starts": 1
+    }
+  },
+  "ok": true
+}

@@ -142,12 +142,12 @@ await check("service plans", () => {
   // A logon task gets the owner's own PATH, so serviceContext carries none on Windows.
   const windows = servicePlan({ ...nasty("win32"), env: { PERRY_CODEX_SANDBOX: "workspace-write" } });
   const [launcher, task] = windows.files;
-  expect(launcher.content.includes(`set "PERRY_CODEX_SANDBOX=workspace-write"`), "launcher does not carry PERRY_CODEX_SANDBOX");
-  expect(launcher.content.includes(`cd /d "C:\\Users\\O'Neil Müller\\code\\me bot 100%% & $HOME"`), `launcher cd: ${launcher.content}`);
-  expect(launcher.content.includes(`\\scripts\\perry.ts" "run" >> "C:\\Users\\O'Neil Müller\\.perry\\logs\\runner.log" 2>&1`), "launcher does not run perry run, or does not log");
-  expect(launcher.content.includes(`set "PERRY_SERVICE_PID_FILE=C:\\Users\\O'Neil Müller\\.perry\\service\\runner.pid"`), "launcher sets no PID file");
+  expect(launcher.content.includes(`<Variable name="PERRY_CODEX_SANDBOX">workspace-write</Variable>`), "launcher does not carry PERRY_CODEX_SANDBOX");
+  expect(launcher.content.includes(`<WorkingDirectory>C:\\Users\\O&apos;Neil Müller\\code\\me bot 100% &amp; $HOME</WorkingDirectory>`), `launcher cwd: ${launcher.content}`);
+  expect(launcher.content.includes(`\\scripts\\perry.ts&quot; run --background</Arguments>`) && launcher.content.includes("<LogFile>"), "launcher does not run perry run, or does not log");
+  expect(launcher.content.includes(`<Variable name="PERRY_SERVICE_PID_FILE">C:\\Users\\O&apos;Neil Müller\\.perry\\service\\runner.pid</Variable>`), "launcher sets no PID file");
   expect(task.encoding === "utf16le" && task.content.includes("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"), "task keeps the 72-hour limit");
-  expect(task.content.includes("<UserId>DESKTOP\\O&apos;Neil Müller</UserId>") && task.content.includes("O&apos;&apos;Neil"), "task XML is not escaped");
+  expect(task.content.includes("<UserId>DESKTOP\\O&apos;Neil Müller</UserId>") && task.content.includes("\\service\\runner.exe</Command>"), "task XML is not escaped or uses the old launcher");
   return { launchd: mac.files[0].path, systemd: linux.files[0].path, taskScheduler: TASK };
 });
 
@@ -178,7 +178,7 @@ await check("service lint", () => {
     expect(created.code === 0, `schtasks /Create: ${created.output}`);
     const read = exec(["schtasks", "/Query", "/TN", name, "/XML"]);
     exec(["schtasks", "/Delete", "/TN", name, "/F"]);
-    expect(read.code === 0 && read.output.includes("PT0S") && read.output.includes("powershell.exe"), `schtasks /Query: ${read.output}`);
+    expect(read.code === 0 && read.output.includes("PT0S") && read.output.includes("runner.exe"), `schtasks /Query: ${read.output}`);
     return "registered, read back and deleted";
   }
   if (!has("systemd-analyze")) return "skipped: no systemd-analyze";

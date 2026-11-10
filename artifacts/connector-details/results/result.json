@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "checks": [
+    "Existing identities gain name, email and username; full long identities survive; token fields excluded",
+    "Profiles cached between loads and retained after expiration",
+    "Dashboard shows account details, dates, separate workspaces, and duplicate connection controls",
+    "Search finds display names and workspaces",
+    "375px layout has no horizontal overflow, long identity remains complete, no browser errors"
+  ]
+}

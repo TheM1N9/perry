@@ -1,0 +1,26 @@
+[
+  {
+    "path": ".batch-work/batch-3/coordinator/ui/run-1792190035245",
+    "bytes": 5447369.0
+  },
+  {
+    "path": ".batch-work/batch-3/coordinator/ui/run-1792190332536",
+    "bytes": 5447369.0
+  },
+  {
+    "path": ".batch-work/batch-3/coordinator/node-compile-cache",
+    "bytes": 2270296.0
+  },
+  {
+    "path": ".batch-work/batch-2/238/fixture",
+    "bytes": null
+  },
+  {
+    "path": ".batch-work/batch-2/254/synthetic-home",
+    "bytes": null
+  },
+  {
+    "path": ".batch-work/batch-2/250/test-home",
+    "bytes": null
+  }
+]

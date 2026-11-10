@@ -1,0 +1,13 @@
+# Isolation failure inventory (recorded before E2E code)
+- Real home/config/credentials accidentally read by static imports: set synthetic PERRY_HOME, DB and key before dynamic imports; block network and child processes.
+- Normal bootstrap starts services/cron/models: import Runtime/schema/functions only, stop Runtime before mutation, no singleton/bootstrap.
+- Patches touch peer/shared files: the peer originally used proposal overlays; the final packaged harness imports integrated checkout sources directly, without applying or loading patches.
+- Scheduler executes fake tasks: keep stopped throughout; manually invoke terminal mutations only.
+- Shared SQLite connection bypasses transactions: fixture setup before concurrency; exercise actual Runtime mutation calls thereafter.
+- Admission overshoots under simultaneous sends, outbox handoff double-counts, pending steer fallback double-counts, stale fallback duplicates, retry at full queue overshoots, compact bypasses cap, repeated enqueue duplicates: assert each using real SQLite and actual function definitions.
+- Removal cross-chat/key/guest bypass; claim/removal race stops active work; repeat removal double-decrements; removal affects unrelated messages; removed run/spans stay open: assert status/run/chat isolation and transaction ordering.
+- Legacy overfull steer fallback crashes whole finalization: require terminal failure with standard finalization scheduling.
+- Evidence contains synthetic DB bulk or secrets: persist compact named results only; remove own fresh fixture home after closing SQLite.
+- UI cannot be exercised here without coordinator server: report explicitly unrun; inspect accessibility and supply exact shared integration hunks.
+- Backend projection could expose queued removal for running/applied/delivered messages or retain removed prompts: exercise getChatMessages before/after removal and claim; browser UI remains coordinator verification.
+- Integrated review: an expired outbox entry with identical text can precede a fresh matching reservation. Admission must subtract exactly the fresh entry actually removed, or fallback/retry admission can observe 11 durable waiting messages. Exercise expired duplicate + 10 fresh reservations, multiple fresh identical prompts, unrelated prompt at capacity, and concurrent same-run enqueue replay.

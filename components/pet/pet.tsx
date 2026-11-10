@@ -1,13 +1,13 @@
 "use client";
 
 import {
-  BookOpenIcon, BrainIcon, CheckIcon, ExternalLinkIcon, HourglassIcon, InboxIcon, ListTodoIcon, MessageCircleIcon, MoonIcon, NotebookPenIcon,
+  BookOpenIcon, BrainIcon, CheckIcon, EllipsisIcon, ExternalLinkIcon, HourglassIcon, InboxIcon, ListTodoIcon, MessageCircleIcon, MoonIcon, NotebookPenIcon,
   PaletteIcon, PencilIcon, SearchIcon, TerminalIcon, XIcon, type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "motion/react";
 import { catchError, type ErrorInfo } from "next/error";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
+import { useConnection, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { shownStep, type Pose } from "@/convex/lib/activity";
@@ -17,7 +17,10 @@ import { errorText, plural, useNow } from "@/lib/format";
 import { KEY_STORAGE, SessionContext, useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { countdown, dueLabel } from "@/lib/when";
+import { describe } from "@/convex/lib/shortcuts";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,6 +33,9 @@ import { Empty } from "./empty";
 import { PetNeedsYou } from "./needs-you";
 import { PetTip } from "./tip";
 import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
+import { useMeetings, type MeetingBridge } from "./meetings";
+import { applyWords, corrections, readWords, writeWords } from "./voice-words";
+import { clockOf } from "@/convex/lib/meetings";
 
 /**
  * Perry on the desktop: the platypus, standing in a corner of the screen on
@@ -51,7 +57,7 @@ import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
  */
 
 /** What the pet's window (pet/preload.cjs) lets this page do. */
-type Bridge = VoiceBridge & {
+type Bridge = VoiceBridge & MeetingBridge & {
   /** Whether the pointer is over something to click; elsewhere clicks pass through. */
   solid: (on: boolean) => void;
   /** Where he goes: his spot, the window's top-left corner with him in its bottom-right one, in screen points. */
@@ -95,6 +101,23 @@ const TAB_CLAIMS_MS = 1_500;
 /** A reply held up goes by itself once it has been up this long, and a little longer for each letter of it. */
 const REPLY_SHOWS_MS = 8_000;
 const REPLY_MS_PER_LETTER = 60;
+/** How talking works on this computer: the microphone, the sounds, whether what is said goes at once. */
+const VOICE_STORAGE = "perry.pet.voice";
+type LocalVoice = { microphone?: string; sounds: boolean; sendsAtOnce: boolean };
+const DEFAULT_VOICE: LocalVoice = { sounds: true, sendsAtOnce: true };
+/** Whether the owner has talked to him here, and how many times he has offered to show them. */
+const TRIED_STORAGE = "perry.pet.voiceTried";
+const OFFERS_STORAGE = "perry.pet.voiceOffers";
+const MOST_OFFERS = 3;
+/** Quiet for an hour: until when he keeps what can wait to himself. */
+const QUIET_STORAGE = "perry.pet.quietUntil";
+const QUIET_MS = 60 * 60_000;
+/** The server out of reach this long is worth saying; less is a blink. */
+const OFFLINE_AFTER_MS = 4_000;
+/** The least time between two of the same kind of passing remark. What it was about stays in its list. */
+const REMARK_EVERY_MS = { news: 30_000, added: 20_000, looked: 30_000 } as const;
+/** Work going on in another chat is mentioned for this long; after that, it is in that chat's list. */
+const AWAY_SHOWS_MS = 20_000;
 
 export function PetScreen() {
   const [key, setKey] = useState<string | null>(null);
@@ -190,10 +213,10 @@ function useClickThrough() {
 }
 
 type Tab = "chat" | "todos" | "needs";
-type Said = { title: string; detail?: string; until: number; onOpen?: () => void };
+type Said = { title: string; detail?: string; until: number; onOpen?: () => void; undo?: () => void; ambient?: boolean };
 /** The chat the pet last had open, so he picks up where you left off. */
 const CHAT_STORAGE = "perry.pet.chat";
-const ASKS = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain" } as const;
+const ASKS = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain", tool: "confirm a tool request", permission: "use additional computer access" } as const;
 /** A step that has taken this long shows its time. */
 const STEP_TIMER_MS = 5_000;
 
@@ -220,11 +243,46 @@ function Pet() {
   const pausedAt = pauseView?.paused?.at;
   const [pauseHidden, setPauseHidden] = useState<number | null>(null);
   const now = useNow(1000);
+  const meeting = useMeetings(key, now, Boolean(pausedAt));
+  const connection = useConnection();
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    if (connection === "connected") { setOffline(false); return; }
+    const timer = window.setTimeout(() => setOffline(true), OFFLINE_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [connection]);
+  const [localVoice, setLocalVoice] = useState<LocalVoice>(DEFAULT_VOICE);
+  const localVoiceNow = useRef(localVoice);
+  localVoiceNow.current = localVoice;
+  useEffect(() => {
+    try { setLocalVoice({ ...DEFAULT_VOICE, ...JSON.parse(window.localStorage.getItem(VOICE_STORAGE) ?? "{}") as Partial<LocalVoice> }); } catch { /* The defaults will do. */ }
+  }, []);
+  const changeVoice = useCallback((change: Partial<LocalVoice>) => {
+    const next = { ...localVoiceNow.current, ...change };
+    setLocalVoice(next);
+    window.localStorage.setItem(VOICE_STORAGE, JSON.stringify(next));
+  }, []);
+  const [quietUntil, setQuietUntil] = useState(0);
+  useEffect(() => { setQuietUntil(Number(window.localStorage.getItem(QUIET_STORAGE) ?? 0) || 0); }, []);
+  const quietFor = useCallback((until: number) => {
+    setQuietUntil(until);
+    window.localStorage.setItem(QUIET_STORAGE, String(until));
+  }, []);
+  // Whether to show him how to talk: assumed already shown until this computer says otherwise, so it never flashes up.
+  const [offering, setOffering] = useState(false);
+  const [teachKeys, setTeachKeys] = useState(false);
+  const noteTalked = useMutation(api.pet.heardVoice);
+  const listenKeyNow = useRef(meeting.hotkey);
+  listenKeyNow.current = meeting.hotkey;
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("chat");
-  const [chatId, setChatIdState] = useState<PetChatId>(null);
+  const [selectedChatId, setChatIdState] = useState<PetChatId>(null);
+  // A saved selection can belong to a deleted chat or a previous install.
+  // Check the live list before any query (or the panel) receives that id.
+  const chatId = selectedChatId && chats?.some((chat) => chat.id === selectedChatId) ? selectedChatId : null;
   const [draft, setDraft] = useState("");
   const petChat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
+  const petStream = useQuery(api.turnStreams.getChatStream, chatId ? { key, id: chatId } : "skip");
   // What he is doing, step by step: in his chat, and anywhere else (a job, a message on the phone).
   const activity = useQuery(api.dashboard.getActivity, chatId ? { key, id: chatId } : "skip");
   const elsewhere = useQuery(api.dashboard.getActivity, { key });
@@ -250,7 +308,8 @@ function Pet() {
   const unseen = useRef<Set<string> | null>(null);
   const news = useRef<{ ids: string[]; until: number } | null>(null);
   const writing = useRef<{ since: number; text: string } | null>(null);
-  const voice = useVoice(typeof window === "undefined" ? undefined : window.perryPet);
+  const voice = useVoice(typeof window === "undefined" ? undefined : window.perryPet, (result) => { void heardText(result); },
+    { language: meeting.language, microphone: localVoice.microphone, sounds: localVoice.sounds });
   // The Talk and Look hotkeys: the keys Settings has, taken up by his window, which says if another app has them.
   const shortcuts = useQuery(api.dashboard.getShortcuts, { key })?.shortcuts;
   const talkKeys = shortcuts?.talk;
@@ -261,6 +320,20 @@ function Pet() {
   const [lookKey, setLookKey] = useState<HotkeyState>({ hotkey: null, error: null });
   const lookKeyNow = useRef(lookKey);
   lookKeyNow.current = lookKey;
+  const pasteKeys = shortcuts?.paste;
+  const [pasteKey, setPasteKey] = useState<HotkeyState>({ hotkey: null, error: null });
+  const pasteKeyNow = useRef(pasteKey);
+  pasteKeyNow.current = pasteKey;
+  /** What he last wrote down into the box, to learn from if it is corrected before it goes. */
+  const wroteDown = useRef("");
+  const [learned, setLearned] = useState<{ words: Array<[string, string]> } | null>(null);
+  /** The first time he hears the owner: said in his chat too, since the hotkey has it open and bubbles wait behind it. */
+  const [firstWords, setFirstWords] = useState(false);
+  useEffect(() => {
+    if (!firstWords) return;
+    const timer = window.setTimeout(() => setFirstWords(false), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [firstWords]);
   /** A picture of the screen waiting in his chat's box, to check before it goes with the question. */
   const [shot, setShot] = useState<Shot | null>(null);
   const idleNow = useRef(0);
@@ -270,13 +343,29 @@ function Pet() {
   const busy = useRef(false);
   busy.current = voice.state !== "idle";
 
-  const say = useCallback((title: string, detail?: string, ms = 3500, onOpen?: () => void) => setSaid({ title, detail, until: Date.now() + ms, onOpen }), []);
+  const say = useCallback((title: string, detail?: string, ms = 3500, onOpen?: () => void, more?: Pick<Said, "undo" | "ambient">) => setSaid({ title, detail, until: Date.now() + ms, onOpen, ...more }), []);
+  const remarked = useRef<Partial<Record<keyof typeof REMARK_EVERY_MS, number>>>({});
+  const [awaySeen, setAwaySeen] = useState<{ id: string; since: number } | null>(null);
+  /** Whether a passing remark of this kind may be made now; it counts as made if so. */
+  const mayRemark = useCallback((kind: keyof typeof REMARK_EVERY_MS) => {
+    const at = Date.now();
+    if (at - (remarked.current[kind] ?? 0) < REMARK_EVERY_MS[kind]) return false;
+    remarked.current[kind] = at;
+    return true;
+  }, []);
+  /** An answer sent without waiting: if it did not go through, he says so rather than leaving it looking done. */
+  const attempt = useCallback((sent: Promise<unknown>) => {
+    void sent.catch((cause: unknown) => say("That didn't go through", errorText(cause), 6000));
+  }, [say]);
   const setChatId = useCallback((id: PetChatId) => {
     setChatIdState(id);
     if (id) window.localStorage.setItem(CHAT_STORAGE, id);
     else window.localStorage.removeItem(CHAT_STORAGE);
   }, []);
   useEffect(() => { setChatIdState(window.localStorage.getItem(CHAT_STORAGE) as PetChatId); }, []);
+  useEffect(() => {
+    if (selectedChatId && chats && !chatId) setChatId(null);
+  }, [selectedChatId, chats, chatId, setChatId]);
   const askToOpen = useMutation(api.pet.askToOpen);
   const claimOpen = useMutation(api.pet.claimOpen);
   /**
@@ -340,8 +429,10 @@ function Pet() {
   }, [setPaused, say]);
   const updateNow = useCallback(() => {
     setUpdateNews(null);
-    void update().then((text) => say("See you in a few minutes", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
-  }, [update, say]);
+    // Downloading only fetches it; installing is what takes him away for a few minutes.
+    const installing = updates?.state === "ready";
+    void update().then((text) => say(installing ? "See you in a few minutes" : "Downloading the update", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
+  }, [update, say, updates?.state]);
 
   // Scheduled things run in the owner's timezone, which only this computer knows: Perry's own, not a laptop taken abroad.
   useEffect(() => {
@@ -368,7 +459,7 @@ function Pet() {
           hotkeyNow.current = { ...hotkeyNow.current, hold: talk.hold };
           setHotkey(hotkeyNow.current);
         }
-        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch((error: unknown) => {
+        void presence({ key, idleSeconds: seconds, talking: busy.current, ...reported(hotkeyNow.current, lookKeyNow.current, listenKeyNow.current, pasteKeyNow.current) }).catch((error: unknown) => {
           if (/dashboard key|removed from Perry/i.test(errorText(error))) setRefused(errorText(error));
         });
       }
@@ -384,10 +475,10 @@ function Pet() {
     const ids = new Set(board.open.map((todo) => todo.id as string));
     if (known.current) {
       const added = board.open.filter((todo) => !known.current!.has(todo.id) && todo.by === "assistant");
-      if (added.length) say(added.length === 1 ? `Perry added “${added[0].title}”` : `Perry added ${added.length} to-dos`, added[0].dueAt ? dueLabel(added[0].dueAt) : undefined, 5000, () => { setTab("todos"); setOpen(true); });
+      if (added.length && mayRemark("added")) say(added.length === 1 ? `Perry added “${added[0].title}”` : `Perry added ${added.length} to-dos`, added[0].dueAt ? dueLabel(added[0].dueAt) : undefined, 5000, () => { setTab("todos"); setOpen(true); }, { ambient: true });
     }
     known.current = ids;
-  }, [board, say]);
+  }, [board, say, mayRemark]);
 
   // Other chats with something new in them (a schedule's result, a reply you left for): he says where.
   // Several at once, or one while he is still saying another, are said together, so none is lost.
@@ -399,26 +490,28 @@ function Pet() {
       const fresh = chats.filter((chat) => chat.unseen && !unseen.current!.has(chat.id) && chat.id !== chatId);
       if (fresh.length) {
         const saying = news.current && news.current.until > Date.now() ? news.current.ids : [];
+        // Still saying one, this joins it; otherwise only so often, and the chat list keeps the rest.
+        if (!saying.length && !mayRemark("news")) { unseen.current = current; return; }
         const ids = [...fresh.map((chat) => chat.id as string), ...saying.filter((id) => current.has(id) && !fresh.some((chat) => chat.id === id))];
         const titles = ids.map((id) => chats.find((chat) => chat.id === id)?.title ?? "a chat");
         const first = fresh[0].id;
         news.current = { ids, until: Date.now() + 8000 };
-        say(ids.length === 1 ? `New in ${titles[0]}` : `New in ${ids.length} chats`, ids.length > 1 ? titles.join(", ") : undefined, 8000, () => openChat(first));
+        say(ids.length === 1 ? `New in ${titles[0]}` : `New in ${ids.length} chats`, ids.length > 1 ? titles.join(", ") : undefined, 8000, () => openChat(first), { ambient: true });
       }
     }
     unseen.current = current;
-  }, [chats, say, openChat, chatId]);
+  }, [chats, say, openChat, chatId, mayRemark]);
 
   // His own chat's reply, finished while you were not reading it: he holds it up until you do, or for a while (below).
   useEffect(() => {
     if (!petChat || !chatId) return;
     if (petChat.isRunning) {
-      writing.current = { since: writing.current?.since ?? Date.now(), text: petChat.streaming ?? writing.current?.text ?? "" };
+      writing.current = { since: writing.current?.since ?? Date.now(), text: petStream ?? writing.current?.text ?? "" };
       return;
     }
     if (writing.current && !reading) setReply({ id: chatId, since: writing.current.since, streamed: writing.current.text });
     writing.current = null;
-  }, [petChat, chatId, reading]);
+  }, [petChat, petStream, chatId, reading]);
   useEffect(() => { if (reading) setReply((held) => held && held.id === chatId ? null : held); }, [reading, chatId]);
   // The saved reply, kept with it: opening another chat first leaves it still held up, and still worded.
   useEffect(() => {
@@ -445,19 +538,60 @@ function Pet() {
   // Not when the hotkey stopped him: by the time what was said is written down, a press may have started him again.
   const { start: listen, stop: stopListening, cancel: cancelListening } = voice;
   const talk = useCallback((sends: boolean) => {
-    talkSends.current = sends;
+    talkSends.current = sends && localVoiceNow.current.sendsAtOnce;
     setTab("chat");
     setOpen(true);
     void listen().then((on) => { if (!on && sends) window.perryPet?.voiceDone(); });
   }, [listen]);
-  const heard = useCallback(async (byKeys = false) => {
+  const heardText = useCallback(async (result: Promise<string>) => {
     const sends = talkSends.current;
-    if (!byKeys) window.perryPet?.voiceDone();
-    const text = await stopListening();
-    if (!text) return;
+    const heardWords = await result;
+    if (!heardWords) return;
+    const text = applyWords(heardWords, readWords());
+    window.perryPet?.setLastHeard?.(text);
+    wroteDown.current = sends ? "" : text;
     setDraft((previous) => (previous.trim() ? `${previous.trimEnd()} ${text}` : text));
     if (sends) setSendSignal((count) => count + 1);
-  }, [stopListening]);
+    // The first time: he makes something of it, and the welcome page hears.
+    if (!window.localStorage.getItem(TRIED_STORAGE)) {
+      window.localStorage.setItem(TRIED_STORAGE, "1");
+      setOffering(false);
+      setFirstWords(true);
+      setCheer((count) => count + 1);
+      say("Well done!", "That's all it takes. Talk to me from anywhere.", 5000);
+      attempt(noteTalked({ key }));
+    }
+  }, [attempt, key, noteTalked, say]);
+  const retryHeard = useCallback(() => {
+    // Back in the box to check, rather than sent: it has been a while since it was said.
+    talkSends.current = false;
+    setTab("chat");
+    setOpen(true);
+    void heardText(voice.retry());
+  }, [heardText, voice.retry]);
+  /** Sent from the box: if what he wrote down was corrected first, he learns the spelling. */
+  const sentText = useCallback((text: string) => {
+    const heard = wroteDown.current;
+    wroteDown.current = "";
+    if (!heard) return;
+    const words = corrections(heard, text);
+    if (!words.length) return;
+    const saved = readWords();
+    for (const [from, to] of words) saved[from.toLowerCase()] = to;
+    writeWords(saved);
+    setLearned({ words });
+  }, []);
+  const unlearn = useCallback(() => {
+    if (!learned) return;
+    const saved = readWords();
+    for (const [from] of learned.words) delete saved[from.toLowerCase()];
+    writeWords(saved);
+    setLearned(null);
+  }, [learned]);
+  const heard = useCallback((byKeys = false) => {
+    if (!byKeys) window.perryPet?.voiceDone();
+    return heardText(stopListening());
+  }, [heardText, stopListening]);
   const stopTalking = useCallback((byKeys = false) => {
     cancelListening();
     if (!byKeys) window.perryPet?.voiceDone();
@@ -483,7 +617,7 @@ function Pet() {
       // At once, not at the next render: the Look keys' report carries these too.
       hotkeyNow.current = result;
       setHotkey(result);
-      void presence({ key, idleSeconds: idleNow.current, ...reported(result, lookKeyNow.current) }).catch(() => {});
+      void presence({ key, idleSeconds: idleNow.current, talking: busy.current, ...reported(result, lookKeyNow.current, listenKeyNow.current, pasteKeyNow.current) }).catch(() => {});
     }, () => {});
   }, [talkKeys, key, presence]);
   // The same for the Look keys. A pet window from before Look has none, and says it needs a restart.
@@ -494,10 +628,51 @@ function Pet() {
     void taking.then((result) => {
       lookKeyNow.current = result;
       setLookKey(result);
-      void presence({ key, idleSeconds: idleNow.current, ...reported(hotkeyNow.current, result) }).catch(() => {});
+      void presence({ key, idleSeconds: idleNow.current, talking: busy.current, ...reported(hotkeyNow.current, result, listenKeyNow.current, pasteKeyNow.current) }).catch(() => {});
     }, () => {});
   }, [lookKeys, key, presence]);
-
+  useEffect(() => {
+    if (!meeting.hotkey.hotkey && !meeting.hotkey.error) return;
+    void presence({ key, idleSeconds: idleNow.current, talking: busy.current, ...reported(hotkeyNow.current, lookKeyNow.current, meeting.hotkey, pasteKeyNow.current) }).catch(() => {});
+  }, [key, presence, meeting.hotkey]);
+  // The paste keys, as the others. A pet window from before them has none.
+  useEffect(() => {
+    const bridge = window.perryPet;
+    if (!bridge?.setPasteHotkey || !pasteKeys) return;
+    void bridge.setPasteHotkey(pasteKeys).then((result) => {
+      pasteKeyNow.current = result;
+      setPasteKey(result);
+      void presence({ key, idleSeconds: idleNow.current, talking: busy.current, ...reported(hotkeyNow.current, lookKeyNow.current, listenKeyNow.current, result) }).catch(() => {});
+    }, () => {});
+  }, [pasteKeys, key, presence]);
+  useEffect(() => window.perryPet?.onPasted?.((how) => {
+    if (how === "pasted") say("Pasted", undefined, 1500);
+    else if (how === "copied") say("Copied", "Paste it where you want it.", 3500);
+    else if (how === "nothing") say("Nothing to paste yet", "Talk to me first, then press this again.", 3500);
+    else say("I couldn't paste that", undefined, 3500);
+  }), [say]);
+  // Talking starts or stops: the server hears at once, so an update waits for the end of the sentence.
+  const talkingNow = voice.state !== "idle";
+  useEffect(() => {
+    void presence({ key, idleSeconds: idleNow.current, talking: talkingNow, ...reported(hotkeyNow.current, lookKeyNow.current, listenKeyNow.current, pasteKeyNow.current) }).catch(() => {});
+  }, [talkingNow, key, presence]);
+  // Show him how, a few times at most, until it has been tried or waved away.
+  useEffect(() => {
+    if (!window.perryPet || !hotkey.hotkey) return;
+    if (window.localStorage.getItem(TRIED_STORAGE)) { setTeachKeys((Number(window.localStorage.getItem(`${TRIED_STORAGE}.uses`)) || 0) < 5); return; }
+    setTeachKeys(true);
+    const offers = Number(window.localStorage.getItem(OFFERS_STORAGE)) || 0;
+    if (offers >= MOST_OFFERS) return;
+    window.localStorage.setItem(OFFERS_STORAGE, String(offers + 1));
+    setOffering(true);
+  }, [hotkey.hotkey]);
+  // Keycaps in the empty chat stop once they have been used a few times.
+  useEffect(() => {
+    if (voice.state !== "listening") return;
+    const uses = (Number(window.localStorage.getItem(`${TRIED_STORAGE}.uses`)) || 0) + 1;
+    window.localStorage.setItem(`${TRIED_STORAGE}.uses`, String(uses));
+    if (uses >= 5) setTeachKeys(false);
+  }, [voice.state]);
   // A picture of the screen: his chat opens with it in the box, ready for the question.
   const showShot = useCallback((taken: TakenShot) => {
     // What to allow on a Mac, and where, takes a while to read: it stays up longer.
@@ -526,13 +701,13 @@ function Pet() {
           if (!picture) throw new Error(taken.error ?? "The desktop pet could not take the picture.");
           const kept = await keepPicture(picture.image);
           await fulfilLook({ key, id: request.id, path: kept.path, name: picture.name });
-          say("I looked at your screen", request.why, 6000);
+          if (mayRemark("looked")) say("I looked at your screen", request.why, 6000, undefined, { ambient: true });
         } catch (error) {
           await fulfilLook({ key, id: request.id, error: error instanceof Error ? error.message : String(error) }).catch(() => {});
         }
       })();
     }
-  }, [lookRequests, key, fulfilLook, say]);
+  }, [lookRequests, key, fulfilLook, say, mayRemark]);
   const lookNow = useCallback(async () => {
     const taken = await window.perryPet?.look?.(true).catch((error: unknown) => ({ error: String(error) }));
     if (taken) showShot(taken);
@@ -553,10 +728,10 @@ function Pet() {
   }, [stopTalking]);
 
   const done = (todo: TodoView) => {
-    void setDone({ key, id: todo.id, done: true }).catch(() => {});
+    attempt(setDone({ key, id: todo.id, done: true }));
     setCheer((count) => count + 1);
     const streak = (board?.streak ?? 0) || 1;
-    say("Done!", streak > 1 ? `${plural(streak, "day")} in a row` : undefined, 2500);
+    say("Done!", streak > 1 ? `${plural(streak, "day")} in a row` : undefined, 5000, undefined, { undo: () => attempt(setDone({ key, id: todo.id, done: false })) });
   };
 
   // What he has to say, most pressing first: a computer waiting on you, something late, the last minutes
@@ -570,15 +745,43 @@ function Pet() {
   const step = working ? shownStep(activity, now) : undefined;
   const away = !petChat?.isRunning && elsewhere?.running && elsewhere.conversationId !== chatId ? elsewhere : undefined;
   const awayStep = shownStep(away, now);
+  // Only so long for each stretch of work elsewhere: it is the owner's attention, and the work is not waiting on it.
+  const awayId = away?.conversationId ?? null;
+  useEffect(() => { setAwaySeen(awayId ? { id: awayId, since: Date.now() } : null); }, [awayId]);
+  const awayShowing = Boolean(awaySeen && awaySeen.id === awayId && now - awaySeen.since < AWAY_SHOWS_MS);
   // How long the step has taken, once that is worth saying.
   const took = (since?: number) => since !== undefined && now - since >= STEP_TIMER_MS ? countdown(now - since) : undefined;
   let bubble: ReactNode = null;
   let urgent = false;
+  /** What he is saying can wait, so being quiet for an hour holds it back. */
+  let ambient = false;
   /** The reply's bubble, when that is what he is holding up, and for how long it stays. */
   let replyUp: { key: string; ms: number } | null = null;
-  if (said && said.until > now) {
+  if (meeting.state.phase !== "off" && !meeting.nativeControls) {
+    const listening = meeting.state.phase === "listening";
+    const warning = meeting.state.droppedMs ? "Some audio could not be transcribed." : meeting.state.system !== "live" ? /permission/i.test(meeting.state.system ?? "") ? meeting.state.system : "Microphone only. I can't hear the other side yet." : meeting.state.mic !== "live" ? "Computer sound only. I can't hear your microphone." : "Hearing you and the call. Only text is saved.";
+    bubble = <Bubble id="meeting" title={listening ? `Listening · ${clockOf(now - (meeting.state.startedAt ?? now))}` : meeting.state.phase === "starting" ? "Opening my ears…" : "Finishing the transcript…"}
+      detail={meeting.state.progress !== undefined ? `Downloading speech model: ${Math.round(meeting.state.progress * 100)}%` : warning}>
+      {listening && <BubbleButton primary onClick={meeting.stop}>Stop Notetaker</BubbleButton>}
+      {meeting.state.phase === "starting" && <BubbleButton onClick={meeting.stop}>Cancel</BubbleButton>}
+      {meeting.state.id && <BubbleButton onClick={() => openPath(`/meetings/${meeting.state.id}`)}>Notes</BubbleButton>}
+    </Bubble>;
+  } else if (meeting.state.phase === "off" && meeting.state.error) {
+    bubble = <Bubble title="I couldn't listen" detail={meeting.state.error} onClose={meeting.clearError} />;
+  } else if (meeting.upcoming || meeting.notice) {
+    const event = meeting.upcoming;
+    bubble = <Bubble id="meeting-upcoming" title={event ? `Starting soon: ${event.title}` : "On a call?"} detail="I can listen and write your notes." onClose={meeting.dismiss}>
+      {event?.joinUrl && <BubbleButton primary onClick={() => void meeting.start({ title: event.title, eventId: event.eventId, joinUrl: event.joinUrl })}>Join &amp; start Notetaker</BubbleButton>}
+      <BubbleButton primary={!event?.joinUrl} onClick={() => void meeting.start(event ? { title: event.title, eventId: event.eventId } : {})}>Start Notetaker</BubbleButton>
+      <BubbleButton onClick={meeting.dismiss}>Not now</BubbleButton>
+    </Bubble>;
+  } else if (said && said.until > now) {
     const onOpen = said.onOpen;
-    bubble = <Bubble title={said.title} detail={said.detail} onClose={() => setSaid(null)} onOpen={onOpen && (() => { setSaid(null); onOpen(); })} />;
+    const undo = said.undo;
+    ambient = Boolean(said.ambient);
+    bubble = <Bubble title={said.title} detail={said.detail} onClose={() => setSaid(null)} onOpen={onOpen && (() => { setSaid(null); onOpen(); })}>
+      {undo && <BubbleButton onClick={() => { setSaid(null); undo(); }}>Undo</BubbleButton>}
+    </Bubble>;
   } else if (pausedAt && pauseHidden !== pausedAt) {
     bubble = (
       <Bubble id="paused" title="I'm paused" detail="Nothing runs until you resume." onClose={() => setPauseHidden(pausedAt)}>
@@ -591,8 +794,8 @@ function Pet() {
     bubble = (
       <Bubble tone="ask" title={`${ask.runner} wants to ${ASKS[ask.kind]}`} code={ask.title}
         detail={[ask.chat && `In ${ask.chat.title}`, asking.length > 1 && `${asking.length - 1} more waiting`].filter(Boolean).join(" · ") || undefined}>
-        <BubbleButton primary onClick={() => void decide({ key, id: ask.id, approved: true })}>Approve</BubbleButton>
-        <BubbleButton onClick={() => void decide({ key, id: ask.id, approved: false })}>Decline</BubbleButton>
+        <BubbleButton primary onClick={() => attempt(decide({ key, id: ask.id, approved: true }))}>Approve</BubbleButton>
+        <BubbleButton onClick={() => attempt(decide({ key, id: ask.id, approved: false }))}>Decline</BubbleButton>
         <BubbleButton onClick={() => { setTab("needs"); setOpen(true); }}>More</BubbleButton>
       </Bubble>
     );
@@ -602,8 +805,8 @@ function Pet() {
     bubble = (
       <Bubble tone="late" title={todo.title} detail={`${countdown(now - todo.dueAt!)} late${late.length > 1 ? ` · ${late.length - 1} more` : ""}`}>
         <BubbleButton primary onClick={() => done(todo)}>Done</BubbleButton>
-        <BubbleButton onClick={() => void pushBack({ key, id: todo.id, minutes: 10 })}>10 min</BubbleButton>
-        <BubbleButton onClick={() => void pushBack({ key, id: todo.id, minutes: 60 })}>1 hour</BubbleButton>
+        <BubbleButton onClick={() => attempt(pushBack({ key, id: todo.id, minutes: 10 }))}>10 min</BubbleButton>
+        <BubbleButton onClick={() => attempt(pushBack({ key, id: todo.id, minutes: 60 }))}>1 hour</BubbleButton>
       </Bubble>
     );
   } else if (next && next.dueAt! - now <= HOLD_MIN * 60_000) {
@@ -611,7 +814,7 @@ function Pet() {
     bubble = (
       <Bubble tone="soon" title={next.title} detail={`in ${countdown(next.dueAt! - now)}`}>
         <BubbleButton primary onClick={() => done(next)}>Done</BubbleButton>
-        <BubbleButton onClick={() => void pushBack({ key, id: next.id, minutes: 10 })}>Later</BubbleButton>
+        <BubbleButton onClick={() => attempt(pushBack({ key, id: next.id, minutes: 10 }))}>Later</BubbleButton>
       </Bubble>
     );
   } else if (reply) {
@@ -622,13 +825,16 @@ function Pet() {
     const words = excerpt(saved?.text || reply.streamed || "…");
     const key = `${reply.id}:${reply.since}`;
     replyUp = { key, ms: REPLY_SHOWS_MS + (words.length + did.length) * REPLY_MS_PER_LETTER };
+    ambient = true;
     bubble = <Bubble title="Perry" detail={words} note={did || undefined} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)}
       onPointer={(on) => setPointerOn(on ? key : null)} />;
   } else if (working) {
-    const writing = step?.label === "Writing the reply" && petChat?.streaming;
-    bubble = <Bubble id="working" title={step?.label ?? "On it…"} detail={writing ? excerpt(petChat!.streaming!, true) : took(step?.since)} onOpen={() => openChat(chatId)} />;
-  } else if (away && awayStep) {
+    const writing = step?.label === "Writing the reply" && petStream;
+    ambient = true;
+    bubble = <Bubble id="working" title={step?.label ?? "On it…"} detail={writing ? excerpt(petStream!, true) : took(step?.since)} onOpen={() => openChat(chatId)} />;
+  } else if (away && awayStep && awayShowing) {
     const where = [away.chat && `In ${away.chat}`, took(awayStep.since)].filter(Boolean).join(" · ");
+    ambient = true;
     bubble = <Bubble id="elsewhere" title={awayStep.label} detail={where || undefined} onOpen={() => openChat(away.conversationId)} />;
   } else if (next) {
     const minutes = (next.dueAt! - now) / 60_000;
@@ -637,11 +843,13 @@ function Pet() {
       const mark = `${next.id}:${next.dueAt}:${step}`;
       if (!headsUp.current.has(mark)) headsUp.current.set(mark, now);
       if (now - headsUp.current.get(mark)! < HEADS_UP_SHOWS_MS) {
+        ambient = true;
         bubble = <Bubble title={`Psst: ${next.title}`} detail={`in ${Math.ceil(minutes)} min`} onClose={() => headsUp.current.set(mark, 0)} />;
       }
     }
   }
   if (!bubble && limit && limitNews?.mark === limit.mark && limitNews.until > now) {
+    ambient = true;
     bubble = (
       <Bubble id="limit" tone={limit.level === "out" ? "late" : "soon"} title={limit.title} detail={limit.detail} onClose={() => setLimitNews(null)}>
         <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings/usage"); }}>See usage</BubbleButton>
@@ -650,13 +858,26 @@ function Pet() {
     );
   }
   if (!bubble && updateNews && updateNews > now && updates && updateReady(updates)) {
+    ambient = true;
     bubble = (
-      <Bubble id="update" title="A new version of me is ready" detail={`${plural(updates.behind, "change")} · ${updates.latest?.title ?? ""}`} onClose={() => setUpdateNews(null)}>
-        <BubbleButton primary onClick={updateNow}>Update</BubbleButton>
+      <Bubble id="update" title={updates.state === "ready" ? "Update ready to install" : "An update is available"} detail={updates.state === "ready" ? "Reload when you’re ready to install it." : "Download it now and install when you’re ready."} onClose={() => setUpdateNews(null)}>
+        <BubbleButton primary onClick={updateNow}>{updates.state === "ready" ? "Reload to install" : "Download update"}</BubbleButton>
         <BubbleButton onClick={() => setUpdateNews(null)}>Later</BubbleButton>
       </Bubble>
     );
   }
+
+  // Nothing else to say, and talking has not been tried: he shows how, in the keys it is really on.
+  if (!bubble && offering && hotkey.hotkey) {
+    ambient = true;
+    bubble = (
+      <Bubble id="try-talking" title="Say hi to me" onClose={() => { window.localStorage.setItem(OFFERS_STORAGE, String(MOST_OFFERS)); setOffering(false); }}>
+        <p className="text-xs leading-relaxed text-muted-foreground">{hotkey.hold ? "Tap " : "Hold "}<Kbd>{describe(hotkey.hotkey, /Mac/.test(navigator.platform))}</Kbd>{hotkey.hold ? ", talk, and tap it again." : " and talk."}</p>
+      </Bubble>
+    );
+  }
+  const quiet = quietUntil > now;
+  if (ambient && quiet) { bubble = null; replyUp = null; }
 
   // The reply goes by itself once it has been up a while, counted while it shows and the pointer is not on it; it stays in
   // his chat. What waits on the owner (a yes, something late or about to be) has no such end.
@@ -672,9 +893,9 @@ function Pet() {
     cheerSeen.current = cheer;
   }
   // Paused, he is off duty whatever else goes on, unless something needs the owner now.
-  const asleep = pausedAt ? !urgent && !open : !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
+  const asleep = meeting.state.phase !== "off" ? false : pausedAt ? !urgent && !open : !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
   // Under his name: what he is doing, what waits on you, or a new version of him, a click away.
-  const status: ReactNode = pausedAt ? (
+  const status: ReactNode = offline ? "Can't reach Perry. Trying again…" : pausedAt ? (
     <>Paused ·{" "}
       <Button variant="link" className="h-auto p-0 text-xs" onClick={resume}>Resume</Button>
     </>
@@ -685,20 +906,30 @@ function Pet() {
           {limit.title}
         </Button>
       )
-      : updates?.state === "updating" ? "Updating myself; back in a few minutes"
-        : updates?.state === "waiting" ? "Updating once I'm done"
+      : updates?.state === "downloading" ? "Downloading update…"
+      : updates?.state === "updating" ? "Installing update…"
+        : updates?.state === "waiting" ? "The update will install when I’m done"
           : updateReady(updates) ? (
             <>A new version is ready ·{" "}
-              <Button variant="link" className="h-auto p-0 text-xs" onClick={updateNow}>Update</Button>
+              <Button variant="link" className="h-auto p-0 text-xs" onClick={updateNow}>{updates?.state === "ready" ? "Reload to install" : "Download update"}</Button>
+            </>
+          ) : quiet ? (
+            <>Quiet until {new Date(quietUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} ·{" "}
+              <Button variant="link" className="h-auto p-0 text-xs" onClick={() => quietFor(0)}>Undo</Button>
             </>
           ) : "Here when you need him";
   const panel = (
     <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)} onOpenApp={() => openPath("/")}
-      status={status} busy={Boolean(petChat?.isRunning)}>
+      status={meeting.state.phase === "listening" ? <Button variant="link" className="h-auto p-0 text-xs" onClick={meeting.stop}>Listening · {clockOf(now - (meeting.state.startedAt ?? now))} · Stop</Button> : status}
+      mode={meeting.state.phase === "listening" ? "call" : voice.state === "listening" ? "you" : petChat?.isRunning || voice.state === "transcribing" ? "busy" : "idle"}
+      menu={window.perryPet ? <PetMenu voice={localVoice} onVoice={changeVoice} quiet={quiet} onQuiet={() => quietFor(quiet ? 0 : Date.now() + QUIET_MS)} /> : undefined}>
+      {window.perryPet?.startMeeting && meeting.state.phase === "off" && <div className="flex justify-end px-3 pt-2"><Button variant="ghost" size="sm" onClick={() => void meeting.start()}>Start Notetaker</Button></div>}
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
           voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} hold={hotkey.hold ?? null} byHotkey={talkSends.current} sendSignal={sendSignal}
-          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={() => stopTalking()}
+          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={() => stopTalking()} onRetry={retryHeard} onSent={sentText} teachKeys={teachKeys}
+          notice={firstWords ? "Well done! That's all it takes. Talk to me from anywhere." : undefined}
+          learned={learned ? { text: learned.words.map(([, to]) => to).join(", "), undo: unlearn, dismiss: () => setLearned(null) } : null}
           shot={shot} onShot={setShot} onLook={window.perryPet?.look ? () => void lookNow() : undefined} lookKeys={lookKey.hotkey} />
       )
         : tab === "needs" ? <PetNeedsYou now={now} onChat={openChat} open={openPath} />
@@ -707,8 +938,8 @@ function Pet() {
   );
   return (
     <Stage bubble={open ? panel : bubble}>
-      <Body mood={voice.state === "listening" ? "listening" : urgent ? "urgent" : petChat?.isRunning || voice.state === "transcribing" ? "thinking" : "idle"}
-        level={voice.levels[voice.levels.length - 1]} asleep={asleep} cheer={cheer} badge={open ? 0 : needs} onTouch={wake}
+      <Body mood={meeting.state.phase === "listening" || voice.state === "listening" ? "listening" : urgent ? "urgent" : petChat?.isRunning || voice.state === "transcribing" ? "thinking" : "idle"}
+        asleep={asleep} cheer={cheer} badge={open ? 0 : needs} onTouch={wake}
         pose={voice.state === "idle" ? (step ?? awayStep)?.pose : undefined}
         onClick={() => setOpen((value) => !value)} />
     </Stage>
@@ -717,9 +948,9 @@ function Pet() {
 
 /** The hotkeys' standing, as presence reports it: the keys held, why not the ones asked for, and why the Talk keys can only be tapped. */
 const standing = (state: HotkeyState) => ({ ...(state.hotkey ? { hotkey: state.hotkey } : {}), ...(state.error ? { error: state.error } : {}) });
-const reported = (talk: HotkeyState, look: HotkeyState) => {
+const reported = (talk: HotkeyState, look: HotkeyState, listen: HotkeyState, paste: HotkeyState) => {
   const { hotkey, error } = standing(talk);
-  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), ...(talk.hold ? { hotkeyHold: talk.hold } : {}), keys: { look: standing(look) } };
+  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), ...(talk.hold ? { hotkeyHold: talk.hold } : {}), keys: { look: standing(look), listen: standing(listen), paste: standing(paste) } };
 };
 
 /** A line or two of a reply, for a bubble: its start, or while it is being written, its end. */
@@ -962,7 +1193,8 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
   // Asleep, he breathes, even with less motion asked for; awake, the bob and fidgets stop then.
   const bob = asleep ? { y: [0, 2, 0], scaleY: [1, 0.97, 1], transition: { duration: 4.5, repeat: Infinity, ease: "easeInOut" as const } }
     : reduced ? undefined
-      : mood === "urgent" ? { rotate: [0, -5, 5, -3, 0, 0, 0], y: [0, -4, 0, 0, 0, 0, 0], transition: { duration: 2.4, repeat: Infinity } }
+      // A few fidgets, then still: his bubble and badge go on saying it, and motion that never stops stops being seen.
+      : mood === "urgent" ? { rotate: [0, -5, 5, -3, 0, 0, 0], y: [0, -4, 0, 0, 0, 0, 0], transition: { duration: 2.4, repeat: 2 } }
         : mood === "thinking" ? { rotate: [0, 3, 0, -3, 0], transition: { duration: 2.8, repeat: Infinity, ease: "easeInOut" as const } }
           : mood === "listening" ? { y: -2, scale: 1 + level * 0.06, transition: { duration: 0.08 } }
           : { y: [0, -3, 0], transition: { duration: 3.2, repeat: Infinity, ease: "easeInOut" as const } };
@@ -986,7 +1218,7 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
         style={{ transformOrigin: "50% 100%" }}
       >
         <PlatypusArt
-          look={armed ? { x: 0, y: 1 } : mood === "thinking" ? { x: 0.5, y: -0.9 } : mood === "listening" ? { x: -0.2, y: 0.1 } : look}
+          look={armed ? { x: 0, y: 1 } : mood === "urgent" ? { x: -0.4, y: place.below ? 0.8 : -0.8 } : mood === "thinking" ? { x: 0.5, y: -0.9 } : mood === "listening" ? { x: -0.2, y: 0.1 } : look}
           lid={blink ? 1 : armed || mood === "urgent" || mood === "listening" ? 0.05 : 0.32}
           hatLift={tip ? 16 : mood === "listening" ? 6 + level * 12 : 0}
           asleep={asleep}
@@ -1040,10 +1272,13 @@ function Prop({ pose, reduced }: { pose: Pose; reduced: boolean }) {
 }
 
 /** His panel: a small Perry, with your chats, your to-dos, and what is waiting on you. */
-function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }: {
+function Panel({ tab, onTab, needs, status, mode, menu, onClose, onOpenApp, children }: {
   tab: Tab; onTab: (tab: Tab) => void; needs: number;
   /** What he is up to, under his name. */
-  status: ReactNode; busy: boolean;
+  status: ReactNode;
+  /** What he is doing, as the colour of his dot: listening to you, to a call, working on something, or nothing. */
+  mode: "you" | "call" | "busy" | "idle";
+  menu?: ReactNode;
   onClose: () => void; onOpenApp: () => void; children: ReactNode;
 }) {
   const tabs: Array<[Tab, string, typeof MessageCircleIcon]> = [["chat", "Chat", MessageCircleIcon], ["todos", "To-dos", ListTodoIcon], ["needs", "Needs you", InboxIcon]];
@@ -1064,12 +1299,13 @@ function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }
       <header className="flex items-center gap-2.5 px-3.5 pt-3 pb-2.5">
         <span className="relative shrink-0">
           <PlatypusArt head className="size-9 rounded-full bg-brand-soft" />
-          <span className={cn("absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-background", busy ? "animate-pulse bg-primary" : "bg-success")} aria-hidden />
+          <span className={cn("absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-background", mode === "call" ? "bg-destructive" : mode === "you" ? "animate-pulse bg-primary" : mode === "busy" ? "animate-pulse bg-muted-foreground" : "bg-success")} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-tight font-semibold tracking-[-0.01em]">Perry</p>
           <p className="truncate text-xs leading-tight text-muted-foreground" aria-live="polite">{status}</p>
         </div>
+        {menu}
         <PetTip label="Open Perry" side="bottom">
           <Button variant="ghost" size="icon" className="text-muted-foreground" aria-label="Open Perry" onClick={onOpenApp}><ExternalLinkIcon /></Button>
         </PetTip>
@@ -1093,12 +1329,52 @@ function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }
   );
 }
 
+/** His menu: how talking works on this computer, and keeping quiet for a while. */
+function PetMenu({ voice, onVoice, quiet, onQuiet }: { voice: LocalVoice; onVoice: (change: Partial<LocalVoice>) => void; quiet: boolean; onQuiet: () => void }) {
+  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const load = () => void navigator.mediaDevices.enumerateDevices().then((devices) => setMicrophones(devices.filter((device) => device.kind === "audioinput" && device.deviceId !== "default" && device.deviceId !== "communications")), () => {});
+  return (
+    <DropdownMenu onOpenChange={(open) => { if (open) load(); }}>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="text-muted-foreground" aria-label="Perry's menu" />}><EllipsisIcon /></DropdownMenuTrigger>
+      <DropdownMenuContent data-solid align="end" className="w-[252px]">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Microphone</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={voice.microphone ?? ""} onValueChange={(value) => onVoice({ microphone: (value as string) || undefined })}>
+            <DropdownMenuRadioItem value="">Computer's default</DropdownMenuRadioItem>
+            {microphones.map((device, index) => <DropdownMenuRadioItem key={device.deviceId} value={device.deviceId}><span className="truncate">{device.label || `Microphone ${index + 1}`}</span></DropdownMenuRadioItem>)}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem checked={voice.sounds} onCheckedChange={(checked) => onVoice({ sounds: Boolean(checked) })}>Sounds when listening</DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={voice.sendsAtOnce} onCheckedChange={(checked) => onVoice({ sendsAtOnce: Boolean(checked) })}>Send what I say right away</DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onQuiet}>{quiet ? "Stop being quiet" : "Quiet for an hour"}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function PetTodos({ board, now, onDone, onAdded }: {
   board: Board | undefined;
   now: number;
   onDone: (todo: TodoView) => void;
   onAdded: (title: string, dueAt?: number) => void;
 }) {
+  /** The to-do just removed, for a few seconds, with a way to bring it back. */
+  const [removed, setRemoved] = useState<{ title: string; undo: () => void } | null>(null);
+  useEffect(() => {
+    if (!removed) return;
+    const timer = window.setTimeout(() => setRemoved(null), 6_000);
+    return () => window.clearTimeout(timer);
+  }, [removed]);
+  /** What did not go through: said here, since his bubbles wait behind an open panel. */
+  const [problem, setProblem] = useState("");
+  const onProblem = setProblem;
+  useEffect(() => {
+    if (!problem) return;
+    const timer = window.setTimeout(() => setProblem(""), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [problem]);
   const key = useDashboardKey();
   const endDay = useMutation(api.todos.endDay);
   const [ending, setEnding] = useState(false);
@@ -1122,24 +1398,31 @@ function PetTodos({ board, now, onDone, onAdded }: {
               </p>
               <StreakBadge days={board.streak} />
             </div>
-            <TodoRows todos={board.open} now={now} compact onDone={onDone} />
+            <TodoRows todos={board.open} now={now} compact onDone={onDone} onProblem={onProblem} onRemoved={(todo, undo) => setRemoved({ title: todo.title, undo })} />
           </>)}
         {board && board.doneToday.length > 0 && (
           <div className="px-1 pt-1.5">
             <Button variant="ghost" size="xs" className="px-1.5 text-muted-foreground" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone}>
               <CheckIcon className="size-3.5 text-success" aria-hidden />{board.doneToday.length} done today
             </Button>
-            {showDone && <TodoRows todos={board.doneToday} now={now} compact />}
+            {showDone && <TodoRows todos={board.doneToday} now={now} compact onProblem={onProblem} onRemoved={(todo, undo) => setRemoved({ title: todo.title, undo })} />}
           </div>
         )}
       </div>
       </ScrollArea>
+      {problem && <p className="px-3.5 pb-2 text-xs text-destructive" role="alert">{problem}</p>}
+      {removed && (
+        <p className="truncate px-3.5 pb-2 text-xs text-muted-foreground" role="status">
+          Removed “{removed.title}”.{" "}
+          <button type="button" className="font-medium underline underline-offset-2 hover:text-foreground" onClick={() => { removed.undo(); setRemoved(null); }}>Undo</button>
+        </p>
+      )}
       {leftToday > 0 && (
         <footer className="flex h-11 items-center gap-1.5 border-t bg-muted/30 px-3">
           {ending ? (
             <>
-              <BubbleButton primary onClick={() => { void endDay({ key, action: "move" }); setEnding(false); }}>Move {leftToday} to tomorrow</BubbleButton>
-              <BubbleButton onClick={() => { void endDay({ key, action: "clear" }); setEnding(false); }}>Clear</BubbleButton>
+              <BubbleButton primary onClick={() => { void endDay({ key, action: "move" }).catch((cause: unknown) => onProblem(errorText(cause))); setEnding(false); }}>Move {leftToday} to tomorrow</BubbleButton>
+              <BubbleButton onClick={() => { void endDay({ key, action: "clear" }).catch((cause: unknown) => onProblem(errorText(cause))); setEnding(false); }}>Clear</BubbleButton>
               <span className="flex-1" />
               <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setEnding(false)}>Cancel</Button>
             </>

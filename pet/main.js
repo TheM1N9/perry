@@ -25,10 +25,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SCREEN_RECORDING_SETTINGS, capture, lookKey } from "./look.js";
 import { DEFAULT_HOTKEY, hotkeys, transcribe, warmUp } from "./voice.js";
+import { listener } from "./listen.js";
+import { noticeCalls } from "./notice-calls.js";
+import { meetingNotice } from "./meeting-notice.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..");
 const HOME = process.env.PERRY_HOME ?? join(homedir(), ".perry");
+const ISSUE_URL = "https://github.com/TheM1N9/perry/issues/new";
 const STATE = join(HOME, "pet.json");
 /** Where the voice model is kept once downloaded. */
 const MODELS = process.env.PERRY_MODELS_DIR ?? join(HOME, "models");
@@ -187,6 +191,20 @@ if (!app.requestSingleInstanceLock({ argv })) {
 } else {
   let win = null;
   let tray = null;
+  const healthStartedAt = Date.now();
+  let healthLabel = "Starting Perry…";
+  const refreshHealth = () => {
+    if (PAIRED) return;
+    let label = Date.now() - healthStartedAt > 90_000 ? "Perry is unavailable" : "Starting Perry…";
+    try {
+      const status = JSON.parse(readFileSync(join(HOME, "service", "status.json"), "utf8"));
+      if (Date.now() - status.at < 15_000 && Number.isSafeInteger(status.pid) && status.pid > 0) {
+        process.kill(status.pid, 0);
+        label = status.state === "ready" ? "Perry is ready" : status.state === "starting" ? "Starting Perry…" : "Perry is unavailable";
+      } else label = "Perry is unavailable";
+    } catch { if (existsSync(join(HOME, "service", "status.json"))) label = "Perry is unavailable"; }
+    if (label !== healthLabel) { healthLabel = label; refreshMenu(); }
+  };
   /** Ghost: every click goes through him, even on him. */
   let ghost = Boolean(readState().ghost);
   /** Whether his page last said the pointer is on him (pet:solid): his window takes clicks then. */
@@ -219,6 +237,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     // The size is set with the place each time: on a scaled screen, moving alone can grow a window a pixel at a time.
     win?.setBounds(framed.bounds);
     win?.webContents.send("pet:place", framed.place);
+    meetingPrompt?.moved();
   };
   /** Where his body's middle is on the screen, for the screen he is on. */
   const bodyPoint = () => ({ x: spot.x + SIZE.width - BODY.width / 2, y: spot.y + SIZE.height - BODY.height / 2 });
@@ -240,6 +259,35 @@ if (!app.requestSingleInstanceLock({ argv })) {
   /** The hotkey that shows him the screen (look.js), and why he does not have the one asked for. */
   let look = null;
   let lookError = null;
+  let meetings = null;
+  let listenKeys = null;
+  let pasteKeys = null;
+  /** The last thing said to him, for pasting into another app. Replaced each time; never written to disk. */
+  let lastHeard = "";
+  let stopNoticing = null;
+  let meetingPrompt = null;
+  const callMeeting = async (path, args) => {
+    const response = await net.fetch(`${BASE}/api/backend/call`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, args: { ...args, key: KEY } }), signal: AbortSignal.timeout(30_000),
+    });
+    const answer = await response.json();
+    if (!response.ok) throw new Error(answer.error ?? `Perry's server answered ${response.status}`);
+    return answer.value;
+  };
+  const listenNow = async (ask = {}) => {
+    show();
+    if (meetings?.state().phase !== "off") return meetings?.state();
+    // An invite can only open a known meeting host. Never allow an arbitrary URL from calendar text.
+    if (ask.joinUrl) {
+      let url;
+      try { url = new URL(ask.joinUrl); } catch { return { phase: "off", error: "That meeting link is invalid." }; }
+      if (url.protocol !== "https:" || url.username || url.password || !/(^|\.)(meet\.google\.com|zoom\.us|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com)$/i.test(url.hostname)) return { phase: "off", error: "That meeting link isn't supported." };
+      try { await shell.openExternal(url.href); }
+      catch { return { phase: "off", error: "The meeting link couldn't be opened. Join the call yourself, then choose Start Notetaker." }; }
+    }
+    return meetings.start(ask);
+  };
   const voiceTo = (type) => {
     // Talking to him brings him back if he was hidden, without taking the focus from what you are in.
     if (type === "start" && win && !win.isVisible()) show();
@@ -389,8 +437,10 @@ if (!app.requestSingleInstanceLock({ argv })) {
 
   function refreshMenu() {
     if (!tray) return;
+    tray.setToolTip(PAIRED ? "Perry" : healthLabel);
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: "Perry", enabled: false },
+      { label: PAIRED ? "Perry" : healthLabel, enabled: false },
+      { type: "separator" },
       wanted ? { label: "Hide", click: hide } : { label: "Show", click: show },
       { label: "Let clicks through him", type: "checkbox", checked: ghost, click: (item) => {
         ghost = item.checked;
@@ -403,8 +453,15 @@ if (!app.requestSingleInstanceLock({ argv })) {
         ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voice.start() }
         : { label: "Talk to him: his keys are taken by another app", enabled: false },
       { label: `Show him the screen${look?.current() ? ` (${look.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})` : ""}`, click: () => void lookNow() },
+      { label: meetings?.state().phase === "off" ? "Start Notetaker" : "Stop Notetaker", click: () => {
+        if (meetings?.state().phase === "off") void listenNow();
+        else void meetings?.stop();
+      } },
+      { label: "Meeting notes", click: () => openDashboard("/meetings") },
       { label: "Keyboard shortcuts…", click: () => openDashboard("/settings/desktop-pet#shortcuts") },
+      { label: "Report a problem…", click: () => void shell.openExternal(ISSUE_URL) },
       { label: "Open Perry", click: () => openDashboard("/") },
+      ...(!PAIRED ? [{ label: "Open logs", click: () => { mkdirSync(join(HOME, "logs"), { recursive: true }); void shell.openPath(join(HOME, "logs")); } }] : []),
       { label: "Put him back in the corner", click: () => {
         const area = screen.getPrimaryDisplay().workArea;
         standAt({ x: area.x + area.width - SIZE.width, y: area.y + area.height - SIZE.height });
@@ -423,6 +480,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     // Paired again (connect.js starts him): another server or key, and his page from it.
     const now = connection();
     const changed = now.base !== BASE || now.key !== KEY;
+    if (changed) meetings?.quit();
     ({ base: BASE, key: KEY, paired: PAIRED } = now);
     if (args.includes("--reload") || changed) void load();
     if (!args.includes("--reload")) show();
@@ -529,9 +587,16 @@ if (!app.requestSingleInstanceLock({ argv })) {
     });
     ipcMain.handle("pet:idle", () => powerMonitor.getSystemIdleTime());
     // What was said, as text: the page records, this listens.
-    ipcMain.handle("pet:transcribe", async (_event, samples) => {
+    ipcMain.handle("pet:transcribe", async (_event, samples, options) => {
       try {
-        const text = await transcribe(MODELS, samples, (progress) => win?.webContents.send("pet:voice-progress", progress));
+        // The end-to-end check's stand-ins for a slow or failing model (PERRY_PET_FAKE_KEYS is set only for it).
+        const stand = process.env.PERRY_PET_FAKE_KEYS ? globalThis.perryFakeTranscribe : null;
+        if (stand?.delayMs) await new Promise((resolve) => setTimeout(resolve, stand.delayMs));
+        if (stand?.fail > 0) { stand.fail -= 1; return { error: "a stand-in failure" }; }
+        const language = typeof options?.language === "string" && /^[a-z]{2,20}$/.test(options.language) ? options.language : undefined;
+        if (stand) stand.language = language;
+        const text = await transcribe(MODELS, samples, (progress) => win?.webContents.send("pet:voice-progress", progress), language ? { language } : {});
+        if (text) lastHeard = text;
         return { text };
       } catch (error) {
         return { error: error instanceof Error ? error.message : String(error) };
@@ -554,6 +619,56 @@ if (!app.requestSingleInstanceLock({ argv })) {
     if (take(saved).error && saved !== DEFAULT_HOTKEY) take(DEFAULT_HOTKEY);
     warmUp(MODELS);
     ipcMain.on("pet:open", (_event, path) => openDashboard(path));
+    meetings = listener({ here: HERE, models: MODELS, call: callMeeting, tell: (state) => {
+      win?.webContents.send("pet:meeting", state);
+      meetingPrompt?.listening(state);
+      refreshMenu();
+    } });
+    meetingPrompt = meetingNotice({ here: HERE, start: listenNow,
+      stop: () => meetings.stop(),
+      keepGoing: () => meetings.keepGoing(), holdEnding: (held) => meetings.holdEnding(held), forget: () => meetings.forgetEnded(),
+      discard: (id) => callMeeting("meetings:discard", { id }),
+      // Beside him when he is on screen, so what he asks comes from where he stands.
+      anchor: () => (wanted && win?.isVisible() ? { x: spot.x + SIZE.width - BODY.width, y: spot.y + SIZE.height - BODY.height, width: BODY.width, height: BODY.height } : null),
+      dismiss: (eventId) => callMeeting("meetings:dismissUpcoming", { eventId }), open: openDashboard });
+    listenKeys = lookKey(() => {
+      if (meetings.state().phase === "off") void listenNow();
+      else void meetings.stop();
+    });
+    listenKeys.change(readState().listenHotkey ?? "CommandOrControl+Shift+L");
+    const pasteLast = () => {
+      if (!lastHeard) return win?.webContents.send("pet:pasted", "nothing");
+      void voice.paste(lastHeard).then((how) => win?.webContents.send("pet:pasted", how), () => win?.webContents.send("pet:pasted", "failed"));
+    };
+    pasteKeys = lookKey(pasteLast);
+    if (globalThis.perryFakeKeys) globalThis.perryFakeKeys.paste = pasteLast;
+    pasteKeys.change(readState().pasteHotkey ?? "CommandOrControl+Alt+Shift+V");
+    const ownPage = (event) => event.sender === win?.webContents;
+    ipcMain.handle("pet:meeting-state", (event) => ownPage(event) ? meetings.state() : null);
+    ipcMain.handle("pet:meeting-start", (event, ask) => ownPage(event) ? listenNow(ask ?? {}) : null);
+    ipcMain.handle("pet:meeting-stop", (event) => ownPage(event) ? meetings.stop() : null);
+    ipcMain.on("pet:show", (event) => { if (ownPage(event)) show(); });
+    ipcMain.on("pet:meeting-suggestions", (event, config) => { if (ownPage(event)) meetingPrompt.configure(config); });
+    ipcMain.on("pet:meeting-written", (event, meeting) => { if (ownPage(event)) meetingPrompt.written(meeting); });
+    ipcMain.handle("pet:set-listen-hotkey", (event, accelerator) => {
+      if (!ownPage(event) || typeof accelerator !== "string") return { hotkey: null, error: "invalid" };
+      const result = listenKeys.change(accelerator);
+      if (result.hotkey) saveState({ listenHotkey: result.hotkey });
+      return { hotkey: listenKeys.current(), error: result.error ?? null };
+    });
+    ipcMain.on("pet:last-heard", (event, text) => { if (ownPage(event) && typeof text === "string") lastHeard = text.slice(0, 50_000); });
+    ipcMain.handle("pet:set-paste-hotkey", (event, accelerator) => {
+      if (!ownPage(event) || typeof accelerator !== "string") return { hotkey: null, error: "invalid" };
+      const result = pasteKeys.change(accelerator);
+      if (result.hotkey) saveState({ pasteHotkey: result.hotkey });
+      return { hotkey: pasteKeys.current(), error: result.error ?? null };
+    });
+    stopNoticing = noticeCalls((call) => {
+      meetingPrompt.call(call);
+      meetings.callActive(call.active);
+      win?.webContents.send("pet:call-active", call.active);
+    });
+    app.once("will-quit", () => { stopNoticing?.(); meetingPrompt.dispose(); meetings.dispose(); });
     // Looking at the screen: his chat's button and Perry's look_at_screen ask for the picture; the Look hotkey sends it to the page.
     ipcMain.handle("pet:look", async (_event, byOwner) => await shoot(byOwner === true));
     look = lookKey(() => void lookNow());
@@ -574,6 +689,8 @@ if (!app.requestSingleInstanceLock({ argv })) {
     tray.on("click", () => (wanted ? hide() : show()));
     refreshMenu();
 
+    refreshHealth();
+    setInterval(refreshHealth, 3000);
     void load();
   });
 

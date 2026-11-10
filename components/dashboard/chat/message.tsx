@@ -1,22 +1,25 @@
 "use client";
 
-import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, PuzzleIcon, RefreshCwIcon } from "lucide-react";
+import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useState, type ReactNode } from "react";
-import type { Work } from "@/convex/dashboard";
+import { Fragment, memo, type ReactNode } from "react";
+import type { ChatAgent, QueuedTurn } from "@/convex/dashboard";
 import { STARTING } from "@/convex/lib/activity";
-import { SKILL_MENTION } from "@/convex/lib/commands";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Message, MessageContent, MessageFooter } from "@/components/ui/message";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopy } from "../common";
+import { AgentRows } from "./agents";
 import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
-import { Spinner, WorkSummary, type WorkState } from "./work";
+import { QueueRemoveButton } from "./queue-remove-button";
+import { LiveWork, Spinner, WorkSummary, type Turn } from "./work";
+import { ReactionBadges, ReactionPicker } from "./reactions";
 
-export type ChatMessage = { id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; memories?: Array<{ id: string; text: string }> };
+export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedTurn; memories?: Array<{ id: string; text: string }>; reactions?: { owner?: string; perry?: string } };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -29,32 +32,6 @@ function Action({ label, onClick, disabled, children }: { label: string; onClick
   );
 }
 
-/**
- * Your words, with each skill they name ("$weekly-review") marked as one and
- * linked to it in Apps & skills. A $name no skill has stays plain text.
- */
-function WithSkills({ text, skills }: { text: string; skills?: ReadonlySet<string> }) {
-  if (!skills?.size || !text.includes("$")) return <>{text}</>;
-  const parts: ReactNode[] = [];
-  let from = 0;
-  for (const match of text.matchAll(SKILL_MENTION)) {
-    if (!skills.has(match[1])) continue;
-    parts.push(text.slice(from, match.index));
-    parts.push(
-      <Tooltip key={match.index}>
-        <TooltipTrigger render={<Link href={`/apps/skills?skill=${encodeURIComponent(match[1])}`} data-skill-mention={match[1]} aria-label={`${match[0]}: the ${match[1]} skill`} />}
-          className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary no-underline outline-none [box-decoration-break:clone] hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring/50">
-          <PuzzleIcon className="mr-1 inline size-3.5 align-[-2px]" aria-hidden />{match[0]}
-        </TooltipTrigger>
-        <TooltipContent>The {match[1]} skill</TooltipContent>
-      </Tooltip>,
-    );
-    from = match.index + match[0].length;
-  }
-  parts.push(text.slice(from));
-  return <>{parts}</>;
-}
-
 function CopyAction({ text }: { text: string }) {
   const { copied, copy } = useCopy();
   return <Action label={copied ? "Copied" : "Copy"} onClick={() => copy(text)}>{copied ? <CheckIcon /> : <CopyIcon />}</Action>;
@@ -65,10 +42,11 @@ function CopyAction({ text }: { text: string }) {
  * width of the column, unboxed, since that is what you read. The actions show
  * on hover and focus, and always on the newest reply.
  */
-export function MessageRow({ message, work, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote }: {
+export const MessageRow = memo(function MessageRow({ message, work, agents, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote, onReact }: {
   message: ChatMessage;
   /** The run that wrote this reply, when it took steps: "Worked for 46s" above it. */
-  work?: Work;
+  work?: Turn;
+  agents?: ChatAgent[];
   assistant: string;
   latest: boolean;
   canRegenerate: boolean;
@@ -78,75 +56,65 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
   busy: boolean;
   /** The skills there are, so a "$name" of one is marked in your messages. */
   skills?: ReadonlySet<string>;
-  onEdit: (text: string) => void;
-  onRegenerate: () => void;
-  onBranch: () => void;
+  onEdit: (message: ChatMessage) => void;
+  onRegenerate: (message: ChatMessage) => void;
+  onBranch: (message: ChatMessage) => void;
   /** Keep this reply as a note of its own. */
-  onSaveNote?: () => void;
+  onSaveNote?: (message: ChatMessage) => void;
+  onReact?: (message: ChatMessage, emoji: string) => Promise<void>;
 }) {
   const mine = message.role === "user";
   // Not in the history until its reply saves it, so there is nothing yet to edit or branch from.
   const saved = !message.pending;
-  const [editing, setEditing] = useState<string | null>(null);
-
-  if (editing !== null) {
-    return (
-      <form className="ml-auto w-full max-w-[85%] space-y-2" onSubmit={(event) => { event.preventDefault(); if (editing.trim() && !busy) { onEdit(editing); setEditing(null); } }}>
-        <Textarea autoFocus aria-label="Edit your message" value={editing} className="max-h-72 min-h-20 rounded-2xl bg-muted px-4 py-3 text-md"
-          onChange={(event) => setEditing(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") { event.preventDefault(); setEditing(null); }
-            // Enter resends, as in the composer; Shift+Enter is a new line.
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
-          }} />
-        <div className="flex items-center justify-end gap-1">
-          <span className="mr-1 text-xs text-muted-foreground">Enter resends, Esc cancels</span>
-          <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setEditing(null)}>Cancel</Button>
-          <Button type="submit" variant="ghost" size="sm" className="text-primary hover:text-primary" disabled={busy}>Save and resend</Button>
-        </div>
-      </form>
-    );
-  }
-
   return (
-    <div className={cn("group/message flex flex-col", mine ? "items-end" : "items-start")} data-role={mine ? "user" : "assistant"}>
-      <h3 className="sr-only">{mine ? "You said" : `${assistant} said`}</h3>
-      {mine ? (
-        <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
-          <WithSkills text={message.text} skills={skills} />
-          <AttachmentList attachments={message.attachments} align="end" />
-        </div>
-      ) : (
-        <div className="w-full min-w-0">
-          {work && <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} />}
-          <Markdown text={message.text} />
-          <AttachmentList attachments={message.attachments} />
-          {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
-        </div>
-      )}
-      <div className={cn(
-        "mt-1 flex items-center gap-0.5 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
-        !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
-      )}>
-        {mine && (
-          <time className="nums mr-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
-            {timeOf(message.createdAt)}
-          </time>
+    <Message id={message.attachmentKey ? `message-${message.attachmentKey}` : undefined} align={mine ? "end" : "start"} data-role={mine ? "user" : "assistant"}>
+      <MessageContent className="gap-1">
+        <h3 className="sr-only">{mine ? "You said" : `${assistant} said`}</h3>
+        {mine ? (
+          <Bubble align="end" variant="muted" className="max-w-[85%]">
+            <BubbleContent className="rounded-3xl px-4 py-2.5 text-md [overflow-wrap:anywhere]">
+              <div data-cite-text><Markdown text={message.text} skills={skills} /></div>
+              <AttachmentList attachments={message.attachments} align="end" />
+            </BubbleContent>
+          </Bubble>
+        ) : (
+          <div className="w-full min-w-0">
+            {work && <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} omitText={message.text}><AgentRows agents={agents ?? []} /></WorkSummary>}
+            <div data-cite-text><Markdown text={message.text} /></div>
+            <AttachmentList attachments={message.attachments} />
+            {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
+          </div>
         )}
-        <CopyAction text={message.text} />
-        {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => setEditing(message.text)}><PencilIcon /></Action>}
-        {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={onRegenerate}><RefreshCwIcon /></Action>}
-        {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={onBranch}><GitBranchIcon /></Action>}
-        {!mine && saved && onSaveNote && <Action label="Save as note" onClick={onSaveNote}><FilePlusIcon /></Action>}
-        {!mine && (
-          <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
-            {timeOf(message.createdAt)}
-          </time>
-        )}
-      </div>
-    </div>
+        {/* Waiting in the queue it is under Up next (up-next.tsx); here only while it waits behind nothing (dashboard.QueuedTurn, now). */}
+        {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
+        <MessageFooter className="flex-wrap gap-x-2 gap-y-1 px-0 font-normal">
+          <div className={cn(
+            "flex items-center gap-0.5 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
+            !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
+          )}>
+            {mine && (
+              <time className="nums mr-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
+                {timeOf(message.createdAt)}
+              </time>
+            )}
+            <CopyAction text={message.text} />
+            {saved && onReact && <ReactionPicker current={message.reactions?.owner} onChange={(emoji) => onReact(message, emoji)} />}
+            {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => onEdit(message)}><PencilIcon /></Action>}
+            {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={() => onRegenerate(message)}><RefreshCwIcon /></Action>}
+            {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={() => onBranch(message)}><GitBranchIcon /></Action>}
+            {!mine && saved && onSaveNote && <Action label="Save as note" onClick={() => onSaveNote?.(message)}><FilePlusIcon /></Action>}
+            {!mine && (
+              <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
+                {timeOf(message.createdAt)}
+              </time>
+            )}
+          </div>
+          <ReactionBadges {...message.reactions} assistant={assistant} onChange={saved && onReact ? (emoji) => onReact(message, emoji) : undefined} />
+        </MessageFooter>
+      </MessageContent>
+    </Message>
   );
-}
+});
 
 /**
  * What a reply remembered: the memories it said it relied on, each a link to
@@ -176,39 +144,44 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
 /** A message you sent, before the server lists it; "Sending…" until the server has taken it. */
 export function PendingRow({ text, attachments, sent, skills }: { text: string; attachments: Attachment[]; sent: boolean; skills?: ReadonlySet<string> }) {
   return (
-    <div className="flex flex-col items-end" data-role="user" data-pending>
-      <div className={cn("max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]", !sent && "opacity-70")}>
-        <WithSkills text={text} skills={skills} />
-        <AttachmentList attachments={attachments} align="end" />
-      </div>
-      {!sent && <span className="mt-1 text-xs text-muted-foreground" role="status">Sending…</span>}
-    </div>
+    <Message align="end" data-role="user" data-pending>
+      <MessageContent className="gap-1">
+        <Bubble align="end" variant="muted" className={cn("max-w-[85%]", !sent && "opacity-70")}>
+          <BubbleContent className="rounded-3xl px-4 py-2.5 text-md [overflow-wrap:anywhere]">
+            <Markdown text={text} skills={skills} />
+            <AttachmentList attachments={attachments} align="end" />
+          </BubbleContent>
+        </Bubble>
+        {!sent && <MessageFooter className="px-0 font-normal" role="status">Sending…</MessageFooter>}
+      </MessageContent>
+    </Message>
   );
 }
 
 /**
- * The reply being written: each step the run has taken so far, in order
- * (dashboard.getChatWork), so none goes by unseen; then what has streamed of
- * the words, or "Thinking" while nothing else is going on.
+ * The reply being written: "Working for 12s" and the step it is on
+ * (work.tsx, LiveWork), every step a click away, so none goes by unseen;
+ * then what has streamed of the words, or "Thinking" before the turn's run
+ * is in.
  */
-export function ReplyInProgress({ streaming, work, now, approving = false }: { streaming?: string; work?: Work; now: number; approving?: boolean }) {
-  const steps = work?.steps ?? [];
-  // Over (its reply on its way to the page), on a step, or held for the owner's approval: either way, not thinking.
+export function ReplyInProgress({ streaming, fullText = streaming, work, agents = [], approving = false, unresponsive = false }: { streaming?: string; fullText?: string; work?: Turn; agents?: ChatAgent[]; approving?: boolean; unresponsive?: boolean }) {
+  // Over (its reply on its way to the page), held for the owner's approval, or with its computer gone: not writing.
   const over = work?.finishedAt !== undefined;
-  const busy = over || approving || steps.some((step) => step.status === "running");
-  const state: WorkState = over ? (work?.status === "ok" ? "done" : "failed") : approving ? "waiting" : "working";
+  const busy = unresponsive || over || approving;
   return (
-    <div className="min-w-0 space-y-2" data-role="assistant" {...(streaming ? { "data-streaming": true } : { "data-thinking": true })}>
-      {work && <WorkSummary work={work} state={state} now={now} />}
-      {streaming ? (
+    <div className="min-w-0 space-y-2" data-role="assistant" {...(unresponsive ? { "data-unresponsive": true } : streaming !== undefined ? { "data-streaming": true } : { "data-thinking": true })}>
+      {work && (over
+        ? <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} omitText={fullText}><AgentRows agents={agents} /></WorkSummary>
+        : <LiveWork work={work} state={unresponsive ? "unresponsive" : approving ? "waiting" : "working"} omitText={fullText}><AgentRows agents={agents} /></LiveWork>)}
+      {streaming !== undefined ? (
         <div>
-          <Markdown text={streaming} />
+          <div data-cite-text><Markdown text={streaming} streaming /></div>
           {!busy && <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}
         </div>
-      ) : !busy && (
+      ) : !work && (
         <p className="flex items-center gap-2 text-md font-medium" data-step={STARTING.label}>
           <Spinner />
-          <span className="shimmer">{STARTING.label}</span>
+          <span className="shimmer motion-reduce:shimmer-none">{STARTING.label}</span>
         </p>
       )}
     </div>

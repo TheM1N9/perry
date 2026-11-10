@@ -9,10 +9,22 @@
  */
 
 export const SHORTCUTS = {
+  listen: {
+    label: "Start or stop Notetaker",
+    description: "Start or stop meeting notes with the desktop pet.",
+    default: "CommandOrControl+Shift+L",
+    global: true,
+  },
   talk: {
     label: "Talk to Perry",
     description: "Anywhere, with the desktop pet on: hold, speak, let go.",
     default: "CommandOrControl+Shift+Space",
+    global: true,
+  },
+  paste: {
+    label: "Paste what you last said",
+    description: "Anywhere, with the desktop pet on: what you last said to him goes into the app you're in.",
+    default: "CommandOrControl+Alt+Shift+V",
     global: true,
   },
   look: {
@@ -31,6 +43,19 @@ export const SHORTCUTS = {
     label: "New chat",
     description: "",
     default: "CommandOrControl+Shift+O",
+    global: false,
+  },
+  // T3 Code's panel keys, less the ones a browser keeps for itself (⌘T, ⌘W, ⌘⇧B).
+  chatPanel: {
+    label: "Chat panel",
+    description: "Show or hide the panel beside a chat.",
+    default: "CommandOrControl+Alt+B",
+    global: false,
+  },
+  panelSurface: {
+    label: "Open in the chat panel",
+    description: "Details, Files, Browser or Work: press its letter next.",
+    default: "CommandOrControl+Alt+N",
     global: false,
   },
 } as const;

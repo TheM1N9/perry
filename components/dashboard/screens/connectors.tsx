@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { KeyIcon, PlusIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useAction } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -33,7 +33,7 @@ function connectionStatus(status?: string): { tone: Tone; label: string } {
   const value = (status ?? "active").toLowerCase();
   if (value === "active") return { tone: "success", label: "Connected" };
   if (value === "initiated" || value === "initializing" || value === "pending") return { tone: "info", label: "Finishing sign-in" };
-  if (value === "expired") return { tone: "warning", label: "Expired" };
+  if (value === "expired" || value === "revoked") return { tone: "danger", label: "Reconnect required" };
   if (value === "failed" || value === "error") return { tone: "danger", label: "Failed" };
   if (value === "inactive") return { tone: "neutral", label: "Paused" };
   return { tone: "neutral", label: value.charAt(0).toUpperCase() + value.slice(1) };
@@ -42,7 +42,7 @@ function connectionStatus(status?: string): { tone: Tone; label: string } {
 const addedOn = (at?: string, withTime = false) => at ? `Added ${new Date(at).toLocaleString(undefined, withTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" })}` : "Added earlier";
 
 /** Which of one account's connections to keep using: a working one first, then the newest. */
-const RANK: Record<string, number> = { ACTIVE: 0, INITIATED: 1, INITIALIZING: 1, INACTIVE: 2, EXPIRED: 3, FAILED: 4 };
+const RANK: Record<string, number> = { ACTIVE: 0, INITIATED: 1, INITIALIZING: 1, INACTIVE: 2, EXPIRED: 3, REVOKED: 3, FAILED: 4 };
 const rank = (item: ConnectedAccount) => RANK[item.status.toUpperCase()] ?? 5;
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
@@ -61,7 +61,8 @@ function byApp(connections: ConnectedAccount[]): AppAccounts[] {
   const apps = new Map<string, { name: string; logo?: string; accounts: Map<string, ConnectedAccount[]> }>();
   for (const item of connections) {
     const app = apps.get(item.toolkit) ?? { name: item.name, logo: item.logo, accounts: new Map() };
-    const key = item.account ? item.account.toLowerCase() : `#${item.id}`;
+    const identity = item.profile?.email ?? item.profile?.username ?? item.account;
+    const key = identity ? JSON.stringify([identity.toLowerCase(), item.profile?.workspace?.toLowerCase() ?? ""]) : `#${item.id}`;
     app.accounts.set(key, [...app.accounts.get(key) ?? [], item]);
     apps.set(item.toolkit, app);
   }
@@ -172,11 +173,16 @@ function AccountRow({ app, account, busy, onConnect, onRemove }: {
   const { main, spares, label } = account;
   const status = connectionStatus(main.status);
   const working = status.tone === "success";
+  const details = [...new Set([main.profile?.displayName, main.profile?.email, main.profile?.username, main.profile?.workspace])]
+    .filter((value): value is string => Boolean(value) && value?.toLowerCase() !== label.toLowerCase());
   const who = main.account ? <strong>{main.account}</strong> : "this account";
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-1.5 hover:bg-muted/50 sm:pl-16">
       <div className="min-w-0 flex-1 basis-48">
-        <p className={cn("truncate", !main.account && "text-muted-foreground")} title={main.account ? `Signed in as ${main.account}` : undefined}>{label}</p>
+        <p className={cn("wrap-anywhere", !main.account && "text-muted-foreground")}>{label}</p>
+        {details.length > 0 && <p className="wrap-anywhere text-sm text-muted-foreground">{details.join(" · ")}</p>}
+        {main.account && main.createdAt && <p className="text-xs text-muted-foreground">{addedOn(main.createdAt)}</p>}
+        {(main.status === "EXPIRED" || main.status === "REVOKED") && <p role="status" className="text-sm text-destructive">Sign-in expired or was revoked. Reconnect this account to use it again.</p>}
         {spares.length > 0 && (
           <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
             Connected {spares.length + 1} times
@@ -196,7 +202,7 @@ function AccountRow({ app, account, busy, onConnect, onRemove }: {
       <div className="flex items-center gap-2">
         {!working && <span className={cn("text-sm font-medium", TONE_TEXT[status.tone])}>{status.label}</span>}
         {!working && (
-          <Button variant="outline" size="sm" disabled={busy !== null} aria-busy={busy === `account:${main.id}` || undefined} onClick={() => onConnect(app.toolkit, `account:${main.id}`)}>{busy === `account:${main.id}` && <Spinner />}Reconnect</Button>
+          <Button variant="outline" size="sm" disabled={busy !== null} aria-busy={busy === `account:${main.id}` || undefined} aria-label={`Reconnect ${app.name} (${label})`} onClick={() => onConnect(app.toolkit, `account:${main.id}`)}>{busy === `account:${main.id}` && <Spinner />}Reconnect</Button>
         )}
         <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive"
           action={() => onRemove([main, ...spares])}
@@ -223,8 +229,6 @@ export function Connectors() {
   const getCatalog = useAction(api.dashboard.getCatalog);
   const connectToolkit = useAction(api.dashboard.connectToolkit);
   const disconnectAccount = useAction(api.dashboard.disconnectAccount);
-  const getTokenAuthOptions = useAction(api.dashboard.getTokenAuthOptions);
-  const connectToolkitWithToken = useAction(api.dashboard.connectToolkitWithToken);
   const [state, setState] = useState<{ configured: boolean; accounts: ConnectedAccount[]; error?: string } | null>(null);
   const [catalog, setCatalog] = useState<CatalogApp[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -233,8 +237,7 @@ export function Connectors() {
   const [search, setSearch] = useState("");
   const [shown, setShown] = useState(PAGE);
   /** The toolkit Composio just sent you back from, read off the callback address. */
-  const [returned, setReturned] = useState<{ slug: string; status: string | null } | null>(null);
-  /** The app a token-based connection dialog is open for, if any. */
+  const [returned, setReturned] = useState<{ slug: string; status: string | null; accountId: string | null } | null>(null);
   const [tokenApp, setTokenApp] = useState<{ slug: string; name: string } | null>(null);
 
   const refresh = useCallback(async () => {
@@ -257,28 +260,45 @@ export function Connectors() {
     const params = new URLSearchParams(window.location.search);
     const slug = params.get("connected");
     if (!slug) return;
-    setReturned({ slug, status: params.get("status") });
+    setReturned({ slug, status: params.get("status"), accountId: params.get("account") });
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
   useEffect(() => {
     if (!returned || !state) return;
-    const found = state.accounts.find((item) => item.toolkit === returned.slug && item.status === "ACTIVE");
-    const failed = returned.status !== null && returned.status.toLowerCase() !== "success";
-    if (found) toast.success(`${found.name}${found.account ? ` (${found.account})` : ""} is connected.`);
-    else if (failed) toast.error(`Signing in to ${returned.slug} didn't finish. Try connecting it again.`);
-    else toast.info(`${returned.slug} isn't showing as connected yet. Refresh in a moment.`);
+    const done = returned;
     setReturned(null);
-  }, [returned, state]);
+    const failed = done.status !== null && done.status.toLowerCase() !== "success";
+    if (failed) toast.error(`Signing in to ${done.slug} didn't finish. Try reconnecting it.`);
+    else if (done.accountId) {
+      // An active alternate must not make a failed reconnect look successful.
+      void connectToolkit({ key: dashboardKey, toolkit: done.slug, accountId: done.accountId }).then(async (result) => {
+        if (result.status === "ACTIVE" && !result.error && !result.redirectUrl) toast.success(`${done.slug} is reconnected.`);
+        else toast.info(`${done.slug} isn't confirmed yet. Refresh or reconnect this account again.`);
+        await refresh();
+      }, () => toast.error("Couldn't verify the reconnect. Refresh and try again."));
+    } else {
+      const found = state.accounts.find((item) => item.toolkit === done.slug && item.status === "ACTIVE");
+      if (found) toast.success(`${found.name}${found.account ? ` (${found.account})` : ""} is connected.`);
+      else toast.info(`${done.slug} isn't showing as connected yet. Refresh in a moment.`);
+    }
+  }, [returned, state, connectToolkit, dashboardKey, refresh]);
 
   const connect = async (toolkit: string, from: string) => {
     const slug = toolkit.trim().toLowerCase();
     if (!slug || busy) return;
     setBusy(from);
     try {
-      const callbackUrl = `${window.location.origin}${window.location.pathname}?connected=${encodeURIComponent(slug)}`;
-      const result = await connectToolkit({ key: dashboardKey, toolkit: slug, callbackUrl });
+      const accountId = from.startsWith("account:") ? from.slice("account:".length) : undefined;
+      const callbackUrl = `${window.location.origin}${window.location.pathname}?connected=${encodeURIComponent(slug)}${accountId ? `&account=${encodeURIComponent(accountId)}` : ""}`;
+      const result = await connectToolkit({ key: dashboardKey, toolkit: slug, callbackUrl, accountId });
       // Same tab, so Composio can send you back here when sign-in ends.
       if (result.redirectUrl) return window.location.assign(result.redirectUrl);
+      if (result.status === "ACTIVE" && !result.error) {
+        toast.success(`${slug} is reconnected.`);
+        await refresh();
+        setBusy(null);
+        return;
+      }
       toast.error(result.error ?? `Couldn't start a connection for “${slug}”. Check the name and try again.`);
     } catch (cause) {
       toast.error(errorText(cause));
@@ -302,7 +322,7 @@ export function Connectors() {
   // An app by its name shows whole; otherwise only the accounts whose address matches.
   const shownApps = useMemo(() => term ? apps.flatMap((app) => {
     if (matches(app.name) || matches(app.toolkit)) return [app];
-    const accounts = app.accounts.filter((account) => matches(account.main.account));
+    const accounts = app.accounts.filter((account) => matches(account.main.account) || Object.values(account.main.profile ?? {}).some(matches));
     return accounts.length ? [{ ...app, accounts }] : [];
   }) : apps, [apps, term, matches]);
   const found = useMemo(() => (catalog ?? []).filter((app) => !term || matches(app.name) || matches(app.slug) || matches(app.category) || matches(app.description)), [catalog, term, matches]);
@@ -390,13 +410,12 @@ export function Connectors() {
       )}
 
       <ActionLookup />
-      <TokenConnectDialog
+      {tokenApp && <TokenConnectDialog
+        key={tokenApp.slug}
         app={tokenApp}
         onClose={() => setTokenApp(null)}
-        getOptions={(slug) => getTokenAuthOptions({ key: dashboardKey, toolkit: slug })}
-        onSubmit={(slug, mode, credentials) => connectToolkitWithToken({ key: dashboardKey, toolkit: slug, mode, credentials })}
         onConnected={() => void refresh()}
-      />
+      />}
     </Page>
   );
 }
@@ -406,82 +425,88 @@ export function Connectors() {
  * access token, say) instead of going through OAuth. Composio still owns the
  * connection either way; this only changes how it gets created.
  */
-function TokenConnectDialog({ app, onClose, getOptions, onSubmit, onConnected }: {
-  app: { slug: string; name: string } | null;
+function TokenConnectDialog({ app, onClose, onConnected }: {
+  app: { slug: string; name: string };
   onClose: () => void;
-  getOptions: (slug: string) => Promise<{ options: TokenAuthOption[]; error?: string }>;
-  onSubmit: (slug: string, mode: string, credentials: Record<string, string>) => Promise<{ status?: string; error?: string }>;
   onConnected: () => void;
 }) {
+  const { dashboardKey } = useSession();
+  const getOptions = useAction(api.dashboard.getTokenAuthOptions);
+  const connectWithToken = useAction(api.dashboard.connectToolkitWithToken);
   const [options, setOptions] = useState<TokenAuthOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const mounted = useRef(false);
 
   useEffect(() => {
-    if (!app) { setOptions(null); setError(null); setValues({}); return; }
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-    void getOptions(app.slug).then((result) => {
+    void getOptions({ key: dashboardKey, toolkit: app.slug }).then((result) => {
       if (cancelled) return;
       setOptions(result.options);
       setError(result.options.length === 0 ? (result.error ?? `${app.name} only offers signing in, not a pasted token.`) : null);
     }, (cause) => { if (!cancelled) { setOptions([]); setError(errorText(cause)); } });
     return () => { cancelled = true; };
-  }, [app, getOptions]);
+  }, [app.slug, app.name, dashboardKey, getOptions]);
 
   const option = options?.[0] ?? null;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!app || !option || submitting) return;
+    if (!option || submitting) return;
     setSubmitting(true);
+    setError(null);
     try {
-      const result = await onSubmit(app.slug, option.mode, values);
+      const result = await connectWithToken({ key: dashboardKey, toolkit: app.slug, mode: option.mode, credentials: values });
+      if (!mounted.current) return;
       if (result.error) { setError(result.error); return; }
+      if (result.status !== "ACTIVE") { setError(`${app.name} hasn't confirmed the connection. Refresh connected accounts before trying again.`); return; }
       toast.success(`${app.name} is connected.`);
       onConnected();
       onClose();
     } catch (cause) {
-      setError(errorText(cause));
+      if (mounted.current) setError(errorText(cause));
     } finally {
-      setSubmitting(false);
+      if (mounted.current) setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={app !== null} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent aria-label={app ? `Connect ${app.name} with a token` : undefined}>
-        {app && (
-          <>
-            <DialogHeader>
-              <DialogTitle>Connect {app.name} with a token</DialogTitle>
-              <DialogDescription>
-                {option?.authHintUrl
-                  ? <>Paste a token from <a href={option.authHintUrl} target="_blank" rel="noopener noreferrer" className="link">{app.name}</a> that already has the access you want Perry to use.</>
-                  : `Paste a token ${app.name} already accepts.`}
-              </DialogDescription>
-            </DialogHeader>
-            {options === null
-              ? <div className="flex justify-center py-4"><Spinner /></div>
-              : option && (
-                <form className="space-y-3" onSubmit={(event) => void submit(event)}>
-                  {option.fields.map((field) => (
-                    <div key={field.name} className="space-y-1.5">
-                      <Label htmlFor={`token-${field.name}`}>{field.displayName}{!field.required && " (optional)"}</Label>
-                      <Input id={`token-${field.name}`} type={field.isSecret ? "password" : "text"} required={field.required} autoComplete="off"
-                        value={values[field.name] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} />
-                      {field.description && <p className="text-xs text-muted-foreground">{field.description}</p>}
-                    </div>
-                  ))}
-                  {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-                  <DialogFooter className="gap-2 pt-2">
-                    <Button type="submit" disabled={submitting}>{submitting && <Spinner />}Connect</Button>
-                  </DialogFooter>
-                </form>
-              )}
-            {options?.length === 0 && error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-          </>
-        )}
+    <Dialog open onOpenChange={(next) => { if (!next && !submitting) onClose(); }}>
+      <DialogContent aria-label={`Connect ${app.name} with a token`} showCloseButton={!submitting}>
+        <DialogHeader>
+          <DialogTitle>Connect {app.name} with a token</DialogTitle>
+          <DialogDescription>
+            {option?.authHintUrl
+              ? <>Paste a token from <a href={option.authHintUrl} target="_blank" rel="noopener noreferrer" className="link">{app.name}</a> that already has the access you want Perry to use.</>
+              : `Paste a token ${app.name} already accepts.`}
+            {" "}It is sent through this Perry to Composio and isn't saved locally.
+          </DialogDescription>
+        </DialogHeader>
+        {options === null
+          ? <div className="flex justify-center py-4"><Spinner /></div>
+          : option && (
+            <form className="space-y-3" onSubmit={(event) => void submit(event)}>
+              {option.fields.map((field) => (
+                <div key={field.name} className="space-y-1.5">
+                  <Label htmlFor={`token-${field.name}`}>{field.displayName}{!field.required && " (optional)"}</Label>
+                  <Input id={`token-${field.name}`} type={field.isSecret ? "password" : "text"} required={field.required} autoComplete="off" spellCheck={false} disabled={submitting}
+                    value={values[field.name] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} />
+                  {field.description && <p className="text-xs text-muted-foreground">{field.description}</p>}
+                </div>
+              ))}
+              {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+              <DialogFooter className="gap-2 pt-2">
+                <Button type="submit" disabled={submitting}>{submitting && <Spinner />}Connect</Button>
+              </DialogFooter>
+            </form>
+          )}
+        {options?.length === 0 && error && <p className="text-sm text-destructive" role="alert">{error}</p>}
       </DialogContent>
     </Dialog>
   );

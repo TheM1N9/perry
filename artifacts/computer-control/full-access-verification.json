@@ -1,0 +1,37 @@
+﻿{
+    "verifiedAt":  "2026-10-25T22:44:13.4796950Z",
+    "baseCommit":  "fd4843249f5c798b0a744ffdb61552191285ef85",
+    "codexProtocolVersion":  "0.163.0",
+    "approvalChecks":  {
+                           "checks":  35,
+                           "passed":  true
+                       },
+    "browserChecks":  {
+                          "checks":  19,
+                          "passed":  true
+                      },
+    "parallelSessionChecks":  {
+                                  "checks":  39,
+                                  "passed":  true
+                              },
+    "smokeChecks":  {
+                        "checks":  9,
+                        "passed":  true
+                    },
+    "backendTypecheck":  "passed",
+    "applicationTypecheck":  "passed in final production build",
+    "productionBuild":  "passed",
+    "liveModelBehaviorTested":  false,
+    "installedPerryUpdated":  false,
+    "sourceSha256":  {
+                         "components/dashboard/approval-card.tsx":  "e9123474652a5514b0981a0e679f15f1ca5549a6c5f95019847a446066f3ad04",
+                         "components/pet/pet.tsx":  "00abb0ecf3eae477e60a47e1f3ffe600006734b67b141a7d337b1458a9cdfb74",
+                         "convex/approvals.ts":  "243fe2dd4842b41fc7e9834d3ed6359ab422649e60dcabeba96a451a403af8d7",
+                         "convex/schema.ts":  "f83b682dcb5a2cbf155f11d468bdafa59ab278e40f81ec8efc5c21aee09e0db1",
+                         "runner/engine.ts":  "677a318738afbe9d0edb0e671dfd2cfc646118783c13fb7c26b55b444ca7be37",
+                         "runner/engines/acp.ts":  "722e9f1122231eec0f5dca88f372c7114ea61cffcaad2e7cb6904754b4f8b920",
+                         "runner/engines/claude.ts":  "a6b7145f174adf0c3ade7ef6ece10b49b211161a2c45687c72e77eef4f01d3c6",
+                         "runner/engines/codex.ts":  "50d83aa6bc02e804802635cb478ace727d31140b3c1910a67851bbf0ed5522b3",
+                         "runner/index.ts":  "33e95571742cc0cc2744e4fda0126ce4663546e8eaaf75afeef64e374fb40e61"
+                     }
+}

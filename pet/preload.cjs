@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("perryPet", {
+  meetingControls: true,
   solid: (on) => ipcRenderer.send("pet:solid", Boolean(on)),
   moveTo: (x, y) => ipcRenderer.send("pet:move", Number(x), Number(y)),
   // A drag of him: where his body is in the window as it starts, and its end; whether he is over the circle that hides him.
@@ -34,7 +35,7 @@ contextBridge.exposeInMainWorld("perryPet", {
     ipcRenderer.on("pet:voice-progress", handler);
     return () => ipcRenderer.off("pet:voice-progress", handler);
   },
-  transcribe: (samples) => ipcRenderer.invoke("pet:transcribe", samples),
+  transcribe: (samples, options) => ipcRenderer.invoke("pet:transcribe", samples, options),
   voiceDone: () => ipcRenderer.send("pet:voice-done"),
   // Showing him the screen: a picture of the window you are in and of the screen, from his chat's button (byOwner) or for Perry, or from the Look hotkey; and which keys that is on.
   look: (byOwner) => ipcRenderer.invoke("pet:look", byOwner === true),
@@ -44,4 +45,28 @@ contextBridge.exposeInMainWorld("perryPet", {
     return () => ipcRenderer.off("pet:look", handler);
   },
   setLookHotkey: (accelerator) => ipcRenderer.invoke("pet:set-look-hotkey", String(accelerator)),
+  meetingState: () => ipcRenderer.invoke("pet:meeting-state"),
+  setMeetingSuggestions: (config) => ipcRenderer.send("pet:meeting-suggestions", config),
+  startMeeting: (ask) => ipcRenderer.invoke("pet:meeting-start", ask),
+  stopMeeting: () => ipcRenderer.invoke("pet:meeting-stop"),
+  meetingWritten: (meeting) => ipcRenderer.send("pet:meeting-written", meeting),
+  setLastHeard: (text) => ipcRenderer.send("pet:last-heard", String(text)),
+  setPasteHotkey: (accelerator) => ipcRenderer.invoke("pet:set-paste-hotkey", String(accelerator)),
+  onPasted: (listener) => {
+    const handler = (_event, how) => listener(how);
+    ipcRenderer.on("pet:pasted", handler);
+    return () => ipcRenderer.off("pet:pasted", handler);
+  },
+  show: () => ipcRenderer.send("pet:show"),
+  setListenHotkey: (accelerator) => ipcRenderer.invoke("pet:set-listen-hotkey", String(accelerator)),
+  onMeeting: (listener) => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on("pet:meeting", handler);
+    return () => ipcRenderer.off("pet:meeting", handler);
+  },
+  onCallActive: (listener) => {
+    const handler = (_event, active) => listener(active);
+    ipcRenderer.on("pet:call-active", handler);
+    return () => ipcRenderer.off("pet:call-active", handler);
+  },
 });

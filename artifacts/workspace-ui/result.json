@@ -1,0 +1,169 @@
+{
+  "ranAt": "2026-10-15T16:40:03.262Z",
+  "ok": true,
+  "checks": {
+    "eachCardItsOwnWindow": true,
+    "floatsOverTheChat": true,
+    "sameButtonCloses": true,
+    "panelOpens": true,
+    "panelCards": true,
+    "contextCard": true,
+    "filesListed": true,
+    "filePreview": true,
+    "browserOpens": true,
+    "takeOver": true,
+    "addressBar": true,
+    "browserFitsTheCard": true,
+    "liveFrames": true,
+    "clickShowsQuickly": true,
+    "giveBack": true,
+    "closeAndReopen": true,
+    "phoneSheet": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "ownWindows": {
+      "context": {
+        "view": "context",
+        "title": "Context",
+        "cards": [
+          "context"
+        ],
+        "pressed": "true"
+      },
+      "files": {
+        "view": "files",
+        "title": "Files",
+        "cards": [
+          "files"
+        ],
+        "pressed": "true"
+      },
+      "browser": {
+        "view": "browser",
+        "title": "Browser",
+        "cards": [
+          "browser"
+        ],
+        "pressed": "true"
+      }
+    },
+    "eachCardItsOwnWindow": {
+      "context": {
+        "view": "context",
+        "title": "Context",
+        "cards": [
+          "context"
+        ],
+        "pressed": "true"
+      },
+      "files": {
+        "view": "files",
+        "title": "Files",
+        "cards": [
+          "files"
+        ],
+        "pressed": "true"
+      },
+      "browser": {
+        "view": "browser",
+        "title": "Browser",
+        "cards": [
+          "browser"
+        ],
+        "pressed": "true"
+      }
+    },
+    "floatsOverTheChat": {
+      "before": 1184,
+      "during": 1184
+    },
+    "panelCards": [
+      "context",
+      "files",
+      "browser"
+    ],
+    "contextCard": "Context\n\nHow full the context is shows after Perry's next reply.\n\nEngine\nGrok Build\nModel\ngrok-fake-fast",
+    "openButton": true,
+    "browserFit": {
+      "card": [
+        660,
+        1401,
+        1251
+      ],
+      "page": [
+        668,
+        1393,
+        1199
+      ],
+      "wide": 725
+    },
+    "browserFitsTheCard": {
+      "card": [
+        660,
+        1401,
+        1251
+      ],
+      "page": [
+        668,
+        1393,
+        1199
+      ],
+      "wide": 725
+    },
+    "framesPerSecond": 10.333333333333334,
+    "liveFrames": 10.333333333333334,
+    "clickToScreenMs": 68,
+    "clickShowsQuickly": 68,
+    "closeAndReopen": {
+      "closed": true,
+      "back": true
+    },
+    "phoneSheet": {
+      "spill": 0,
+      "sheet": 390
+    },
+    "noPageErrors": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (linux)\u001b[0m",
+      "\u001b[2m  directory  /tmp/claude-0/-home-user-perry/7192a0c1-ba7d-54e5-86ce-d44107d70a1e/scratchpad/e2e/perry-workspace-ui-yIPDWv/workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[31m  Could not save a chat's name: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and nothing waits for you\u001b[0m",
+      "\u001b[2m  saved turn tn4n84map2eqqsdpmm9xgvx0qx\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and nothing waits for you\u001b[0m",
+      "\u001b[2m  saved turn xek9ydhj4eeyq2czd4sw522wm9\u001b[0m",
+      "\u001b[2m",
+      "  runner stopped. Assistant has no hands here now.",
+      "\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true,
+  "before": {
+    "checks": {
+      "panelOpens": true,
+      "panelViews": true,
+      "filesListed": false,
+      "filePreview": false,
+      "browserOpens": true,
+      "takeOver": true,
+      "addressBar": true,
+      "liveFrames": false,
+      "clickShowsQuickly": true,
+      "giveBack": true,
+      "closeAndReopen": true,
+      "phoneSheet": true,
+      "noPageErrors": true
+    },
+    "framesPerSecond": 1.3333333333333333,
+    "clickToScreenMs": 724
+  }
+}

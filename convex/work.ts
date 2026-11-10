@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { parseTarget } from "./lib/price";
@@ -40,6 +41,7 @@ export const createTask = internalMutation({
     title: v.string(),
     prompt: v.string(),
     goalId: v.optional(v.id("goals")),
+    origin: v.optional(v.id("conversations")),
   },
   returns: v.id("tasks"),
   handler: async (ctx, args) => {
@@ -49,6 +51,7 @@ export const createTask = internalMutation({
       prompt: args.prompt.slice(0, 12000),
       status: "running",
       goalId: args.goalId,
+      ...(args.origin ? { origin: args.origin } : {}),
       plan: [],
       createdAt: now,
       updatedAt: now,
@@ -77,20 +80,39 @@ export const setPlan = internalMutation({
 export const updateTask = internalMutation({
   args: {
     taskId: v.string(),
+    turnId: v.optional(v.id("codexTurns")),
     status: v.optional(vTaskStatus),
     question: v.optional(v.string()),
     result: v.optional(v.string()),
     error: v.optional(v.string()),
   },
   returns: v.null(),
-  handler: async (ctx, { taskId, ...rest }) => {
+  handler: async (ctx, { taskId, turnId, ...rest }) => {
     const id = ctx.db.normalizeId("tasks", taskId);
     if (!id) return null;
+    const task = await ctx.db.get(id);
+    if (!task) return null;
+    // The check and update serialize with owner cancellation, including late tool results.
+    if (task.status === "cancelled") {
+      if (rest.status === "cancelled") return null;
+      throw new Error("The owner cancelled this task; stop working on it.");
+    }
+    if (rest.status && ["done", "blocked", "failed"].includes(rest.status) &&
+      await ctx.runQuery(internal.tasks.awaitingSteering, { id: taskId, ...(turnId ? { turnId } : {}) })) {
+      throw new Error("The owner sent an update still awaiting delivery. Keep completed work and let its follow-up turn finish the task.");
+    }
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     for (const [key, value] of Object.entries(rest)) {
       if (value !== undefined) patch[key] = value;
     }
     await ctx.db.patch(id, patch);
+    if (rest.status === "cancelled") {
+      await ctx.db.patch(id, { waiting: undefined });
+      if (task.conversationId && await ctx.db.get(task.conversationId)) {
+        await ctx.runMutation(internal.codex.requestStop, { conversationId: task.conversationId });
+      }
+      await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
+    }
     return null;
   },
 });
@@ -429,6 +451,7 @@ export const snapshot = internalQuery({
         title: t.title,
         status: t.status,
         plan: t.plan,
+        ownerUpdates: (t.steering ?? []).map((update) => ({ text: update.text, createdAt: update.createdAt })),
         question: t.question,
         result: t.result,
         error: t.error,

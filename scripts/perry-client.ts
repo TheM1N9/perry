@@ -67,11 +67,15 @@ export class Perry {
     this.beat(true);
     try {
       await this.convex.mutation(api.dashboard.sendChat, { key, id: chatId, text, model: options.model, engine: options.model ? options.engine : undefined });
+      const unsubscribe = options.onText ? this.convex.onUpdate(api.turnStreams.getChatStream, { key, id: chatId }, (text) => {
+        if (text) options.onText?.(text);
+      }) : () => {};
       // The mutation has resolved, so this subscription already sees the turn as running.
-      await this.until(api.dashboard.getChat, { key, id: chatId }, (chat) => {
-        if (chat.isRunning && chat.streaming) options.onText?.(chat.streaming);
-        return !chat.isRunning;
-      }, options.signal);
+      try {
+        await this.until(api.dashboard.getChat, { key, id: chatId }, (chat) => !chat.isRunning, options.signal);
+      } finally {
+        unsubscribe();
+      }
     } finally {
       this.beat(false);
     }

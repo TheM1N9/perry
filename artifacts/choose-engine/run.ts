@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { FAKE_AGENT, REPO, perry, redact, sleep } from "../engine-acp/harness";
@@ -47,6 +47,9 @@ import { FAKE_AGENT, REPO, perry, redact, sleep } from "../engine-acp/harness";
 //      Codex thread is not resumed.
 //  14. A command resolves to the owner's real codex, claude or grok, or a test Perry touches the owner's home.
 //  15. The pages throw.
+//  16. Setup writes service/encryption keys with group/other access on POSIX,
+//      or a rerun leaves a preexisting permissive env file readable. Check the
+//      real fresh/rerun setup flow; Windows keeps its inherited ACL semantics.
 
 const argv = process.argv.slice(2);
 const outDir = argv.find((arg) => !arg.startsWith("--")) ?? "";
@@ -73,7 +76,7 @@ const tailOf = (text: string, lines = 6) => text.trim().split("\n").slice(-lines
 type Standing = "missing" | "signed-out" | "signed-in";
 type World = { root: string; bin: string; state: string; acp: string; env: Record<string, string> };
 const PATH_KEY = Object.keys(process.env).find((name) => name.toUpperCase() === "PATH") ?? "PATH";
-const ENGINE_CLIS = ["codex", "claude", "grok"];
+const ENGINE_CLIS = ["codex", "claude", "grok", "opencode"];
 /** This machine's PATH without any folder that holds a real codex, claude or grok. */
 const cleanPath = (process.env[PATH_KEY] ?? "").split(delimiter).filter((dir) => dir && !ENGINE_CLIS.some((name) =>
   ["", ".cmd", ".exe", ".bat", ".ps1"].some((ext) => existsSync(join(dir, name + ext))))).join(delimiter);
@@ -206,7 +209,7 @@ async function terminal() {
   const two = world({ codex: "signed-in", claude: "signed-in" });
   const refused = await setup(two);
   transcript("setup-refused", refused.output);
-  check("refusesWithoutChoice", refused.code === 1 && refused.output.includes("there is no one here to answer") && refused.output.includes("--engine <codex|claude|grok|antigravity>")
+  check("refusesWithoutChoice", refused.code === 1 && refused.output.includes("there is no one here to answer") && refused.output.includes("--engine <codex|claude|grok|antigravity|opencode>")
     && !envWritten(two) && choiceIn(two.env.PERRY_HOME) === undefined && !/default engine (Codex|Claude Code|Grok Build|Antigravity)/.test(refused.output)
     && !logOf(two.state).some((entry) => entry.cli === "npm" || entry.cli === "installer" || (entry.args ?? []).includes("login") && (entry.args ?? [])[1] !== "status"),
     tailOf(refused.output));
@@ -251,10 +254,10 @@ async function terminal() {
   transcript("setup-asked", asked.output);
   const list = listOf(asked.output);
   const npm = logOf(fresh.state).filter((entry) => entry.cli === "npm");
-  check("listSaysHowEachStands", list.map((item) => item.engine).join(",") === "Grok Build,Antigravity,Claude Code,Codex"
+  check("listSaysHowEachStands", list.map((item) => item.engine).join(",") === "Grok Build,Antigravity,Claude Code,Codex,OpenCode"
     && /^1\.0\.42-fake, signed in with Grok account/.test(list[0]?.standing ?? "") && list[1]?.standing.startsWith("experimental, not turned on")
-    && list[2]?.standing === "2.1.277, not signed in" && list[3]?.standing === "not installed"
-    && asked.output.includes("[1-4, Enter for Grok Build]"), list);
+    && list[2]?.standing === "2.1.277, not signed in" && list[3]?.standing === "not installed" && list[4]?.standing === "not installed"
+    && asked.output.includes("[1-5, Enter for Grok Build]"), list);
   check("installsTheChosenOne", asked.code === 0 && npm.some((entry) => entry.args.join(" ") === "install -g @openai/codex")
     && !logOf(fresh.state).some((entry) => entry.cli === "installer") && existsSync(join(fresh.bin, WINDOWS ? "codex.cmd" : "codex")),
     { npm: npm.map((entry) => entry.args.join(" ")) });
@@ -263,10 +266,14 @@ async function terminal() {
     && /default engine Codex, 0\.177\.7, signed in with ChatGPT Plus/.test(asked.output) && choiceIn(fresh.env.PERRY_HOME) === "codex" && envWritten(fresh),
     { logins: logins.map((entry) => `${entry.cli} ${entry.args.join(" ")}`), last: tailOf(asked.output, 4) });
   chosenWhileStopped = { home: fresh.env.PERRY_HOME, engine: choiceIn(fresh.env.PERRY_HOME) };
+  const freshEnv = join(fresh.root, "checkout", ".env.local");
+  check("freshEnvOwnerOnly", WINDOWS || (statSync(freshEnv).mode & 0o077) === 0);
 
   // --- 8. Run again with Perry still stopped: the choice waiting for it is kept, nothing asked -----------------------
+  if (!WINDOWS) chmodSync(freshEnv, 0o644); // A legacy permissive file must be corrected too.
   const again = await setup(fresh);
   check("rerunKeepsChoice", again.code === 0 && !again.output.includes("Which should Perry use") && again.output.includes("default engine Codex") && choiceIn(fresh.env.PERRY_HOME) === "codex", tailOf(again.output, 3));
+  check("rerunEnvOwnerOnly", WINDOWS || (statSync(freshEnv).mode & 0o077) === 0);
 
   // --- 4, 5. Enter takes the one ready engine; answers piped before their questions are kept -----------------------
   const enter = world({ codex: "signed-out", grok: "signed-in" });

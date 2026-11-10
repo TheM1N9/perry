@@ -10,6 +10,7 @@ import { authenticate, policyOf, type Policy } from "./runner";
 import { targetOf, type Target } from "./channels";
 import { presenceOf } from "./todos";
 import { readPersona } from "./persona";
+import { posix, win32 } from "node:path";
 
 /**
  * Approvals for what a runner is asked to do on the owner's machine: a command
@@ -34,22 +35,30 @@ const ttlOf = (row: Pick<Doc<"approvals">, "kind">) => (row.kind === "brain" ? B
 /** With no pet to say whether the owner is at the computer, how long a web request waits before it goes to the phone too. */
 const ESCALATE_MS = 2 * 60_000;
 
-const vKind = v.union(v.literal("command"), v.literal("file"), v.literal("write"));
-type Kind = "command" | "file" | "write";
+const vKind = v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("tool"), v.literal("permission"));
+type Kind = "command" | "file" | "write" | "tool" | "permission";
 type Person = "terminal" | "dashboard" | "telegram" | "whatsapp" | "timeout";
 
 // --- Rules ---------------------------------------------------------------
 
 /** Compare paths the way the owner's filesystem does: Windows ignores case and slash direction. */
-function normalPath(path: string): string {
-  const slashed = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return /^[a-z]:(\/|$)/i.test(slashed) || slashed.startsWith("//") ? slashed.toLowerCase() : slashed;
+function normalPath(path: string): string | null {
+  if (!path || path.includes("\0")) return null;
+  const slashed = path.replace(/\\/g, "/");
+  const windows = /^[a-z]:\//i.test(slashed) || /^\/\/[^/]+\/[^/]+(?:\/|$)/.test(slashed);
+  if (windows) {
+    if (slashed.startsWith("//?/") || slashed.startsWith("//./")) return null;
+    // Win32 aliases trailing dots/spaces; do not guess at ambiguous components or device paths.
+    if (slashed.split("/").some(part => part !== "." && part !== ".." && /[. ]$/.test(part))) return null;
+    return win32.normalize(path).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  }
+  return posix.isAbsolute(path) ? posix.normalize(path).replace(/\/+$/, "") || "/" : null;
 }
 
 function inside(path: string, folder: string): boolean {
   const child = normalPath(path);
   const parent = normalPath(folder);
-  return child === parent || child.startsWith(`${parent}/`);
+  return child !== null && parent !== null && (child === parent || child.startsWith(parent.endsWith("/") ? parent : `${parent}/`));
 }
 
 /**
@@ -91,9 +100,11 @@ function suggestedPrefix(command: string, amendment?: string[]): string | undefi
 
 /** The deepest folder holding every path, unless that is a drive or home-sized root that allows too much. */
 function commonFolder(paths: string[]): string | undefined {
+  const normalized = paths.map(normalPath);
+  if (normalized.some(path => path === null)) return undefined;
   const windows = /^[a-z]:[\\/]/i.test(paths[0] ?? "");
   const same = (a: string, b: string) => windows ? a.toLowerCase() === b.toLowerCase() : a === b;
-  const folders = paths.map((path) => path.replace(/\\/g, "/").split("/").slice(0, -1));
+  const folders = (normalized as string[]).map(path => path.split("/").slice(0, -1));
   let shared = folders[0] ?? [];
   for (const parts of folders.slice(1)) {
     let i = 0;
@@ -102,30 +113,35 @@ function commonFolder(paths: string[]): string | undefined {
   }
   // C:/Users/me is three parts, and so is /home/me with its empty root.
   if (shared.length < 3) return undefined;
+  // //server/share is the network equivalent of a drive root.
+  if (normalized[0]?.startsWith("//") && shared.length <= 4) return undefined;
   const folder = shared.join("/");
   return windows ? folder.replace(/\//g, "\\") : folder;
 }
 
-type Request = { kind: Kind; title: string; cwd?: string; paths?: string[] };
+type Request = { kind: Kind; title: string; cwd?: string; paths?: string[]; cwdVerified?: boolean; pathsVerified?: boolean };
 
 function alwaysAllowFor(request: Request, amendment?: string[]): Doc<"approvals">["alwaysAllow"] {
+  if (request.kind === "tool" || request.kind === "permission") return undefined;
   if (request.kind === "command") {
+    if (request.cwd && !request.cwdVerified) return undefined;
     if (request.title.length > 4000) return undefined;
     const prefix = suggestedPrefix(request.title, amendment);
     return prefix ? { command: prefix, prefix: true } : { command: request.title };
   }
-  const folder = request.paths?.length ? commonFolder(request.paths) : undefined;
+  const folder = request.pathsVerified && request.paths?.length ? commonFolder(request.paths) : undefined;
   return folder ? { pathPrefix: folder } : undefined;
 }
 
 function ruleMatches(rule: Doc<"approvalRules">, request: Request): boolean {
+  if (request.kind === "tool" || request.kind === "permission") return false;
   if (request.kind === "command") {
     if (rule.kind !== "command" || !rule.command) return false;
-    if (rule.cwd && !(request.cwd && inside(request.cwd, rule.cwd))) return false;
+    if (rule.cwd && !(request.cwdVerified && request.cwd && inside(request.cwd, rule.cwd))) return false;
     return rule.prefix ? startsWithCommand(request.title, rule.command) : request.title === rule.command;
   }
   const folder = rule.pathPrefix;
-  return rule.kind === "file" && Boolean(folder) && Boolean(request.paths?.length)
+  return rule.kind === "file" && Boolean(folder) && request.pathsVerified === true && Boolean(request.paths?.length)
     && request.paths!.every((path) => inside(path, folder!));
 }
 
@@ -146,6 +162,8 @@ export const request = mutation({
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),
     paths: v.optional(v.array(v.string())),
+    cwdVerified: v.optional(v.boolean()),
+    pathsVerified: v.optional(v.boolean()),
     /** Codex's proposed exec-policy amendment: a command prefix it would allow from now on. */
     amendment: v.optional(v.array(v.string())),
     conversationId: v.optional(v.id("conversations")),
@@ -157,7 +175,8 @@ export const request = mutation({
   handler: async (ctx, args): Promise<{ id: Id<"approvals">; next: "run" | "review" | "ask" }> => {
     const runner = await authenticate(ctx, args.token);
     const now = Date.now();
-    const request: Request = { kind: args.kind, title: args.title, cwd: args.cwd, paths: args.paths };
+    if (args.kind === "permission" && (!args.detail || args.detail.length > 800)) throw new Error("The complete computer permission scope must fit in the approval details.");
+    const request: Request = { kind: args.kind, title: args.title, cwd: args.cwd, paths: args.paths, cwdVerified: args.cwdVerified, pathsVerified: args.pathsVerified };
     const row = {
       runnerId: runner._id,
       conversationId: args.conversationId,
@@ -169,6 +188,20 @@ export const request = mutation({
       alwaysAllow: alwaysAllowFor(request, args.amendment),
       createdAt: now,
     };
+
+    // Computer permission grants follow Full access; explicit tool consent
+    // still asks. Neither can be supplied by a saved command/file rule.
+    if (args.kind === "tool" || args.kind === "permission") {
+      const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
+      if (!chat || chat.contactId) throw new Error("Tool confirmations require an owner's chat.");
+      if (args.kind === "permission" && chat.access === "full") {
+        const id = await ctx.db.insert("approvals", { ...row, status: "auto", decidedBy: "trust", decidedAt: now });
+        return { id, next: "run" };
+      }
+      const id = await ctx.db.insert("approvals", { ...row, status: "pending" });
+      await ask(ctx, id);
+      return { id, next: "ask" };
+    }
 
     // The owner already said "always" to this.
     const rules = await ctx.db.query("approvalRules").withIndex("by_runner", (q) => q.eq("runnerId", runner._id)).take(200);
@@ -215,7 +248,7 @@ export const reviewed = mutation({
   handler: async (ctx, args): Promise<boolean> => {
     const runner = await authenticate(ctx, args.token);
     const row = await ctx.db.get(args.id);
-    if (row?.runnerId !== runner._id || row.status !== "reviewing") return false;
+    if (row?.runnerId !== runner._id || row.status !== "reviewing" || row.kind === "tool" || row.kind === "permission") return false;
     const review = { verdict: args.verdict, reason: args.reason.slice(0, 1000), model: args.model, ms: args.ms };
     // The owner may have changed the chat's access while the reviewer looked: Full access runs it, Ask asks.
     const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
@@ -293,7 +326,7 @@ export async function accessChanged(ctx: MutationCtx, conversationId: Id<"conver
   const pending = await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).take(200);
   const now = Date.now();
   for (const row of pending) {
-    if (row.conversationId !== conversationId) continue;
+    if (row.conversationId !== conversationId || row.kind === "tool") continue;
     await ctx.db.patch(row._id, { status: "auto", decidedBy: "trust", decidedAt: now });
     if (row.telegramMessageId) await ctx.scheduler.runAfter(0, internal.approvals.showOutcomeOnTelegram, { id: row._id });
   }
@@ -361,6 +394,17 @@ export const decisionOf = internalMutation({
       return "expired";
     }
     return row.status;
+  },
+});
+
+/** An interrupted browser call cannot use its outstanding approval later. */
+export const cancelBrowser = internalMutation({
+  args: { id: v.id("approvals") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (row?.kind === "browser" && row.status === "pending") await settleRow(ctx, row, { approved: false, by: "timeout" });
+    return null;
   },
 });
 
@@ -442,7 +486,7 @@ export const escalate = internalMutation({
 
 // --- Telegram ------------------------------------------------------------
 
-const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain" } as const;
+const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain", tool: "confirm a tool request", permission: "use additional computer access" } as const;
 /** Who is asking: the computer for what runs on it, Perry itself for talking with people. */
 const asker = async (ctx: QueryCtx, row: Doc<"approvals">) =>
   row.kind === "contact" || row.kind === "message" || row.kind === "brain" ? (await readPersona(ctx)).name : (await ctx.db.get(row.runnerId))?.name;

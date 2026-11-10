@@ -9,12 +9,22 @@
 - Never write unit tests after writing code.
 - Prefer end-to-end tests as the sole testing mechanism for complex features. End each E2E run with a verifiable, repeatable artifact.
 - If a system must be tested in isolation, write down every way it could fail before writing the test code.
+- After verification, delete temporary tests, generated test artifacts, disposable data, and test-only tooling created for the task. Preserve existing project tests.
 
 ## Development
 
 - Find what already solves the problem before writing code. Read the source of the runtime, framework, and installed libraries before concluding a feature is missing.
 - Prefer native platform features, then existing library utilities, then a few lines of project code, then a new abstraction, and only then a new dependency.
 - Avoid keeping state that the platform already keeps. Replace clever custom behavior with the built-in equivalent when available.
+
+## Long-lived tabs and windows
+
+The dashboard and the pet stay open for days.
+
+- Every listener, observer, timer and `requestAnimationFrame` needs a teardown that actually runs, including on unmount mid-flight.
+- Every module-level Map or Set needs an eviction or replacement path (key on id and overwrite, never on id plus revision).
+- Anything kept mounted offscreen must stay small, since it still re-renders on every update.
+- A leak that only shows after an hour is a bug like any other.
 
 ## Next.js
 
@@ -23,7 +33,7 @@
 
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 

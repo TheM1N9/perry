@@ -1,11 +1,14 @@
 "use client";
 
+import { randomUUID } from "@/lib/uuid";
+
 import { ArrowUpIcon, ChevronDownIcon, ExternalLinkIcon, FilePlusIcon, PlusIcon, ScanEyeIcon, SquareIcon, XIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { noteHref } from "@/convex/lib/notes";
+import { useTypewriter } from "@/hooks/use-typewriter";
 import { errorText } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -16,7 +19,9 @@ import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Markdown } from "@/components/dashboard/chat/markdown";
+import { ReactionBadges } from "@/components/dashboard/chat/reactions";
 import { StatusIndicator } from "@/components/dashboard/status-indicator";
+import { ChatAnnouncer } from "@/components/dashboard/chat-announcer";
 import { describe, holdProblem } from "@/convex/lib/shortcuts";
 import { Empty } from "./empty";
 import { PetTip } from "./tip";
@@ -50,7 +55,7 @@ export async function keepPicture(image: string): Promise<{ path: string; fileNa
   return { path: body.path, fileName, size: file.size };
 }
 
-export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, hold, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel, shot, onShot, onLook, lookKeys }: {
+export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, hold, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel, onRetry, onSent, teachKeys, notice, learned, shot, onShot, onLook, lookKeys }: {
   chatId: PetChatId;
   onChatId: (id: PetChatId) => void;
   draft: string;
@@ -68,6 +73,16 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   onTalk: () => void;
   onTalkSend: () => void;
   onTalkCancel: () => void;
+  /** Write down again a recording that could not be written down. */
+  onRetry?: () => void;
+  /** A message went, with these words: what was written down may have been corrected first. */
+  onSent?: (text: string) => void;
+  /** Whether to show the Talk keys where there is room, until they have been used a few times. */
+  teachKeys?: boolean;
+  /** Something he has to say that belongs under the box. */
+  notice?: string;
+  /** A spelling just learned, with a way to take it back. */
+  learned?: { text: string; undo: () => void; dismiss: () => void } | null;
   shot: Shot | null;
   onShot: (shot: Shot | null) => void;
   /** Take a picture of the screen, where his window can (not in a plain browser). */
@@ -77,6 +92,8 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const key = useDashboardKey();
   const chats = useQuery(api.dashboard.listChats, { key });
   const chat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
+  const stream = useQuery(api.turnStreams.getChatStream, chatId ? { key, id: chatId } : "skip");
+  const streaming = useTypewriter(stream ?? "", chatId);
   const { results } = usePaginatedQuery(api.dashboard.getChatMessages, chatId ? { key, id: chatId } : "skip", { initialNumItems: 30 });
   const messages = useMemo(() => [...results].sort((a, b) => a.createdAt - b.createdAt), [results]);
   const createChat = useMutation(api.dashboard.createChat);
@@ -90,14 +107,11 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   /** What a note just saved says: where it went, with a way to open it. */
   const [noted, setNoted] = useState<{ text: string; id: Id<"notes"> } | null>(null);
   const [sending, setSending] = useState(false);
+  const submitting = useRef(false);
   /** What scrolls: the ScrollArea's viewport, kept at the newest message. */
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
-  // A chat that was deleted in the dashboard is let go of.
-  useEffect(() => {
-    if (chatId && chats && !chats.some((item) => item.id === chatId)) onChatId(null);
-  }, [chatId, chats, onChatId]);
   // Open here, what it says is seen, as in the dashboard.
   useEffect(() => {
     if (chatId && chat && !chat.isRunning) void markSeen({ key, id: chatId }).catch(() => {});
@@ -105,13 +119,15 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   useLayoutEffect(() => {
     const element = scroller.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [chatId, messages.length, chat?.streaming, chat?.isRunning]);
+  }, [chatId, messages.length, streaming, chat?.isRunning]);
   useEffect(() => { input.current?.focus(); }, [chatId]);
 
   const picture = shot ? shot[shot.use] ?? null : null;
+  const current = useRef({ chatId, draft, shot });
+  useLayoutEffect(() => { current.current = { chatId, draft, shot }; }, [chatId, draft, shot]);
   const send = async () => {
     const text = draft.trim();
-    if ((!text && !picture) || sending) return;
+    if ((!text && !picture) || sending || submitting.current) return;
     // "/note <words>": into the Inbox note at once, with no reply to wait for.
     if (!picture && /^\/note(\s|$)/i.test(text)) {
       const words = text.slice(5).trim();
@@ -126,6 +142,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       }
       return;
     }
+    submitting.current = true;
     setSending(true);
     setNoted(null);
     setError("");
@@ -133,14 +150,18 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       const id = chatId ?? await createChat({ key });
       if (!chatId) onChatId(id);
       // The picture is kept on this computer as the dashboard keeps a file you attach, and goes with the message.
-      const messageKey = crypto.randomUUID();
+      const messageKey = randomUUID();
       const attachmentIds = picture ? [await attach(id, messageKey, picture)] : [];
-      onDraft("");
-      onShot(null);
       await sendChat({ key, id, text, ...(attachmentIds.length ? { attachmentIds, messageKey } : {}) });
+      onSent?.(text);
+      if (current.current.chatId === id) {
+        if (current.current.draft.trim() === text) onDraft("");
+        if (current.current.shot === shot) onShot(null);
+      }
     } catch (cause) {
       setError(errorText(cause));
     } finally {
+      submitting.current = false;
       setSending(false);
     }
   };
@@ -170,6 +191,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <ChatAnnouncer chatId={chatId} status={chatId ? chats?.find((item) => item.id === chatId)?.status : undefined} />
       <div className="flex items-center gap-0.5 border-b px-2.5 pb-1.5">
         {/* Your chats, as a menu: arrow keys, Esc and a click outside close it; data-solid, or the window would let its clicks through. */}
         <DropdownMenu>
@@ -182,7 +204,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             <DropdownMenuRadioGroup value={chatId ?? ""} onValueChange={(id) => onChatId(id as Id<"conversations">)}>
               {yours.map((item) => (
                 <DropdownMenuRadioItem key={item.id} value={item.id} closeOnClick className="gap-2">
-                  <span className={cn("min-w-0 flex-1 truncate", item.naming && "shimmer")}>{item.title}</span>
+                  <span className={cn("min-w-0 flex-1 truncate", item.naming && "shimmer motion-reduce:shimmer-none")}>{item.title}</span>
                   <StatusIndicator status={item.status} unseen={item.unseen && item.id !== chatId} />
                 </DropdownMenuRadioItem>
               ))}
@@ -204,7 +226,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       <div className="flex min-h-full flex-col space-y-3 px-3.5 pt-3 pb-2 [&_.prose-chat]:text-sm [&_.prose-chat]:leading-[1.6]" aria-live="polite">
         {!chatId && (<div className="flex flex-1 flex-col justify-center pb-3">
           <Empty title="What can I do for you?" awake className="pt-0">
-            {voice && hotkey ? (holdProblem(hold)
+            {voice && hotkey && teachKeys !== false ? (holdProblem(hold)
               ? <>Type, or tap <Kbd>{keys(hotkey)}</Kbd> anywhere, talk, and tap it again.</>
               : <>Type, or hold <Kbd>{keys(hotkey)}</Kbd> anywhere and talk.</>)
               : null}
@@ -232,10 +254,12 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
                 {message.text}
               </p>
             )}
+            <ReactionBadges {...message.reactions} assistant="Perry" />
           </div>
         ) : (
           <div key={message.id} className="group/reply">
             <Markdown text={message.text} openNote={open} />
+            <ReactionBadges {...message.reactions} assistant="Perry" />
             {!message.pending && chatId && (
               <PetTip label="Save as note">
                 <Button variant="ghost" size="icon-xs" aria-label="Save as note" className="-ml-1 text-muted-foreground opacity-0 group-hover/reply:opacity-100 focus-visible:opacity-100"
@@ -246,8 +270,8 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             )}
           </div>
         ))}
-        {running && (chat?.streaming
-          ? <div className="opacity-90"><Markdown text={chat.streaming} /></div>
+        {running && (stream != null
+          ? <div className="opacity-90"><Markdown text={streaming} streaming /></div>
           : <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><span className="size-1.5 animate-pulse rounded-full bg-primary" />Working…</p>)}
         {chat?.lastError && !running && <p className="text-xs text-destructive">{chat.lastError}</p>}
       </div>
@@ -288,7 +312,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
               onChange={(event) => { onDraft(event.target.value); setError(""); }}
               onKeyDown={onKey}
               aria-label="Message Perry"
-              placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : "Message Perry"}
+              placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : voice && hotkey && teachKeys ? `Message Perry, or hold ${keys(hotkey)}` : "Message Perry"}
               className="max-h-28 min-h-9 py-2 pl-3 text-sm md:text-sm"
             />
             <InputGroupAddon align="inline-end" className="gap-1 self-end pb-1.5">
@@ -298,14 +322,15 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
                 </PetTip>
               )}
               {voice && <MicButton onClick={onTalk} />}
-              {running && !draft.trim() && !picture ? (
+              {running && (
                 <PetTip label="Stop">
                   <InputGroupButton size="icon-xs" variant="default" className="size-7 rounded-full bg-foreground text-background hover:bg-foreground/80" aria-label="Stop"
-                    onClick={() => chatId && void stopChat({ key, id: chatId })}>
+                    onClick={() => chatId && void stopChat({ key, id: chatId }).catch(cause => setError(errorText(cause)))}>
                     <SquareIcon className="size-3 fill-current" />
                   </InputGroupButton>
                 </PetTip>
-              ) : (
+              )}
+              {(!running || draft.trim() || picture) && (
                 <InputGroupButton type="submit" size="icon-xs" variant={!draft.trim() && !picture ? "secondary" : "default"} className={cn("size-7 rounded-full", !draft.trim() && !picture && "text-muted-foreground disabled:opacity-100")} aria-label="Send" disabled={(!draft.trim() && !picture) || sending}>
                   <ArrowUpIcon className="size-4" />
                 </InputGroupButton>
@@ -318,9 +343,24 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             {!byHotkey || !hotkey ? "Listening. Send when you're done; Esc to stop."
               : holdProblem(hold) ? `Listening. Press ${keys(hotkey)} again to send; Esc to stop. ${holdProblem(hold)}`
                 : `Listening. Let go of ${keys(hotkey)} to send; Esc to stop.`}
+            {" Stops automatically after five minutes."}
           </p>
         )}
-        {(error || voice?.error) && <p className="mt-1 px-1 text-xs text-destructive">{error || voice?.error}</p>}
+        {(error || voice?.error) && <p className="mt-1 px-1 text-xs text-destructive" role="alert">{error || voice?.error}</p>}
+        {voice?.failed && voice.state === "idle" && (
+          <p className="mt-1 flex items-center gap-2 px-1 text-xs text-muted-foreground" role="status">
+            Your recording is saved.
+            <button type="button" className="font-medium underline underline-offset-2 hover:text-foreground" onClick={onRetry}>Try again</button>
+            <button type="button" className="underline-offset-2 hover:text-foreground hover:underline" onClick={voice.discard}>Discard</button>
+          </p>
+        )}
+        {notice && !error && <p className="mt-1 px-1 text-xs font-medium text-primary" role="status" data-notice>{notice}</p>}
+        {learned && !error && (
+          <p className="mt-1 px-1 text-xs text-muted-foreground" role="status" data-learned>
+            I'll write {learned.text} that way from now on.{" "}
+            <button type="button" className="font-medium underline underline-offset-2 hover:text-foreground" onClick={learned.undo}>Undo</button>
+          </p>
+        )}
         {noted && !error && (
           <p className="mt-1 px-1 text-xs text-muted-foreground" role="status" data-noted>
             {noted.text}{" "}

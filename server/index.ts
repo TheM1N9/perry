@@ -11,6 +11,7 @@ import { backupBeforeModelChange, moveVectorsOut } from "./brainIndex";
 import { EMBED_MODEL } from "../convex/lib/embed";
 import { modules } from "./modules";
 import { Runtime } from "./runtime";
+import { initializeCredentialEncryption } from "./credential-encryption";
 import { pollTelegram } from "./telegram";
 import { runTriggers } from "./triggers";
 import { runWake } from "./wake";
@@ -34,6 +35,12 @@ export function backend(): Runtime {
   if (!box.__perry) {
     mkdirSync(HOME, { recursive: true });
     const sql = new DatabaseSync(process.env.PERRY_DB ?? join(HOME, "perry.sqlite"));
+    try {
+      initializeCredentialEncryption(sql, HOME);
+    } catch (error) {
+      sql.close();
+      throw error;
+    }
     const runtime = new Runtime(sql, schema as never, modules, {
       storageDir: join(HOME, "storage"),
       crons: crons as never,
@@ -238,6 +245,7 @@ export async function startBackend() {
   await runtime.runMutation("projects:migrate", {}, { internal: true });
   // Every note's paragraphs as lines that search finds with the memories (pages.ts); nothing once done.
   await runtime.runMutation("pages:indexAll", {}, { internal: true });
+  await runtime.runMutation("compaction:applyPendingUpkeep", {}, { internal: true });
   // Memories from before pages move into them, after a backup.
   await moveMemoriesIntoPages(runtime);
   await givePeoplePages(runtime);

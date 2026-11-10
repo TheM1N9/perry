@@ -13,11 +13,11 @@
  * Pure, with no server imports, so the browser bundle and the runner use it too.
  */
 
-export const ENGINES = ["codex", "claude", "grok", "cursor", "antigravity"] as const;
+export const ENGINES = ["codex", "claude", "grok", "cursor", "antigravity", "opencode"] as const;
 export type EngineKind = (typeof ENGINES)[number];
 
 /** The engines a runner drives today (runner/engines/index.ts): the ones the owner can choose as the default. */
-export const RUNNABLE_ENGINES: readonly EngineKind[] = ["codex", "claude", "grok", "antigravity"];
+export const RUNNABLE_ENGINES: readonly EngineKind[] = ["codex", "claude", "grok", "antigravity", "opencode"];
 export const isRunnable = (value: unknown): value is EngineKind => (RUNNABLE_ENGINES as readonly unknown[]).includes(value);
 
 /**
@@ -42,6 +42,7 @@ export const ENGINE_LABELS: Record<EngineKind, string> = {
   grok: "Grok Build",
   cursor: "Cursor",
   antigravity: "Antigravity",
+  opencode: "OpenCode",
 };
 
 /** What the sign-in button says: the account the owner signs in with. */
@@ -51,6 +52,7 @@ export const SIGN_IN_LABELS: Record<EngineKind, string> = {
   grok: "Sign in with Grok",
   cursor: "Sign in with Cursor",
   antigravity: "Sign in with Google",
+  opencode: "Sign in with OpenCode",
 };
 
 export const isEngine = (value: unknown): value is EngineKind => (ENGINES as readonly unknown[]).includes(value);

@@ -1,0 +1,323 @@
+{
+  "phase": "changed-row-positive-control",
+  "renderers": [
+    {
+      "version": "19.3.0-canary-cbb046ab-20260731",
+      "package": "react-dom",
+      "bundleType": 0
+    }
+  ],
+  "totals": {
+    "LiveReply": {
+      "mounts": 0,
+      "updates": 12,
+      "actualDurationMs": 0.5000000149011612
+    },
+    "ReplyInProgress": {
+      "mounts": 0,
+      "updates": 12,
+      "actualDurationMs": 0
+    },
+    "ChatScreen": {
+      "mounts": 0,
+      "updates": 3,
+      "actualDurationMs": 7.600000023841858
+    },
+    "ComposerDraft": {
+      "mounts": 0,
+      "updates": 3,
+      "actualDurationMs": 2.4000000208616257
+    },
+    "Composer": {
+      "mounts": 0,
+      "updates": 3,
+      "actualDurationMs": 2.2000000178813934
+    },
+    "MessageRow": {
+      "mounts": 0,
+      "updates": 1,
+      "actualDurationMs": 1.7000000029802322
+    }
+  },
+  "commits": [
+    {
+      "at": 159078.30000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 160078.10000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 161078.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 162075,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 163070.10000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 163188.20000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ChatScreen": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 2.2000000029802322
+        },
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1
+        }
+      }
+    },
+    {
+      "at": 163189.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 163194.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ChatScreen": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.6000000089406967
+        },
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.6000000089406967
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5000000149011612
+        }
+      }
+    },
+    {
+      "at": 163195.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 163208.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ChatScreen": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 3.800000011920929
+        },
+        "MessageRow": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.7000000029802322
+        },
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.800000011920929
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 163209.30000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 164073.10000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 165069.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 165862.10000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 166078.80000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 167069.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    }
+  ],
+  "truncated": false
+}

@@ -1,0 +1,8 @@
+{
+  "scope": "Actual Telegram idle polling loop with a synthetic no-token runtime; only 15-second delays accelerated",
+  "idleCycles": 12,
+  "abortListenersRetainedBeforeStop": 12,
+  "abortListenersAfterStop": 1,
+  "completed": true,
+  "findingConfirmed": true
+}

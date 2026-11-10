@@ -1,0 +1,45 @@
+{
+  "lifecycle": {
+    "passed": true,
+    "checks": 55
+  },
+  "browser": {
+    "passed": true,
+    "checks": 16
+  },
+  "steering": {
+    "passed": true,
+    "checks": 62
+  },
+  "turnHealth": {
+    "passed": true,
+    "journeys": 22
+  },
+  "smoke": {
+    "passed": true,
+    "checks": 9
+  },
+  "backendTypecheck": "passed",
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "buildWarnings": [
+    "Existing filesystem tracing in convex/pet.ts",
+    "Existing filesystem tracing in server/wake.ts"
+  ],
+  "fixtureShutdown": true,
+  "browserProfileCleanup": "blocked by automatic approval review: W:/motionclip-storage-513/temp/perry-e2e-profile-xND6D3",
+  "liveProvidersExercised": false,
+  "sourceSha256": {
+    "components/dashboard/chat/chat-screen.tsx": "82caf3a356e0e9e998f555c4428c5625723892fbb6b8c49c64882eb62d3fbf46",
+    "components/dashboard/chat/composer.tsx": "808e213656e67a4d9007f8941c40f38e6119ac1e8a06707295c5bd5528afd95c",
+    "components/pet/chat.tsx": "02119ca09a590976b436c005b2413ebdf0c9e7d7883be81572895a525290de16",
+    "convex/brain.ts": "b6f1c5e20e480c26e879d63b7d8947ac95453f5079d0c0e2eaed4b433d73ba18",
+    "convex/codex.ts": "41d001d43ab2ec22d6839b86861ea78da1c748683eff856be108e8176c51f837",
+    "convex/dashboard.ts": "defea4bc1c171cbfbb31cd3f5baa1130314be76a7f782f728882ede32bc28145",
+    "convex/pause.ts": "32dace8551a37afc01438a32ecda4311149ee0ec3d9b47a3fc3682e428710d79",
+    "convex/queue.ts": "b0d794fc073cde191f1c0777a71141c254bfbfc8d4e905f2cc6c5c4b368c1bb5",
+    "convex/recovery.ts": "70def1fed76195cbe2cb59cf7c124f1a0f7d3f1277ecdab841c45ac95347a0bf",
+    "convex/schema.ts": "05bfa1842d627abbcc2ba75c6ebefafbb0351107fb50548957a4d859cf5f7c44",
+    "runner/index.ts": "d37a842c9543f2af173072bf1ea55dc7d500ec4f41c2b407597bd0fa4f562025"
+  }
+}

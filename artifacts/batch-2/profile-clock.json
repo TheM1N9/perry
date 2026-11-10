@@ -1,0 +1,462 @@
+{
+  "phase": "clock-200-messages",
+  "renderers": [
+    {
+      "version": "19.3.0-canary-cbb046ab-20260731",
+      "package": "react-dom",
+      "bundleType": 0
+    }
+  ],
+  "totals": {
+    "LiveReply": {
+      "mounts": 0,
+      "updates": 25,
+      "actualDurationMs": 2.8000000715255737
+    },
+    "ReplyInProgress": {
+      "mounts": 0,
+      "updates": 25,
+      "actualDurationMs": 0.9000000059604645
+    }
+  },
+  "commits": [
+    {
+      "at": 30275.20000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        }
+      }
+    },
+    {
+      "at": 30865.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 31276,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 32278.80000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        }
+      }
+    },
+    {
+      "at": 33277.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.20000000298023224
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 34280.70000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 35275.80000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        }
+      }
+    },
+    {
+      "at": 36276.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 37283,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 38281.40000000596,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 39274.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.20000000298023224
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 40277.10000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 41284.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        }
+      }
+    },
+    {
+      "at": 42281.90000000596,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 43281.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 44276.80000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        }
+      }
+    },
+    {
+      "at": 45273.70000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        }
+      }
+    },
+    {
+      "at": 45865.5,
+      "priority": 3,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 46282.5,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 47274.40000000596,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.20000000298023224
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        }
+      }
+    },
+    {
+      "at": 48273.10000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 49282.70000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        }
+      }
+    },
+    {
+      "at": 50282.90000000596,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 51282.5,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 52273.40000000596,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.20000000298023224
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 53282.70000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        }
+      }
+    },
+    {
+      "at": 54277.30000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    }
+  ],
+  "truncated": false
+}

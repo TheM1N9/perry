@@ -1,0 +1,14 @@
+{
+  "reviewedAt": "2026-10-12T22:26:54.521818+00:00",
+  "issue": 265,
+  "method": "Manual browser UI journeys through Codex computer use; disposable local data. Existing feature E2E reports remain separate.",
+  "checks": [
+    "Desktop and 390px settings layout",
+    "Platform disclosure reveals operation details",
+    "Refresh keeps unprobed operations marked Not verified"
+  ],
+  "screenshots": [
+    "desktop.jpg",
+    "mobile.jpg"
+  ]
+}

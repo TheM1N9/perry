@@ -1,19 +1,60 @@
 "use client";
 
 import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SparklesIcon, SquareIcon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, type Access, type ModelOption } from "@/convex/lib/commands";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
+import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, typingSkill, type Access, type ModelOption } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { cn } from "@/lib/utils";
+import { randomUUID } from "@/lib/uuid";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { InfoTip } from "../common";
-import { PickedFiles } from "./attachments";
+import { AttachmentList, PickedFiles, type Attachment } from "./attachments";
+import { PromptEditor, type PromptHandle } from "./prompt-editor";
+import { CitationChips, type Citation } from "./citations";
 
 export const MAX_FILES = 10;
 export const MAX_BYTES = 50 * 1024 * 1024;
+
+export type DraftHandle = { read: () => string; write: (text: string) => void; citations: () => Citation[]; writeCitations: (citations: Citation[]) => void; cite: (text: string) => void };
+/** The composer's box (prompt-editor.tsx): focused, and written at the caret. */
+export type ComposerHandle = PromptHandle;
+
+/** Draft/caret updates stop here. Keep this mounted even for a read-only chat. */
+export function ComposerDraft({ ref, refreshSkills, storageKey, children }: {
+  ref: Ref<DraftHandle>;
+  storageKey: string;
+  refreshSkills: () => unknown;
+  /** `before`: the caret's line up to the caret, where a $name is typed. */
+  children: (state: { draft: string; setDraft: (text: string) => void; citations: Citation[]; setCitations: (citations: Citation[]) => void; before: string | undefined; setBefore: (before: string) => void }) => ReactNode;
+}) {
+  const [draft, setDraftState] = useState("");
+  const [citations, setCitationState] = useState<Citation[]>([]);
+  const setCitations = useCallback((items: Citation[]) => {
+    setCitationState(items);
+    try { if (items.length) sessionStorage.setItem(`${storageKey}.citations`, JSON.stringify(items)); else sessionStorage.removeItem(`${storageKey}.citations`); } catch {}
+  }, [storageKey]);
+  const setDraft = useCallback((text: string) => {
+    setDraftState(text);
+    try { if (text) sessionStorage.setItem(storageKey, text); else sessionStorage.removeItem(storageKey); } catch {}
+  }, [storageKey]);
+  useEffect(() => {
+    try { setDraftState(sessionStorage.getItem(storageKey) ?? ""); } catch { setDraftState(""); }
+    try {
+      const saved: unknown = JSON.parse(sessionStorage.getItem(`${storageKey}.citations`) ?? "[]");
+      setCitationState(Array.isArray(saved) ? saved.filter((item): item is Citation => Boolean(item) && typeof item.id === "string" && typeof item.text === "string" && typeof item.comment === "string") : []);
+    } catch { setCitationState([]); }
+  }, [storageKey]);
+  const [before, setBefore] = useState<string>();
+  useImperativeHandle(ref, () => ({ read: () => draft, write: setDraft, citations: () => citations, writeCitations: setCitations,
+    cite: (text) => setCitations([...citations, { id: randomUUID(), text, comment: "" }]),
+  }), [draft, setDraft, citations, setCitations]);
+  const mentioning = !draft.startsWith("/") && typingSkill(before ?? draft) !== null;
+  useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
+  return children({ draft, setDraft, citations, setCitations, before, setBefore });
+}
 const ACCEPT = "image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json";
 
 /** `typed`: already typed out in full, so Enter sends the message rather than picking it. */
@@ -39,16 +80,17 @@ type Pickers = {
 };
 
 export function Composer({
-  ref, assistant, draft, onDraftChange, onCaret, onSubmit, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
-  suggestions, suggesting = "Commands", completing, pickers, above,
+  ref, assistant, draft, onDraftChange, onCaret, onSubmit, onQueue, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
+  suggestions, suggesting = "Commands", completing, pickers, above, editing, editingQueued, citations = [], onCitationsChange,
 }: {
-  ref?: Ref<HTMLTextAreaElement>;
+  ref?: Ref<ComposerHandle>;
   assistant: string;
   draft: string;
   onDraftChange: (draft: string) => void;
-  /** Where the caret is, as it moves: a $name is completed where it is typed. */
-  onCaret?: (position: number) => void;
+  /** The caret's line up to the caret, as it moves: a $name is completed where it is typed. */
+  onCaret?: (before: string) => void;
   onSubmit: () => void;
+  onQueue?: () => void;
   onStop?: () => void;
   waiting: boolean;
   busy: boolean;
@@ -61,8 +103,13 @@ export function Composer({
   suggesting?: string;
   /** What Enter finishes instead of sending: a half-typed command name, a half-typed choice ("/think hi"), or a half-typed $skill. */
   completing: "command" | "choice" | "skill" | null;
-  pickers: Pickers;
+  pickers?: Pickers;
+  editing?: { attachments: Attachment[]; onRemove: (attachment: Attachment) => void; onCancel: () => void };
+  /** A queued message's words are in the box (up-next.tsx): sending saves them in its place, and Escape gives the draft back. */
+  editingQueued?: { onCancel: () => void };
   above?: ReactNode;
+  citations?: Citation[];
+  onCitationsChange?: (citations: Citation[]) => void;
 }) {
   const picker = useRef<HTMLInputElement>(null);
   const [highlight, setHighlight] = useState(0);
@@ -75,11 +122,28 @@ export function Composer({
 
   const shown = dismissed ? [] : suggestions;
   const index = Math.min(highlight, Math.max(0, shown.length - 1));
-  const empty = !draft.trim() && files.length === 0;
+  const empty = !draft.trim() && citations.length === 0 && files.length === 0 && !editing?.attachments.some((file) => !file.removed);
   const stopping = waiting && empty && onStop;
 
+  /** Keys the box gives the composer first; true when one was taken. Enter that is not taken sends (prompt-editor.tsx). */
+  function onKey(event: KeyboardEvent) {
+    if (editing && event.key === "Escape" && !uploading) { editing.onCancel(); return true; }
+    if (editingQueued && event.key === "Escape" && !shown.length) { editingQueued.onCancel(); return true; }
+    if (!shown.length) return false;
+    if (event.key === "ArrowDown") { setArrowed(true); setHighlight((index + 1) % shown.length); return true; }
+    if (event.key === "ArrowUp") { setArrowed(true); setHighlight((index - 1 + shown.length) % shown.length); return true; }
+    if (event.key === "Tab") { shown[index].apply(); return true; }
+    if (event.key === "Escape") { setDismissed(true); return true; }
+    // Enter takes a suggestion you arrowed to, or finishes a half-typed command or $name; anything typed out in full runs as typed.
+    if (event.key === "Enter" && !event.shiftKey && (arrowed || completing === "choice" || (completing === "command" && shown[index].label.trim() !== draft.trim())
+      || (completing === "skill" && !shown[index].typed))) {
+      shown[index].apply(); return true;
+    }
+    return false;
+  }
+
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       {above}
       {/* The Command menu's look, kept by hand: cmdk gives its list and items ids of its own and runs Enter itself, and
           here the box keeps the focus (aria-activedescendant names the option) and a command typed out in full runs as typed. */}
@@ -99,58 +163,67 @@ export function Composer({
       <div data-composer
         className={cn(
           "rounded-3xl border bg-background shadow-float transition-[border-color,box-shadow] dark:bg-card",
+          editing && "rounded-xl shadow-none",
           dragging && "border-primary ring-3 ring-primary/20",
         )}
         onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
-        onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); onAddFiles(Array.from(event.dataTransfer.files)); } }}
+        onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); if (!editingQueued) onAddFiles(Array.from(event.dataTransfer.files)); } }}
       >
-        <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading)} />
-        <textarea
+        {citations.length > 0 && onCitationsChange && <CitationChips citations={citations} onChange={onCitationsChange} />}
+        {editing ? (editing.attachments.length > 0 || files.length > 0) && <div className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1">
+          {editing.attachments.length > 0 && <ul aria-label="Current attachments" className="flex gap-2">
+            {editing.attachments.map((attachment, index) => <li key={attachment.id ?? index} className="relative shrink-0">
+              <AttachmentList attachments={[attachment]} compact />
+              <Button type="button" size="icon-xs" variant="secondary" className="absolute top-1 right-1 size-5 rounded-full bg-background/90 shadow-sm" aria-label={`Remove ${attachment.fileName}`} disabled={busy || Boolean(uploading)} onClick={() => editing.onRemove(attachment)}><XIcon /></Button>
+            </li>)}
+          </ul>}
+          <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading || busy)} className="overflow-visible p-0" />
+        </div> : <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading)} />}
+        <PromptEditor
           ref={ref}
-          id="composer"
           value={draft}
-          rows={1}
-          aria-label={`Message ${assistant}`}
-          placeholder={waiting ? "Add to the reply, or stop it" : `Message ${assistant}`}
-          role="combobox"
-          aria-expanded={shown.length > 0}
-          aria-controls={shown.length ? "chat-commands" : undefined}
-          aria-autocomplete="list"
-          aria-activedescendant={shown.length ? `chat-command-${index}` : undefined}
-          className="block max-h-[40vh] min-h-[52px] w-full resize-none bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-md field-sizing-content placeholder:text-muted-foreground"
-          onChange={(event) => { onDraftChange(event.target.value); onCaret?.(event.target.selectionStart); }}
-          onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
-          onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); onAddFiles(pasted); } }}
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return;
-            if (shown.length) {
-              if (event.key === "ArrowDown") { event.preventDefault(); setArrowed(true); setHighlight((index + 1) % shown.length); return; }
-              if (event.key === "ArrowUp") { event.preventDefault(); setArrowed(true); setHighlight((index - 1 + shown.length) % shown.length); return; }
-              if (event.key === "Tab") { event.preventDefault(); shown[index].apply(); return; }
-              if (event.key === "Escape") { event.preventDefault(); setDismissed(true); return; }
-              // Enter takes a suggestion you arrowed to, or finishes a half-typed command or $name; anything typed out in full runs as typed.
-              if (event.key === "Enter" && !event.shiftKey && (arrowed || completing === "choice" || (completing === "command" && shown[index].label.trim() !== draft.trim())
-                || (completing === "skill" && !shown[index].typed))) {
-                event.preventDefault(); shown[index].apply(); return;
-              }
-            }
-            if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSubmit(); }
+          onChange={onDraftChange}
+          onCaret={onCaret}
+          onSubmit={onSubmit}
+          onKeyDown={onKey}
+          onFiles={(pasted) => { if (!editingQueued) onAddFiles(pasted); return true; }}
+          placeholder={editingQueued ? "Edit the queued message" : waiting ? "Add to the reply, or stop it" : `Message ${assistant}`}
+          attributes={{ id: editing ? "edit-composer" : "composer", role: "combobox", "aria-autocomplete": "list" }}
+          aria={{
+            "aria-label": editing ? "Edit your message" : editingQueued ? "Edit the queued message" : `Message ${assistant}`,
+            "aria-expanded": String(shown.length > 0),
+            "aria-controls": shown.length ? "chat-commands" : undefined,
+            "aria-activedescendant": shown.length ? `chat-command-${index}` : undefined,
           }}
+          disabled={Boolean(editing && (uploading || busy))}
+          autoFocus={Boolean(editing)}
+          className="max-h-[40vh] min-h-[52px] w-full overflow-y-auto px-5 pt-4 pb-1"
         />
-        <div className="flex items-center gap-1 px-2.5 pt-1 pb-2.5">
+        <div className={cn("flex items-center gap-1 px-2.5 pt-1 pb-2.5", editing && "flex-wrap justify-end")}>
           <Tooltip>
             <TooltipTrigger render={<Button type="button" variant="ghost" size="icon" className="rounded-full text-muted-foreground" aria-label="Attach files"
-              onClick={() => picker.current?.click()} disabled={busy || Boolean(uploading) || files.length >= MAX_FILES} />}>
+              onClick={() => picker.current?.click()} disabled={busy || Boolean(uploading) || Boolean(editingQueued) || files.length + (editing?.attachments.length ?? 0) >= MAX_FILES} />}>
               <PaperclipIcon />
             </TooltipTrigger>
             <TooltipContent>Attach images, video, audio or documents (up to 10, 50 MB each)</TooltipContent>
           </Tooltip>
           <input ref={picker} type="file" multiple hidden accept={ACCEPT} onChange={(event) => { onAddFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
-          <ModelPickers {...pickers} />
+          {pickers && <ModelPickers {...pickers} />}
           <span className="ml-auto" />
           {uploading && <span className="nums mr-1 flex items-center gap-1.5 text-xs text-muted-foreground" role="status"><Spinner className="size-3" />Uploading {uploading.index} of {uploading.total}</span>}
-          {stopping ? (
+          {!editing && !editingQueued && waiting && !empty && <>
+            {onStop && <Button type="button" size="icon" variant="secondary" className="size-9 shrink-0 rounded-full" aria-label="Stop the reply" onClick={onStop}><SquareIcon className="size-3.5 fill-current" /></Button>}
+            {onQueue && <Button type="button" size="sm" variant="secondary" className="shrink-0 rounded-full" aria-label="Queue message after the reply" onClick={onQueue} disabled={busy || Boolean(uploading)}>Queue</Button>}
+          </>}
+          {editing ? <>
+            <Button type="button" variant="ghost" size="sm" onClick={editing.onCancel} disabled={busy || Boolean(uploading)}>Cancel</Button>
+            <Button type="button" size="sm" onClick={onSubmit} disabled={empty || busy || waiting || Boolean(uploading)}>Save and resend</Button>
+          </> : editingQueued ? <>
+            {/* Its files stay with it; only the words change. */}
+            <Button type="button" variant="ghost" size="sm" className="rounded-full" onClick={editingQueued.onCancel} disabled={busy}>Cancel</Button>
+            <Button type="button" size="sm" className="rounded-full" aria-label="Save the queued message" onClick={onSubmit} disabled={busy}>Save</Button>
+          </> : stopping ? (
             <Button type="button" size="icon" className="size-9 rounded-full" aria-label="Stop the reply" onClick={onStop}>
               <SquareIcon className="size-3.5 fill-current" />
             </Button>
@@ -176,17 +249,22 @@ const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-sm fo
  * the chat there.
  */
 function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, access, onAccess, accessDisabled }: Pickers) {
-  const efforts = modelInfo?.efforts ?? [];
+  // An engine can name its own default as an effort level ("default", from
+  // ACP); the picker's own Default option already covers it, so it is not
+  // offered twice.
+  const efforts = (modelInfo?.efforts ?? []).filter((level) => level !== "default");
+  const defaultEffort = modelInfo?.defaultEffort && modelInfo.defaultEffort !== "default" ? modelInfo.defaultEffort : undefined;
   const keyOf = (item: ModelOption) => modelKey(item.engine, item.id);
   const engines = enginesOf(models ?? []);
   const modelItems = (models ?? []).map((item) => ({ value: keyOf(item), label: item.name }));
   const modelItem = (item: ModelOption) => (
-    <SelectItem key={keyOf(item)} value={keyOf(item)}>
-      {item.name}{item.isDefault && <span className="text-muted-foreground"> · default</span>}
+    <SelectItem key={keyOf(item)} value={keyOf(item)} className="max-w-[18rem]">
+      <span className="truncate">{item.name}</span>
+      {item.isDefault && <span className="shrink-0 text-muted-foreground">· default</span>}
     </SelectItem>
   );
   const effortItems = [
-    { value: "default", label: modelInfo?.defaultEffort ? `Default (${levelName(modelInfo.defaultEffort)})` : "Default" },
+    { value: "default", label: defaultEffort ? `Default (${levelName(defaultEffort)})` : "Default" },
     ...efforts.map((level) => ({ value: level, label: levelName(level) })),
   ];
   const accessItems = ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }));
@@ -195,11 +273,11 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
   return (
     <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
       <Select items={modelItems} value={model ?? null} onValueChange={(value) => { if (value) onModel(value); }} disabled={!models?.length}>
-        <SelectTrigger aria-label="Model" className={pill}>
+        <SelectTrigger aria-label="Model" className={cn(pill, "max-w-64")}>
           <CpuIcon className="size-3.5" />
-          <SelectValue placeholder={models === undefined ? "Loading…" : "Default model"} />
+          <SelectValue className="truncate" placeholder={models === undefined ? "Loading…" : "Default model"} />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} align="start" side="top">
+        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="max-h-80 w-72">
           {engines.length > 1
             ? engines.map((engine) => (
                 <SelectGroup key={engine}>
@@ -245,13 +323,13 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
 }
 
 /** A dismissible line above the composer: a command's answer, why something failed, or a heads-up (an engine near its limit). */
-export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "warning" | "error"; children: ReactNode; onDismiss: () => void }) {
+export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "warning" | "error"; children: ReactNode; onDismiss?: () => void }) {
   return (
     <div role={tone === "error" ? "alert" : "status"}
       className={cn("mb-2 flex items-start gap-2 text-sm",
         tone === "error" ? "rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-destructive" : tone === "warning" ? "rounded-2xl border border-warning/40 bg-warning-soft px-4 py-2.5 text-warning" : "px-4 text-muted-foreground")}>
       <div className={cn("min-w-0 flex-1 leading-relaxed whitespace-pre-wrap", tone === "info" && "font-mono text-xs")}>{children}</div>
-      <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss} className="-mr-1 shrink-0"><XIcon /></Button>
+      {onDismiss && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss} className="-mr-1 shrink-0"><XIcon /></Button>}
     </div>
   );
 }

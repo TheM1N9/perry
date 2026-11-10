@@ -125,7 +125,7 @@ function launch(program, args = []) {
   const env = { ...process.env };
   // Set, Electron would run as plain Node and never open a window.
   delete env.ELECTRON_RUN_AS_NODE;
-  spawn(program, [HERE, ...args], { cwd: HERE, env, detached: true, stdio: "ignore", windowsHide: false }).unref();
+  spawn(program, [HERE, ...args], { cwd: HERE, env, detached: true, stdio: "ignore", windowsHide: true }).unref();
 }
 
 async function pair(typed, code) {

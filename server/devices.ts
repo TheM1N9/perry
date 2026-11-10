@@ -19,15 +19,20 @@ import { backend } from "./index";
  * refused to a pet, never opened by mistake.
  */
 const PET_CALLS: Record<string, "which pet" | true> = {
-  "todos:board": true, "todos:add": true, "todos:setDone": true, "todos:pushBack": true, "todos:remove": true, "todos:setRepeat": true, "todos:endDay": true,
+  "todos:board": true, "todos:add": true, "todos:restore": true, "todos:setDone": true, "todos:pushBack": true, "todos:remove": true, "todos:setRepeat": true, "todos:endDay": true,
   "todos:presence": "which pet",
   "approvals:pending": true, "approvals:decide": true,
   "dashboard:getInbox": true, "dashboard:dismissInbox": true, "dashboard:getShortcuts": true, "dashboard:getActivity": true,
   "dashboard:listChats": true, "dashboard:getChat": true, "dashboard:getChatMessages": true, "dashboard:markChatSeen": true,
   "dashboard:createChat": true, "dashboard:sendChat": true, "dashboard:stopChat": true, "dashboard:registerAttachment": true,
   "screen:asked": "which pet", "screen:fulfil": "which pet",
+  // Listening to a call on that computer: sending what it hears, its own heads-ups. Nothing here reads a transcript or a page back.
+  "meetings:pet": "which pet", "meetings:start": "which pet", "meetings:heard": "which pet", "meetings:alive": "which pet", "meetings:appendSegments": "which pet", "meetings:finish": "which pet", "meetings:abandon": "which pet", "meetings:discard": "which pet", "meetings:dismissUpcoming": true,
+  "speech:transcribe": "which pet",
   "updates:status": true, "updates:update": true,
   "pause:status": true, "pause:set": true,
+  // That the owner has talked to him, for the welcome page. It says nothing of what was said.
+  "pet:heardVoice": true,
   // Noting something down from him: "/note <words>" to the Inbox note, and a reply kept as a note. Nothing reads notes back.
   "notes:jot": true, "notes:fromChat": true,
   // How much of each engine's plan is used, so he warns before a reply fails for it.

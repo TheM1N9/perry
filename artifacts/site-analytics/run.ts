@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { sleep } from "../browser";
+import { FILM_CDN } from "../../site/lib/film";
 
 // bun artifacts/site-analytics/run.ts [outDir]
 // Builds site/ for production, serves it with `next start`, and drives headless
@@ -17,8 +18,11 @@ import { sleep } from "../browser";
 //   layout lost them): after hydration, the production page must hold exactly
 //   one /_vercel/insights/script.js and one /_vercel/speed-insights/script.js,
 //   marked as the Next.js integrations.
-// - The scripts load from somewhere else, breaking the landing page's promise
-//   that it only talks to its own origin: no request may leave the origin.
+// - Analytics goes to the wrong region/project, doubles pageviews, loses conversions,
+//   or includes copied commands: capture the real SDK's outgoing payloads in Chrome,
+//   acknowledge them locally, and assert the US key, event properties and content limits.
+// - PostHog runs in development: no PostHog network request or event is allowed there.
+// - Unexpected third-party traffic: only PostHog US hosts and the existing film CDN may leave the origin.
 // - Production loads the debug scripts, or development the real ones, so dev
 //   visits would count as traffic: production must not reference
 //   va.vercel-scripts.com, and development must load only the debug scripts
@@ -71,7 +75,7 @@ const check = (name: string, pass: boolean, detail?: unknown) => {
 };
 
 // ---------- Build ----------
-const build = spawnSync("pnpm", ["build"], { cwd: siteDir, shell: true, encoding: "utf8" });
+const build = spawnSync("pnpm", ["build"], { cwd: siteDir, shell: true, encoding: "utf8", windowsHide: true });
 const buildLog = `${build.stdout}${build.stderr}`;
 writeFileSync(join(work, "build.log"), buildLog);
 check("next build succeeds", build.status === 0, buildLog.slice(-2000));
@@ -79,10 +83,10 @@ const buildNoise = buildLog.split("\n").filter((line) => /error|warn|⚠|⨯/i.t
 check("next build prints no errors or warnings", buildNoise.length === 0, buildNoise);
 
 /** Start a Next server and collect everything it prints. */
-async function serve(args: string[]) {
+async function serve(args: string[], cwd = siteDir, env: NodeJS.ProcessEnv = process.env) {
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
-  const server = spawn("pnpm", ["exec", "next", ...args, "-p", String(port), "-H", "127.0.0.1"], { cwd: siteDir, shell: true });
+  const server = spawn("pnpm", ["exec", "next", ...args, "-p", String(port), "-H", "127.0.0.1"], { cwd, env, shell: true, windowsHide: true });
   children.push(server);
   let output = "";
   server.stdout.on("data", (chunk) => (output += chunk));
@@ -147,8 +151,46 @@ async function chrome() {
   await send("Runtime.enable");
   await send("Page.enable");
   await send("Network.enable");
+  // PostHog correctly filters HeadlessChrome as a bot; exercise normal visitor behavior.
+  await send("Emulation.setUserAgentOverride", { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36" });
   await send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await send("Target.setDiscoverTargets", { discover: true });
+  // Install before SDK evaluation. Intercept analytics only; application requests remain real.
+  // This keeps synthetic test traffic out of the user's new PostHog project.
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: `
+    window.phEvents = []; window.phDecodeErrors = []; window.phCalls = [];
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.startsWith('https://us.i.posthog.com/')) return originalFetch(input, init);
+      window.phCalls.push({ url: url.split('?')[0], body: !!init?.body });
+      if (init?.body) {
+        try {
+          let text;
+          const bytes = new Uint8Array(await new Response(init.body).arrayBuffer());
+          if (bytes[0] === 31 && bytes[1] === 139) {
+            text = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+          } else {
+            text = new TextDecoder().decode(bytes);
+            if (text.startsWith('data=')) text = atob(new URLSearchParams(text).get('data'));
+          }
+          const data = JSON.parse(text);
+          window.phCalls[window.phCalls.length-1].keys = Object.keys(data);
+          for (const item of Array.isArray(data) ? data : data.batch ?? [data]) {
+            if (item.event) window.phEvents.push(item);
+          }
+        } catch (e) { window.phDecodeErrors.push(String(e)); }
+      }
+      return new Response(JSON.stringify({ status: 1, featureFlags: {}, featureFlagPayloads: {}, flags: {}, sessionRecording: false }), {
+        status: 200, headers: { 'content-type': 'application/json' }
+      });
+    };
+    const originalBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = (url, body) => {
+      if (!String(url).startsWith('https://us.i.posthog.com/')) return originalBeacon(url, body);
+      window.fetch(url, { method: 'POST', body }); return true;
+    };
+  ` });
   const close = () => {
     ws.close();
     kill(browser);
@@ -204,6 +246,9 @@ const expectEvent = async (name: string, action: () => Promise<unknown>, expecte
   await sleep(250);
   const after = (await page.evaluate(EVENTS)).slice(before);
   check(name, after.length === 1 && JSON.stringify(after[0]) === JSON.stringify(expected), after);
+  await page.evaluate(`window.lastCopyLabel = document.querySelector('[data-copy="install"]')?.textContent; true`);
+  await until(page.evaluate, `window.phEvents.some((e) => e.event === ${JSON.stringify(expected[0])} && Object.entries(${JSON.stringify(expected[1])}).every(([k,v]) => e.properties[k] === v))`, 6000);
+  check(`${name}: also reaches PostHog`, await page.evaluate(`window.phEvents.some((e) => e.event === ${JSON.stringify(expected[0])} && e.properties.app === 'website' && Object.entries(${JSON.stringify(expected[1])}).every(([k,v]) => e.properties[k] === v))`));
   return after;
 };
 
@@ -232,11 +277,17 @@ await expectEvent("Copy on the run commands sends Copy command {command: run, os
 // The clipboard refuses: the event says so, and the button tells the reader to select instead.
 await page.evaluate(`navigator.clipboard.writeText = () => Promise.reject(new DOMException("denied", "NotAllowedError")); true`);
 await expectEvent("a refused copy sends Copy command {copied: false}", () => click(page, `[data-copy="install"]`), ["Copy command", { command: "install", os: "windows", copied: false }]);
-check("a refused copy still shows Select to copy", await until(page.evaluate, `document.querySelector('[data-copy="install"]').textContent === "Select to copy"`, 2000));
+check("a refused copy still shows Select to copy", await page.evaluate(`window.lastCopyLabel === "Select to copy"`));
 
 const allEvents = await page.evaluate(EVENTS);
 const foreign = [...new Set(page.requests)].filter((url) => !url.startsWith(prod.base) && !url.startsWith("data:"));
-check("production: every request stays on the page's own origin", foreign.length === 0, foreign);
+check("production: external requests use only PostHog US hosts and the existing film CDN", foreign.every((url) => url === FILM_CDN || /^https:\/\/us(-assets)?\.i\.posthog\.com\//.test(url)), foreign);
+await sleep(3500);
+const posthogEvents = await page.evaluate(`window.phEvents`);
+check("production: PostHog sends one page view with the configured project key", posthogEvents.filter((e: any) => e.event === "$pageview").length === 1 && posthogEvents.every((e: any) => e.properties.token === "phc_qeCkb5s5b6x4T5adoyZWdCKsmwK27dKq3RginMwWAwqn"), posthogEvents.map((e: any) => e.event));
+if (!posthogEvents.length) console.log("PostHog diagnostics", await page.evaluate(`({calls: window.phCalls, dnt:navigator.doNotTrack, ua:navigator.userAgent})`));
+check("production: analytics payloads decode without errors", (await page.evaluate(`window.phDecodeErrors`)).length === 0, await page.evaluate(`window.phDecodeErrors`));
+check("production: custom conversion events exclude clipboard contents", posthogEvents.filter((e: any) => ["CTA click", "GitHub click", "Copy command"].includes(e.event)).every((e: any) => Object.values(installers).every((command) => !JSON.stringify(e).includes(command))));
 check("production: no page errors or console errors", page.errors.length === 0, page.errors);
 check("production: no new tab was opened (links were held for the check)", page.newTabs.length === 0, page.newTabs);
 const vercelLogs = page.logs.filter((line) => line.includes("[Vercel"));
@@ -264,17 +315,56 @@ check("development: both debug scripts say no requests will be sent", ["Web Anal
   devPage.logs.some((line) => line.includes(`[Vercel ${tool}] Debug mode is enabled by default in development. No requests will be sent to the server.`))), devPage.logs.filter((line) => line.includes("[Vercel")));
 const sent = devPage.requests.filter((url) => url.includes("/_vercel/") || /vercel-scripts\.com\/(?!v1\/(speed-insights\/)?script\.debug\.js)/.test(url));
 check("development: nothing is sent to Vercel (only the two debug scripts are fetched)", sent.length === 0, sent);
+check("development: PostHog sends nothing", devPage.requests.every((url) => !url.includes("posthog.com")) && (await devPage.evaluate(`window.phEvents`)).length === 0);
 check("development: no page errors", devPage.errors.filter((e) => !/Download the React DevTools/.test(e)).length === 0, devPage.errors);
 const devLogs = devPage.logs.filter((line) => line.includes("[Vercel"));
 devPage.close();
 kill(dev.server);
 
+// Dashboard E2E failure modes: instrumentation may not run; URL/fragment credentials,
+// nested person/entry metadata, route IDs, DOM text or mutation arguments may escape;
+// operations may lose results or fail to track, and a disabled replay may still emit snapshots.
+// Use a fresh real backend, unlock via the normal link, then create a page through the UI.
+const dashboardHome = mkdtempSync(join(work, "dashboard-"));
+const dashboard = await serve(["dev"], resolve("."), {
+  ...process.env,
+  PERRY_HOME: dashboardHome,
+  DASHBOARD_KEY: "e2e-private-dashboard-key",
+  TELEGRAM_BOT_TOKEN: "",
+  COMPOSIO_API_KEY: "",
+  NEXT_PUBLIC_POSTHOG_ENABLED: "true",
+  PERRY_TELEMETRY_DISABLED: "1",
+});
+const dashboardPage = await chrome();
+await load(dashboardPage, `${dashboard.base}/brain?analytics_secret=e2e-private-query#key=e2e-private-dashboard-key`);
+check("dashboard: the real backend unlocks and renders Brain", await until(dashboardPage.evaluate, `!![...document.querySelectorAll('button')].find((b) => b.textContent.includes('New page'))`, 60000));
+await dashboardPage.evaluate(`document.title = 'e2e-private-title'; const button = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('New page')); button.click(); true`);
+check("dashboard: creating a page still navigates to it", await until(dashboardPage.evaluate, `location.pathname.startsWith('/brain/')`, 30000));
+await until(dashboardPage.evaluate, `window.phEvents.some((e) => e.event === 'Feature used' && e.properties.operation === 'notes:create')`, 15000);
+await until(dashboardPage.evaluate, `window.phEvents.some((e) => e.event === '$pageview' && e.properties.$pathname === '/brain/:id')`, 15000);
+const dashboardEvents = await dashboardPage.evaluate(`window.phEvents`);
+check("dashboard: feature outcome and timing reach PostHog", dashboardEvents.some((e: any) => e.event === "Feature used" && e.properties.operation === "notes:create" && e.properties.success === true && typeof e.properties.duration_ms === "number"));
+check("dashboard: client navigation produces normalized pageviews", dashboardEvents.some((e: any) => e.event === "$pageview" && e.properties.$pathname === "/brain/:id"));
+const privateId = await dashboardPage.evaluate(`location.pathname.split('/').pop()`);
+const privacyFailures: string[] = [];
+const findPrivateFields = (value: any, path: string) => {
+  if (typeof value === "string" && ["e2e-private-dashboard-key", "e2e-private-query", "e2e-private-title", dashboard.base, privateId].some((secret) => value.includes(secret))) privacyFailures.push(path);
+  else if (value && typeof value === "object") for (const [key, child] of Object.entries(value)) findPrivateFields(child, `${path}.${key}`);
+};
+findPrivateFields(dashboardEvents, "events");
+check("dashboard: credentials, queries, title, route IDs and host stay local", dashboardEvents.length > 0 && privacyFailures.length === 0, privacyFailures);
+check("dashboard: session replay sends no snapshots", dashboardEvents.every((e: any) => e.event !== "$snapshot"));
+check("dashboard: event payloads decode without errors", (await dashboardPage.evaluate(`window.phDecodeErrors`)).length === 0);
+dashboardPage.close();
+kill(dashboard.server);
+
 const pass = checks.every((c) => c.pass);
 writeFileSync(join(outDir, "result.json"), `${JSON.stringify({
   pass,
   at: new Date().toISOString(),
-  production: { scripts, events: allEvents, browserLogsFromVercel: vercelLogs },
+  production: { scripts, events: allEvents, posthogEvents: posthogEvents.map((e: any) => ({ event: e.event, app: e.properties.app })), browserLogsFromVercel: vercelLogs },
   development: { scripts: devScripts, browserLogsFromVercel: devLogs },
+  dashboard: { events: dashboardEvents.map((e: any) => ({ event: e.event, operation: e.properties.operation, pathname: e.properties.$pathname })) },
   checks,
 }, null, 2)}\n`);
 console.log(pass ? "\nAll checks passed." : "\nSome checks failed.");

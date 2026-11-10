@@ -1,7 +1,9 @@
+import { scrubStream } from "./lib/turn-stream";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { SavedValue } from "./lib/secrets";
+import { decryptCredential, encryptCredential } from "./lib/credential-encryption";
 
 /**
  * The owner's logins and secrets, for Perry to sign in to websites with
@@ -60,7 +62,7 @@ export function hide(text: string, values: string[]): string {
 
 /** Every saved value long enough to hide on sight, for hiding it in whatever is about to be kept. */
 export async function savedValues(ctx: Pick<QueryCtx, "db">): Promise<string[]> {
-  return (await ctx.db.query("vault").collect()).map((row) => row.value).filter((value) => value.length >= HIDE_EVERYWHERE);
+  return (await ctx.db.query("vault").collect()).map((row) => decryptCredential("vault", row.value)).filter((value) => value.length >= HIDE_EVERYWHERE);
 }
 
 /**
@@ -68,8 +70,8 @@ export async function savedValues(ctx: Pick<QueryCtx, "db">): Promise<string[]> 
  * into memory or a page (pages.scrubbed, lib/secrets.ts). As long as savedValues' are, so a PIN is not found in every year.
  */
 export async function keptSecrets(ctx: Pick<QueryCtx, "db">): Promise<SavedValue[]> {
-  const logins = (await ctx.db.query("vault").collect()).map((row) => ({ value: row.value, label: row.label }));
-  const keys = (await ctx.db.query("secrets").collect()).map((row) => ({ value: row.value, label: row.name }));
+  const logins = (await ctx.db.query("vault").collect()).map((row) => ({ value: decryptCredential("vault", row.value), label: row.label }));
+  const keys = (await ctx.db.query("secrets").collect()).map((row) => ({ value: decryptCredential("secrets", row.value), label: row.name }));
   return [...logins, ...keys].filter((item) => item.value.length >= HIDE_EVERYWHERE);
 }
 
@@ -105,7 +107,7 @@ export const save = internalMutation({
     if (!label) throw new Error("Give it a name, like the site it is for.");
     if (!value) throw new Error("There is no password or secret to save.");
 
-    const fields = { label, url: clean(args.url), username: clean(args.username), value, note: clean(args.note), by: args.by, updatedAt: Date.now() };
+    const fields = { label, url: clean(args.url), username: clean(args.username), value: encryptCredential("vault", value), note: clean(args.note), by: args.by, updatedAt: Date.now() };
     const existing = (await ctx.db.query("vault").collect())
       .find((row) => same(row.label, label) && same(row.username, fields.username));
     let id: Id<"vault">;
@@ -152,6 +154,7 @@ async function hideInChat(ctx: MutationCtx, conversationId: Id<"conversations">,
   // The owner's message is saved to the chat when its turn ends, from the turn itself.
   const turns = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", conversationId)).collect();
   for (const turn of turns) {
+    if (await scrubStream(ctx, turn._id, scrub)) changed++;
     const patch: Partial<Pick<Doc<"codexTurns">, "prompt" | "history" | "partial" | "response">> = {};
     for (const field of ["prompt", "history", "partial", "response"] as const) {
       const text = turn[field];
@@ -183,7 +186,7 @@ export const reveal = internalMutation({
     const row = id && await ctx.db.get(id);
     if (!row) return null;
     await ctx.db.patch(row._id, { lastUsedAt: Date.now() });
-    return { ...entry(row), value: row.value };
+    return { ...entry(row), value: decryptCredential("vault", row.value) };
   },
 });
 

@@ -1,0 +1,5 @@
+{
+  "status": 400,
+  "subsequentFixtureGET": 200,
+  "body": "{\"error\":\"The request body is not JSON.\"}"
+}

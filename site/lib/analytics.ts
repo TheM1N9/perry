@@ -1,7 +1,8 @@
 import { track } from "@vercel/analytics";
+import posthog from "posthog-js";
 
 /**
- * The custom events the site sends to Vercel Web Analytics. The dashboard
+ * The custom events the site sends to PostHog and Vercel Web Analytics. The dashboard
  * groups by these names and properties, so renaming one starts a new series.
  */
 type Events = {
@@ -18,4 +19,9 @@ export type EventData<E extends EventName> = Events[E];
 
 export function trackEvent<E extends EventName>(name: E, data: Events[E]) {
   track(name, data);
+  try {
+    posthog.capture(name, data);
+  } catch {
+    // Keep links and clipboard actions working even if tracking fails.
+  }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { ChevronRightIcon, ExternalLinkIcon, LockIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
+import { ArchiveIcon, BellIcon, ChevronRightIcon, CpuIcon, ExternalLinkIcon, KeyRoundIcon, LockIcon, MessageCircleIcon, MonitorIcon, MoonIcon, PaletteIcon, PawPrintIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon, UsersIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -34,6 +34,7 @@ import { TimePicker } from "@/components/ui/time-picker";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
+import { MeetingSettings } from "./meetings";
 import { PetDevices } from "../pet-devices";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
@@ -44,6 +45,7 @@ import { Usage, UsageMoved } from "./usage";
 import { SaveStatus, useAutosave } from "../autosave";
 import { EngineChoice, useEngineChoices } from "../default-engine";
 import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, SecretInput, Section, StatusBadge, type Tone } from "../common";
+import { Internet } from "./internet";
 
 /**
  * What each section of Settings holds (lib/settings.ts names them and puts
@@ -62,6 +64,7 @@ const SECTIONS: Record<SettingsSection, () => ReactNode> = {
   "desktop-pet": () => <><DesktopPet /><Shortcuts /></>,
   people: () => <People />,
   activity: () => <Activity />,
+  internet: () => <Internet />,
   logins: () => <Logins />,
   security: () => <Security />,
 };
@@ -92,7 +95,7 @@ function DefaultEngine() {
     ? [...reported, { kind: current, label: ENGINE_LABELS[current], ready: false, detail: "No connected computer has it right now." }]
     : reported;
   return (
-    <Section title="Default engine" description="For new chats, your phone, schedules and tasks." tip="A chat or schedule with a model of its own keeps it. Chats you already started keep their engine.">
+    <Section title="Default engine" icon={<CpuIcon />} tip="Used for new chats, phone messages, schedules and tasks. Existing chats and custom model choices stay as they are.">
       {current === undefined || engines === undefined ? <ListSkeleton rows={1} />
         : engines.length === 0 ? (
           <EmptyState title="No engines to choose from yet" action={<CommandLine>perry start</CommandLine>} />
@@ -121,7 +124,7 @@ function Engines() {
   const computers = useQuery(api.engines.list, { key: dashboardKey });
 
   return (
-    <Section title="Engines" tip="Coding agents on your computers, signed in with your own subscriptions. Each sign-in stays on its computer.">
+    <Section title="Engines" icon={<CpuIcon />} tip="Coding agents on your computers, signed in with your own subscriptions. Each sign-in stays on its computer.">
       {computers === undefined && <ListSkeleton rows={1} />}
       {computers?.length === 0 && <EmptyState title="No computer connected" action={<CommandLine>perry start</CommandLine>} />}
       {computers && computers.length > 0 && (
@@ -158,8 +161,11 @@ export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id
   const unavailable = !online ? "This computer is offline." : !engine.installed ? `${engine.label} isn't installed or can't start on this computer.` : null;
   // Too old for Perry: it is updated before it is signed in.
   const outdated = engine.update?.need === "required";
+  // A provider account or key is connected. OpenCode's free models answer without one.
+  const connected = Boolean(engine.auth.type || engine.auth.label);
   const state: { tone: Tone; label: string } = !online ? { tone: "neutral", label: "Offline" }
     : !engine.installed ? { tone: "danger", label: `${engine.label} unavailable` }
+    : engine.signedIn && !connected ? { tone: "success", label: "Ready" }
     : engine.signedIn ? { tone: "success", label: "Signed in" } : { tone: "warning", label: "Signed out" };
   const update: { tone: Tone; label: string } | null = online && engine.update
     ? engine.update.need === "required" ? { tone: "danger", label: "Update required" } : { tone: "info", label: "Update available" }
@@ -168,7 +174,9 @@ export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id
   const pill = update?.tone === "danger" ? update : state.tone === "danger" || state.tone === "warning" ? state : null;
   const plan = engine.auth.plan ? ` ${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";
   const account = engine.signedIn
-    ? `${engine.auth.label ?? "Signed in"}${plan}${engine.auth.email ? ` · ${engine.auth.email}` : ""}`
+    ? connected
+      ? `${engine.auth.label ?? "Signed in"}${plan}${engine.auth.email ? ` · ${engine.auth.email}` : ""}`
+      : "No account needed for its free models."
     : engine.auth.type ? `${engine.label} is using ${engine.auth.label ?? engine.auth.type}` : "Not signed in";
   const interaction = request?.status === "running" ? request.interaction : undefined;
   const ask = (kind: "login" | "logout", method?: string) => requestAuth({ key: dashboardKey, runnerId, engine: engine.kind, kind, ...(method ? { method } : {}) });
@@ -188,7 +196,7 @@ export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id
           <p className="mt-0.5 text-sm text-muted-foreground">{account}{unavailable && ` · ${unavailable}`}</p>
           {engine.message && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{engine.message}</p>}
         </div>
-        {engine.signedIn
+        {engine.signedIn && connected
           ? <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={Boolean(unavailable) || pending}
               action={() => ask("logout")}
               confirm={{ title: `Sign out of ${engine.label} on ${computer}?`, body: `Perry can't use ${engine.label} on this computer until you sign in again.`, label: "Sign out" }}>Sign out</ActionButton>
@@ -206,7 +214,7 @@ export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id
       </div>
       {experimental && !engine.signedIn && (
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
-          Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved below. Signing in with Google also works, at your own risk: <GoogleWarning inline />
+          Use a Gemini API key, or sign in with Google at your own risk: <GoogleWarning inline />
         </p>
       )}
       {updatingNow
@@ -247,22 +255,22 @@ function UpdateSteps({ engine, computer, update, last, onUpdate }: {
   const failed = tried?.status === "error";
   return (
     <div className={cn("mt-3 border-l-2 pl-3", required && "border-destructive")} role={required ? "alert" : "status"} data-engine-update={tried?.status ?? "none"}>
-      <p className={cn("text-sm font-medium", required && "text-destructive")}>{required ? `Update ${engine} to keep using it` : `${engine} ${update.latest} is out`}</p>
+      <p className={cn("text-sm font-medium", required && "text-destructive")}>{required ? `Update ${engine} to keep using it` : `Update available for ${engine}`}</p>
       {!elevate && (
         <ActionButton size="sm" className="mt-2" variant={required ? "default" : "outline"} action={onUpdate}>{failed ? "Try again" : "Update"}</ActionButton>
       )}
       {(required || elevate) && (
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
-          {required && `${computer} has ${update.version}; Perry needs ${update.minimum} or newer and won't start replies with it until then.`}
-          {elevate && ` ${tried?.error ?? ""} Run this yourself in a terminal with those rights:`}
+          {required && `Update ${engine} before starting a new reply.`}
+          {elevate && " Open a terminal as administrator and run this command:"}
         </p>
       )}
-      {failed && <p className="mt-2 text-sm text-pretty text-destructive">The update didn&apos;t work. {tried?.error}</p>}
-      {failed && tried?.output && <Folded label="What it said"><Printed output={tried.output} /></Folded>}
+      {failed && <p className="mt-2 text-sm text-pretty text-destructive">The update couldn’t be installed. Try again.</p>}
+      {failed && (tried?.error || tried?.output) && <Folded label="Technical details"><Printed output={[tried?.error, tried?.output].filter(Boolean).join("\n\n")} /></Folded>}
       {elevate
         ? <div className="mt-3 max-w-md"><CommandLine>{elevate}</CommandLine></div>
         : (
-          <Folded label="Or run it yourself">
+          <Folded label="Update manually">
             <div className="max-w-md"><CommandLine>{update.command}</CommandLine></div>
           </Folded>
         )}
@@ -273,23 +281,18 @@ function UpdateSteps({ engine, computer, update, last, onUpdate }: {
 /** An update on its way: asked for, waiting for that engine's replies to end, or running, with the last of what it prints. */
 function UpdateProgress({ engine, computer, updating }: { engine: string; computer: string; updating: EngineUpdating }) {
   const output = updating.output?.trim() ?? "";
-  // A few lines at most, so a long log doesn't move the page as it runs; all of it is folded beneath.
-  const lines = output.split("\n");
   return (
     <div className="mt-3 border-l-2 border-primary/60 pl-3" role="status" data-engine-update={updating.status}>
       <p className="flex items-center gap-2 text-sm font-medium"><Spinner className="size-3.5" />{updating.status === "waiting" ? "Update waiting" : `Updating ${engine}…`}</p>
       {updating.status !== "running" && (
         <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
-          {updating.status === "queued" ? `Waiting for ${computer} to pick this up…`
+          {updating.status === "queued" ? "Preparing the update…"
             : updating.waitingFor
-              ? `Starts once ${updating.waitingFor} ${/^a /.test(updating.waitingFor) ? "is" : "are"} done. New replies on ${engine} wait.`
+              ? "The update will start when current replies finish."
               : "Getting ready…"}
         </p>
       )}
-      {updating.status === "running" && output && (
-        <pre className="mt-2 line-clamp-3 font-mono text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]" aria-label="What the update prints">{lines.slice(-3).join("\n")}</pre>
-      )}
-      {updating.status === "running" && lines.length > 3 && <Folded label="What it said"><Printed output={output} /></Folded>}
+      {updating.status === "running" && output && <Folded label="Technical details"><Printed output={output} /></Folded>}
     </div>
   );
 }
@@ -301,8 +304,7 @@ function Updated({ engine, updating }: { engine: string; updating: EngineUpdatin
   const at = ago(updating.finishedAt, now);
   return (
     <div className="mt-2" data-engine-update="done">
-      <p className="text-sm text-muted-foreground" role="status">Updated {engine}{updating.from ? ` from ${updating.from}` : ""} to {updating.to}, {at === "now" ? "just now" : at}.</p>
-      {updating.output && <Folded label="What it said"><Printed output={updating.output} /></Folded>}
+      <p className="text-sm text-muted-foreground" role="status">Updated {engine} {at === "now" ? "just now" : at}.</p>
     </div>
   );
 }
@@ -412,7 +414,7 @@ function NewChatAccess() {
     .then(() => toast.success(`New chats start on ${ACCESS_LABELS[access]}.`), (cause) => toast.error(errorText(cause)));
   const Icon = current ? ACCESS_ICONS[current] : ShieldCheckIcon;
   return (
-    <Section title="Access for new chats" tip="What Perry may do without asking in a chat you start. Change any chat from its composer, or with /access.">
+    <Section title="Access for new chats" icon={<ShieldCheckIcon />} tip="What Perry may do without asking in a chat you start. Change any chat from its composer, or with /access.">
       <Select modal={false} items={ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }))} value={current ?? null} onValueChange={(value) => { if (value) choose(value as Access); }} disabled={current === undefined}>
         <SelectTrigger aria-label="Access for new chats" className={cn("w-56", current === "full" && "text-warning")}><Icon className="size-4" /><SelectValue /></SelectTrigger>
         <SelectContent className="w-56">
@@ -443,16 +445,15 @@ function BrainArchive() {
   const days = useQuery(api.archive.getSetting, { key: dashboardKey });
   const save = useMutation(api.archive.setSetting);
   return (
-    <Section title="Brain" description="Lines nobody uses go to the archive. Deep search still finds them."
-      tip="Never archived: About me, and what you pinned. A line used again comes back by itself.">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm font-medium">Archive after</span>
-        <Select modal={false} items={ARCHIVE_AFTER} value={days === undefined ? undefined : String(days)} disabled={days === undefined}
+    <Section title="Memory" icon={<ArchiveIcon />}
+      tip="Archive unused memories after this time. Deep search still finds them. Pinned memories and About me stay; reused memories return automatically.">
+      <div className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-x-4">
+        <span className="text-sm text-muted-foreground">Archive unused</span>
+        <Select modal={false} items={ARCHIVE_AFTER} value={days === undefined ? null : String(days)} disabled={days === undefined}
           onValueChange={(value) => { if (!value) return; void save({ key: dashboardKey, days: Number(value) }).then(() => toast.success(value === "0" ? "Nothing is archived." : `Archived after ${ARCHIVE_AFTER.find((item) => item.value === value)?.label} unused.`), (cause) => toast.error(errorText(cause))); }}>
-          <SelectTrigger aria-label="Archive after" className="w-36"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Archive after" className="min-h-11 w-40 sm:min-h-9"><SelectValue placeholder="Loading…" /></SelectTrigger>
           <SelectContent>{ARCHIVE_AFTER.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
-        <span className="text-sm text-muted-foreground">unused</span>
       </div>
     </Section>
   );
@@ -486,27 +487,27 @@ function Manners() {
   const hours = (on: boolean, start = latest.current.start, end = latest.current.end) => on ? { quietHours: { start, end } } : {};
   const saveHours = () => { const { on, start, end } = latest.current; if (on) store({ ...hours(true, start, end), dailyLimit: limit }, `Quiet from ${start} to ${end}.`); };
   return (
-    <Section title="Messages Perry sends on his own" description="Schedules, watches and the heartbeat. Due reminders always go."
-      tip="What comes in quiet hours or past the day's limit waits, then arrives as one message.">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm font-medium">
+    <Section title="Proactive messages" icon={<BellIcon />} description="Due reminders always arrive."
+      tip="Controls schedules, watches and heartbeat messages. Messages held by quiet hours or the daily limit arrive together later. Due reminders bypass both.">
+      <div className="grid gap-3">
+          <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-medium">
+            Quiet hours
             <Switch checked={quiet.on} disabled={!manners} aria-label="Quiet hours"
               onCheckedChange={(on) => { setQuiet({ ...latest.current, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${latest.current.start} to ${latest.current.end}.` : "Quiet hours off."); }} />
-            Quiet hours
           </label>
-          <span className="text-sm text-muted-foreground">from</span>
-          <TimePicker aria-label="Quiet from" value={quiet.start} disabled={!quiet.on}
+        {quiet.on && <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-muted-foreground">From</span>
+          <TimePicker aria-label="Quiet from" value={quiet.start}
             onValueChange={(start) => setQuiet({ ...latest.current, start })} onBlur={saveHours} />
           <span className="text-sm text-muted-foreground">to</span>
-          <TimePicker aria-label="Quiet until" value={quiet.end} disabled={!quiet.on}
+          <TimePicker aria-label="Quiet until" value={quiet.end}
             onValueChange={(end) => setQuiet({ ...latest.current, end })} onBlur={saveHours} />
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium">At most</span>
+        </div>}
+        <div className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-x-4">
+          <span className="text-sm text-muted-foreground">Daily limit</span>
           <Select modal={false} items={LIMITS} value={limit ? String(limit) : "none"} disabled={!manners}
             onValueChange={(value) => { if (!value) return; const n = value === "none" ? undefined : Number(value); store({ ...hours(quiet.on), dailyLimit: n }, n ? `At most ${n} a day.` : "No daily limit."); }}>
-            <SelectTrigger aria-label="Daily limit" className="w-36"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Daily limit" className="min-h-11 w-40 sm:min-h-9"><SelectValue /></SelectTrigger>
             <SelectContent>{LIMITS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
           </Select>
           {manners && manners.waiting > 0 && <StatusBadge tone="info">{manners.waiting} waiting</StatusBadge>}
@@ -527,14 +528,14 @@ function DesktopPet() {
   const [picked, setPicked] = useState<PetTheme | null>(null);
   const theme = picked ?? pet?.theme;
   return (
-    <Section title="Desktop pet">
+    <Section title="Desktop pet" icon={<PawPrintIcon />}>
       <PetControl />
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <ThemeChoice<PetTheme> label="Pet theme" value={theme} onChange={(value) => {
           setPicked(value);
           void setTheme({ key: dashboardKey, theme: value }).catch((cause) => { setPicked(null); toast.error(errorText(cause)); });
         }} />
-        <p className="text-sm text-muted-foreground">On this computer. Others follow their system.</p>
+        <InfoTip>Applies to this computer. Other computers follow their system theme.</InfoTip>
       </div>
       <div className="mt-4 flex items-start gap-3">
         <Switch id="screen-look" checked={screenLook ?? true} disabled={screenLook === undefined} className="mt-0.5"
@@ -542,10 +543,12 @@ function DesktopPet() {
             () => toast.success(enabled ? "Perry can look at your screen when a question needs it." : "Perry sees the screen only when you show him."),
             (cause) => toast.error(errorText(cause)))} />
         <div className="text-sm">
-          <label htmlFor="screen-look" className="font-medium">Let Perry look at the screen when he needs to</label>
-          <p className="mt-0.5 text-pretty text-muted-foreground">Only in chats, never in scheduled or background work. What he saw shows in the chat.</p>
+          <label htmlFor="screen-look" className="font-medium">Screen access in chats</label>
+          <p className="mt-0.5 text-pretty text-muted-foreground">Perry may look when needed. Captures appear in the chat.</p>
         </div>
       </div>
+      <MeetingSettings />
+      <KeyRow name="GROQ_API_KEY" />
       <PetDevices />
     </Section>
   );
@@ -556,8 +559,11 @@ function Appearance() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return (
-    <Section title="Appearance">
-      <ThemeChoice label="Theme" value={mounted ? (theme ?? "system") : undefined} onChange={setTheme} />
+    <Section title="Appearance" icon={<PaletteIcon />}>
+      <div className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-x-4">
+        <span className="text-muted-foreground">Theme</span>
+        <ThemeChoice label="Theme" value={mounted ? (theme ?? "system") : undefined} onChange={setTheme} />
+      </div>
     </Section>
   );
 }
@@ -572,9 +578,9 @@ const THEMES = [
 function ThemeChoice<Value extends string>({ label, value, onChange }: { label: string; value: string | undefined; onChange: (value: Value) => void }) {
   return (
     <ToggleGroup aria-label={label} value={value ? [value] : []} onValueChange={(next) => { if (next[0]) onChange(next[0] as Value); }}
-      spacing={0.5} className="rounded-lg border bg-muted/50 p-0.5">
+      spacing={0.5} className="w-fit max-w-full rounded-lg border bg-muted/50 p-0.5">
       {THEMES.map((option) => (
-        <ToggleGroupItem key={option.value} value={option.value} className="rounded-md px-3 text-muted-foreground hover:bg-transparent aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm">
+        <ToggleGroupItem key={option.value} value={option.value} className="min-h-11 rounded-md px-2.5 text-sm text-muted-foreground hover:bg-transparent aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm sm:min-h-8">
           <option.icon />{option.label}
         </ToggleGroupItem>
       ))}
@@ -627,8 +633,7 @@ export function KeyRow({ name, className }: { name: SecretName; className?: stri
         <Field data-invalid={Boolean(error) || undefined}>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <FieldLabel htmlFor={id}>{entry.label}</FieldLabel>
-              <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{entry.hint}</p>
+              <FieldLabel htmlFor={id}>{entry.label}<InfoTip>{entry.hint}</InfoTip></FieldLabel>
             </div>
             {/* Not set is said once, in the line under the field. */}
             {entry.set && <StatusBadge tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></StatusBadge>}
@@ -657,11 +662,11 @@ function Security() {
   const { lock } = useSession();
   return (
     <>
-      <Section title="Dashboard key" description="Change DASHBOARD_KEY in .env.local in Perry's folder, then restart Perry:"
+      <Section title="Change key" icon={<KeyRoundIcon />} description={<>Edit <code className="font-mono text-xs">DASHBOARD_KEY</code> in <code className="font-mono text-xs">.env.local</code>, then restart:</>}
         tip="It can't be changed from here, so a mistake can't lock you out.">
         <CommandLine>perry stop && perry start</CommandLine>
       </Section>
-      <Section title="Lock this browser" description="This browser asks for the key again.">
+      <Section title="Browser session" icon={<LockIcon />} tip="Locking signs this browser out. Enter the dashboard key to unlock it.">
         <Button variant="outline" onClick={lock}><LockIcon />Lock dashboard</Button>
       </Section>
     </>
@@ -706,8 +711,8 @@ function Logins() {
   };
 
   return (
-    <Section title="Logins & secrets" description="For Perry to sign in to websites. Passwords are never shown again."
-      tip="Send one in a chat and Perry moves it here, out of the chat.">
+    <Section title="Saved logins" icon={<KeyRoundIcon />} description="Passwords stay hidden."
+      tip="Perry uses these to sign in to websites. Send a password in chat and Perry moves it here.">
       {logins === undefined ? <ListSkeleton /> : logins.length === 0 ? <EmptyState title="No logins saved" /> : (
         <List label="Logins & secrets">
           {logins.map((login) => (
@@ -806,7 +811,7 @@ function People() {
   const [editing, setEditing] = useState<Id<"contacts"> | null>(null);
 
   return (
-    <Section title="People" tip="What Perry remembers about someone from your chats is used only in yours, and from theirs only in theirs. You're asked before Perry first talks with anyone.">
+    <Section title="People" icon={<UsersIcon />} tip="What Perry remembers about someone from your chats is used only in yours, and from theirs only in theirs. You're asked before Perry first talks with anyone.">
       {people === undefined ? <ListSkeleton /> : people.length === 0 && !remembered?.others.length ? <EmptyState title="Nobody yet" /> : (
         <List label="People">
           {people.map((person) => (
@@ -1101,7 +1106,7 @@ function AwayChannel() {
   const state = useQuery(api.whatsapp.status, { key: dashboardKey });
   const setHome = useMutation(api.whatsapp.setHomeChannel);
   return (
-    <Section title="When you're away" tip="Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app.">
+    <Section title="Delivery app" icon={<SendIcon />} tip="Replies go where you wrote. Proactive messages go to the app chosen here.">
       {!state ? <ListSkeleton rows={1} /> : state.paired && state.telegramPaired ? (
         <ChoiceCards label="Where Perry reaches you" value={state.homeChannel}
           options={[
@@ -1111,9 +1116,8 @@ function AwayChannel() {
           onChange={(channel) => void setHome({ key: dashboardKey, channel }).then(() => toast.success(`Perry will reach you on ${channel === "telegram" ? "Telegram" : "WhatsApp"}.`), (cause) => toast.error(errorText(cause)))} />
       ) : (
         <p className="text-sm text-pretty text-muted-foreground">
-          {state.paired || state.telegramPaired ? `They go to ${state.paired ? "WhatsApp" : "Telegram"}, the one you've paired. Pair both ` : "Pair "}
-          <Link href="/settings/telegram" className="link">Telegram</Link>{state.paired || state.telegramPaired ? " and " : " or "}<Link href="/settings/whatsapp" className="link">WhatsApp</Link>
-          {state.paired || state.telegramPaired ? " to choose." : " to get them on your phone."}
+          {state.paired || state.telegramPaired ? `Using ${state.paired ? "WhatsApp" : "Telegram"}. Connect both to choose: ` : "Connect "}
+          <Link href="/settings/telegram" className="link">Telegram</Link>{" or "}<Link href="/settings/whatsapp" className="link">WhatsApp</Link>.
         </p>
       )}
     </Section>

@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, LibraryIcon, ListChecksIcon, LockIcon,
-  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
+  BellIcon, BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, LibraryIcon, ListChecksIcon, LockIcon, HeadphonesIcon,
+  LifeBuoyIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useAction, useMutation, useQuery } from "@/client/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAction, useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -40,7 +40,7 @@ import { usePalette } from "./command-palette";
 import { ChannelIcon, PerryMark } from "./common";
 import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
-import { UpdateNotice } from "./updates";
+import { UpdateControl } from "./updates";
 import { PauseMenuItem, PauseNotice, usePause } from "./pause";
 import { PlatypusArt } from "./platypus";
 import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
@@ -52,7 +52,7 @@ const CHAT_PAGE = 25;
 
 export function AppSidebar() {
   const { dashboardKey } = useSession();
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const palette = usePalette();
   const { setOpenMobile } = useSidebar();
   const { label } = useShortcuts();
@@ -66,8 +66,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" variant="sidebar">
       <SidebarHeader className="pb-0">
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<Link href="/chat" />} tooltip={assistant} className="gap-2.5">
+          <SidebarMenuItem className="flex items-center gap-2 group-data-[collapsible=icon]:flex-col">
+            <SidebarMenuButton size="lg" render={<Link href="/chat" />} tooltip={assistant} className="min-w-0 flex-1 gap-2.5 group-data-[collapsible=icon]:flex-none">
               <PerryMark className="size-8" />
               <span className="truncate text-md font-semibold tracking-[-0.01em]" translate="no">{assistant}</span>
             </SidebarMenuButton>
@@ -103,6 +103,12 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/meetings" />} isActive={pathname.startsWith("/meetings")} tooltip="Meetings">
+                  <HeadphonesIcon />
+                  <span>Meetings</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/brain" />} isActive={pathname.startsWith("/brain")} tooltip="Brain">
                   <BrainIcon />
                   <span>Brain</span>
@@ -133,7 +139,6 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <PauseNotice />
-        <UpdateNotice />
         <DesktopPet />
         <AccountMenu />
       </SidebarFooter>
@@ -144,7 +149,8 @@ export function AppSidebar() {
 
 function ChatGroups() {
   const { dashboardKey } = useSession();
-  const all = useQuery(api.dashboard.listChats, { key: dashboardKey });
+  const listed = useQuery(api.dashboard.listChats, { key: dashboardKey });
+  const all = useMemo(() => listed?.filter((chat) => !chat.systemJob && !chat.isAgent), [listed]);
   const [showAll, setShowAll] = useState(false);
   const [renaming, setRenaming] = useState<ChatSummary | null>(null);
   const [removing, setRemoving] = useState<ChatSummary | null>(null);
@@ -197,6 +203,14 @@ function ChatGroups() {
 
 function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary; onRename: () => void; onDelete: () => void; onNewProject: () => void }) {
   const { dashboardKey } = useSession();
+  const client = useConvex();
+  const cancelWarm = useRef<(() => void) | undefined>(undefined);
+  const cancel = () => { cancelWarm.current?.(); cancelWarm.current = undefined; };
+  const warm = () => {
+    cancel();
+    cancelWarm.current = client.scheduleChatPrefetch(dashboardKey, chat.id);
+  };
+  useEffect(() => () => cancelWarm.current?.(), [client, dashboardKey, chat.id]);
   const pathname = usePathname();
   const active = pathname === `/chat/${chat.id}`;
   const setPinned = useMutation(api.dashboard.setChatPinned).withOptimisticUpdate((store, args) => {
@@ -206,15 +220,15 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
   const pin = () => void setPinned({ key: dashboardKey, id: chat.id, pinned: !chat.pinned })
     .catch((cause) => toast.error(`Couldn't ${chat.pinned ? "unpin" : "pin"} it: ${errorText(cause)}`));
 
-  // The dot gives way to the options button under the pointer, so on hover or focus the row says what the dot meant.
+  // Keep the status beside the menu, including while the row is hovered.
   const said = statusLabel(chat.status, chat.unseen && !active);
   const row = (
-    <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
+    <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} onPointerEnter={warm} onPointerLeave={cancel} onFocus={warm} onBlur={cancel} />} isActive={active}
       className={cn(chat.unseen && !active && "font-semibold")}
       aria-current={active ? "page" : undefined}>
       {chat.pinned && <PinIcon role="img" aria-label="Pinned" className="text-muted-foreground" />}
       <ChannelIcon channel={chat.channel} />
-      <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
+      <span className={cn("pr-8", chat.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={chat.naming || undefined}>{chat.title}</span>
     </SidebarMenuButton>
   );
 
@@ -227,7 +241,7 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
         </Tooltip>
       ) : row}
       <StatusIndicator status={chat.status} unseen={chat.unseen && !active}
-        className="pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 transition-opacity md:right-1.5 md:group-focus-within/menu-item:opacity-0 md:group-hover/menu-item:opacity-0" />
+        className="pointer-events-none absolute top-1/2 right-8 -translate-y-1/2" />
       <DropdownMenu>
         <DropdownMenuTrigger render={<SidebarMenuAction showOnHover aria-label={`Options for ${chat.title}`} />}>
           <MoreHorizontalIcon />
@@ -405,10 +419,7 @@ function useSignedIn(): SignedIn[] | undefined {
 }
 
 /**
- * The owner, at the foot of the sidebar: under the name, the plan and engine
- * Perry thinks with (or Telegram waiting to be paired). Open, the same two
- * lines, then Usage (Settings → Usage), the theme, Settings and locking the
- * dashboard. How much of each plan is left is on the usage page, not here.
+ * The account row keeps the name visible; account details and settings live in the overflow menu.
  */
 function AccountMenu() {
   const { dashboardKey, lock } = useSession();
@@ -429,17 +440,15 @@ function AccountMenu() {
 
   return (
     <SidebarMenu>
-      {/* The name opens the menu; beside it, what needs you, as an inbox with its count. Stacked when the sidebar is icons. */}
-      <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-0.5">
+      <SidebarMenuItem className="flex min-h-12 items-center gap-3 px-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:px-0" data-account-row>
+        <div className="flex min-w-0 flex-1 items-center gap-2 group-data-[collapsible=icon]:flex-none">
+          <Avatar size="sm" aria-hidden className="size-7 after:hidden"><AvatarFallback className="bg-muted text-xs font-medium text-foreground">{name.charAt(0).toUpperCase()}</AvatarFallback></Avatar>
+          <span className="truncate text-sm font-medium group-data-[collapsible=icon]:hidden">{name}</span>
+        </div>
+        <UpdateControl />
         <DropdownMenu>
-          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="min-w-0 flex-1 data-popup-open:bg-sidebar-accent group-data-[collapsible=icon]:flex-none" />}>
-            <Avatar aria-hidden className="after:hidden">
-              <AvatarFallback className="bg-foreground text-sm font-semibold text-background">{name.charAt(0).toUpperCase()}</AvatarFallback>
-            </Avatar>
-            <span className="grid min-w-0 flex-1 text-left leading-tight">
-              <span className="truncate text-sm font-medium">{name}</span>
-              <span className="truncate text-xs text-muted-foreground" data-account-line>{line}</span>
-            </span>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Account options" className="relative shrink-0 touch-manipulation text-muted-foreground before:absolute before:-inset-1.5" />}>
+            <MoreHorizontalIcon className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-60">
             <DropdownMenuGroup>
@@ -462,18 +471,19 @@ function AccountMenu() {
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuItem onClick={() => go("/settings/general")}><SettingsIcon />Settings</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => window.open("https://github.com/TheM1N9/perry/issues/new", "_blank", "noopener,noreferrer")}><LifeBuoyIcon />Report a problem</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={lock}><LockIcon />Lock dashboard</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Tooltip>
-          <TooltipTrigger render={<SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} aria-label={count > 0 ? `Needs you: ${count}` : "Needs you"} className="relative size-9 shrink-0 justify-center p-0" />}>
-            <InboxIcon />
-            {count > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-2xs font-semibold text-background" aria-hidden>{count}</span>
-            )}
+          <TooltipTrigger render={<Button variant="ghost" size="icon" nativeButton={false} render={<Link href="/inbox" />} aria-current={pathname === "/inbox" ? "page" : undefined}
+            aria-label={count > 0 ? `Notifications: ${count} need your attention` : "Notifications"}
+            className="relative shrink-0 touch-manipulation text-muted-foreground before:absolute before:-inset-1.5 aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground" />}>
+            <BellIcon className="size-4" />
+            {count > 0 && <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-destructive ring-2 ring-sidebar" aria-hidden />}
           </TooltipTrigger>
-          <TooltipContent side="right">Needs you{count > 0 ? ` · ${count}` : ""}</TooltipContent>
+          <TooltipContent side="top">{count > 0 ? `${count} need your attention` : "Notifications"}</TooltipContent>
         </Tooltip>
       </SidebarMenuItem>
     </SidebarMenu>

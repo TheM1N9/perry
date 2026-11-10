@@ -10,6 +10,8 @@
 #   6. The Set-Item Env: form, for PERRY_ENGINE and PERRY_PET, does not set the variable in one of the shells.
 #   7. On a new computer, with no Git, winget is never reached: a function of the installer's own named like it
 #      (PowerShell's names ignore case) calls itself until PowerShell gives up (call depth overflow).
+#   8. The test's installs link perry to themselves in the real ~\.perry\bin, and the owner's perry then runs
+#      a temporary folder this script deletes.
 param([string]$OutDir = $PSScriptRoot)
 $ErrorActionPreference = 'Continue'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -40,6 +42,10 @@ $env:PERRY_NO_SETUP = '1'
 $env:PERRY_REPO = "$root"
 $env:PERRY_BRANCH = (git -C $root rev-parse --abbrev-ref HEAD)
 $env:PERRY_NO_PATH = '1'
+# A Perry home of the test's own, so linking writes its perry there and not over the owner's.
+$env:PERRY_HOME = Join-Path $work 'perry-home'
+$ownerLauncher = Join-Path $HOME '.perry\bin\perry.cmd'
+$ownerBefore = (Get-FileHash $ownerLauncher -ErrorAction SilentlyContinue).Hash
 
 $old = Typed cmd "iwr -useb $local | iex" 'old-line-in-cmd'
 $installs = [ordered]@{}
@@ -71,6 +77,8 @@ $env:PERRY_DIR = Join-Path $work 'perry-powershell'
 $newPc = Typed powershell ($line.Replace($published, 'file:///' + ($noGit -replace '\\', '/'))) 'install-without-git'
 $env:Path = $path
 $asked = @(Get-Content $wingetLog -ErrorAction SilentlyContinue | ForEach-Object { "$_" })
+# The last install linked perry; it runs that install's folder.
+$testLauncher = Get-Content -Raw (Join-Path $env:PERRY_HOME 'bin\perry.cmd') -ErrorAction SilentlyContinue
 
 # Set-Item Env: before the irm, with a stand-in installer that only says what it was given.
 $probe = Join-Path $work 'probe.ps1'
@@ -97,6 +105,8 @@ $checks = [ordered]@{
   missingGitAsksWingetOnce = $asked.Count -eq 1 -and $asked[0] -like 'install --id Git.Git -e --source winget *'
   missingGitDoesNotLoop = $newPc.output -notmatch 'call depth|installing --id'
   missingGitStillInstalls = $newPc.output -match 'Installed\.'
+  linkedInTestHome = $testLauncher -like "*perry-powershell*"
+  ownerLauncherUntouched = (Get-FileHash $ownerLauncher -ErrorAction SilentlyContinue).Hash -eq $ownerBefore
 }
 $result = [ordered]@{
   ranAt = (Get-Date).ToString('o'); line = $line; policy = 'Restricted'; checks = $checks

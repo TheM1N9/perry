@@ -1,0 +1,27 @@
+{
+  "ranAt": "2026-10-15T20:44:01.355Z",
+  "checks": {
+    "listWasAttempted": true,
+    "helpAnsweredAfterList": true
+  },
+  "notes": {
+    "commands": [],
+    "helped": [
+      "model",
+      "think",
+      "access",
+      "usage",
+      "stop",
+      "pause",
+      "resume",
+      "compact",
+      "note",
+      "status",
+      "reset",
+      "help"
+    ],
+    "runnerLog": [],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

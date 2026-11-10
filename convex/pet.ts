@@ -63,6 +63,8 @@ export type PetView = {
   theme: PetTheme;
   /** The computer Perry runs on, where he appears. */
   host: string;
+  /** Whether the owner has ever talked to him. */
+  heardVoice: boolean;
   setup: { action: "on" | "off"; state: "working" | "failed" | "done"; step?: string; error?: string; at: number } | null;
 };
 
@@ -77,6 +79,7 @@ export const status = query({
       running: Boolean(presence && Date.now() - presence.seenAt < PET_GONE_MS),
       theme: themeOf(readConfig()),
       host: hostname(),
+      heardVoice: Boolean(await ctx.db.query("petFirstWords").first()),
       setup: setup ? {
         action: setup.action,
         state: stale ? "failed" : setup.state,
@@ -173,6 +176,17 @@ async function run(ctx: ActionCtx, which: "on" | "off"): Promise<null> {
 }
 
 /** His theme, written to his config file; his window sees it change. */
+/** The owner talked to him for the first time. */
+export const heardVoice = mutation({
+  args: { key: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    if (!await ctx.db.query("petFirstWords").first()) await ctx.db.insert("petFirstWords", { at: Date.now() });
+    return null;
+  },
+});
+
 export const setTheme = action({
   args: { key: v.string(), theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")) },
   returns: v.null(),

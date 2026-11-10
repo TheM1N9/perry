@@ -1,0 +1,167 @@
+{
+  "ranAt": "2026-10-14T22:22:00.996Z",
+  "ok": true,
+  "checks": {
+    "absolutePathOpensTheFile": true,
+    "otherWaysToNameIt": true,
+    "untouchedFileNotALink": true,
+    "webLinkNewTab": true,
+    "perryPageStaysInApp": true,
+    "noLinkBackToPerry": true,
+    "servesTheFile": true,
+    "onlyTheChatsFiles": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "links": {
+      "summary.md": {
+        "tag": "A",
+        "href": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview",
+        "target": "_blank",
+        "file": true,
+        "path": false
+      },
+      "as file url": {
+        "tag": "A",
+        "href": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview",
+        "target": "_blank",
+        "file": true,
+        "path": false
+      },
+      "relative": {
+        "tag": "A",
+        "href": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview",
+        "target": "_blank",
+        "file": true,
+        "path": false
+      },
+      "line 2": {
+        "tag": "A",
+        "href": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview",
+        "target": "_blank",
+        "file": true,
+        "path": false
+      },
+      "never touched": {
+        "tag": "SPAN",
+        "href": null,
+        "target": null,
+        "file": false,
+        "path": true
+      },
+      "example": {
+        "tag": "A",
+        "href": "https://example.com/",
+        "target": "_blank",
+        "file": false,
+        "path": false
+      },
+      "your to-dos": {
+        "tag": "A",
+        "href": "/todos",
+        "target": null,
+        "file": false,
+        "path": false
+      }
+    },
+    "absolutePathOpensTheFile": {
+      "tag": "A",
+      "href": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview",
+      "target": "_blank",
+      "file": true,
+      "path": false
+    },
+    "otherWaysToNameIt": [
+      {
+        "tag": "A",
+        "href": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview",
+        "target": "_blank",
+        "file": true,
+        "path": false
+      },
+      {
+        "tag": "A",
+        "href": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview",
+        "target": "_blank",
+        "file": true,
+        "path": false
+      },
+      {
+        "tag": "A",
+        "href": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview",
+        "target": "_blank",
+        "file": true,
+        "path": false
+      }
+    ],
+    "untouchedFileNotALink": {
+      "tag": "SPAN",
+      "href": null,
+      "target": null,
+      "file": false,
+      "path": true
+    },
+    "webLinkNewTab": {
+      "tag": "A",
+      "href": "https://example.com/",
+      "target": "_blank",
+      "file": false,
+      "path": false
+    },
+    "perryPageStaysInApp": {
+      "tag": "A",
+      "href": "/todos",
+      "target": null,
+      "file": false,
+      "path": false
+    },
+    "noLinkBackToPerry": [],
+    "served": {
+      "status": 200,
+      "type": "text/plain; charset=utf-8",
+      "body": "# Summary\nThe numbers went up.\n"
+    },
+    "servesTheFile": {
+      "status": 200,
+      "type": "text/plain; charset=utf-8",
+      "body": "# Summary\nThe numbers went up.\n"
+    },
+    "onlyTheChatsFiles": [
+      {
+        "path": "/tmp/claude-0/-home-user-perry/7192a0c1-ba7d-54e5-86ce-d44107d70a1e/scratchpad/e2e/perry-file-links-C91MRb/work/report/summary.md",
+        "url": "/api/media/093rz0rg4mfv344pqh81px6vnn?preview"
+      }
+    ],
+    "noPageErrors": [],
+    "fakeLog": [
+      {
+        "at": 1792016516491,
+        "pid": 1179,
+        "profile": "grok",
+        "finished": "EDIT {\"path\":\"/tmp/claude-0/-home-user-perry/7192a0c1-ba7d-54e5-86ce-d44107d70a1",
+        "stopReason": "end_turn",
+        "reply": "I wrote it:\n\n- absolute: [summary.md](/tmp/claude-0/-home-user-perry/7192a0c1-ba7d-54e5-86ce-d44107d70a1e/scratchpad/e2e/perry-file-links-C91MRb/work/report/summary.md)\n- file url: [as file url](file:///tmp/claude-0/-home-user-perry/7192a0c1-ba7d-54e5-86ce-d44107d70a1e/scratchpad/e2e/perry-file-link"
+      }
+    ],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (linux)\u001b[0m",
+      "\u001b[2m  directory  /tmp/claude-0/-home-user-perry/7192a0c1-ba7d-54e5-86ce-d44107d70a1e/scratchpad/e2e/perry-file-links-C91MRb/workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  named a chat \"Editing summary file links test\" (haiku)\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and nothing waits for you\u001b[0m",
+      "\u001b[2m  saved turn zxkjqmbv72q4ex9hn1qahnx6k0\u001b[0m",
+      "\u001b[2m",
+      "  runner stopped. Assistant has no hands here now.",
+      "\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

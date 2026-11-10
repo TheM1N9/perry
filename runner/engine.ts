@@ -1,3 +1,4 @@
+import type { TurnErrorCode } from "../lib/turn-errors";
 /**
  * Perry's engines: the coding agents that do a chat's work on the owner's
  * computer, each signed in with the owner's own subscription. Codex is the
@@ -69,6 +70,9 @@
  */
 
 import type { Access } from "../convex/lib/commands";
+
+/** Tell the model about existing computer authorization as well as enforcing it in tools. */
+export const FULL_ACCESS_INSTRUCTIONS = "The owner selected Full access for this chat. You already have permission to use this computer to carry out their request. Do not ask again for general computer, browser, app or filesystem access; proceed with routine control steps directly. Explicit external-tool consent, authentication challenges and operating-system dialogs still use their supported flows.";
 import type { EngineKind, LoginInteraction } from "../convex/lib/engines";
 import type { PlanLimits, PlanWindow } from "../convex/lib/usage";
 
@@ -206,6 +210,13 @@ export type EngineItem = {
   durationMs?: number;
   /** The engine's own item, for traces. */
   raw: unknown;
+  agents?: ProviderAgentUpdate[];
+};
+
+export type ProviderAgentUpdate = {
+  id: string; title?: string; prompt?: string; text?: string; model?: string;
+  updatedAt?: number;
+  status: "running" | "done" | "failed" | "cancelled";
 };
 
 /** One model response's tokens. Cached input is part of input, reasoning part of output. */
@@ -234,6 +245,8 @@ export type EngineRequest = {
     changes?: FileChange[];
     /** A command prefix the engine suggests allowing from now on. */
     proposedPrefix?: string[];
+    /** Requested native network/filesystem scope, displayed without broadening it. */
+    permissionSummary?: string;
     /** The MCP server or tool asking, for a question from one. */
     server?: string;
     message?: string;
@@ -311,6 +324,8 @@ export type TurnSink = {
   /** The turn is running, with what interrupt() and steer() need. */
   onStarted?(handle: TurnHandle): void;
   onEvent?(event: TurnEvent): void;
+  /** Native agents may finish after the parent turn ends. */
+  onAgents?(agents: ProviderAgentUpdate[]): void;
   /** Answer with the id of one of the request's options. */
   onRequest(request: EngineRequest): Promise<string>;
 };
@@ -324,13 +339,15 @@ export type TurnResult = {
   images: GeneratedImage[];
   /** The engine compacted the session's context during the turn. */
   compacted?: boolean;
+  /** Stable reason when the adapter exposes one. */
+  errorCode?: TurnErrorCode;
   /** Why it failed. */
   error?: string;
 };
 
 /** A quick side turn: no tools, no approvals, only an answer. */
 export type QuickTurn = {
-  purpose: "review" | "title";
+  purpose: "review" | "title" | "meeting";
   instructions: string;
   text: string;
   /** JSON Schema the answer must match. */

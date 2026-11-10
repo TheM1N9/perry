@@ -1,0 +1,1137 @@
+{
+  "phase": "typing-200-messages",
+  "renderers": [
+    {
+      "version": "19.3.0-canary-cbb046ab-20260731",
+      "package": "react-dom",
+      "bundleType": 0
+    }
+  ],
+  "totals": {
+    "LiveReply": {
+      "mounts": 0,
+      "updates": 8,
+      "actualDurationMs": 0.8000000268220901
+    },
+    "ReplyInProgress": {
+      "mounts": 0,
+      "updates": 8,
+      "actualDurationMs": 0.20000000298023224
+    },
+    "ComposerDraft": {
+      "mounts": 0,
+      "updates": 42,
+      "actualDurationMs": 33.00000001490116
+    },
+    "Composer": {
+      "mounts": 0,
+      "updates": 42,
+      "actualDurationMs": 31.299999997019768
+    }
+  },
+  "commits": [
+    {
+      "at": 21276.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 21386.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.9000000059604645
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 21388.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 21394.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.2000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.0999999940395355
+        }
+      }
+    },
+    {
+      "at": 21396.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 21485.10000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.1000000089406967
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1
+        }
+      }
+    },
+    {
+      "at": 21487.20000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 21581.10000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.699999988079071
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        }
+      }
+    },
+    {
+      "at": 21582.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 21673,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 21674.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 21751.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 21753.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 21843.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.9000000059604645
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        }
+      }
+    },
+    {
+      "at": 21845.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 21941.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 21944,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22030.90000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        }
+      }
+    },
+    {
+      "at": 22033.20000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22122.70000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 22124.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22203,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        }
+      }
+    },
+    {
+      "at": 22204.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22279.5,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        }
+      }
+    },
+    {
+      "at": 22303.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 22305,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22390.90000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 22392.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22470.10000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 22471.70000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22576.10000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.4000000059604645
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.4000000059604645
+        }
+      }
+    },
+    {
+      "at": 22579.70000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22671.10000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.9000000059604645
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.800000011920929
+        }
+      }
+    },
+    {
+      "at": 22672.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22763,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.8999999910593033
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.8999999910593033
+        }
+      }
+    },
+    {
+      "at": 22764.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22852.70000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 22854.70000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 22941,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        }
+      }
+    },
+    {
+      "at": 22942.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23023.30000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 23024.70000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23102,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 23103.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23180.90000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        }
+      }
+    },
+    {
+      "at": 23182.30000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23258.20000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.9000000059604645
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.9000000059604645
+        }
+      }
+    },
+    {
+      "at": 23260.10000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23277.10000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 23353.70000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 23355,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23443.90000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        }
+      }
+    },
+    {
+      "at": 23446.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23545.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        }
+      }
+    },
+    {
+      "at": 23547,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23636.30000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.699999988079071
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.699999988079071
+        }
+      }
+    },
+    {
+      "at": 23637.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23731.30000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        }
+      }
+    },
+    {
+      "at": 23732.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23830.90000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 23832.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 23916.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.9000000059604645
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.9000000059604645
+        }
+      }
+    },
+    {
+      "at": 23918.10000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24011.30000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        }
+      }
+    },
+    {
+      "at": 24012.90000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24059.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.6000000089406967
+        }
+      }
+    },
+    {
+      "at": 24061.20000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24090.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.800000011920929
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 24092.20000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24121.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 24123.30000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24152.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 24154.60000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24182,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.699999988079071
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.699999988079071
+        }
+      }
+    },
+    {
+      "at": 24183.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24212.70000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.5999999940395355
+        }
+      }
+    },
+    {
+      "at": 24214.30000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24244.90000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 24246.20000000298,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24273.70000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 24285.90000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 24287.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24313.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7000000029802322
+        }
+      }
+    },
+    {
+      "at": 24315.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24344.10000000894,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        }
+      }
+    },
+    {
+      "at": 24345.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 24385.40000000596,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "ComposerDraft": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        },
+        "Composer": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.7999999970197678
+        }
+      }
+    },
+    {
+      "at": 24386.80000001192,
+      "priority": 1,
+      "didError": false,
+      "rendered": {}
+    },
+    {
+      "at": 25277.30000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.20000000298023224
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 26276.30000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 27277.20000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        }
+      }
+    },
+    {
+      "at": 28278.5,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    }
+  ],
+  "truncated": false
+}

@@ -1,0 +1,3 @@
+results/fixture.json
+results/*failure*
+results/build.log

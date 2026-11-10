@@ -1,0 +1,1729 @@
+{
+  "reader": {
+    "client": 521,
+    "height": 7014,
+    "jump": false,
+    "live": "xture message 187\n\n4:03\nPerry said\n\nSaved fixture message 188\n\n4:03\nYou said\n\nSaved fixture message 189\n\n4:03\nPerry said\n\nSaved fixture message 190\n\n4:03\nYou said\n\nSaved fixture message 191\n\n4:03\nPerry said\n\nSaved fixture message 192\n\n4:03\nYou said\n\nSaved fixture message 193\n\n4:03\nPerry said\n\nSaved fixture message 194\n\n4:03\nYou said\n\nSaved fixture message 195\n\n4:03\nPerry said\n\nSaved fixture message 196\n\n4:03\nYou said\n\nSaved fixture message 197\n\n4:03\nPerry said\n\nSaved fixture message 198\n\n4:03\nYou said\n\nSaved fixture message 199\n\n4:03\nPerry said\n\nSaved fixture message 200\n\n4:03\nWorking for 42s · 1 step\nUsing command\n1s\n\n**Streaming bold\n\nItem\tStatus\nOne\tIn progress\n\njs console.log('fixture');",
+    "strong": [],
+    "tables": 1,
+    "top": 5888
+  },
+  "boldAndVersion": {
+    "buttons": [
+      {
+        "label": "Copy",
+        "text": ""
+      },
+      {
+        "label": "Edit and resend",
+        "text": ""
+      },
+      {
+        "label": "Branch into a new chat",
+        "text": ""
+      },
+      {
+        "label": "Copy",
+        "text": ""
+      },
+      {
+        "label": "Branch into a new chat",
+        "text": ""
+      },
+      {
+        "label": "Save as note",
+        "text": ""
+      },
+      {
+        "label": null,
+        "text": "New reply below"
+      },
+      {
+        "label": "Attach files",
+        "text": ""
+      },
+      {
+        "label": "Model",
+        "text": "Default model▼"
+      },
+      {
+        "label": "Access",
+        "text": "Ask▼"
+      },
+      {
+        "label": "Stop the reply",
+        "text": ""
+      },
+      {
+        "label": "Close toast",
+        "text": ""
+      }
+    ],
+    "strong": [
+      "Streaming bold"
+    ],
+    "toast": [
+      "Perry has been updated\nFinish your draft, then refresh to use the updated dashboard.\nRefresh"
+    ],
+    "top": 5888
+  },
+  "rollback": {
+    "draft": "Keep this synthetic draft",
+    "toast": null,
+    "top": 6370.66650390625
+  },
+  "pagination": {
+    "count": 112,
+    "first": "You saidLive fixture prompt4:03",
+    "height": 12008,
+    "offset": 84,
+    "top": 0
+  },
+  "cached": {
+    "composer": false,
+    "content": "You said\n\nDistinct second history 1\n\n4:03\nPerry said\n\nDistinct second history 2\n\n4:03\nYou said\n\nDist",
+    "other": false,
+    "saved": true,
+    "url": "/chat/y09ta24abfc1mrbeyx8v32hjgs"
+  },
+  "voiceSilence": {
+    "mode": "silence",
+    "decodedSeconds": 1,
+    "holdTranscription": false,
+    "transcript": "Synthetic voice acceptance.",
+    "getUserMediaCalls": 2,
+    "recorderStarts": 2,
+    "recorderStops": 2,
+    "transcribeCalls": 0,
+    "voiceDoneCalls": 1,
+    "meterReads": 57,
+    "frequencyReads": 21,
+    "waveformMutations": 0,
+    "liveTracks": 0,
+    "openContexts": 0,
+    "recordingCount": 0,
+    "recorderIntervals": 0,
+    "capturedDeadlines": 0,
+    "deferredTranscriptions": 0,
+    "voiceSubscribers": 1,
+    "transcriptionSampleLengths": []
+  },
+  "voiceLimit": {
+    "resources": {
+      "mode": "voice",
+      "decodedSeconds": 1,
+      "holdTranscription": false,
+      "transcript": "Synthetic voice acceptance.",
+      "getUserMediaCalls": 3,
+      "recorderStarts": 3,
+      "recorderStops": 3,
+      "transcribeCalls": 1,
+      "voiceDoneCalls": 2,
+      "meterReads": 163,
+      "frequencyReads": 37,
+      "waveformMutations": 0,
+      "liveTracks": 0,
+      "openContexts": 0,
+      "recordingCount": 0,
+      "recorderIntervals": 0,
+      "capturedDeadlines": 0,
+      "deferredTranscriptions": 0,
+      "voiceSubscribers": 1,
+      "transcriptionSampleLengths": [
+        16000
+      ]
+    },
+    "draft": null,
+    "page": {
+      "alerts": [
+        "Recording stopped at the five-minute limit."
+      ],
+      "draft": "Synthetic voice acceptance."
+    }
+  },
+  "voiceCancel": {
+    "resources": {
+      "mode": "voice",
+      "decodedSeconds": 1,
+      "holdTranscription": true,
+      "transcript": "Synthetic voice acceptance.",
+      "getUserMediaCalls": 4,
+      "recorderStarts": 4,
+      "recorderStops": 4,
+      "transcribeCalls": 2,
+      "voiceDoneCalls": 3,
+      "meterReads": 415,
+      "frequencyReads": 64,
+      "waveformMutations": 0,
+      "liveTracks": 0,
+      "openContexts": 0,
+      "recordingCount": 0,
+      "recorderIntervals": 0,
+      "capturedDeadlines": 0,
+      "deferredTranscriptions": 0,
+      "voiceSubscribers": 1,
+      "transcriptionSampleLengths": [
+        16000,
+        16000
+      ]
+    },
+    "draft": "Synthetic voice acceptance."
+  },
+  "versionWithDraft": {
+    "draft": "Keep this synthetic draft"
+  },
+  "versionBaseline": {
+    "draft": "Draft survives version events",
+    "toast": false
+  },
+  "versionReconnect": {
+    "draft": "Draft survives version events",
+    "toast": "Perry has been updated\nFinish your draft, then refresh to use the updated dashboard.\nRefresh",
+    "url": "/chat/vd9ehvfxtf3bgq9zh7dqtebpea"
+  },
+  "dismissStable": {
+    "draft": "Draft survives version events",
+    "toast": false
+  },
+  "missingVersion": {
+    "draft": "Draft survives version events",
+    "toast": false
+  },
+  "typingProfile": {
+    "phase": "200-row-typing",
+    "renderers": [
+      {
+        "version": "19.3.0-canary-cbb046ab-20260731",
+        "package": "react-dom",
+        "bundleType": 0
+      }
+    ],
+    "totals": {
+      "ComposerDraft": {
+        "mounts": 0,
+        "updates": 12,
+        "actualDurationMs": 10.500000014901161
+      },
+      "Composer": {
+        "mounts": 0,
+        "updates": 12,
+        "actualDurationMs": 10.100000008940697
+      },
+      "LiveReply": {
+        "mounts": 0,
+        "updates": 7,
+        "actualDurationMs": 2.2999999970197678
+      },
+      "ReplyInProgress": {
+        "mounts": 0,
+        "updates": 7,
+        "actualDurationMs": 1.2999999970197678
+      }
+    },
+    "commits": [
+      {
+        "at": 43511.19999998808,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 1.1000000089406967
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 1.1000000089406967
+          }
+        }
+      },
+      {
+        "at": 43514,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 43587.09999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7000000029802322
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.6000000089406967
+          }
+        }
+      },
+      {
+        "at": 43588.69999998808,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 43662.09999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.9000000059604645
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.9000000059604645
+          }
+        }
+      },
+      {
+        "at": 43663.59999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 43739.5,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7000000029802322
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7000000029802322
+          }
+        }
+      },
+      {
+        "at": 43741.79999999702,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 43817.29999999702,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7000000029802322
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7000000029802322
+          }
+        }
+      },
+      {
+        "at": 43818.89999999106,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 43881.69999998808,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.10000000894069672
+          }
+        }
+      },
+      {
+        "at": 43898.89999999106,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7999999970197678
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7999999970197678
+          }
+        }
+      },
+      {
+        "at": 43901.09999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 43973.89999999106,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.9000000059604645
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7999999970197678
+          }
+        }
+      },
+      {
+        "at": 43975.59999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 44051.89999999106,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7999999970197678
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7999999970197678
+          }
+        }
+      },
+      {
+        "at": 44053.59999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 44131,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 1.2000000029802322
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 1.0999999940395355
+          }
+        }
+      },
+      {
+        "at": 44133.79999999702,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 44209.79999999702,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 1.199999988079071
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 1.0999999940395355
+          }
+        }
+      },
+      {
+        "at": 44213.19999998808,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 44298,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7999999970197678
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7999999970197678
+          }
+        }
+      },
+      {
+        "at": 44299.5,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 44376.39999999106,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7000000029802322
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7000000029802322
+          }
+        }
+      },
+      {
+        "at": 44378,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 44848.79999999702,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.29999999701976776
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.29999999701976776
+          }
+        }
+      },
+      {
+        "at": 45737.69999998808,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 45845.29999999702,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.4000000059604645
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          }
+        }
+      },
+      {
+        "at": 46859,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.30000001192092896
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.10000000894069672
+          }
+        }
+      },
+      {
+        "at": 47852.19999998808,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.19999998807907104
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.19999998807907104
+          }
+        }
+      },
+      {
+        "at": 48850.69999998808,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.29999999701976776
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          }
+        }
+      },
+      {
+        "at": 49855.79999999702,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.5999999940395355
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.19999998807907104
+          }
+        }
+      }
+    ],
+    "truncated": false
+  },
+  "streamProfile": {
+    "phase": "200-row-stream",
+    "renderers": [
+      {
+        "version": "19.3.0-canary-cbb046ab-20260731",
+        "package": "react-dom",
+        "bundleType": 0
+      }
+    ],
+    "totals": {
+      "LiveReply": {
+        "mounts": 0,
+        "updates": 10,
+        "actualDurationMs": 7.299999982118607
+      },
+      "ReplyInProgress": {
+        "mounts": 0,
+        "updates": 10,
+        "actualDurationMs": 6.30000002682209
+      },
+      "ChatScreen": {
+        "mounts": 0,
+        "updates": 1,
+        "actualDurationMs": 2.7000000029802322
+      },
+      "ComposerDraft": {
+        "mounts": 0,
+        "updates": 1,
+        "actualDurationMs": 0.8999999910593033
+      },
+      "Composer": {
+        "mounts": 0,
+        "updates": 1,
+        "actualDurationMs": 0.7999999970197678
+      }
+    },
+    "commits": [
+      {
+        "at": 52853.29999999702,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.29999999701976776
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          }
+        }
+      },
+      {
+        "at": 53850.79999999702,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.19999998807907104
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0
+          }
+        }
+      },
+      {
+        "at": 54858.19999998808,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.10000000894069672
+          }
+        }
+      },
+      {
+        "at": 55858.69999998808,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.29999999701976776
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          }
+        }
+      },
+      {
+        "at": 56228.69999998808,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ChatScreen": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 2.7000000029802322
+          },
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.09999999403953552
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.09999999403953552
+          },
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.8999999910593033
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.7999999970197678
+          }
+        }
+      },
+      {
+        "at": 56230.39999999106,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 56238.59999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 4.799999997019768
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 4.799999997019768
+          }
+        }
+      },
+      {
+        "at": 56262.59999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 56855,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.4000000059604645
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          }
+        }
+      },
+      {
+        "at": 57613.39999999106,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 57616.09999999404,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 57845.89999999106,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.29999999701976776
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          }
+        }
+      },
+      {
+        "at": 58858.09999999404,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.20000000298023224
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.10000000894069672
+          }
+        }
+      },
+      {
+        "at": 59848.29999999702,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.5
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.4000000059604645
+          }
+        }
+      }
+    ],
+    "truncated": false
+  },
+  "codeAndTable": {
+    "code": "console.log('fixture');\n",
+    "rows": 212,
+    "table": "Item\tStatus\nOne\tReady",
+    "top": 0
+  },
+  "copyCode": "",
+  "voiceProfile": {
+    "profile": {
+      "phase": "synthetic-fft",
+      "renderers": [
+        {
+          "version": "19.3.0-canary-cbb046ab-20260731",
+          "package": "react-dom",
+          "bundleType": 0
+        }
+      ],
+      "totals": {},
+      "commits": [
+        {
+          "at": 22435,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 23395.40000000596,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 23442.90000000596,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 23549.60000000894,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 24436.40000000596,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 25445.80000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 26049.80000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 26203.70000000298,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 26437.80000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 27451,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 28437.5,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 29284.10000000894,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 29443.5,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 30451.30000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 31442.40000000596,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 32438.5,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 33028.20000000298,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 33182.70000000298,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 33447.70000000298,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 34448.80000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 35442.30000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 36436.60000000894,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 36854,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 37008.90000000596,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 37445.70000000298,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 38437.5,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 39448.90000000596,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 40145,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 40300.5,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 40442.80000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 41436.80000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 42450.60000000894,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 43449.80000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 44443.5,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 45451.10000000894,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 45930,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 46089.40000000596,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 46443.80000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 47439.30000001192,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        },
+        {
+          "at": 48436.40000000596,
+          "priority": 3,
+          "didError": false,
+          "rendered": {}
+        }
+      ],
+      "truncated": false
+    },
+    "resources": {
+      "mode": "voice",
+      "decodedSeconds": 1,
+      "holdTranscription": false,
+      "transcript": "Synthetic voice acceptance.",
+      "getUserMediaCalls": 2,
+      "recorderStarts": 2,
+      "recorderStops": 1,
+      "transcribeCalls": 0,
+      "voiceDoneCalls": 0,
+      "meterReads": 371,
+      "frequencyReads": 42,
+      "waveformMutations": 0,
+      "liveTracks": 1,
+      "openContexts": 1,
+      "recordingCount": 1,
+      "recorderIntervals": 1,
+      "capturedDeadlines": 1,
+      "deferredTranscriptions": 0,
+      "voiceSubscribers": 1,
+      "transcriptionSampleLengths": []
+    },
+    "bars": [
+      "scaleY(0.721569)",
+      "scaleY(0.713725)",
+      "scaleY(0.709804)",
+      "scaleY(0.703922)",
+      "scaleY(0.694118)",
+      "scaleY(0.686275)"
+    ]
+  },
+  "voicePositiveControl": {
+    "phase": "synthetic-fft",
+    "renderers": [
+      {
+        "version": "19.3.0-canary-cbb046ab-20260731",
+        "package": "react-dom",
+        "bundleType": 0
+      }
+    ],
+    "totals": {},
+    "commits": [
+      {
+        "at": 22435,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 23395.40000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 23442.90000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 23549.60000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 24436.40000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 25445.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 26049.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 26203.70000000298,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 26437.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 27451,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 28437.5,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 29284.10000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 29443.5,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 30451.30000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 31442.40000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 32438.5,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 33028.20000000298,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 33182.70000000298,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 33447.70000000298,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 34448.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 35442.30000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 36436.60000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 36854,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 37008.90000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 37445.70000000298,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 38437.5,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 39448.90000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 40145,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 40300.5,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 40442.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 41436.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 42450.60000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 43449.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 44443.5,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 45451.10000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 45930,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 46089.40000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 46443.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 47439.30000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 48436.40000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 49442.60000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 50092.5,
+        "priority": 2,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 50130.10000000894,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 50168.20000000298,
+        "priority": 2,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 50169.5,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 50373.90000000596,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 50439,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 50529,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 51452.10000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 52448.60000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 53441.10000000894,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 54436.80000001192,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      }
+    ],
+    "truncated": false
+  },
+  "historyPositiveControl": {
+    "phase": "history-positive-control",
+    "renderers": [
+      {
+        "version": "19.3.0-canary-cbb046ab-20260731",
+        "package": "react-dom",
+        "bundleType": 0
+      }
+    ],
+    "totals": {
+      "LiveReply": {
+        "mounts": 0,
+        "updates": 1,
+        "actualDurationMs": 0.5
+      },
+      "ReplyInProgress": {
+        "mounts": 0,
+        "updates": 1,
+        "actualDurationMs": 0.3999999910593033
+      },
+      "ChatScreen": {
+        "mounts": 0,
+        "updates": 5,
+        "actualDurationMs": 57
+      },
+      "ComposerDraft": {
+        "mounts": 0,
+        "updates": 5,
+        "actualDurationMs": 4.5999999940395355
+      },
+      "Composer": {
+        "mounts": 1,
+        "updates": 2,
+        "actualDurationMs": 4.399999991059303
+      },
+      "MessageRow": {
+        "mounts": 20,
+        "updates": 0,
+        "actualDurationMs": 43.599999994039536
+      }
+    },
+    "commits": [
+      {
+        "at": 143849.59999999404,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "LiveReply": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.5
+          },
+          "ReplyInProgress": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.3999999910593033
+          }
+        }
+      },
+      {
+        "at": 144253.59999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 144333.29999999702,
+        "priority": 3,
+        "didError": false,
+        "rendered": {
+          "ChatScreen": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 1.300000011920929
+          },
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0
+          }
+        }
+      },
+      {
+        "at": 144360,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ChatScreen": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 2.5
+          },
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0
+          }
+        }
+      },
+      {
+        "at": 144369.29999999702,
+        "priority": 2,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 144370.69999998808,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 144371.29999999702,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 144377,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ChatScreen": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 4.299999997019768
+          },
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 2.699999988079071
+          },
+          "Composer": {
+            "mounts": 1,
+            "updates": 0,
+            "actualDurationMs": 2.5999999940395355
+          }
+        }
+      },
+      {
+        "at": 144379.59999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 144380.29999999702,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 144442,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ChatScreen": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 46.3999999910593
+          },
+          "MessageRow": {
+            "mounts": 20,
+            "updates": 0,
+            "actualDurationMs": 43.599999994039536
+          },
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.9000000059604645
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.9000000059604645
+          }
+        }
+      },
+      {
+        "at": 144445.09999999404,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 144450.39999999106,
+        "priority": 1,
+        "didError": false,
+        "rendered": {
+          "ChatScreen": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 2.5
+          },
+          "ComposerDraft": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 1
+          },
+          "Composer": {
+            "mounts": 0,
+            "updates": 1,
+            "actualDurationMs": 0.8999999910593033
+          }
+        }
+      },
+      {
+        "at": 144451.29999999702,
+        "priority": 1,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 148368.19999998808,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      },
+      {
+        "at": 150730.5,
+        "priority": 3,
+        "didError": false,
+        "rendered": {}
+      }
+    ],
+    "truncated": false
+  },
+  "explicitRefresh": {
+    "draft": "",
+    "path": "/chat/tth9tdyjrz6336ydvfkvr0xm8g",
+    "phase": "{\"phase\":\"settling\",\"renderers\":[{\"version\":\"19.3.0-canary-cbb046ab-20",
+    "rows": 20
+  }
+}

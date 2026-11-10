@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { TaskSteering } from "../task-steering";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -73,8 +74,8 @@ function Intro({ children, action }: { children?: ReactNode; action: ReactNode }
   );
 }
 
-function Row({ children, className }: { children: ReactNode; className?: string }) {
-  return <li className={cn("flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:gap-4", className)}>{children}</li>;
+function Row({ children, className, id }: { children: ReactNode; className?: string; id?: string }) {
+  return <li id={id} className={cn("flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:gap-4", className)}>{children}</li>;
 }
 
 /** A small menu for a row's quieter actions, so the one you want most stays a button. */
@@ -321,7 +322,7 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
           const done = task.plan.filter((step) => step.status === "done").length;
           const live = task.status === "running" || task.status === "blocked";
           return (
-            <Row key={task._id}>
+            <Row key={task._id} id={`task-${task._id}`}>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{task.title}</h3>
@@ -389,6 +390,7 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                     </CollapsibleContent>
                   </Collapsible>
                 )}
+                <TaskSteering task={task} />
                 {task.result && <p className="mt-3 text-sm text-pretty whitespace-pre-line text-foreground/80">{task.result}</p>}
                 {task.error && <p className="mt-3 text-sm text-pretty text-destructive">{task.error}</p>}
               </div>

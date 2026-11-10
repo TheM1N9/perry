@@ -1,0 +1,15 @@
+{
+  "reviewedAt": "2026-10-12T22:26:54.522811+00:00",
+  "issue": 284,
+  "method": "Source review, JavaScript syntax check, and TypeScript check on macOS.",
+  "checks": [
+    "node --check pet/main.js",
+    "TypeScript check for shared link semantics",
+    "Native menu uses one status heading, a separator, and recovery actions beside Open Perry"
+  ],
+  "screenshots": [],
+  "limitations": [
+    "No Windows desktop available. Installed-app console visibility remains unverified on Windows.",
+    "Attempted pinned Electron 44.4.5 native app check; macOS sandbox_extension_issue_file blocked the helper and the inspected window was blank. No protections changed."
+  ]
+}

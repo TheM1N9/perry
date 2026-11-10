@@ -1,0 +1,18 @@
+{
+  "value": {
+    "channel": "web",
+    "engine": "codex",
+    "access": "supervised",
+    "title": "Batch verification",
+    "isRunning": true,
+    "unresponsive": false,
+    "lastAliveAt": 1792179203037,
+    "streaming": "Current partial answer is safe."
+  },
+  "reads": [
+    "conversations",
+    "runs",
+    "codexTurns",
+    "runners"
+  ]
+}

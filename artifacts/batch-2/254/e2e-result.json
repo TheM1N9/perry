@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "checks": [
+    "never-connected does not create expired health",
+    "router helpers without metadata retain execution and never guess account health",
+    "revocation pins and marks only primary; response sanitized; UI account data distinguishes alternate",
+    "pending reconnect retains health",
+    "ACTIVE with OAuth redirect remains unconfirmed and retains health",
+    "wrong toolkit and foreign account cannot refresh",
+    "successful exact reconnect clears stale health and rejects older failure",
+    "401, 403, 429, 503, cause-chain outage, unrelated expiry never mark auth expired",
+    "thrown explicit invalid_grant persists account health",
+    "successful pinned execution clears old auth health",
+    "successful read-only identity probe clears recovered account",
+    "disconnect removes exact health and preserves alternate",
+    "internetRead records exact account, clears on success, and prioritizes rate limit/outage over expiry prose",
+    "health has no provider payload; network attempts zero"
+  ],
+  "networkAttempts": 0,
+  "sqlite": "memory",
+  "scheduler": "stopped before mutations",
+  "sdk": "fake; installed interface inspected",
+  "schema": "integrated source; no overlay"
+}

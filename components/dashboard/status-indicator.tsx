@@ -48,14 +48,14 @@ function Dot({ label, children }: { label: string; children: ReactElement }) {
  * once a reply is ready. The green dot stays until you read the reply, or for
  * a moment when you were already watching it land.
  */
-export function StatusIndicator({ status, unseen, className }: { status: ChatStatus; unseen?: boolean; className?: string }) {
+export function StatusIndicator({ status, unseen, className, fallback = null }: { status: ChatStatus; unseen?: boolean; className?: string; fallback?: ReactElement | null }) {
   const done = useJustFinished(status);
   const box = cn("relative flex size-4 shrink-0 items-center justify-center", className);
   if (status === "running") {
     return (
       <Dot label="Working">
         <span role="img" data-status="running" className={box}>
-          <span className="size-3 rounded-full border-2 border-primary/25 border-t-primary motion-safe:animate-spin motion-reduce:animate-pulse" />
+          <span className="size-3 rounded-full border-2 border-primary/25 border-t-primary motion-safe:animate-spin" />
         </span>
       </Dot>
     );
@@ -79,11 +79,11 @@ export function StatusIndicator({ status, unseen, className }: { status: ChatSta
       </Dot>
     );
   }
-  if (!unseen && !done) return null;
+  if (!unseen && !done) return fallback;
   const label = unseen ? "Reply ready" : "Done";
   return (
     <Dot label={label}>
-      <span role="img" data-status={unseen ? "unseen" : "done"} className={cn(box, "animate-in fade-in zoom-in-50 duration-300 motion-reduce:animate-none")}>
+      <span role="img" data-status={unseen ? "unseen" : "done"} className={cn(box, "animate-in fade-in duration-150 motion-reduce:animate-none")}>
         <span className="size-2 rounded-full bg-success" />
       </span>
     </Dot>

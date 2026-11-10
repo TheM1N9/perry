@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "name": "accepted Forget persists hidden state and preserves the 25-result limit",
+      "pass": true
+    },
+    {
+      "name": "stale Undo cannot cancel a later Forget; scheduled operation survives a database reopen",
+      "pass": true
+    },
+    {
+      "name": "Undo leaves the memory intact after the original deadline",
+      "pass": true
+    },
+    {
+      "name": "deletion failure restores the row with a durable visible error",
+      "pass": true
+    },
+    {
+      "name": "older-memory Forget rejects page lines and wrong dashboard keys",
+      "pass": true
+    }
+  ]
+}

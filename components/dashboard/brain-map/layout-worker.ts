@@ -86,7 +86,9 @@ scope.onmessage = ({ data }) => {
     simulation.nodes(nodes)
       .force("link", forceLink<Node, Link>(links).distance((link) => link.length ?? 30)
         .strength((link) => (link.loose ? 0.25 : 1) * Math.min(1, 0.6 + 0.1 * link.weight) / Math.min((link.source as Node).degree, (link.target as Node).degree)))
-      .force("charge", forceManyBody<Node>().strength((node) => -40 - 4 * Math.sqrt(node.degree)).theta(big ? 1.5 : 0.9))
+      // On a small map the push reaches only so far, so a page tied to little is not driven out to the edge. A large
+      // map keeps its full reach: its journal is spread along a timeline, read a month to a dot at the zoom that fits.
+      .force("charge", forceManyBody<Node>().strength((node) => -40 - 4 * Math.sqrt(node.degree)).theta(big ? 1.5 : 0.9).distanceMax(big ? Infinity : 420))
       // A weak pull to the middle keeps the map together; a page tied to nothing is pulled harder, or the push of
       // thousands of others would leave it far out, and the map zoomed out to fit it.
       .force("x", forceX<Node>((node) => node.at ?? 0).strength((node) => (node.at !== undefined ? 0.5 : node.degree ? 0.04 : 0.25)))

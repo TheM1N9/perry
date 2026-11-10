@@ -147,7 +147,7 @@ export const shareFromLibrary = internalMutation({
       .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))
       .collect();
     if (!existing.some((row) => (item.localPath && row.localPath === item.localPath) || (item.storageId && row.storageId === item.storageId))) {
-      await ctx.db.insert("chatAttachments", {
+      const attachmentId = await ctx.db.insert("chatAttachments", {
         conversationId: job.conversationId,
         messageKey: mediaKey,
         ...(item.localPath ? { localPath: item.localPath } : { storageId: item.storageId }),
@@ -156,6 +156,7 @@ export const shareFromLibrary = internalMutation({
         size: item.size,
         createdAt: Date.now(),
       });
+      await index(ctx, attachmentId);
     }
     await ctx.db.patch(job._id, { mediaKey });
     return { fileName: item.name, contentType: item.contentType };

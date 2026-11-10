@@ -15,6 +15,7 @@ pnpm-debug.log*
 
 .vercel
 *.tsbuildinfo
+artifacts/orphan-tasks/result.json
 next-env.d.ts
 
 # Written by artifacts/telegram-delivery on every run (big.bin is 51 MB)

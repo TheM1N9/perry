@@ -1,23 +1,31 @@
 "use client";
 
+import { randomUUID } from "@/lib/uuid";
+
+import { AgentRows, AgentStatus, agentsForWork } from "./agents";
+import { TurnError } from "./turn-error";
+
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ActivityIcon, ArrowDownIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
+  ActivityIcon, ArrowDownIcon, ArrowUpLeftIcon, BotIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
   SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
+import { useAction, useConnection, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
+import { NextStep } from "./next-step";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { Artifact } from "@/convex/interactive";
 import {
-  ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
+  ACCESS_HINTS, ACCESS_LABELS, ACCESSES, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
 } from "@/convex/lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
 import { noteHref } from "@/convex/lib/notes";
 import { describeUsage, limitWarning } from "@/convex/lib/usage";
+import { useTypewriter } from "@/hooks/use-typewriter";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -34,19 +42,43 @@ import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
 import { MoveToProject, NewProjectDialog } from "../projects";
 import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
+import { ProviderIcon } from "../provider-icon";
+import { PlanChecklist } from "./plan";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
-import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
-import { MessageRow, PendingRow, ReplyInProgress } from "./message";
-import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
+import { ComposerDraft, type ComposerHandle, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
+import { InteractiveAnswer } from "./interactive-answer";
+import { ChatFiles } from "./markdown";
+import { MessageEditor, type MessageEdit } from "./message-editor";
+import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
+import { Interrupted, LANDING_MS, SAVED_BEFORE_END_MS, together, WorkSummary, type Turn, type Work } from "./work";
+import { NowAction, ThreadNow, type NowLine } from "./thread-now";
+import { UpNext, type UpNextItem } from "./up-next";
+import { ClockIcon, Minimize2Icon, UnplugIcon } from "lucide-react";
+
+import { useChatDeadline, useChatEvent, useStableRecords } from "./render-isolation";
+import { useChatScroll } from "./use-chat-scroll";
+
+import { ChatPanel, ChatPanelToggle, useChatPanel } from "./panel/chat-panel";
+import { ChatAnnouncer } from "../chat-announcer";
+import { citedMessage, SelectionCite } from "./citations";
+
+const messageKey = (message: ChatMessage) => message.id;
+const workKey = (work: Turn) => work.runId;
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
 /**
  * A message you sent, shown before the server has it: `sent` once sendChat
  * returns, after which the server lists it as pending until its reply saves it.
+ * `queued`: sent with Queue, so it waits under Up next, not in the conversation.
  */
-type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean; sent: boolean };
+type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean; sent: boolean; queued?: boolean };
+/** A queued message being edited in the composer, and the draft the composer had before, given back after. */
+type QueueEdit = { id: Id<"codexTurns">; conversationId: ChatId; stash: string };
+
+/** No files yet, the same list each time so the replies do not draw again for nothing. */
+const NO_FILES: ReadonlyArray<{ path: string; url: string }> = [];
 
 const STARTERS = [
   "Plan my day",
@@ -74,8 +106,8 @@ function greeting(name?: string) {
 }
 
 /** Keep the file on this machine, through the local media server. */
-async function store(file: File): Promise<{ localPath: string }> {
-  const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name) }, body: file });
+async function store(file: File, uploadId?: string, signal?: AbortSignal): Promise<{ localPath: string }> {
+  const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name), ...(uploadId ? { "x-upload-id": uploadId } : {}) }, body: file, signal });
   if (local.ok) return { localPath: (await local.json() as { path: string }).path };
   throw new Error((await local.json().catch(() => null) as { error?: string } | null)?.error ?? `Could not save ${file.name}.`);
 }
@@ -83,17 +115,28 @@ async function store(file: File): Promise<{ localPath: string }> {
 export function ChatScreen() {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const params = useParams<{ id?: string }>();
+  const params = useParams<{ id?: string }>()!;
   const paramId = (params.id ? decodeURIComponent(params.id) : null) as ChatId | null;
   /** A chat made from /chat by its first message, until the address catches up. */
   const [createdId, setCreatedId] = useState<ChatId | null>(null);
   useEffect(() => setCreatedId(null), [paramId]);
   const selectedId = paramId ?? createdId;
+  // The panel beside the chat (panel/chat-panel.tsx): open or not, its tabs and its width, kept per chat.
+  const panel = useChatPanel(selectedId ?? "new");
 
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  // A blink of the connection is nothing; a few seconds out of reach is worth saying.
+  const connection = useConnection();
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    if (connection === "connected") { setOffline(false); return; }
+    const timer = window.setTimeout(() => setOffline(true), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [connection]);
   const assistant = status?.assistantName ?? "Perry";
   const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
   const summary = chats?.find((item) => item.id === selectedId);
+  const agents = useQuery(api.dashboard.getChatAgents, selectedId ? { key: dashboardKey, id: selectedId } : "skip") ?? [];
   const parent = chats?.find((item) => item.id === summary?.parentConversationId);
   const chat = useQuery(api.dashboard.getChat, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
   const { results: newest, status: messageStatus, loadMore } = usePaginatedQuery(
@@ -101,9 +144,21 @@ export function ChatScreen() {
     selectedId ? { key: dashboardKey, id: selectedId } : "skip",
     { initialNumItems: 50 },
   );
-  const messages = useMemo(() => [...newest].sort((a, b) => a.createdAt - b.createdAt), [newest]);
+  const stableMessages = useStableRecords(newest, messageKey);
+  // What is saved comes first: a turn's messages are saved as it ends, so a message queued while it ran is older than
+  // them by the clock and would otherwise sit above the very reply it waited for.
+  const messages = useMemo(() => [...stableMessages].sort((a, b) => Number(Boolean(a.pending)) - Number(Boolean(b.pending)) || a.createdAt - b.createdAt), [stableMessages]);
   const approvals = useQuery(api.approvals.pending, { key: dashboardKey });
-  const now = useNow(1000);
+  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
+  // The chat's runs without their steps: a fold reads its steps when it is open, the reply running its newest one.
+  const workQuery = useQuery(api.dashboard.getChatRuns, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const artifacts = useQuery(api.interactive.list, selectedId && chat !== null ? { key: dashboardKey, conversationId: selectedId } : "skip");
+  const deadlineRevision = useChatDeadline([
+    ...(approvals ?? []).filter((item) => item.chat?.id === selectedId).map((item) => item.expiresAt),
+    ...(workQuery ?? []).filter((run) => run.status === "ok" && run.finishedAt !== undefined).map((run) => run.finishedAt! + LANDING_MS),
+    ...(planLimits?.engines.flatMap((item) => item.usage?.limits?.windows.map((window) => window.resetsAt) ?? []) ?? []),
+  ]);
+  const now = Date.now();
   const here = (approvals ?? []).filter((item) => item.chat?.id === selectedId && item.expiresAt > now);
 
   const createChat = useMutation(api.dashboard.createChat);
@@ -113,10 +168,11 @@ export function ChatScreen() {
   const compactChat = useAction(api.dashboard.compactChat);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const markSeen = useMutation(api.dashboard.markChatSeen);
+  const setReaction = useMutation(api.reactions.setWeb);
   const skipOnboarding = useMutation(api.dashboard.skipOnboarding);
   const redoOnboarding = useMutation(api.dashboard.redoOnboarding);
   const branchChat = useAction(api.dashboard.branchChat);
-  const rewindChat = useAction(api.dashboard.rewindChat);
+  const rewindChat = useMutation(api.dashboard.rewindChat);
   const resetChat = useAction(api.dashboard.resetChat);
   const setPinned = useMutation(api.dashboard.setChatPinned);
   const noteFromChat = useMutation(api.notes.fromChat);
@@ -125,7 +181,6 @@ export function ChatScreen() {
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
   const defaultEngine = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
-  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
   // The heads-up about the engine's limit the owner closed, until it changes.
   const [limitSeen, setLimitSeen] = useState("");
   // The note about Perry moving the chat to another engine the owner closed, by when it moved.
@@ -151,9 +206,8 @@ export function ChatScreen() {
   const [draftEngine, setDraftEngine] = useState<EngineKind>();
   const [draftEffort, setDraftEffort] = useState<string>();
   const [draftAccess, setDraftAccess] = useState<Access>();
-  const [draft, setDraft] = useState("");
-  /** Where the caret is in the draft; unset puts it at the end. */
-  const [caret, setCaret] = useState<number>();
+  const draftControl = useRef<DraftHandle>(null);
+  const setDraft = useCallback((text: string) => draftControl.current?.write(text), []);
   const { skills, refresh: refreshSkills } = useSkills();
   const skillNames = useMemo(() => new Set((skills ?? []).filter((skill) => !skill.problem).map((skill) => skill.name)), [skills]);
   const [notice, setNotice] = useState("");
@@ -164,11 +218,17 @@ export function ChatScreen() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState<{ index: number; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef<{ id: ChatId | null; controller: AbortController } | null>(null);
+  useEffect(() => () => submitting.current?.controller.abort(), []);
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  useEffect(() => setEditing(null), [selectedId]);
+  const [queueEdit, setQueueEdit] = useState<QueueEdit | null>(null);
+  const editQueued = useMutation(api.queue.edit);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
   /** A new project is being made for this chat to move into. */
   const [creatingProject, setCreatingProject] = useState(false);
-  const composer = useRef<HTMLTextAreaElement>(null);
+  const composer = useRef<ComposerHandle>(null);
   const compactionStatus = useQuery(api.dashboard.getCompaction, compaction ? { key: dashboardKey, id: compaction } : "skip");
 
   // Remember the open chat, for the next visit to the root.
@@ -180,7 +240,7 @@ export function ChatScreen() {
     if (!paramId) window.setTimeout(() => composer.current?.focus(), 0);
   }, [paramId]);
   // Needs you starts an answer here with ?draft=, which is taken in, then out of the address.
-  const search = useSearchParams();
+  const search = useSearchParams()!;
   const handed = search.get("draft");
   // A new chat started inside a project (?project=) is in it from its first message.
   const inProject = paramId ? null : search.get("project");
@@ -228,17 +288,53 @@ export function ChatScreen() {
       return changed ? next : items;
     });
   }, [chat?.isRunning, selectedId]);
+  // Blob previews of a just-sent message are memory; each is freed the moment its
+  // row stops being shown, and the rest when the screen goes.
+  const previews = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const live = new Set<string>();
+    for (const item of pending) for (const attachment of item.attachments) if (attachment.url.startsWith("blob:")) live.add(attachment.url);
+    for (const url of previews.current) if (!live.has(url)) URL.revokeObjectURL(url);
+    previews.current = live;
+  }, [pending]);
+  useEffect(() => () => { for (const url of previews.current) URL.revokeObjectURL(url); }, []);
+  // The end of the timeline says it is compacting, then that it compacted (nowLines); only why it could not is said here.
   useEffect(() => {
     if (!compactionStatus || compactionStatus.status === "queued" || compactionStatus.status === "running") return;
-    setNotice(compactionStatus.status === "done" ? COMPACTED : `Could not compact: ${compactionStatus.error ?? "no reason was given."}`);
+    if (compactionStatus.status !== "done") setNotice(`Could not compact: ${compactionStatus.error ?? "no reason was given."}`);
     setCompaction(null);
   }, [compactionStatus]);
 
-  const shownPending = pending.filter((item) => item.id === selectedId);
+  const shownPending = useMemo(() => pending.filter((item) => item.id === selectedId), [pending, selectedId]);
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
+  // What waits its turn, in the order it will go, after what is going on now (up-next.tsx); a message that
+  // waits behind nothing (it joins the reply running, or starts next) stays with the conversation.
+  const upNext = useMemo((): UpNextItem[] => [
+    ...messages.flatMap((message) => message.queued && !message.queued.now ? [{ key: message.queued.id, text: message.text, attachments: message.attachments, queued: message.queued }] : [])
+      .sort((a, b) => a.queued.position - b.queued.position),
+    ...shownPending.flatMap((item, index) => item.queued ? [{ key: `sending-${index}`, text: item.text, attachments: item.attachments }] : []),
+  ], [messages, shownPending]);
+  const conversation = useMemo(() => messages.filter((message) => !message.queued || message.queued.now), [messages]);
+  // A queued message edited in the composer that started meanwhile: the words stay in the composer, unsaved.
+  useEffect(() => {
+    if (!queueEdit || queueEdit.conversationId !== selectedId || messageStatus === "LoadingFirstPage" || upNext.some((item) => item.queued?.id === queueEdit.id)) return;
+    setQueueEdit(null);
+    setError("That message started before your edit was saved. Your words are still in the composer.");
+  }, [queueEdit, upNext, messageStatus, selectedId]);
+  // Leaving the chat mid-edit drops the edit, and the chat's own draft is what it finds when it comes back.
+  const queueEditNow = useRef(queueEdit);
+  useLayoutEffect(() => { queueEditNow.current = queueEdit; }, [queueEdit]);
+  useEffect(() => () => {
+    const left = queueEditNow.current;
+    if (!left) return;
+    try { if (left.stash) sessionStorage.setItem(`perry.prompt.${left.conversationId}`, left.stash); else sessionStorage.removeItem(`perry.prompt.${left.conversationId}`); } catch {}
+    setQueueEdit(null);
+  }, [selectedId]);
   // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
-  const work = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
-  const { workOf, liveWork, failedWork } = useMemo(() => {
+  const work = workQuery;
+  const chatFiles = useQuery(api.dashboard.getChatFiles, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const { workOf, liveWork, failedWork, compaction: compacting, lastReply } = useMemo(() => {
+    const now = Date.now();
     const runs = work ?? [];
     const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
     // Each message is a run of its own, and one sent while a reply works joins that reply's turn: several runs
@@ -246,53 +342,83 @@ export function ChatScreen() {
     // last reply saved while it ran; a message that waited for a turn of its own then gets that turn's reply.
     const groups = new Map<string, Work[]>();
     for (const run of runs) {
+      // Prefer the saved run id; older messages fall back to the time they were saved.
       if (run.status === "running" || run.finishedAt === undefined) continue;
-      const reply = [...replies].reverse().find((message) => message.createdAt >= run.startedAt && message.createdAt <= run.finishedAt! + SAVED_BEFORE_END_MS);
+      const reply = [...replies].reverse().find((message) => message.runId === run.runId) ?? [...replies].reverse().find((message) => message.createdAt >= run.startedAt && message.createdAt <= run.finishedAt! + SAVED_BEFORE_END_MS);
       if (reply) groups.set(reply.id, [...groups.get(reply.id) ?? [], run]);
     }
-    const workOf = new Map<string, Work>();
+    const workOf = new Map<string, Turn>();
     for (const [id, group] of groups) {
       const merged = together(group);
-      if (merged?.steps.length) workOf.set(id, merged);
+      if (merged) workOf.set(id, merged);
     }
     // A run that ended well and whose reply is not in the chat yet stays up until it is: the two come
     // from different reads, a moment apart, and the steps would blink out in between.
     const paired = new Set([...groups.values()].flat());
-    const landing = runs.filter((run) => run.status === "ok" && run.steps.length && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
+    const landing = runs.filter((run) => run.status === "ok" && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
     // A turn that failed before it could reply has no reply to sit above: its steps stay where its reply would have been.
     const lastReply = replies.at(-1)?.createdAt ?? 0;
-    const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && run.steps.length && !paired.has(run) && run.startedAt > lastReply);
-    return { workOf, liveWork: together([...runs.filter((run) => run.status === "running"), ...landing]), failedWork: together(failed) };
-  }, [work, messages, now]);
-
-  // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
-  const scroller = useRef<HTMLDivElement>(null);
-  const olderScroll = useRef<{ height: number; top: number } | null>(null);
-  const stick = useRef(true);
-  const [atBottom, setAtBottom] = useState(true);
-  useLayoutEffect(() => { stick.current = true; setAtBottom(true); }, [selectedId]);
-  const onScroll = useCallback(() => {
-    const element = scroller.current;
-    if (!element) return;
-    const bottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
-    stick.current = bottom;
-    setAtBottom(bottom);
-  }, []);
-  useLayoutEffect(() => {
-    const element = scroller.current;
-    if (!element) return;
-    if (olderScroll.current) {
-      element.scrollTop = olderScroll.current.top + element.scrollHeight - olderScroll.current.height;
-      olderScroll.current = null;
-    } else if (stick.current) {
-      element.scrollTop = element.scrollHeight;
+    const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && !paired.has(run) && run.startedAt > lastReply);
+    // A /compact is not a reply: the end of the timeline says it is going on (nowLines).
+    const running = runs.filter((run) => run.status === "running" && !run.compact);
+    // The latest /compact, said at the end of the timeline while it runs, and after until a reply comes.
+    const compaction = [...runs].reverse().find((run) => run.compact);
+    return { workOf, liveWork: together([...running, ...landing]), failedWork: together(failed), compaction, lastReply };
+  }, [work, messages, deadlineRevision]);
+  // A reply is on its way: not one held for a reset (said at the end of the timeline), and not messages sent
+  // during a /compact, which wait behind it under Up next rather than show a reply thinking.
+  const replying = !(summary?.isAgent && !summary.taskId) && !chat?.waiting && Boolean(liveWork || (waiting && compacting?.status !== "running"));
+  const historicalWork = useStableRecords(useMemo(() => [...workOf.values()], [workOf]), workKey);
+  const stableWorkOf = useMemo(() => new Map(historicalWork.map((item) => [item.runId, item])), [historicalWork]);
+  const rowWork = useMemo(() => new Map([...workOf].map(([id, item]) => [id, stableWorkOf.get(item.runId)])), [workOf, stableWorkOf]);
+  const timeline = useMemo(() => {
+    const anchors = new Map<string, string>();
+    for (const message of conversation) {
+      if (message.runId) anchors.set(message.runId, message.id);
+      for (const runId of rowWork.get(message.id)?.runIds ?? []) anchors.set(runId, message.id);
     }
-  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
-  const jumpToLatest = () => {
-    stick.current = true;
-    setAtBottom(true);
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  };
+    const byMessage = new Map<string, Artifact[]>();
+    const live = new Set([...(liveWork?.runIds ?? []), ...(failedWork?.runIds ?? [])]);
+    const current: Artifact[] = [];
+    for (const artifact of artifacts ?? []) {
+      const anchor = anchors.get(artifact.runId);
+      if (anchor) byMessage.set(anchor, [...(byMessage.get(anchor) ?? []), artifact]);
+      else if (live.has(artifact.runId)) current.push(artifact);
+    }
+    // Cards keep the same sibling key as a live run becomes a saved reply, preserving unsaved inputs.
+    const entries: Array<{ key: string; message: typeof conversation[number] } | { key: string; pending: Pending } | { key: string; artifact: Artifact }> = [];
+    for (const message of conversation) {
+      entries.push({ key: message.id, message });
+      for (const artifact of byMessage.get(message.id) ?? []) entries.push({ key: `interactive:${artifact.id}`, artifact });
+    }
+    shownPending.forEach((pending, index) => { if (!pending.queued) entries.push({ key: `pending:${index}`, pending }); });
+    for (const artifact of current) entries.push({ key: `interactive:${artifact.id}`, artifact });
+    return entries;
+  }, [conversation, rowWork, artifacts, shownPending, liveWork, failedWork]);
+
+  const { scroller, atBottom, onScroll, followLiveReply, jumpToLatest, release: releaseScroll, readerRevision, beginPagination, restorePagination } = useChatScroll(selectedId);
+  // Text commits stay in the live leaf; structural changes only follow while
+  // the reader has opted in. Pagination restores its visible message instead.
+  useLayoutEffect(() => {
+    if (messageStatus !== "LoadingMore") restorePagination();
+    followLiveReply();
+  }, [selectedId, messages.length, artifacts?.length, shownPending.length, waiting, liveWork?.stepCount, here.length, upNext.length, messageStatus, restorePagination, followLiveReply]);
+  const locatedMessage = useRef("");
+  const sourceScrollIntent = useRef<{ source: string; revision: number } | null>(null);
+  const sourceMessage = search.get("message");
+  const sourceRun = search.get("run");
+  useEffect(() => {
+    if (!sourceMessage && !sourceRun) { sourceScrollIntent.current = null; locatedMessage.current = ""; return; }
+    const source = selectedId + ":message:" + sourceMessage + ":run:" + sourceRun;
+    if (sourceScrollIntent.current?.source !== source) sourceScrollIntent.current = { source, revision: readerRevision.current };
+    if (locatedMessage.current === source || sourceScrollIntent.current.revision !== readerRevision.current) return;
+    const target = sourceMessage ? document.getElementById(`message-${sourceMessage}`) : scroller.current?.querySelector(`[data-run="${CSS.escape(sourceRun ?? "")}"]`);
+    if (target) {
+      releaseScroll();
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      locatedMessage.current = source;
+    } else if (messageStatus === "CanLoadMore") loadMore(50);
+  }, [selectedId, sourceMessage, sourceRun, messages.length, messageStatus, loadMore, releaseScroll, readerRevision]);
 
   const models = modelOptions?.models;
   // The chat's engine; a chat not sent yet is on the owner's default, unless a model was picked for it. None while there is neither.
@@ -365,66 +491,6 @@ export function ChatScreen() {
     setFiles((items) => [...items, ...usable].slice(0, MAX_FILES));
   }
 
-  // Slash commands: past a command's name, the suggestions are its choices.
-  const typedModel = parseModelCommand(draft);
-  const typedThink = parseThinkCommand(draft);
-  const typedAccess = parseAccessCommand(draft);
-  const choosing = /^\/(?:(?:set\s+)?model|think|access)\s/i.test(draft);
-  const choices = (options: Array<{ value: string; label: string; hint: string }>, typed: string | undefined, command: string): Suggestion[] =>
-    options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
-      key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
-    }));
-  // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
-  const mention = draft.startsWith("/") ? null : typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length)));
-  const mentioning = mention !== null;
-  // A skill Perry wrote a moment ago is listed too.
-  useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
-  function pickSkill(name: string) {
-    if (!mention) return;
-    const end = mention.start + 1 + mention.typed.length;
-    // The rest of a name the caret was inside is replaced too.
-    const after = draft.slice(end).replace(/^[a-z0-9-]*/, "");
-    const inserted = `$${name}${after.startsWith(" ") ? "" : " "}`;
-    const position = mention.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
-    setDraft(draft.slice(0, mention.start) + inserted + after);
-    setCaret(position);
-    window.setTimeout(() => { composer.current?.focus(); composer.current?.setSelectionRange(position, position); }, 0);
-  }
-  const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
-    .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
-    .sort((a, b) => Number(b.name.startsWith(mention.typed)) - Number(a.name.startsWith(mention.typed)))
-    .map((skill) => ({ key: skill.folder, label: `$${skill.name}`, hint: skill.description, typed: skill.name === mention.typed, apply: () => pickSkill(skill.name) }));
-
-  const suggestions: Suggestion[] = !draft.startsWith("/")
-    ? skillSuggestions
-    : typedModel && choosing
-      ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
-          const key = modelKey(item.engine, item.id);
-          const current = item.engine === engine && item.id === model;
-          return {
-            key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
-            apply: () => void runCommand(`/model ${key}`),
-          };
-        })
-      : typedThink && choosing
-        ? choices([
-            { value: "default", label: "Default", hint: `${modelInfo?.defaultEffort ?? "the model's own"}${effort ? "" : " · current"}` },
-            ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
-          ], typedThink.level, "/think")
-        : typedAccess && choosing
-          ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
-          : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
-              key: item.command, label: item.command, hint: item.hint,
-              apply: () => { setDraft(["/stop", "/compact", "/reset", "/pause", "/resume"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
-            }));
-  const completing = skillSuggestions.length
-    ? "skill" as const
-    : draft.startsWith("/") && !choosing
-      ? "command" as const
-      : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
-        ? "choice" as const
-        : null;
-
   /** Commands never become messages: they change this chat, then say what they did. */
   async function runCommand(text: string): Promise<boolean> {
     const trimmed = text.trim();
@@ -461,6 +527,7 @@ export function ChatScreen() {
     }
     if (command === "/stop") {
       setDraft("");
+      if (submitting.current?.id === selectedId) submitting.current?.controller.abort("stop");
       if (selectedId && waiting) await stopChat({ key: dashboardKey, id: selectedId });
       setNotice(selectedId && waiting ? "Stopping." : "Nothing is running.");
       return true;
@@ -500,89 +567,105 @@ export function ChatScreen() {
       try {
         const id = selectedId ? await compactChat({ key: dashboardKey, id: selectedId }) : null;
         setCompaction(id);
-        setNotice(id ? "Compacting this chat…" : "Nothing to compact yet.");
+        // Under way, the end of the timeline says so (nowLines).
+        if (!id) setNotice("Nothing to compact yet.");
       } catch (cause) { setNotice(errorText(cause)); }
       return true;
     }
     return false;
   }
 
-  async function submit(text = draft) {
-    const message = text.trim();
-    if (message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
+  async function submit(text = draftControl.current?.read() ?? "", mode: "auto" | "queue" = "auto") {
+    // Keep typing/focus available while cached history waits for fresh access metadata.
+    if (selectedId && (!chat || chat.contact)) return;
+    const citations = draftControl.current?.citations() ?? [];
+    const message = citedMessage(citations, text);
+    if (!citations.length && message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
-    if ((!message && files.length === 0) || busy || uploading) return;
+    if ((!message && files.length === 0) || busy || uploading || submitting.current) return;
+    const submission = { id: selectedId, controller: new AbortController() };
+    submitting.current = submission;
     const fresh = !selectedId;
     let id = selectedId;
-    if (!id) {
-      setBusy(true);
-      try {
-        id = await createChat({ key: dashboardKey, ...(newIn ? { projectId: newIn.id } : {}) });
-        setCreatedId(id);
-        // The chat has its own address from now, so a reload while it sends comes back to it.
-        router.replace(`/chat/${id}`);
-      } catch (cause) {
-        fail(cause);
-        return;
-      } finally {
-        setBusy(false);
-      }
-    }
     const sending = files;
-    const messageKey = sending.length ? crypto.randomUUID() : undefined;
-    setDraft(""); setFiles([]); setError(""); setNotice("");
-    stick.current = true;
+    let cleared = false;
     let sent: Pending | undefined;
+    const uploaded: PendingAttachment[] = [];
+    setBusy(true);
     try {
-      const uploaded: PendingAttachment[] = [];
+      const messageKey = sending.length ? randomUUID() : undefined;
+      if (!id) {
+        id = await createChat({ key: dashboardKey, ...(newIn ? { projectId: newIn.id } : {}) });
+        submission.id = id;
+        setCreatedId(id);
+      }
+      setDraft(""); draftControl.current?.writeCitations([]); setFiles([]); setError(""); setNotice("");
+      cleared = true;
       for (const [index, file] of sending.entries()) {
         setUploading({ index: index + 1, total: sending.length });
         const contentType = file.type || "application/octet-stream";
-        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file), fileName: file.name, contentType, size: file.size });
+        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file, undefined, submission.controller.signal), fileName: file.name, contentType, size: file.size });
         uploaded.push({ id: attachmentId, url: URL.createObjectURL(file), fileName: file.name, contentType });
       }
       setUploading(null);
+      submission.controller.signal.throwIfAborted();
       sent = {
         id, text: message, attachments: uploaded,
         baselineCount: fresh ? 0 : messages.filter((item) => item.role === "user" && item.text === message).length,
-        seenRunning: !fresh && Boolean(chat?.isRunning), sent: false,
+        seenRunning: !fresh && Boolean(chat?.isRunning), sent: false, ...(mode === "queue" ? { queued: true } : {}),
       };
       const entry = sent;
       setPending((items) => [...items, entry]);
       // A new chat takes what was picked before it existed; an existing one already has its own.
       await sendChat({
-        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model, engine,
-        ...(fresh ? { effort: pickedEffort ?? "", access: draftAccess } : {}),
+        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, mode,
+        ...(fresh ? { model, engine, effort: pickedEffort ?? "", access: draftAccess } : {}),
       });
+      // Changing the draft's storage key before a failed upload restores it would erase it.
+      if (!paramId && window.location.pathname === "/chat") router.replace(`/chat/${id}`);
+      // A send already crossing the network must acknowledge before Stop can cover it.
+      if (submission.controller.signal.reason === "stop") await stopChat({ key: dashboardKey, id }).catch(fail);
       setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
       // Full access is chosen for a chat, never carried into the next new one.
       if (fresh) setDraftAccess(undefined);
     } catch (cause) {
       setUploading(null);
       setPending((items) => items.filter((item) => item !== sent));
-      setDraft(message); setFiles(sending);
-      setError(`Your message wasn't sent: ${errorText(cause)}`);
+      for (const attachment of uploaded) URL.revokeObjectURL(attachment.url);
+      if (cleared) {
+        const newer = draftControl.current?.read() ?? "";
+        setDraft([text, newer].filter(Boolean).join("\n\n")); setFiles(items => [...sending, ...items]);
+        draftControl.current?.writeCitations([...citations, ...(draftControl.current?.citations() ?? [])]);
+      }
+      setError(submission.controller.signal.aborted ? "Sending cancelled. Your message is back in the composer." : `Your message wasn't sent: ${errorText(cause)}`);
+    } finally {
+      setUploading(null);
+      submitting.current = null;
+      setBusy(false);
     }
   }
 
   /** Regenerate from an assistant reply, or resend one of your messages with new text. */
-  async function rewind(messageId: string, text?: string) {
-    if (!selectedId || busy || waiting) return;
+  async function rewind(messageId: string, edit?: MessageEdit) {
+    if (!selectedId || busy || waiting) {
+      if (edit) throw new Error("Finish or stop the current reply before saving.");
+      return;
+    }
     const index = messages.findIndex((message) => message.id === messageId);
     const source = [...messages.slice(0, index + 1)].reverse().find((message) => message.role === "user");
-    const shown = text ?? source?.text ?? "";
+    const shown = edit?.text ?? source?.text ?? "";
     setBusy(true); setError("");
-    stick.current = true;
     // The copy being replaced is removed before the new one is listed, so it is not part of the baseline.
     const entry: Pending = {
       id: selectedId, text: shown, attachments: source?.attachments ?? [], seenRunning: false, sent: true,
       baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length - (source?.text === shown ? 1 : 0),
     };
     try {
-      setPending((items) => [...items, entry]);
-      await rewindChat({ key: dashboardKey, id: selectedId, messageId, text });
+      if (!edit) setPending((items) => [...items, entry]);
+      await rewindChat({ key: dashboardKey, id: selectedId, messageId, ...edit });
     } catch (cause) {
       setPending((items) => items.filter((item) => item !== entry));
+      if (edit) throw cause;
       fail(cause);
     } finally {
       setBusy(false);
@@ -603,12 +686,75 @@ export function ChatScreen() {
     }
   }
 
-  const stop = () => { if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail); };
+  const editRow = useChatEvent((message: ChatMessage) => setEditing(message));
+  const regenerateRow = useChatEvent((message: ChatMessage) => { void rewind(message.id); });
+  const branchRow = useChatEvent((message: ChatMessage) => { void branch(message.id); });
+  const noteRow = useChatEvent((message: ChatMessage) => { void saveAsNote(message.id); });
+  const reactRow = useChatEvent(async (message: ChatMessage, emoji: string) => {
+    if (selectedId) await setReaction({ key: dashboardKey, conversationId: selectedId, messageId: message.id as Id<"agentMessages">, emoji });
+  });
+  const stop = () => {
+    if (submitting.current?.id === selectedId) submitting.current?.controller.abort("stop");
+    if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail);
+  };
+  /** A queued message's words, into the composer to be changed; what was being written there comes back after. */
+  const startQueueEdit = (item: UpNextItem & { queued: NonNullable<UpNextItem["queued"]> }) => {
+    if (!selectedId) return;
+    setQueueEdit({ id: item.queued.id, conversationId: item.queued.conversationId, stash: draftControl.current?.read() ?? "" });
+    setDraft(item.text); setError("");
+    window.setTimeout(() => composer.current?.focus(), 0);
+  };
+  const endQueueEdit = () => {
+    if (queueEdit) setDraft(queueEdit.stash);
+    setQueueEdit(null);
+    window.setTimeout(() => composer.current?.focus(), 0);
+  };
+  async function saveQueueEdit(text: string) {
+    if (!queueEdit || busy) return;
+    setBusy(true); setError("");
+    try {
+      if (await editQueued({ key: dashboardKey, conversationId: queueEdit.conversationId, id: queueEdit.id, text })) endQueueEdit();
+      else {
+        setQueueEdit(null);
+        setError("That message started before your edit was saved. Your words are still in the composer.");
+      }
+    } catch (cause) {
+      fail(cause);
+    } finally {
+      setBusy(false);
+    }
+  }
+  // What the chat is doing now, at the end of the timeline, after the reply and before what is queued (thread-now.tsx).
+  const nowLines: NowLine[] = [
+    ...(chat?.waiting ? [{
+      id: "reset-wait", icon: <ClockIcon />, title: chat.waiting.why, data: { "data-reset-wait": true },
+      actions: <NowAction onClick={stop}>Stop</NowAction>,
+    }] : []),
+    ...(chat?.unresponsive && waiting ? [{
+      id: "unresponsive", icon: <UnplugIcon />, title: "Your computer is unresponsive", detail: "Waiting for it to reconnect…", data: { "data-turn-health": "unresponsive" },
+    }] : []),
+    // Over, it is said until the next reply starts, so it never sits below a reply that came after it.
+    ...(compacting && (compacting.status === "running" || (!liveWork && lastReply < (compacting.finishedAt ?? 0))) ? [{
+      id: "compaction", icon: <Minimize2Icon />, data: { "data-compaction": compacting.status },
+      ...(compacting.status === "running" ? { title: "Compacting context", live: true }
+        : compacting.status === "ok" ? { title: "Context compacted", detail: `${assistant} works from a summary of this chat now; the messages are unchanged` }
+          : { title: "Couldn't compact the context" }),
+    }] : []),
+  ];
   // Only what is in the history can be regenerated, edited or branched from.
   const saved = messages.filter((message) => !message.pending);
   const lastUser = [...saved].reverse().find((message) => message.role === "user");
   const lastMessage = saved.at(-1);
-  const loading = Boolean(selectedId) && (chat === undefined || messageStatus === "LoadingFirstPage");
+  const runRows = useMemo(() => {
+    const last = new Map<string | undefined, string>();
+    const prompt = new Map<string | undefined, string>();
+    for (const message of messages) {
+      last.set(message.runId, message.id);
+      if (message.role === "user" && !prompt.has(message.runId)) prompt.set(message.runId, message.id);
+    }
+    return { last, prompt };
+  }, [messages]);
+  const loading = Boolean(selectedId) && messageStatus === "LoadingFirstPage";
   const missing = Boolean(selectedId) && chat === null;
   const title = summary?.title ?? (selectedId ? chat?.title ?? "" : "New chat");
   // A Telegram or WhatsApp chat: written in here too, but what is on the phone cannot be taken back.
@@ -616,8 +762,23 @@ export function ChatScreen() {
   const project = selectedId ? chat?.project : newIn ? { id: newIn.id, name: newIn.name } : undefined;
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col">
-      <TopBar actions={selectedId && summary ? (
+    <div className="relative flex h-dvh min-h-0 overflow-hidden">
+    {!summary?.isAgent && !chat?.contact && !queueEdit && <SelectionCite key={selectedId ?? "new"} container={scroller} onCite={(text) => { draftControl.current?.cite(text); composer.current?.focus(); }} />}
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+      {editing && selectedId && <MessageEditor key={editing.id} message={editing} assistant={assistant} waiting={waiting}
+        onClose={() => setEditing(null)} onSave={(edit) => rewind(editing.id, edit)}
+        onStop={() => stopChat({ key: dashboardKey, id: selectedId })}
+        onUpload={async (file, requestId, uploadId) => {
+          const stored = await store(file, uploadId);
+          const contentType = file.type || "application/octet-stream";
+          const id = await registerAttachment({ key: dashboardKey, conversationId: selectedId, messageKey: requestId, editOf: editing.id,
+            ...stored, fileName: file.name, contentType, size: file.size });
+          return { id, url: `/api/media/${id}`, fileName: file.name, contentType };
+        }} />}
+
+      <TopBar actions={<>
+        {!chat?.contact && <ChatPanelToggle panel={panel} />}
+        {selectedId && summary ? (
         <ChatMenu
           pinned={summary.pinned}
           onPin={() => void setPinned({ key: dashboardKey, id: summary.id, pinned: !summary.pinned }).catch(fail)}
@@ -628,7 +789,7 @@ export function ChatScreen() {
           onSaveNote={() => void saveAsNote()}
           move={summary.channel === "web" ? <MoveToProject chat={summary} onNewProject={() => setCreatingProject(true)} /> : null}
         />
-      ) : !selectedId ? null : undefined}>
+      ) : null}</>}>
         {/* A project's chat says which, and leads to the project's page. */}
         {project && <>
           <Link href={`/projects/${project.id}`} className="flex min-w-0 shrink items-center gap-1.5 truncate text-muted-foreground hover:text-foreground">
@@ -636,24 +797,28 @@ export function ChatScreen() {
           </Link>
           <span className="text-muted-foreground/60" aria-hidden>/</span>
         </>}
-        {chat && <ChannelIcon channel={chat.channel} />}
-        <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer")} aria-busy={summary?.naming || undefined}>{title}</h1>
+        {parent && summary?.isAgent && <>
+          <Link href={`/chat/${parent.id}`} className="min-w-0 truncate text-sm text-muted-foreground hover:text-foreground">{parent.title}</Link>
+          <span className="text-muted-foreground/60" aria-hidden>/</span>
+        </>}
+        {chat && (summary?.isAgent ? <ProviderIcon engine={summary.engine ?? chat.engine} aria-hidden /> : <ChannelIcon channel={chat.channel} />)}
+        <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={summary?.naming || undefined}>{title}</h1>
         {summary && <StatusIndicator status={summary.status} />}
-        {parent && (
+        {parent && !summary?.isAgent && (
           <Link href={`/chat/${parent.id}`} className="hidden min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground sm:flex">
             <GitBranchIcon className="size-3 shrink-0" />from {parent.title}
           </Link>
         )}
       </TopBar>
 
-      <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]" id="content" tabIndex={-1}>
+      <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto" id="content" tabIndex={-1}>
         <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
           {noEngine && (
             <Alert variant="quiet" className="mt-4" role="alert">
               <AlertTitle>Choose the engine {assistant} thinks with</AlertTitle>
               <AlertDescription>{assistant} doesn&apos;t pick one for you. Choose a default for every chat, or pick a model for this one in the box below.</AlertDescription>
               <AlertAction>
-                <Button size="sm" render={<Link href="/settings/engines" />}>Choose</Button>
+                <Button size="sm" nativeButton={false} render={<Link href="/settings/engines" />}>Choose</Button>
               </AlertAction>
             </Alert>
           )}
@@ -672,71 +837,78 @@ export function ChatScreen() {
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
               <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
+              {!project && !noEngine && status?.onboarding !== "offer" && <NextStep assistant={assistant} />}
             </div>
           ) : (
-            <WorkFolds>
-            <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
+            <ChatFiles.Provider value={chatFiles ?? NO_FILES}>
+            <div className="flex flex-col gap-4 pt-6 pb-10" aria-busy={loading || undefined}>
+              {parent && summary?.isAgent && <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border/50" /><Link className="flex min-h-11 min-w-0 touch-manipulation items-center gap-2 rounded-full border border-border/50 px-3 py-1.5 hover:text-foreground" href={`/chat/${parent.id}`}><BotIcon className="size-3.5 shrink-0" /><span className="truncate">Subagent of {"\u00b7"} {parent.title}</span></Link><span className="h-px flex-1 bg-border/50" /></div>}
               {loading && (
-                <div className="space-y-8" role="status" aria-label="Loading the conversation">
+                <div className="flex flex-col gap-4" role="status" aria-label="Loading the conversation">
                   <Skeleton className="ml-auto h-10 w-1/2 rounded-3xl" />
                   <div className="space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-11/12" /><Skeleton className="h-4 w-2/3" /></div>
                 </div>
               )}
               {missing && (
-                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" render={<Link href="/chat" />}>New chat</Button>}>
+                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" nativeButton={false} render={<Link href="/chat" />}>New chat</Button>}>
                   It may have been deleted.
                 </EmptyState>
               )}
               {messageStatus === "CanLoadMore" && (
                 <div className="flex justify-center">
-                  <Button variant="outline" size="sm" onClick={() => { if (scroller.current) olderScroll.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; loadMore(50); }}>
+                  <Button variant="outline" size="sm" onClick={() => { beginPagination(); loadMore(50); }}>
                     Load earlier messages
                   </Button>
                 </div>
               )}
               {messageStatus === "LoadingMore" && <p className="text-center text-sm text-muted-foreground" role="status">Loading earlier messages…</p>}
-              {messages.map((message) => (
+              {timeline.map((entry) => {
+                if ("artifact" in entry) return <InteractiveAnswer key={entry.key} artifact={entry.artifact} />;
+                if ("pending" in entry) return <PendingRow key={entry.key} text={entry.pending.text} attachments={entry.pending.attachments} sent={entry.pending.sent} skills={skillNames} />;
+                const { message } = entry;
+                return <Fragment key={entry.key}>
                 <MessageRow
                   key={message.id}
                   message={message}
-                  work={workOf.get(message.id)}
+                  work={rowWork.get(message.id)}
+                  agents={agentsForWork(agents, rowWork.get(message.id))}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
-                  canEdit={!waiting && !app}
-                  canRegenerate={message.id === lastMessage?.id && !waiting && !app}
-                  canBranch={!app}
+                  canEdit={!app && !summary?.isAgent}
+                  canRegenerate={message.id === lastMessage?.id && !waiting && !app && !summary?.isAgent}
+                  canBranch={!app && !summary?.isAgent}
                   busy={busy}
                   skills={skillNames}
-                  onEdit={(text) => void rewind(message.id, text)}
-                  onRegenerate={() => void rewind(message.id)}
-                  onBranch={() => void branch(message.id)}
-                  onSaveNote={() => void saveAsNote(message.id)}
+                  onEdit={editRow}
+                  onRegenerate={regenerateRow}
+                  onBranch={branchRow}
+                  onSaveNote={noteRow}
+                  onReact={!app ? reactRow : undefined}
                 />
-              ))}
-              {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
-              {(waiting || liveWork) && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} approving={here.length > 0} />}
-              {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
-              {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
-              {chat?.lastError && !chat.isRunning && !waiting && (
-                <Alert variant="destructive">
-                  <TriangleAlertIcon />
-                  <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
-                  <AlertDescription>
-                    {/too old for Perry|runner|offline|computer/i.test(chat.lastError) && (
-                      <p className="mb-1">{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines shows it too."
-                        : "Your computer may be offline. Start Perry on it, then try again."}</p>
-                    )}
-                    <p className="font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
-                  </AlertDescription>
-                  {lastUser && !app && (
-                    <AlertAction>
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => void rewind(lastUser.id)}><RefreshCwIcon />Try again</Button>
-                    </AlertAction>
-                  )}
-                </Alert>
+                {message.failure?.error === "Stopped before it finished." && (message.role === "assistant" || message.runId !== chat?.lastErrorRunId) && runRows.last.get(message.runId!) === message.id && <Interrupted />}
+                {message.failure && message.failure.error !== "Stopped before it finished." && runRows.last.get(message.runId!) === message.id && <TurnError
+                  {...message.failure}
+                  busy={busy || waiting}
+                  onRetry={!app && !waiting && runRows.prompt.get(message.runId!)
+                    ? () => { const prompt = runRows.prompt.get(message.runId!); if (prompt) void rewind(prompt); }
+                    : undefined}
+                />}
+                </Fragment>
+              })}
+              {chat?.taskPlan && chat.taskPlan.plan.length > 0 && <PlanChecklist steps={chat.taskPlan.plan} active={["queued", "running", "blocked"].includes(chat.taskPlan.status)} />}
+              {replying && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
+                work={liveWork} agents={agentsForWork(agents, liveWork)} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
+              {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
+              {failedWork && (failedWork.stepCount > 0 || !failedWork.stopped) && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed"><AgentRows agents={agentsForWork(agents, failedWork) ?? []} /></WorkSummary></div>}
+              {chat?.lastError === "Stopped before it finished." && !chat.isRunning && !waiting && !messages.some((message) => message.role === "assistant" && message.failure?.error === chat.lastError && message.runId === chat.lastErrorRunId) && <Interrupted detail={failedWork?.stepCount ? undefined : "Stopped before any work finished"} />}
+              {chat?.lastError && chat.lastError !== "Stopped before it finished." && !chat.isRunning && !waiting && !messages.some((message) => message.failure && message.runId === chat.lastErrorRunId) && (
+                <TurnError error={chat.lastError} errorCode={chat.lastErrorCode} busy={busy}
+                  onRetry={lastUser && !app ? () => void rewind(lastUser.id) : undefined} />
               )}
+              {/* Past and now: what the chat is doing. What waits its turn is on the composer (UpNext). */}
+              <ThreadNow lines={nowLines} />
             </div>
-            </WorkFolds>
+            </ChatFiles.Provider>
           )}
         </div>
       </div>
@@ -745,13 +917,73 @@ export function ChatScreen() {
         {!atBottom && selectedId && (
           <div className="pointer-events-none absolute inset-x-0 -top-12 flex justify-center">
             <Button variant="outline" size="sm" className="pointer-events-auto rounded-full bg-background shadow-md" onClick={jumpToLatest}>
-              <ArrowDownIcon />{waiting ? "New reply below" : "Jump to latest"}
+              {/* It names what goes on below: "Jump to latest · Working". The queue is on the composer, in sight already. */}
+              <ArrowDownIcon />{["Jump to latest", replying ? "Working" : ""].filter(Boolean).join(" · ")}
             </Button>
           </div>
         )}
         <div className="mx-auto w-full max-w-3xl">
-          <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
-          {chat?.contact ? (
+          <p className="sr-only" role="status" aria-live="polite">{chat?.waiting?.why ?? ""}</p>
+          <ChatAnnouncer chatId={selectedId ?? null} status={summary?.status} />
+          {summary?.isAgent && parent ? <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/50 bg-muted/30 px-4 py-3 text-sm" data-agent-bar>
+            <BotIcon className="size-4 text-muted-foreground" /><span className="font-medium">{model || ENGINE_LABELS[engine ?? "codex"]}</span><span className="text-muted-foreground">{effort}</span>
+            <span className="flex-1 text-muted-foreground"><AgentStatus agent={summary.agent} /></span><span className="text-xs text-muted-foreground">Runs on its own</span>
+            <Link href={`/chat/${parent.id}`} className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-md px-2 font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"><ArrowUpLeftIcon className="size-4" />Open parent</Link>
+          </div> : <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, citations, setCitations, before, setBefore }) => {
+            // Slash commands: past a command's name, the suggestions are its choices.
+            const typedModel = parseModelCommand(draft);
+            const typedThink = parseThinkCommand(draft);
+            const typedAccess = parseAccessCommand(draft);
+            const choosing = /^\/(?:(?:set\s+)?model|think|access)\s/i.test(draft);
+            const choices = (options: Array<{ value: string; label: string; hint: string }>, typed: string | undefined, command: string): Suggestion[] =>
+              options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
+                key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
+              }));
+            // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
+            const mention = draft.startsWith("/") ? null : typingSkill(before ?? draft);
+            function pickSkill(name: string) {
+              if (!mention || !composer.current) return;
+              // The rest of a name the caret was inside is replaced too, and the space after it, which "$name " brings back.
+              const rest = composer.current.around().after.match(/^[a-z0-9-]* ?/)?.[0] ?? "";
+              composer.current.replaceAroundCaret(mention.typed.length + 1, rest.length, `$${name} `);
+            }
+            const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
+              .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
+              .sort((a, b) => Number(b.name.startsWith(mention.typed)) - Number(a.name.startsWith(mention.typed)))
+              .map((skill) => ({ key: skill.folder, label: `$${skill.name}`, hint: skill.description, typed: skill.name === mention.typed, apply: () => pickSkill(skill.name) }));
+
+            const suggestions: Suggestion[] = !draft.startsWith("/")
+              ? skillSuggestions
+              : typedModel && choosing
+                ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
+                    const key = modelKey(item.engine, item.id);
+                    const current = item.engine === engine && item.id === model;
+                    return {
+                      key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
+                      apply: () => void runCommand(`/model ${key}`),
+                    };
+                  })
+                : typedThink && choosing
+                  ? choices([
+                      { value: "default", label: "Default", hint: `${modelInfo?.defaultEffort ?? "the model's own"}${effort ? "" : " · current"}` },
+                      ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
+                    ], typedThink.level, "/think")
+                  : typedAccess && choosing
+                    ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
+                    : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
+                        key: item.command, label: item.command, hint: item.hint,
+                        apply: () => { setDraft(["/stop", "/compact", "/reset", "/pause", "/resume"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
+                      }));
+            const completing = skillSuggestions.length
+              ? "skill" as const
+              : draft.startsWith("/") && !choosing
+                ? "command" as const
+                : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
+                  ? "choice" as const
+                  : null;
+
+
+          return chat?.contact ? (
             <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
@@ -764,17 +996,21 @@ export function ChatScreen() {
             ref={composer}
             assistant={assistant}
             draft={draft}
+            citations={queueEdit ? [] : citations}
+            onCitationsChange={setCitations}
             onDraftChange={setDraft}
-            onCaret={setCaret}
-            onSubmit={() => void submit()}
+            onCaret={setBefore}
+            onSubmit={() => void (queueEdit ? saveQueueEdit(draft) : submit(draft))}
+            onQueue={() => void submit(draft, "queue")}
+            editingQueued={queueEdit ? { onCancel: endQueueEdit } : undefined}
             onStop={selectedId ? stop : undefined}
-            waiting={waiting}
-            busy={busy}
+            waiting={waiting || Boolean(uploading)}
+            busy={busy || Boolean(selectedId && chat === undefined)}
             uploading={uploading}
             files={files}
             onAddFiles={addFiles}
             onRemoveFile={(file) => setFiles((items) => items.filter((item) => item !== file))}
-            suggestions={suggestions}
+            suggestions={citations.length && !queueEdit ? [] : suggestions}
             suggesting={mention ? "Skills" : "Commands"}
             completing={completing}
             pickers={{
@@ -791,12 +1027,15 @@ export function ChatScreen() {
                   {chat.moved.to ? `It goes back to ${ENGINE_LABELS[chat.moved.from]} once that has room.` : `Pick a ${ENGINE_LABELS[chat.moved.from]} model to move it back.`}
                 </ComposerNote>
               )}
+              {offline && <ComposerNote tone="warning">Can&apos;t reach Perry&apos;s server. Trying again…</ComposerNote>}
               {limit && limitSeen !== limitMark && (
                 <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
                   <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
                   <Link href="/settings/usage" className="link">See usage</Link>
                 </ComposerNote>
               )}
+              {/* Last, so the queued messages sit on the box they were typed in. Keyed per chat: its "show all" and drag reset. */}
+              {selectedId && <UpNext key={selectedId} items={upNext} editing={queueEdit?.id ?? null} onEdit={startQueueEdit} onCancelEdit={endQueueEdit} />}
               {!selectedId && !draft && files.length === 0 && (
                 <div className="mb-3 flex flex-wrap justify-center gap-2">
                   {STARTERS.map((text) => (
@@ -815,10 +1054,14 @@ export function ChatScreen() {
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
                 : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills.</>}
           </p>
-          </>)}
+          </>);
+          }}</ComposerDraft>}
         </div>
       </div>
 
+    </div>
+      {!chat?.contact && <ChatPanel panel={panel} conversationId={selectedId} project={project}
+        details={{ engine, model, effort, access, status: summary?.status, project, context: chat?.context, usage: engineUsage }} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
       {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}
@@ -834,7 +1077,7 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, o
   const router = useRouter();
   return (
     <>
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground md:hidden" aria-label="New chat" render={<Link href="/chat" />}>
+      <Button variant="ghost" size="icon-sm" className="text-muted-foreground md:hidden" aria-label="New chat" nativeButton={false} render={<Link href="/chat" />}>
         <SquarePenIcon />
       </Button>
       <DropdownMenu>
@@ -856,4 +1099,24 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, o
       </DropdownMenu>
     </>
   );
+}
+
+/** The reply being written. Its running times write themselves from one shared second (lib/format.ts, tickText), so nothing here renders each second. */
+function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameters<typeof ReplyInProgress>[0], "streaming"> & {
+  conversationId: ChatId;
+  onContentChange: () => void;
+}) {
+  const { dashboardKey } = useSession();
+  const stream = useQuery(api.turnStreams.getChatStream, { key: dashboardKey, id: conversationId });
+  const streaming = useTypewriter(stream ?? "", conversationId);
+  // The page follows the reply as it is revealed, not as it lands: that is what the reader is reading.
+  useLayoutEffect(() => { onContentChange(); }, [streaming, onContentChange]);
+  return <div data-live-reply={conversationId}>
+    <ReplyInProgress {...props} streaming={stream == null ? undefined : streaming} fullText={stream ?? undefined} />
+  </div>;
+}
+
+function LiveApproval({ approval }: { approval: Parameters<typeof ApprovalCard>[0]["approval"] }) {
+  const now = useNow(1000);
+  return <ApprovalCard approval={approval} now={now} showChat={false} />;
 }

@@ -1,0 +1,54 @@
+{
+  "scope": "Actual Runtime + native SQLite; integrated checkout sources; no source overlay; synthetic homes only; scheduler stopped; no network/engine/bootstrap",
+  "checks": [
+    {
+      "name": "parallel ordinary/background admission admits exactly 10, refuses 11th with clear detail",
+      "passed": true
+    },
+    {
+      "name": "dashboard outbox reserves 10 slots; handoff replaces its slot and duplicate enqueue is idempotent",
+      "passed": true
+    },
+    {
+      "name": "expired identical outbox prompt: handoff keeps waiting/pending at 10; refusal unchanged; removal releases exactly one",
+      "passed": true
+    },
+    {
+      "name": "matching duplicate fresh prompts consumes exactly one reservation and unrelated prompts cannot borrow capacity",
+      "passed": true
+    },
+    {
+      "name": "concurrent same-run durable replay returns one id at capacity including after removal",
+      "passed": true
+    },
+    {
+      "name": "steers reserve fallback capacity; repeated fallback/recovery never duplicates",
+      "passed": true
+    },
+    {
+      "name": "retry and compact cannot bypass full queue, retry remains available after a slot is freed",
+      "passed": true
+    },
+    {
+      "name": "owner/chat authorization, idempotent removal, spans closed, pending count exact and unrelated running turn untouched",
+      "passed": true
+    },
+    {
+      "name": "claim wins removal race without stop; removal wins claim race without running",
+      "passed": true
+    },
+    {
+      "name": "legacy overfull steer fallback terminates only its own message and schedules recovery finalization",
+      "passed": true
+    },
+    {
+      "name": "backend pending messages expose per-message queue identity only before claim and disappear after removal",
+      "passed": true
+    },
+    {
+      "name": "delivered/finalizing queued anomalies cannot be removed",
+      "passed": true
+    }
+  ],
+  "passed": true
+}

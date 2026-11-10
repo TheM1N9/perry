@@ -1,0 +1,109 @@
+{
+  "ranAt": "2026-10-13T06:15:53.154Z",
+  "platform": "win32",
+  "pass": true,
+  "scope": "Deterministic source/provider fixtures plus real SDK/SQLite/MCP/public HTTP transport on win32; no live connector account claims.",
+  "results": [
+    {
+      "name": "exact URL classification and scope",
+      "passed": true
+    },
+    {
+      "name": "GitHub distinct comments, deduplication and bounded pagination",
+      "passed": true
+    },
+    {
+      "name": "empty success differs from malformed and denied",
+      "passed": true
+    },
+    {
+      "name": "RSS and Atom retain dates, links and missing fields",
+      "passed": true
+    },
+    {
+      "name": "captions disclose automatic text-only coverage; missing captions fail",
+      "passed": true
+    },
+    {
+      "name": "search snippets and retrieved originals are separate",
+      "passed": true
+    },
+    {
+      "name": "cancellation and credentials stop before fetch",
+      "passed": true
+    },
+    {
+      "name": "real MCP read marks external content and holds outward actions",
+      "passed": true
+    },
+    {
+      "name": "public transport blocks private addresses and redirects; statuses are accurate",
+      "passed": true
+    },
+    {
+      "name": "diagnostics isolate failures and never retain source content",
+      "passed": true
+    },
+    {
+      "name": "public browser fallback is isolated and cannot post",
+      "passed": true
+    },
+    {
+      "name": "stopping the chat cancels the in-flight source read",
+      "passed": true
+    },
+    {
+      "name": "shared source serialization and transport deadlines",
+      "passed": true
+    },
+    {
+      "name": "real SDK discovery pins account, validates current read schema and refuses writes",
+      "passed": true
+    }
+  ],
+  "hits": [
+    "/article",
+    "/redirect",
+    "/forbidden",
+    "/rate",
+    "/article",
+    "/session",
+    "/favicon.ico",
+    "/app",
+    "/app",
+    "/favicon.ico",
+    "/slow",
+    "/serialized",
+    "/serialized",
+    "/slow"
+  ],
+  "providerPaths": [
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts"
+  ]
+}

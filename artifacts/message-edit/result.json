@@ -1,0 +1,116 @@
+{
+  "ranAt": "2026-10-12T20:21:41.491Z",
+  "coverage": "production browser + HTTP + SQLite + real runner; fake ACP model, no real model or messaging accounts",
+  "checks": {
+    "original upload and Markdown links": true,
+    "Markdown preserves skill links and code": true,
+    "edit opens existing text and files": true,
+    "cancel preserves original and shared branch": true,
+    "failed upload preserves original and draft": true,
+    "first successful upload retained": true,
+    "failed save preserves original without reupload": true,
+    "replace/add keeps final ordered files": true,
+    "retry does not duplicate uploads": true,
+    "lost response retry is idempotent": true,
+    "branch and Library references survive detach": true,
+    "real runner receives final files": true,
+    "reload persists edits": true,
+    "popup preview replacement.png": true,
+    "popup preview clip.webm": true,
+    "popup preview sound.wav": true,
+    "popup preview file.pdf": true,
+    "popup preview note.txt": true,
+    "document preview is plain text": true,
+    "media needs authentication": true,
+    "text edit keeps files": true,
+    "media-only save enabled": true,
+    "media-only edit persists": true,
+    "empty edit cannot save": true,
+    "stale edit rejected and draft retained": true,
+    "foreign attachment rejected atomically": true,
+    "wrong owner key rejected": true,
+    "active reply allows drafting but blocks save": true,
+    "server blocks active edit and rolls back references": true,
+    "stop then edit uses fresh session": true,
+    "mobile editor fits and controls are labelled": true,
+    "mobile upload status and Save fit": true,
+    "keyboard saves a text-only edit": true,
+    "regeneration still works after removing files": true,
+    "lost upload response retry reuses file": true,
+    "another message's attachment in the same chat is rejected": true,
+    "no browser exceptions": true
+  },
+  "notes": {
+    "editedTurn": {
+      "prompt": "**Edited** https://example.com/edited\n\n<!-- attachments: edit-50b0f59d-d782-4ff3-98fc-6e27412a85d9 -->",
+      "attachments": [
+        {
+          "localPath": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/fe92b2a8-ecf7-42d1-81c8-098ebb5542ca.txt",
+          "fileName": "note.txt",
+          "contentType": "text/plain"
+        },
+        {
+          "localPath": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/1264c378-97db-4805-aff0-29796c701331.png",
+          "fileName": "replacement.png",
+          "contentType": "image/png"
+        },
+        {
+          "localPath": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/01c2bc1b-e280-4fae-b3a9-cb6531d50703.png",
+          "fileName": "other.png",
+          "contentType": "image/png"
+        },
+        {
+          "localPath": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/b335391e-5ddd-445e-86a0-93dd24e77d3e.webm",
+          "fileName": "clip.webm",
+          "contentType": "video/webm"
+        },
+        {
+          "localPath": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/6484c96e-6aa0-4daa-9314-c70f841894e8.wav",
+          "fileName": "sound.wav",
+          "contentType": "audio/wav"
+        },
+        {
+          "localPath": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/c0c7330d-7c26-4f2c-a0e9-a445bbfb1a1c.pdf",
+          "fileName": "file.pdf",
+          "contentType": "application/pdf"
+        }
+      ]
+    },
+    "engineInputs": [
+      {
+        "prompt": "**Original** https://example.com $e2e-skill `$e2e-skill`\n\n<!-- attachments: 423996ef-c8a0-413f-bf90-91fb56f51729 -->\n\nThe owner named a skill for this message. Before anything else, read its SKILL.md and follow it:\n- $e2e-skill: /var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/skills/e2e-skill/SKILL.md\nAttached file: original.png (/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/b282ef4b-270f-4d66-87c4-cd59d381623f.png)\nAttached file: note.txt (/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/fe92b2a8-ecf7-42d1-81c8-098ebb5542ca.txt)"
+      },
+      {
+        "prompt": "**Edited** https://example.com/edited\n\n<!-- attachments: edit-50b0f59d-d782-4ff3-98fc-6e27412a85d9 -->\nAttached file: note.txt (/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/fe92b2a8-ecf7-42d1-81c8-098ebb5542ca.txt)\nAttached file: replacement.png (/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/1264c378-97db-4805-aff0-29796c701331.png)\nAttached file: other.png (/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/01c2bc1b-e280-4fae-b3a9-cb6531d50703.png)\nAttached file: clip.webm (/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/b335391e-5ddd-445e-86a0-93dd24e77d3e.webm)\nAttached file: sound.wav (/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/6484c96e-6aa0-4daa-9314-c70f841894e8.wav)\nAttached file: file.pdf (/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/uploads/c0c7330d-7c26-4f2c-a0e9-a445bbfb1a1c.pdf)"
+      }
+    ],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (darwin)\u001b[0m",
+      "\u001b[2m  directory  /var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-message-edit-l5qJ7Z/workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  using $e2e-skill\u001b[0m",
+      "\u001b[2m  saved turn dysdn41rsryvyer18v8qjmpnax\u001b[0m",
+      "\u001b[2m  saved turn avcjav23mqq65zfbazz08w9c5c\u001b[0m",
+      "\u001b[2m  saved turn fa3z430e0mf1e0d2rcje28vrd7\u001b[0m",
+      "\u001b[2m  saved turn xjvmyy3wqnhcrd5y8m463svsna\u001b[0m",
+      "\u001b[2m  saved turn 28petargg8k5y5wm34h0fngbp3\u001b[0m",
+      "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn gb8t0rhcqbpfc9xja4295ctzh1\u001b[0m",
+      "\u001b[2m  saved turn fg8w4ese7tvajd4s28ywvtfq3d\u001b[0m",
+      "\u001b[2m  saved turn a4p710xg67z8rcmcm6g15wbyzq\u001b[0m",
+      "\u001b[2m  saved turn p8xcmemzqxt8w1mhgmfxw66hz2\u001b[0m",
+      "\u001b[2m",
+      "  runner stopped. Assistant has no hands here now.",
+      "\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

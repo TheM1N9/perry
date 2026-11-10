@@ -1,4 +1,5 @@
 import { backend } from "@/server/index";
+import { isInlineMedia } from "@/lib/media-content";
 
 /**
  * A stored file, by its id; the id is the capability, as Convex's storage URLs were. Byte ranges are served too,
@@ -8,7 +9,15 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const { id } = await context.params;
   const blob = await backend().readFile(id).catch(() => null);
   if (!blob) return new Response("Not found", { status: 404 });
-  const headers = new Headers({ "content-type": blob.type || "application/octet-stream", "cache-control": "private, max-age=31536000, immutable", "accept-ranges": "bytes" });
+  const inline = isInlineMedia(blob.type);
+  const headers = new Headers({
+    "content-type": inline ? blob.type : "application/octet-stream",
+    "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(id)}`,
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "sandbox; default-src 'none'; media-src 'self'; style-src 'unsafe-inline'",
+    "cache-control": "private, max-age=3600",
+    "accept-ranges": "bytes",
+  });
   const range = request.headers.get("range")?.match(/^bytes=(\d*)-(\d*)$/);
   if (range && blob.size > 0) {
     const start = range[1] ? Number(range[1]) : Math.max(0, blob.size - Number(range[2]));

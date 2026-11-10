@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-02T20:31:46.608Z",
+  "ranAt": "2026-10-15T13:43:53.636Z",
   "ownerShaped": {
     "nodes": 25,
     "edges": 18
@@ -9,9 +9,9 @@
     "edges": 21204,
     "pairs": 21204,
     "queryMs": [
-      378,
-      635,
-      366
+      17773,
+      4958,
+      7652
     ],
     "lines": 27665,
     "linesNamingSomeone": 14511
@@ -19,34 +19,34 @@
   "readableAtFit": {
     "drawnNodes": 150,
     "drawnEdges": 1200,
-    "labels": 20,
+    "labels": 19,
     "overlaps": 0
   },
   "zoomedIn": {
-    "drawnNodes": 693,
+    "drawnNodes": 801,
     "drawnEdges": 1200,
-    "labels": 13,
+    "labels": 19,
     "overlaps": 0
   },
   "performance": {
-    "dataMs": 2617,
-    "firstDrawMs": 2730,
-    "drawAfterDataMs": 113,
-    "settledMs": 5518,
+    "dataMs": 7070,
+    "firstDrawMs": 7360,
+    "drawAfterDataMs": 290,
+    "settledMs": 12511,
     "whileLayingOut": {
-      "frames": 213,
-      "frameMsP50": 10,
-      "frameMsP95": 10,
-      "longestMs": 10
+      "frames": 265,
+      "frameMsP50": 17,
+      "frameMsP95": 17,
+      "longestMs": 67
     },
     "panZoomedOut": {
-      "frames": 199,
-      "fps": 100,
+      "frames": 120,
+      "fps": 60,
       "longFrames": 0,
-      "frameMsP50": 10,
-      "frameMsP95": 10.1,
-      "drawMsP50": 0.6,
-      "drawMsP95": 0.9,
+      "frameMsP50": 16.7,
+      "frameMsP95": 16.8,
+      "drawMsP50": 1.1,
+      "drawMsP95": 1.8,
       "drawn": {
         "nodes": 143,
         "edges": 1200,
@@ -54,16 +54,16 @@
       }
     },
     "panZoomedIn": {
-      "frames": 199,
-      "fps": 100,
+      "frames": 118,
+      "fps": 60,
       "longFrames": 0,
-      "frameMsP50": 10,
-      "frameMsP95": 10.1,
-      "drawMsP50": 0.8,
-      "drawMsP95": 1.6,
+      "frameMsP50": 16.7,
+      "frameMsP95": 16.8,
+      "drawMsP50": 1.2,
+      "drawMsP95": 1.9,
       "drawn": {
-        "nodes": 415,
-        "edges": 437,
+        "nodes": 458,
+        "edges": 1200,
         "months": false
       }
     }
@@ -113,8 +113,8 @@
       "pages": 24
     },
     "kindsDaysProjects": [
-      "journal journal 2025-08-28",
-      "journal journal 2026-08-23",
+      "journal journal 2025-09-10",
+      "journal journal 2026-09-05",
       "person Datta",
       "person Vivek",
       "person Manvi",
@@ -122,13 +122,13 @@
       "about About me",
       "remember Kitchen Things to remember (Kitchen)",
       "chat chat with Priya",
-      "journal journal 2026-09-20",
-      "journal journal 2026-09-24",
-      "journal journal 2026-09-27",
-      "journal journal 2026-09-29",
-      "journal journal 2026-09-30",
+      "journal journal 2026-10-03",
+      "journal journal 2026-10-07",
+      "journal journal 2026-10-10",
+      "journal journal 2026-10-12",
+      "journal journal 2026-10-13",
       "journey Kitchen Journey (Kitchen)",
-      "journal journal 2026-10-01",
+      "journal journal 2026-10-14",
       "person Arjun",
       "person Juhi",
       "person Aadil",
@@ -150,31 +150,31 @@
       "extra": []
     },
     "noEdgeFromSupersededOrGuestOrBrokenLinks": [
-      "Aadil | journal 2026-09-30 | about",
-      "Arjun | journal 2025-08-28 | about",
+      "Aadil | journal 2026-10-13 | about",
+      "Arjun | journal 2025-09-10 | about",
       "Datta | Kitchen Journey | about",
       "Datta | Kitchen plan | link",
-      "Datta | journal 2026-09-27 | about",
-      "Datta | journal 2026-10-01 | about",
+      "Datta | journal 2026-10-10 | about",
+      "Datta | journal 2026-10-14 | about",
       "Goa trip | Juhi | link",
       "Goa trip | Packing list | link",
       "Goa trip | Reading list | link",
       "Juhi | Vivek | also",
-      "Juhi | journal 2026-08-23 | about",
-      "Juhi | journal 2026-09-30 | about",
+      "Juhi | journal 2026-09-05 | about",
+      "Juhi | journal 2026-10-13 | about",
       "Kitchen Journey | project Kitchen | project",
       "Kitchen Things to remember | project Kitchen | project",
       "Kitchen plan | project Kitchen | project",
-      "Manvi | journal 2026-09-24 | about",
-      "Manvi | journal 2026-10-01 | about",
-      "Vivek | journal 2026-09-30 | about"
+      "Manvi | journal 2026-10-07 | about",
+      "Manvi | journal 2026-10-14 | about",
+      "Vivek | journal 2026-10-13 | about"
     ],
     "ownerOnly": "Wrong dashboard key.",
     "localGraphQuery": [
       "Datta",
       "Kitchen plan",
-      "journal 2026-10-01",
-      "journal 2026-09-27",
+      "journal 2026-10-14",
+      "journal 2026-10-10",
       "Kitchen Journey"
     ],
     "smallMapNamesAllWithoutOverlap": {
@@ -211,7 +211,7 @@
         "y": 656.5224615394078
       }
     },
-    "clickOpensThePage": "/brain/pzkcghthgnhk5hx028f9k5ncv5",
+    "clickOpensThePage": "/brain/vyaqqas682cbw4z0qkdats5m2g",
     "searchFindsAndCentres": {
       "lit": "Manvi",
       "at": {
@@ -242,8 +242,8 @@
         "Things to remember",
         "About me",
         "chat with Priya",
-        "journal 2026-09-20",
-        "journal 2026-09-29",
+        "journal 2026-10-03",
+        "journal 2026-10-12",
         "Ideas"
       ]
     },
@@ -276,14 +276,14 @@
       "nodes": [
         "Datta",
         "Kitchen plan",
-        "journal 2026-10-01",
-        "journal 2026-09-27",
+        "journal 2026-10-14",
+        "journal 2026-10-10",
         "Kitchen Journey",
         "project Kitchen",
         "Manvi"
       ]
     },
-    "localMapOpensAPage": "/brain/2edzy4ftac2q5cr5her2gxsfxx",
+    "localMapOpensAPage": "/brain/hj419vnbb1r536f4482kxfykdt",
     "darkTheme": {
       "bg": "rgb(12, 12, 14)",
       "dark": true
@@ -321,29 +321,29 @@
     "largeMapReadableAtDefaultZoom": {
       "drawnNodes": 150,
       "drawnEdges": 1200,
-      "labels": 20,
+      "labels": 19,
       "overlaps": 0
     },
     "zoomedInJournalDaysComeBack": "pages",
     "zoomingInRevealsMore": {
-      "drawnNodes": 693,
+      "drawnNodes": 801,
       "drawnEdges": 1200,
-      "labels": 13,
+      "labels": 19,
       "overlaps": 0
     },
     "drawsSoonAfterTheData": {
-      "dataAt": 2617,
-      "firstDraw": 2730
+      "dataAt": 7070,
+      "firstDraw": 7360
     },
     "panningSmooth": {
       "panOut": {
-        "frames": 199,
-        "fps": 100,
+        "frames": 120,
+        "fps": 60,
         "longFrames": 0,
-        "frameMsP50": 10,
-        "frameMsP95": 10.1,
-        "drawMsP50": 0.6,
-        "drawMsP95": 0.9,
+        "frameMsP50": 16.7,
+        "frameMsP95": 16.8,
+        "drawMsP50": 1.1,
+        "drawMsP95": 1.8,
         "drawn": {
           "nodes": 143,
           "edges": 1200,
@@ -351,25 +351,25 @@
         }
       },
       "panIn": {
-        "frames": 199,
-        "fps": 100,
+        "frames": 118,
+        "fps": 60,
         "longFrames": 0,
-        "frameMsP50": 10,
-        "frameMsP95": 10.1,
-        "drawMsP50": 0.8,
-        "drawMsP95": 1.6,
+        "frameMsP50": 16.7,
+        "frameMsP95": 16.8,
+        "drawMsP50": 1.2,
+        "drawMsP95": 1.9,
         "drawn": {
-          "nodes": 415,
-          "edges": 437,
+          "nodes": 458,
+          "edges": 1200,
           "months": false
         }
       }
     },
     "layoutOffTheMainThread": {
-      "frames": 213,
-      "frameMsP50": 10,
-      "frameMsP95": 10,
-      "longestMs": 10
+      "frames": 265,
+      "frameMsP50": 17,
+      "frameMsP95": 17,
+      "longestMs": 67
     },
     "noPageErrors": {
       "pageErrors": [],

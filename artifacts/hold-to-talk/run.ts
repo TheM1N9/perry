@@ -50,6 +50,24 @@ import { openChat, sleep } from "../browser";
 //      still send.
 //  12. The test's pet touches the owner's own pet, its keys, or its login entry.
 //  13. The page throws.
+//  14. The first time, he does not offer to show how, or does not make anything
+//      of being heard; the welcome page never learns it happened.
+//  15. Transcription fails and the recording is gone; or Try again sends it
+//      unchecked, loses it, or leaves the offer up afterwards.
+//  16. A slow model looks stuck, with no word and no way out; or cancelling
+//      still sends what was said.
+//  17. A slip of the key says nothing, or is taken for a silent microphone.
+//  18. "Send right away" off still sends; the setting is lost on reopening.
+//  19. A corrected spelling is not learned, is not used next time, or cannot be
+//      taken back; or a rewritten sentence is taken for a correction.
+//  20. Quiet for an hour holds back approvals, or cannot be undone.
+//  21. Pasting with nothing said says nothing; the check touches the owner's clipboard.
+//  22. The language chosen in Settings never reaches Whisper.
+//  23. No sound plays when he starts and stops listening, or one still plays with sounds off.
+//  24. An update starts while the owner is mid-sentence.
+//  25. Done cannot be undone; a removed to-do cannot be brought back; or either undo does nothing.
+//  26. perry doctor says nothing of the pet, or crashes asking.
+//  27. The server goes away and neither the pet nor the chat says so.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/hold-to-talk/run.ts <outDir>");
@@ -236,6 +254,7 @@ try {
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
   await call("dashboard:setShortcut", { key: KEY, id: "talk", accelerator: TALK_KEYS });
   await call("dashboard:setShortcut", { key: KEY, id: "look", accelerator: LOOK_KEYS });
+  await call("dashboard:setShortcut", { key: KEY, id: "paste", accelerator: "CommandOrControl+Alt+Shift+F9" });
 
   // 1. The real uiohook-napi, in the pet's own Electron: it loads and its hook starts (for a moment, hearing nothing it keeps).
   const probe = join(home, "hook-probe.cjs");
@@ -259,6 +278,11 @@ app.whenReady().then(() => {
   await until(() => main!.evaluate("Boolean(globalThis.perryFakeKeys)"), "the stand-in keys", 30);
   await check("petHoldsTheTestKeysAndCanHold", async () => { const talk = await talkStanding(); return talk.hotkey === TALK_KEYS && !talk.error && !talk.hold; }, 30, talkStanding);
 
+  // 14. Before he has ever been talked to, he offers to show how, in the keys it is really on.
+  await check("offersToShowHowToTalk", async () => /Say hi to me/.test(await text()) && /Ctrl\+Alt\+Shift\+F7/.test(await text()), 30, text);
+  await photograph("offer.png");
+  await page.evaluate(`window.__sawNotice = false; new MutationObserver(() => { if (document.querySelector("[data-notice]")) window.__sawNotice = true; }).observe(document.body, { childList: true, subtree: true }); true`);
+
   // 2, 3. Held (the key repeating, the shortcut with it), let go, a repeat reported late: sent, and he does not start again.
   let count = (await said()).length;
   void keys(`${heldDown} k.down(KEY); k.shortcut(); await wait(500); await repeat(${HOLD - 500}); k.up(KEY); k.shortcut(); await wait(40); ${modsUp}`);
@@ -271,6 +295,9 @@ app.whenReady().then(() => {
   await check("holdSends", async () => (await said()).length === count + 1, 60, async () => (await said()).at(-1));
   checks.holdSendsWhatWasSaid = HEARD.test((await said()).at(-1) ?? "");
   await photograph("sent.png");
+  await check("makesSomethingOfBeingHeard", () => page!.evaluate("window.__sawNotice") as Promise<boolean>, 15);
+  await check("welcomePageLearnsHeWasHeard", async () => (await call<{ heardVoice: boolean }>("pet:status", { key: KEY })).heardVoice === true, 15);
+  checks.stopsOfferingOnceTried = !/Say hi to me/.test(await text());
 
   // 4, 5. The shortcut reported before the key goes down; Ctrl, Alt and Shift let go of before F7.
   await until(idle, "him to be done", 30);
@@ -340,6 +367,170 @@ app.whenReady().then(() => {
   await check("andTheNextPressStartsAgain", listening, 5);
   await keys("k.escape();");
   await until(async () => !(await listening()), "him to stop", 5).catch(() => {});
+
+  // 21. Pasting with nothing said yet would need a new pet; with words said, he has them (the stand-in only reports it).
+  const box = () => page!.evaluate(`document.querySelector('textarea[aria-label="Message Perry"]')?.value ?? ""`) as Promise<string>;
+  const clickText = (name: string) => page!.evaluate(`(() => { const found = [...document.querySelectorAll("button,[role=menuitem],[role=menuitemradio],[role=menuitemcheckbox]")].find((item) => item.textContent.trim() === ${JSON.stringify(name)} || item.getAttribute("aria-label") === ${JSON.stringify(name)}); found?.click(); return Boolean(found); })()`) as Promise<boolean>;
+  const type = (value: string) => page!.evaluate(`(() => { const area = document.querySelector('textarea[aria-label="Message Perry"]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(area, ${JSON.stringify(value)}); area.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+  const send = () => page!.evaluate(`(() => { document.querySelector('button[aria-label="Send"]').click(); return true; })()`);
+  const stand = (value: object) => main!.evaluate(`(() => { globalThis.perryFakeTranscribe = ${JSON.stringify(value)}; return true; })()`);
+  // A ticked box leaves the menu open, so it is opened only if it is not already.
+  const openMenu = async () => {
+    if (!/Sounds when listening/.test(await text())) await clickText("Perry's menu");
+    await until(async () => /Sounds when listening/.test(await text()), "the menu", 5);
+  };
+  const holdAndLetGo = `${heldDown} k.down(KEY); k.shortcut(); await wait(500); await repeat(${HOLD - 500}); k.up(KEY); ${modsUp}`;
+
+  // 15. It fails: nothing is sent, the recording is kept, and Try again puts it in the box to check.
+  await until(idle, "him to be done", 30);
+  count = (await said()).length;
+  await stand({ fail: 1 });
+  await keys(holdAndLetGo);
+  await check("failureKeepsTheRecording", async () => /Your recording is saved/.test(await text()), 30, text);
+  await photograph("failed.png");
+  checks.failureSendsNothing = (await said()).length === count;
+  await stand({});
+  await clickText("Try again");
+  await check("tryAgainPutsItInTheBox", async () => HEARD.test(await box()), 60, box);
+  checks.tryAgainClearsTheOffer = !/Your recording is saved/.test(await text());
+  checks.tryAgainDoesNotSend = (await said()).length === count;
+
+  // 19. Correcting a word before sending teaches it; what is rewritten is not a correction.
+  const corrected = (await box()).replace(/water/i, "wader");
+  await type(corrected);
+  await send();
+  await check("correctionIsLearned", async () => /that way from now on/.test(await text()), 15, text);
+  await until(idle, "him to be done", 30);
+  count = (await said()).length;
+  await keys(holdAndLetGo);
+  await check("learnedWordIsUsed", async () => (await said()).length === count + 1, 60);
+  checks.learnedWordAppliesNextTime = /wader/i.test((await said()).at(-1) ?? "");
+  notes.learnedSentence = (await said()).at(-1);
+  await clickText("Undo");
+  await check("learnedWordCanBeTakenBack", async () => (await page!.evaluate(`localStorage.getItem("perry.pet.words")`)) === "{}", 5);
+
+  // 23. Sounds: one as he starts and one as he stops; none with them off.
+  await until(idle, "him to be done", 30);
+  await page.evaluate(`(() => { window.__tones = 0; const real = AudioContext.prototype.createOscillator; AudioContext.prototype.createOscillator = function () { window.__tones += 1; return real.call(this); }; return true; })()`);
+  await keys(tap);
+  await check("playsAToneStarting", async () => (await page!.evaluate("window.__tones")) === 1, 5);
+  await sleep(600);
+  // 24. Mid-sentence, the update server says it is busy with that.
+  await check("updateWaitsWhileTalking", async () => (await call<{ busy?: string }>("updates:plan", {})).busy === "listening to you", 5, () => call("updates:plan", {}).then((plan) => (plan as { busy?: string }).busy, String));
+  await keys(tap);
+  await check("playsAToneStopping", async () => (await page!.evaluate("window.__tones")) === 2, 5);
+  await until(idle, "him to be done", 60);
+  await openMenu();
+  await clickText("Sounds when listening");
+  await sleep(300);
+  await page.evaluate("window.__tones = 0; true");
+  await keys(tap);
+  await until(listening, "listening", 5);
+  await keys("k.escape();");
+  await until(async () => !(await listening()), "him to stop", 5);
+  checks.noToneWithSoundsOff = (await page.evaluate("window.__tones")) === 0;
+  await openMenu();
+  await clickText("Sounds when listening");
+  await sleep(300);
+  await clickText("Perry's menu");
+  await until(async () => !/Sounds when listening/.test(await text()), "the menu to close", 5);
+
+  // 16. Slow: he says so, and it can be stopped, sending nothing.
+  await until(idle, "him to be done", 30);
+  count = (await said()).length;
+  await stand({ delayMs: 7_000 });
+  await keys(holdAndLetGo);
+  await check("slowSaysSo", async () => /Taking longer than usual/.test(await text()), 15, text);
+  await photograph("slow.png");
+  await clickText("Stop writing it down");
+  await check("cancelWhileWriting", idle, 5);
+  await sleep(8_000);
+  checks.cancelWhileWritingSendsNothing = (await said()).length === count;
+  await stand({});
+
+  // 17. A slip of the key is said to be one.
+  await until(idle, "him to be done", 30);
+  await keys(`${tap} await wait(120); ${tap}`);
+  await check("slipOfTheKeySaysSo", async () => /too quick to catch/.test(await text()), 15, text);
+
+  // 18. Sending right away, off: what is said waits in the box. The microphones are listed.
+  await until(idle, "him to be done", 30);
+  await clickText("Perry's menu");
+  await check("menuOpens", async () => /Sounds when listening/.test(await text()), 5, text);
+  checks.menuListsMicrophones = /Computer's default/.test(await text());
+  await photograph("menu.png");
+  await clickText("Send what I say right away");
+  await sleep(300);
+  await type("");
+  count = (await said()).length;
+  await keys(holdAndLetGo);
+  await check("offWaitsInTheBox", async () => HEARD.test(await box()), 60, box);
+  checks.offSendsNothing = (await said()).length === count;
+  checks.settingIsKept = /"sendsAtOnce":false/.test(await page.evaluate(`localStorage.getItem("perry.pet.voice")`) as string);
+  await type("");
+  await openMenu();
+  await clickText("Send what I say right away");
+  await sleep(300);
+
+  // 22. The speech language in Settings is the one he writes down in.
+  await call("meetings:setSettings", { key: KEY, speech: { provider: "local", model: "small", language: "hi", vocabulary: "" } });
+  await sleep(1_500);
+  await until(idle, "him to be done", 30);
+  await stand({});
+  await keys(holdAndLetGo);
+  await check("talkingUsesTheSpeechLanguage", () => main!.evaluate("globalThis.perryFakeTranscribe.language === 'hi'") as Promise<boolean>, 30, () => main!.evaluate("globalThis.perryFakeTranscribe.language"));
+  await until(idle, "him to be done", 60);
+  await call("meetings:setSettings", { key: KEY, speech: { provider: "local", model: "small", language: "en", vocabulary: "" } });
+  await sleep(1_500);
+
+  // 20. Quiet for an hour, undone from where it says so.
+  await openMenu();
+  await clickText("Quiet for an hour");
+  await check("quietSaysUntilWhen", async () => /Quiet until/.test(await text()), 5, text);
+  await clickText("Undo");
+  await check("quietCanBeUndone", async () => !/Quiet until/.test(await text()), 5, text);
+
+  // 25. Late to-do: Done from his bubble can be undone; removed from his list, it can be brought back.
+  await clickText("Close");
+  await sleep(400);
+  const undone = await call<string>("todos:add", { key: KEY, title: "Water the ferns", dueAt: Date.now() + 1_500 });
+  await check("lateBubbleAppears", async () => /Water the ferns/.test(await text()), 15, text);
+  await clickText("Done");
+  await check("doneOffersUndo", async () => /Done!/.test(await text()), 5, text);
+  await clickText("Undo");
+  await check("undoPutsItBack", async () => (await call<{ open: Array<{ id: string }> }>("todos:board", { key: KEY })).open.some((todo) => todo.id === undone), 10);
+  await call("todos:remove", { key: KEY, id: undone });
+  await call("todos:add", { key: KEY, title: "Sweep the porch" });
+  await keys(tap);
+  await until(listening, "his panel to open", 5);
+  await keys("k.escape();");
+  await until(async () => !(await listening()), "him to stop", 5);
+  await clickText("To-dos");
+  await until(async () => /Sweep the porch/.test(await text()), "the to-do list", 10);
+  await page.evaluate(`document.querySelector('button[aria-label^="Remove"]').click(); true`);
+  await check("removeOffersUndo", async () => /Removed/.test(await text()), 5, text);
+  await clickText("Undo");
+  await check("undoBringsItBack", async () => (await call<{ open: Array<{ title: string }> }>("todos:board", { key: KEY })).open.some((todo) => todo.title === "Sweep the porch"), 10);
+  // Done today, removed, and undone: it comes back done, not as something still to do.
+  const board = () => call<{ open: Array<{ id: string; title: string }>; doneToday: Array<{ title: string }> }>("todos:board", { key: KEY });
+  await until(async () => (await board()).open.some((todo) => todo.title === "Sweep the porch"), "the to-do back", 10);
+  await call("todos:setDone", { key: KEY, id: (await board()).open.find((todo) => todo.title === "Sweep the porch")!.id, done: true });
+  await until(async () => /1 done today/.test(await text()), "the done count", 10);
+  await page.evaluate(`[...document.querySelectorAll("button")].find((item) => /1 done today/.test(item.textContent)).click(); true`);
+  await until(() => page!.evaluate(`Boolean(document.querySelector('button[aria-label^="Remove"]'))`) as Promise<boolean>, "the done row", 5);
+  await page.evaluate(`document.querySelector('button[aria-label^="Remove"]').click(); true`);
+  await until(async () => /Removed/.test(await text()), "the offer to undo", 5);
+  await clickText("Undo");
+  await check("undoKeepsADoneToDoDone", async () => { const now = await board(); return now.doneToday.some((todo) => todo.title === "Sweep the porch") && !now.open.some((todo) => todo.title === "Sweep the porch"); }, 10);
+  await clickText("Chat");
+
+  // 21. Pasting reports what it did, without touching the clipboard here.
+  await clickText("Close");
+  await sleep(400);
+  await keys("k.paste();");
+  await check("pasteReports", async () => /Copied/.test(await text()), 5, text);
+  await page.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); true`);
+
   checks.noPageErrors = page.errors.length === 0;
   notes.pageErrors = page.errors;
 
@@ -382,6 +573,21 @@ app.whenReady().then(() => {
   await check("tapOnlySends", async () => (await said()).length === count + 1, 60);
   checks.noPageErrorsTapOnly = page.errors.length === 0;
   notes.said = await said();
+
+  // 26. The doctor, asked about this very pet.
+  const doctor = spawnSync("bun", [join(REPO, "scripts", "doctor.ts")], { cwd: REPO, env, encoding: "utf8", timeout: 120_000, windowsHide: true });
+  notes.doctor = (doctor.stdout ?? "").split("\n").filter((line) => /desktop pet|talk hotkey|voice model|microphone/.test(line));
+  checks.doctorChecksThePet = /desktop pet/.test(doctor.stdout ?? "") && /talk hotkey/.test(doctor.stdout ?? "") && /voice model/.test(doctor.stdout ?? "");
+
+  // 27. The server goes away: both say so, a moment later.
+  await keys("k.shortcut();").catch(() => {});
+  await until(listening, "his panel to be open", 5).catch(() => {});
+  await keys("k.escape();").catch(() => {});
+  await browser.send("Page.navigate", { url: `${BASE}/chat` });
+  await until(() => browser!.evaluate(`Boolean(document.querySelector('#composer'))`) as Promise<boolean>, "the chat", 30);
+  stop(server);
+  await check("petSaysItCannotReachPerry", async () => /Can't reach Perry/.test(await text()), 30, text);
+  await check("chatSaysItCannotReachPerry", () => browser!.evaluate(`document.body.innerText.includes("Can't reach Perry's server")`) as Promise<boolean>, 30);
 } catch (error) {
   notes.stoppedAt = String(error);
   checks.completed = false;

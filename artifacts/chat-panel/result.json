@@ -1,0 +1,512 @@
+{
+  "ranAt": "2026-10-27T12:10:10.257Z",
+  "checks": {
+    "flagsOffRowsFaded": true,
+    "flagsOffRowsSayWhy": true,
+    "flagsOffLetterIgnored": true,
+    "flagsOffMenuDisabled": true,
+    "unstartedChatSaysWhy": true,
+    "flagsOffNoPageErrors": true,
+    "closedTakesNoRoom": true,
+    "legacyKeysSwept": true,
+    "toggleOpensDockedLauncher": true,
+    "chatNarrowsWhenDocked": true,
+    "arrowsAndEnterOpen": true,
+    "closingLastTabClosesPanel": true,
+    "shortcutOpensPanel": true,
+    "lettersIgnoredWhileTyping": true,
+    "letterOpensWork": true,
+    "workListsTheReply": true,
+    "plusMenuLetterOpens": true,
+    "detailsNamesEngine": true,
+    "pickingOpenSurfaceReusesTab": true,
+    "surfaceShortcutOpensMenu": true,
+    "browserUnmountsWhenInactive": true,
+    "arrowKeysSwitchTabs": true,
+    "closingTabShowsNeighbour": true,
+    "dragResizes": true,
+    "resizeRespectsMax": true,
+    "resizeRespectsMin": true,
+    "arrowKeysResize": true,
+    "widthSaved": true,
+    "chatKeepsRoom": true,
+    "persistsAcrossReload": true,
+    "panelKeyCapped": true,
+    "widthPerChat": true,
+    "noListenerLeak": true,
+    "overlayAt1024": true,
+    "escapeClosesOverlay": true,
+    "sheetAt390": true,
+    "shortcutsInSettings": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "flagsOff": {
+      "rows": {
+        "details": {
+          "unavailable": false,
+          "opacity": "1",
+          "text": "DetailsD"
+        },
+        "files": {
+          "unavailable": true,
+          "opacity": "0.5",
+          "text": "FilesF. Available when Perry's workspace is on (PERRY_WORKSPACE=1)."
+        },
+        "browser": {
+          "unavailable": true,
+          "opacity": "0.5",
+          "text": "BrowserB. Available when Perry's browser is on (PERRY_BROWSER_VIEW=1)."
+        },
+        "work": {
+          "unavailable": false,
+          "opacity": "1",
+          "text": "WorkW"
+        }
+      },
+      "filesTip": "Available when Perry's workspace is on (PERRY_WORKSPACE=1).",
+      "browserTip": "Available when Perry's browser is on (PERRY_BROWSER_VIEW=1).",
+      "afterF": {
+        "mode": "docked",
+        "open": true,
+        "inert": false,
+        "width": 540,
+        "tabs": [],
+        "surface": "launcher",
+        "launcher": "DW",
+        "pressed": "true",
+        "focus": "launcher",
+        "chatWidth": 644,
+        "rowWidth": 1184
+      },
+      "menu": {
+        "details": false,
+        "files": true,
+        "browser": true,
+        "work": false
+      },
+      "unstarted": {
+        "details": null,
+        "files": "FilesF. Available when Perry's workspace is on (PERRY_WORKSPACE=1).",
+        "browser": "BrowserB. Available when Perry's browser is on (PERRY_BROWSER_VIEW=1).",
+        "work": "WorkW. Available once this chat has started."
+      },
+      "pageErrors": []
+    },
+    "closedTakesNoRoom": {
+      "mode": "docked",
+      "open": false,
+      "inert": true,
+      "width": 0,
+      "tabs": [],
+      "surface": null,
+      "launcher": null,
+      "pressed": "false",
+      "focus": "body",
+      "chatWidth": 1184,
+      "rowWidth": 1184
+    },
+    "toggleOpensDockedLauncher": {
+      "mode": "docked",
+      "open": true,
+      "inert": false,
+      "width": 540,
+      "tabs": [],
+      "surface": "launcher",
+      "launcher": "DFBW",
+      "pressed": "true",
+      "focus": "launcher",
+      "chatWidth": 644,
+      "rowWidth": 1184
+    },
+    "chatNarrowsWhenDocked": {
+      "closed": 1184,
+      "opened": 644
+    },
+    "arrowsAndEnterOpen": {
+      "mode": "docked",
+      "open": true,
+      "inert": false,
+      "width": 540,
+      "tabs": [
+        {
+          "id": "files",
+          "selected": true
+        }
+      ],
+      "surface": "files",
+      "launcher": null,
+      "pressed": "true",
+      "focus": "tab:files",
+      "chatWidth": 644,
+      "rowWidth": 1184
+    },
+    "closingLastTabClosesPanel": {
+      "mode": "docked",
+      "open": false,
+      "inert": true,
+      "width": 0,
+      "tabs": [],
+      "surface": null,
+      "launcher": null,
+      "pressed": "false",
+      "focus": "toggle",
+      "chatWidth": 1184,
+      "rowWidth": 1184
+    },
+    "shortcutOpensPanel": {
+      "mode": "docked",
+      "open": true,
+      "inert": false,
+      "width": 540,
+      "tabs": [],
+      "surface": "launcher",
+      "launcher": "DFBW",
+      "pressed": "true",
+      "focus": "launcher",
+      "chatWidth": 644,
+      "rowWidth": 1184
+    },
+    "lettersIgnoredWhileTyping": {
+      "typed": {
+        "mode": "docked",
+        "open": true,
+        "inert": false,
+        "width": 540,
+        "tabs": [],
+        "surface": "launcher",
+        "launcher": "DFBW",
+        "pressed": "true",
+        "focus": "TEXTAREA",
+        "chatWidth": 644,
+        "rowWidth": 1184
+      },
+      "draft": "w"
+    },
+    "work": "Reply with the word ok.\nDone · now\nShow older work",
+    "details": "Status\nReady\nEngine\nCodex\nModel\ngpt-6-luna\nThinking\nDefault\nAccess\nAsk\nPlan\nPro 100\nContext\n11% used\n28k / 258k\n\nPerry saves what matters to Brain before the engine compacts it.\n\nPlan\nWeekly\n24% · resets Mon 2 Nov, 11:32",
+    "plusMenuLetterOpens": {
+      "listed": [
+        "details",
+        "files",
+        "browser",
+        "work"
+      ],
+      "plus": {
+        "mode": "docked",
+        "open": true,
+        "inert": false,
+        "width": 540,
+        "tabs": [
+          {
+            "id": "work",
+            "selected": false
+          },
+          {
+            "id": "details",
+            "selected": true
+          }
+        ],
+        "surface": "details",
+        "launcher": null,
+        "pressed": "true",
+        "focus": "tab:details",
+        "chatWidth": 644,
+        "rowWidth": 1184
+      }
+    },
+    "surfaceShortcutOpensMenu": {
+      "menuOpen": true
+    },
+    "browserUnmountsWhenInactive": {
+      "live": true,
+      "gone": true
+    },
+    "arrowKeysSwitchTabs": {
+      "mode": "docked",
+      "open": true,
+      "inert": false,
+      "width": 540,
+      "tabs": [
+        {
+          "id": "work",
+          "selected": false
+        },
+        {
+          "id": "details",
+          "selected": false
+        },
+        {
+          "id": "browser",
+          "selected": true
+        }
+      ],
+      "surface": "browser",
+      "launcher": null,
+      "pressed": "true",
+      "focus": "tab:browser",
+      "chatWidth": 644,
+      "rowWidth": 1184
+    },
+    "closingTabShowsNeighbour": {
+      "mode": "docked",
+      "open": true,
+      "inert": false,
+      "width": 540,
+      "tabs": [
+        {
+          "id": "work",
+          "selected": false
+        },
+        {
+          "id": "details",
+          "selected": true
+        }
+      ],
+      "surface": "details",
+      "launcher": null,
+      "pressed": "true",
+      "focus": "tab:details",
+      "chatWidth": 644,
+      "rowWidth": 1184
+    },
+    "resize": {
+      "cap": 824,
+      "wider": 660,
+      "widest": 824,
+      "narrowest": 360,
+      "chosen": 600,
+      "keyed": 616,
+      "saved": {
+        "open": true,
+        "tabs": [
+          "work",
+          "details"
+        ],
+        "active": "details",
+        "scope": "chat",
+        "width": 616
+      }
+    },
+    "chatKeepsRoom": {
+      "mode": "docked",
+      "open": true,
+      "inert": false,
+      "width": 616,
+      "tabs": [
+        {
+          "id": "work",
+          "selected": false
+        },
+        {
+          "id": "details",
+          "selected": true
+        }
+      ],
+      "surface": "details",
+      "launcher": null,
+      "pressed": "true",
+      "focus": "DIV",
+      "chatWidth": 568,
+      "rowWidth": 1184
+    },
+    "persistsAcrossReload": {
+      "mode": "docked",
+      "open": true,
+      "inert": false,
+      "width": 616,
+      "tabs": [
+        {
+          "id": "work",
+          "selected": false
+        },
+        {
+          "id": "details",
+          "selected": true
+        }
+      ],
+      "surface": "details",
+      "launcher": null,
+      "pressed": "true",
+      "focus": "body",
+      "chatWidth": 568,
+      "rowWidth": 1184
+    },
+    "panelKeyCapped": {
+      "count": 50
+    },
+    "widthPerChat": {
+      "elsewhere": {
+        "mode": "docked",
+        "open": false,
+        "inert": true,
+        "width": 0,
+        "tabs": [],
+        "surface": null,
+        "launcher": null,
+        "pressed": "false",
+        "focus": "toggle",
+        "chatWidth": 1184,
+        "rowWidth": 1184
+      },
+      "otherOpen": {
+        "mode": "docked",
+        "open": true,
+        "inert": false,
+        "width": 540,
+        "tabs": [],
+        "surface": "launcher",
+        "launcher": "DFBW",
+        "pressed": "true",
+        "focus": "launcher",
+        "chatWidth": 644,
+        "rowWidth": 1184
+      },
+      "back": {
+        "mode": "docked",
+        "open": true,
+        "inert": false,
+        "width": 616,
+        "tabs": [
+          {
+            "id": "work",
+            "selected": true
+          },
+          {
+            "id": "details",
+            "selected": false
+          }
+        ],
+        "surface": "work",
+        "launcher": null,
+        "pressed": "true",
+        "focus": "toggle",
+        "chatWidth": 568,
+        "rowWidth": 1184
+      }
+    },
+    "listeners": {
+      "firstLoad": {
+        "keydown": 4,
+        "pointercancel": 1,
+        "resize": 3,
+        "blur": 23
+      },
+      "baseline": {
+        "pointercancel": 1,
+        "resize": 5,
+        "blur": 23,
+        "keydown": 3
+      },
+      "after": {
+        "pointercancel": 1,
+        "resize": 5,
+        "blur": 23,
+        "keydown": 3
+      }
+    },
+    "noListenerLeak": {
+      "baseline": {
+        "pointercancel": 1,
+        "resize": 5,
+        "blur": 23,
+        "keydown": 3
+      },
+      "after": {
+        "pointercancel": 1,
+        "resize": 5,
+        "blur": 23,
+        "keydown": 3
+      }
+    },
+    "overlayAt1024": {
+      "narrowClosed": {
+        "mode": "none",
+        "open": false,
+        "inert": false,
+        "width": 0,
+        "tabs": [],
+        "surface": null,
+        "launcher": null,
+        "pressed": "false",
+        "focus": "toggle",
+        "chatWidth": 768,
+        "rowWidth": 0
+      },
+      "floating": {
+        "mode": "overlay",
+        "open": true,
+        "inert": false,
+        "width": 400,
+        "tabs": [
+          {
+            "id": "work",
+            "selected": true
+          },
+          {
+            "id": "details",
+            "selected": false
+          }
+        ],
+        "surface": "work",
+        "launcher": null,
+        "pressed": "true",
+        "focus": "tab:work",
+        "chatWidth": 768,
+        "rowWidth": 768
+      }
+    },
+    "escapeClosesOverlay": {
+      "mode": "none",
+      "open": false,
+      "inert": false,
+      "width": 0,
+      "tabs": [],
+      "surface": null,
+      "launcher": null,
+      "pressed": "false",
+      "focus": "toggle",
+      "chatWidth": 768,
+      "rowWidth": 0
+    },
+    "sheetAt390": {
+      "mode": "sheet",
+      "open": true,
+      "inert": false,
+      "width": 390,
+      "tabs": [
+        {
+          "id": "work",
+          "selected": true
+        },
+        {
+          "id": "details",
+          "selected": false
+        }
+      ],
+      "surface": "work",
+      "launcher": null,
+      "pressed": "true",
+      "focus": "tab:work",
+      "chatWidth": 390,
+      "rowWidth": 390
+    },
+    "settingsShortcuts": "Keyboard shortcuts\n\nClick one, then press the new keys.\n\nTalk to Perry\n\nAnywhere, with the desktop pet on: hold, speak, let go.\n\nThe desktop pet isn't on. Turn him on above.\n\nCtrl\nShift\nSpace\n\nShow Perry the screen\n\nAnywhere, with the desktop pet on: the window you're in goes to his chat.\n\nThe desktop pet isn't on. Turn him on above.\n\nCtrl\nAlt\nShift\nSpace\n\nSearch and commands\n\nChats, pages and actions.\n\nCtrl\nK\n\nNew chat\n\nCtrl\nShift\nO\n\nChat panel\n\nShow or hide the panel beside a chat.\n\nCtrl\nAlt\nB\n\nOpen in the chat panel\n\nDetails, Files, Browser or Work: press its letter next.\n\nCtrl\nAlt\nN",
+    "pageErrors": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\motionclip-storage-513\\temp\\perry-chat-panel-1HpGpy\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn hwgf0ce208gqtzr4g3h5w1t5pz\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

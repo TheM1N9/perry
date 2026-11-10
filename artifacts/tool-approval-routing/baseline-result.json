@@ -1,0 +1,63 @@
+{
+  "results": [
+    {
+      "name": "confirmation appears and cannot execute before the owner approves",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n0 !== 1\n"
+    },
+    {
+      "name": "decline returns a protocol decline without executing",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert(waiting.has(id))\n"
+    },
+    {
+      "name": "timeout returns a protocol decline without executing",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert(waiting.has(id))\n"
+    },
+    {
+      "name": "full access still requires this external confirmation",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert(waiting.has(asked.at(-1)!))\n"
+    },
+    {
+      "name": "auto access still requires this external confirmation",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert(waiting.has(asked.at(-1)!))\n"
+    },
+    {
+      "name": "changing access does not grant a pending tool request",
+      "passed": false,
+      "error": "Error: Unexpected argument key."
+    },
+    {
+      "name": "tool approvals never create an Always allow rule",
+      "passed": false,
+      "error": "Error: Argument (args) should be an object with id."
+    },
+    {
+      "name": "unsupported form request has an explicit error instead of fake consent",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /cannot collect|not supported|requires/i. Input:\n\n'Declined.'\n"
+    },
+    {
+      "name": "unsupported url request has an explicit error instead of fake consent",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /cannot collect|not supported|requires/i. Input:\n\n'Declined.'\n"
+    },
+    {
+      "name": "unsupported openai/userVerification request has an explicit error instead of fake consent",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /cannot collect|not supported|requires/i. Input:\n\n'Declined.'\n"
+    },
+    {
+      "name": "orphan requests decline without asking the owner",
+      "passed": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- 'decline'\n"
+    },
+    {
+      "name": "quick reviewer threads cannot request tool consent",
+      "passed": true
+    }
+  ]
+}

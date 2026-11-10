@@ -63,7 +63,7 @@ const listOf = (items: string[]) => (items.length < 2 ? items.join("") : `${item
 /** One note, from the address. */
 export function NoteScreen() {
   const { dashboardKey } = useSession();
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>()!;
   const id = decodeURIComponent(params.id);
   const note = useQuery(api.notes.get, { key: dashboardKey, id });
   useEffect(() => { if (note) document.title = `${note.title} · Perry`; }, [note?.title]);
@@ -85,7 +85,7 @@ export function NoteScreen() {
 }
 
 /** The note's saves (NoteAutosave), made once for the note and fed each newer version the server sends. */
-function useNoteSaves(note: NoteView) {
+export function useNoteSaves(note: NoteView) {
   const { dashboardKey } = useSession();
   const save = useMutation(api.notes.save);
   const saveRef = useRef(save);

@@ -43,7 +43,7 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { agent, ndJsonStream, PROTOCOL_VERSION, RequestError, type AgentContext, type ContentBlock, type McpServer, type PermissionOption, type SessionConfigOption, type SessionUpdate } from "@agentclientprotocol/sdk";
 
@@ -325,6 +325,35 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     // Grok Build's own words for it (xai-grok-shell).
     throw new RequestError(-32000, "You've hit the rate limit for your plan. Upgrade your account or try again later.");
   }
+  if (text.startsWith("HANDOFF-CHECK ")) {
+    const file = join(HOME, "handoff-completed-count");
+    if (profile === "grok") {
+      writeFileSync(file, String(Number(existsSync(file) ? readFileSync(file, "utf8") : "0") + 1));
+      await tool("same-provider-step-id", { title: "Synthetic completed action", kind: "execute", status: "completed", rawInput: { command: "synthetic-action" }, content: [{ type: "content", content: { type: "text", text: "HANDOFF_COMPLETED_ACTION_ONCE" } }] });
+      await say("The synthetic action completed once.");
+      throw new RequestError(-32000, "You've hit the rate limit for your plan. Try again later.");
+    }
+    const context = texts.slice(0, -1).join("\n\n");
+    if (!context.includes("HANDOFF_COMPLETED_ACTION_ONCE") || !context.includes("The synthetic action completed once.")) throw new Error("Continuation lost its completed action or partial reply");
+    if (readFileSync(file, "utf8") !== "1") throw new Error("Completed action was repeated");
+    await stream(["Continued from recorded progress. The action count is 1."], 10);
+    return done("end_turn");
+  }
+  if (text.startsWith("RESET-CHECK ")) {
+    const file = join(HOME, "reset-completed-count");
+    writeFileSync(file, String(Number(existsSync(file) ? readFileSync(file, "utf8") : "0") + 1));
+    await tool("reset-provider-step", { title: "Completed before reset", kind: "execute", status: "completed", content: [{ type: "content", content: { type: "text", text: "RESET_COMPLETED_ACTION_ONCE" } }] });
+    await say("The reset test action completed once.");
+    log({ awaitingResetSeed: true });
+    await sleep(2000);
+    throw new RequestError(-32000, "You've hit the rate limit for your plan. Try again after the reset.");
+  }
+  if (text.startsWith("Continue the previous request") && text.includes("RESET-CHECK ")) {
+    if (readFileSync(join(HOME, "reset-completed-count"), "utf8") !== "1") throw new Error("Reset resumed by repeating completed work");
+    if (!texts.slice(0, -1).join("\n\n").includes("RESET_COMPLETED_ACTION_ONCE")) throw new Error("Reset continuation lost its recorded step");
+    await stream(["Resumed after reset on the same engine. The action count is 1."], 10);
+    return done("end_turn");
+  }
   if (text === "/compact" || text === "/compress") {
     await stream(["Compacted ", "the conversation."], 50);
     return done("end_turn");
@@ -433,6 +462,23 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     const outcome = await callTool(session, name, rest.length ? JSON.parse(rest.join(" ")) : {}, true);
     await stream([`Called ${name}: ${outcome}.`], 10);
     return done("end_turn");
+  }
+  if (text.startsWith("SAY ")) {
+    // A reply given word for word, as a JSON string, so a test can show any Markdown (artifacts/ai-elements).
+    const words = (JSON.parse(text.slice("SAY ".length)) as string).split(/(?<=\n)/);
+    await stream(words, 40);
+    return done(signal.aborted ? "cancelled" : "end_turn");
+  }
+  if (text.startsWith("EDIT ")) {
+    // One file written as an edit step, then a reply about it, word for word (artifacts/file-links).
+    const plan = JSON.parse(text.slice("EDIT ".length)) as { path: string; text: string; reply: string };
+    const id = `edit-${Date.now().toString(36)}`;
+    writeFileSync(plan.path, plan.text);
+    await tool(id, { title: `Edit ${basename(plan.path)}`, kind: "edit", status: "in_progress", locations: [{ path: plan.path }], rawInput: { path: plan.path } });
+    await tool(id, { status: "completed", content: [{ type: "diff", path: plan.path, oldText: "", newText: plan.text }] }, false);
+    await sleep(500);
+    await stream(plan.reply.split(/(?<=\n)/), 40);
+    return done(signal.aborted ? "cancelled" : "end_turn");
   }
   if (text.startsWith("STEPS ")) {
     reply = await steps(session, text, update, say, signal);

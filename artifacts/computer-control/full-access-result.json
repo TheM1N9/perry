@@ -1,0 +1,144 @@
+{
+  "results": [
+    {
+      "name": "confirmation appears and cannot execute before the owner approves",
+      "passed": true
+    },
+    {
+      "name": "decline returns a protocol decline without executing",
+      "passed": true
+    },
+    {
+      "name": "timeout returns a protocol decline without executing",
+      "passed": true
+    },
+    {
+      "name": "full access still requires this external confirmation",
+      "passed": true
+    },
+    {
+      "name": "auto access still requires this external confirmation",
+      "passed": true
+    },
+    {
+      "name": "Full access grants requested native computer permissions without asking",
+      "passed": true
+    },
+    {
+      "name": "supervised: native computer permission asks rather than silently refusing",
+      "passed": true
+    },
+    {
+      "name": "auto: native computer permission asks rather than silently refusing",
+      "passed": true
+    },
+    {
+      "name": "declining native computer permission grants nothing with a valid turn scope",
+      "passed": true
+    },
+    {
+      "name": "switching to Full access releases pending native computer permission",
+      "passed": true
+    },
+    {
+      "name": "permission grant cannot outlive or select a different native turn",
+      "passed": true
+    },
+    {
+      "name": "late native permission approval cannot survive replacement",
+      "passed": true
+    },
+    {
+      "name": "native permission approval cannot survive Stop on the same turn",
+      "passed": true
+    },
+    {
+      "name": "Full permission grants remain turn-scoped and downgrade restores asking",
+      "passed": true
+    },
+    {
+      "name": "saved file rules never grant native computer permission",
+      "passed": true
+    },
+    {
+      "name": "Full-access startup and resumed turns tell Codex computer access is already granted",
+      "passed": true
+    },
+    {
+      "name": "Full access in one chat does not authorize another chat computer permissions",
+      "passed": true
+    },
+    {
+      "name": "Perry browser Full access runs without another approval prompt",
+      "passed": true
+    },
+    {
+      "name": "changing access does not grant a pending tool request",
+      "passed": true
+    },
+    {
+      "name": "tool approvals never create an Always allow rule",
+      "passed": true
+    },
+    {
+      "name": "unsupported form request has an explicit error instead of fake consent",
+      "passed": true
+    },
+    {
+      "name": "unsupported url request has an explicit error instead of fake consent",
+      "passed": true
+    },
+    {
+      "name": "unsupported openai/userVerification request has an explicit error instead of fake consent",
+      "passed": true
+    },
+    {
+      "name": "orphan requests decline without asking the owner",
+      "passed": true
+    },
+    {
+      "name": "quick reviewer threads cannot request tool consent",
+      "passed": true
+    },
+    {
+      "name": "a stopped or replaced turn cannot accept a late approval",
+      "passed": true
+    },
+    {
+      "name": "a request from an earlier turn cannot ask for consent in the new turn",
+      "passed": true
+    },
+    {
+      "name": "concurrent requests keep independent owner decisions",
+      "passed": true
+    },
+    {
+      "name": "Perry own gated MCP flow remains supported",
+      "passed": true
+    },
+    {
+      "name": "a guest cannot create a tool approval for the owner",
+      "passed": true
+    },
+    {
+      "name": "runner wait loop handles backend expiration and cleans its listener",
+      "passed": true
+    },
+    {
+      "name": "existing exec_command_approval still routes through normal approvals",
+      "passed": true
+    },
+    {
+      "name": "existing file_change_approval still routes through normal approvals",
+      "passed": true
+    },
+    {
+      "name": "another runner cannot settle this tool approval",
+      "passed": true
+    },
+    {
+      "name": "saved file rules cannot grant external tool consent",
+      "passed": true
+    }
+  ]
+}
