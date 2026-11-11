@@ -74,7 +74,8 @@ export async function openChat(base: string, dashboardKey: string) {
   process.once("exit", close);
 
   let targets: Array<{ type: string; webSocketDebuggerUrl: string }> = [];
-  for (let i = 0; i < 50 && !targets.some((target) => target.type === "page"); i++) {
+  const launchDeadline = Date.now() + 30_000;
+  while (Date.now() < launchDeadline && !targets.some((target) => target.type === "page")) {
     if (launchError || chrome.exitCode !== null || chrome.signalCode !== null) break;
     try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1000) })).json() as typeof targets; } catch {}
     await sleep(200);

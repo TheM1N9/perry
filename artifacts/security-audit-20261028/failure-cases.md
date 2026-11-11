@@ -68,6 +68,9 @@ browser errors so a selector failure cannot be mistaken for a passing app.
   bounded at 30 seconds. Cancellation, size limits and admission must still work.
 - Browser diagnostics and CDP requests must settle after disconnect or timeout;
   every deadline must clear and cleanup must run even if diagnostics fail.
+- Cold Chrome startup on a busy CI host may exceed ten seconds before exposing
+  a page. Allow a bounded startup window, stop early on process failure, and
+  retain profile/process cleanup when no page appears.
 - Historical and current replay outputs must never overwrite committed snapshots
   or each other. Check output paths and preserve baseline-only evidence links.
 - Temporary directories can themselves use filesystem aliases (macOS /var and
