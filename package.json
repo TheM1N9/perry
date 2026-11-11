@@ -31,6 +31,7 @@
     "@huggingface/transformers": "4.3.0",
     "@puppeteer/browsers": "3.2.4",
     "@tiptap/core": "3.33.1",
+    "@tiptap/extension-image": "3.33.1",
     "@tiptap/extension-list": "3.33.1",
     "@tiptap/extension-table": "3.33.1",
     "@tiptap/extensions": "3.33.1",

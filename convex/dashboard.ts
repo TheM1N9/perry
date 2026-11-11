@@ -16,7 +16,7 @@ import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion 
 import { PAUSED_ERROR, type Access } from "./lib/commands";
 import { assertRunning } from "./pause";
 import type { EngineKind } from "./lib/engines";
-import type { CatalogApp, ConnectedAccount } from "./composio";
+import type { CatalogApp, ConnectedAccount, TokenAuthOption } from "./composio";
 import { policyOf, type Policy } from "./runner";
 import { turnHealth } from "./lib/turn-health";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
@@ -330,6 +330,8 @@ export const deleteChat = mutation({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const chat = webChat(await ctx.db.get(args.id));
+    const document = await ctx.db.query("notes").withIndex("by_live_chat", (q) => q.eq("liveChatId", args.id)).first();
+    if (document) throw new Error("This chat belongs to a Riff document. Delete the document in Riff before deleting its editing chat.");
     if ((chat.pendingTurns ?? 0) > 0) {
       throw new Error("Wait for this chat to finish before deleting it.");
     }
@@ -2119,6 +2121,28 @@ export const connectToolkit = action({
       toolkit: args.toolkit,
       callbackUrl: args.callbackUrl,
       accountId: args.accountId,
+    });
+  },
+});
+
+/** Non-OAuth ways to connect a toolkit, for the "use your own token" option next to Connect. */
+export const getTokenAuthOptions = action({
+  args: { key: vKey, toolkit: v.string() },
+  handler: async (ctx, args): Promise<{ options: TokenAuthOption[]; error?: string }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.composio.tokenAuthOptions, { toolkit: args.toolkit });
+  },
+});
+
+/** Connects a toolkit with a pasted token instead of OAuth. */
+export const connectToolkitWithToken = action({
+  args: { key: vKey, toolkit: v.string(), mode: v.string(), credentials: v.record(v.string(), v.string()) },
+  handler: async (ctx, args): Promise<{ status?: string; error?: string }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.composio.connectWithToken, {
+      toolkit: args.toolkit,
+      mode: args.mode,
+      credentials: args.credentials,
     });
   },
 });

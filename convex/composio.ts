@@ -1,11 +1,12 @@
 "use node";
 
-import { Composio, ToolRouterSession } from "@composio/core";
+import { AuthSchemeEnum, Composio, ConnectionDataSchema, ToolRouterSession, type AuthConfigRetrieveResponse } from "@composio/core";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import type { ToolCtx } from "./lib/agent";
 import { z } from "zod";
+import { hide } from "./vault";
 import { expiredConnection, reconnectMessage } from "./lib/connection-health";
 import { connectedDiagnostic, type ConnectedDiagnostic } from "./lib/connected-error";
 import { DEADLINE_MS, InternetError, publicUrl, type ConnectedRead, type InternetFailure, type InternetRequest, type Platform } from "./lib/internet";
@@ -384,6 +385,148 @@ export const authorize = internalAction({
       };
     } catch {
       return { error: "Could not start or verify sign-in. Check Composio and try reconnecting this account again." };
+    }
+  },
+});
+
+export type TokenAuthField = {
+  name: string;
+  displayName: string;
+  description: string;
+  required: boolean;
+  isSecret?: boolean;
+};
+export type TokenAuthOption = {
+  mode: string;
+  name: string;
+  authHintUrl?: string;
+  fields: TokenAuthField[];
+};
+
+/**
+ * Toolkits whose Composio catalogue entry only lists OAuth, but whose API
+ * accepts a bearer token regardless of how the connection got it (an OAuth
+ * token and a personal access token look the same to GitHub). Composio lets a
+ * custom auth config declare this scheme even when it isn't catalogued,
+ * confirmed by creating one by hand against the live API.
+ */
+const UNCATALOGUED_TOKEN_OPTIONS: Record<string, TokenAuthOption> = {
+  github: {
+    mode: "BEARER_TOKEN",
+    name: "Personal access token",
+    authHintUrl: "https://github.com/settings/tokens",
+    fields: [
+      { name: "token", displayName: "Token", description: "A personal access token with the scopes you want Perry to use.", required: true, isSecret: true },
+    ],
+  },
+};
+
+/**
+ * Ways to connect a toolkit by pasting a credential (a token you already
+ * have) instead of signing in through OAuth, when the toolkit offers one.
+ * GitHub also takes a personal access token, using the access already granted
+ * to that token.
+ */
+export const tokenAuthOptions = internalAction({
+  args: { toolkit: v.string() },
+  handler: async (ctx, args): Promise<{ options: TokenAuthOption[]; error?: string }> => {
+    const slug = args.toolkit.toLowerCase().trim();
+    if (slug !== "github") return { options: [], error: "Token connections are currently supported only for GitHub." };
+    try {
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
+        name: "COMPOSIO_API_KEY",
+      });
+      const toolkit = await client(apiKey).toolkits.get(slug, { signal: AbortSignal.timeout(15_000) });
+      const options: TokenAuthOption[] = (toolkit.authConfigDetails ?? [])
+        .filter((detail) => ["API_KEY", "BASIC", "BEARER_TOKEN"].includes(detail.mode))
+        .map((detail) => ({
+          mode: detail.mode,
+          name: detail.name,
+          authHintUrl: detail.authHintUrl ?? undefined,
+          fields: [
+            ...detail.fields.connectedAccountInitiation.required,
+            ...detail.fields.connectedAccountInitiation.optional,
+          ].map((field) => ({
+            name: field.name,
+            displayName: field.displayName,
+            description: field.description,
+            required: field.required,
+            isSecret: field.isSecret,
+          })),
+        }));
+      if (options.length === 0 && UNCATALOGUED_TOKEN_OPTIONS[slug]) options.push(UNCATALOGUED_TOKEN_OPTIONS[slug]);
+      return { options };
+    } catch (error) {
+      return { options: [], error: message(error) };
+    }
+  },
+});
+
+/**
+ * Connect a toolkit with a pasted credential instead of OAuth. Reuses an
+ * enabled custom auth config made by this flow; the credential itself goes
+ * only to connected-account initiation.
+ */
+export const connectWithToken = internalAction({
+  args: { toolkit: v.string(), mode: v.string(), credentials: v.record(v.string(), v.string()) },
+  handler: async (ctx, args): Promise<{ status?: string; error?: string }> => {
+    const credentials = Object.fromEntries(Object.entries(args.credentials).map(([name, value]) => [name, value.trim()]));
+    let apiKey: string | null = null;
+    try {
+      const slug = args.toolkit.toLowerCase().trim();
+      const available: { options: TokenAuthOption[]; error?: string } = await ctx.runAction(internal.composio.tokenAuthOptions, { toolkit: slug });
+      const option = available.options.find((item) => item.mode === args.mode);
+      if (!option) return { error: available.error ?? "This token authentication method isn't supported for GitHub." };
+      if (Object.keys(args.credentials).some((name) => !option.fields.some((field) => field.name === name))) return { error: "Only the requested credential fields can be supplied." };
+      if (option.fields.some((field) => field.required && !credentials[field.name])) return { error: "Fill in each required credential field." };
+      if (Object.values(args.credentials).some((value) => value.length > 4_096)) return { error: "A credential field is too long." };
+      const mode = AuthSchemeEnum.parse(option.mode);
+      const config = ConnectionDataSchema.safeParse({ authScheme: mode, val: { ...credentials, status: "ACTIVE" } });
+      if (!config.success) return { error: "The token credential fields are incomplete or invalid." };
+      apiKey = await ctx.runQuery(internal.secrets.get, {
+        name: "COMPOSIO_API_KEY",
+      });
+      const composio = client(apiKey);
+      const requestOptions = { signal: AbortSignal.timeout(25_000) };
+
+      // Matched on name too, not just authScheme: otherwise an unrelated auth
+      // config the owner made by hand (or Composio's own) that happens to
+      // share the scheme would get silently reused and mutated.
+      let existing: AuthConfigRetrieveResponse | undefined;
+      let cursor: string | undefined;
+      do {
+        const page = await composio.authConfigs.list({ toolkit: slug, isComposioManaged: false, ...(cursor ? { cursor } : {}) }, requestOptions);
+        existing = page.items.find((config) => config.toolkit.slug === slug && config.authScheme === mode && config.name === `${slug} (token)` && config.isComposioManaged === false && config.status === "ENABLED");
+        cursor = page.nextCursor ?? undefined;
+      } while (!existing && cursor);
+      // A custom auth config the agent's tool-router session can't see is
+      // connected only on paper: the dashboard shows it, but search/execute
+      // (which run through that session) keep reporting the toolkit as not
+      // connected. isEnabledForToolRouter is what actually turns it on there.
+      if (existing && !existing.isEnabledForToolRouter) {
+        await composio.authConfigs.update(existing.id, { type: "custom", isEnabledForToolRouter: true }, requestOptions);
+      }
+      const authConfigId = existing
+        ? existing.id
+        : (
+            await composio.authConfigs.create(slug, {
+              type: "use_custom_auth",
+              name: `${slug} (token)`,
+              authScheme: mode,
+              credentials: {},
+              isEnabledForToolRouter: true,
+            }, requestOptions)
+          ).id;
+
+      const request = await composio.connectedAccounts.initiate(USER_ID, authConfigId, {
+        allowMultiple: true,
+        config: config.data,
+      }, requestOptions);
+      if (request.status !== "ACTIVE") return { status: request.status, error: "GitHub hasn't confirmed this connection. Refresh connected accounts before trying again." };
+      recheckInternetConnections();
+      return { status: request.status };
+    } catch (error) {
+      return { error: hide(message(error), [...Object.values(args.credentials), ...Object.values(credentials), ...(apiKey ? [apiKey] : [])]) };
     }
   },
 });

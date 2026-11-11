@@ -70,6 +70,11 @@ or force them off with `false`; public build variables take effect at build time
 - **"Note this: passport renewal by May."** Keeps notes you both edit: packing
   lists, trip plans, meeting notes, a weekly review a schedule adds to. A
   project's notes are shared with its chats. `/note` from your phone adds a line.
+- **Think out loud in Riff.** Open it from the sidebar, create a document,
+  and start listening. Dictate a draft and ask for edits, images or links while
+  Perry updates it. Voice uses your browser's speech service, which may process
+  audio online; typed instructions work too. Listening stops when you leave the
+  page or switch tabs. Each document keeps its own editing chat and approvals.
 - **Hold a hotkey and talk.** An optional desktop companion sits in a corner
   of your screen with your chats, to-dos and approvals, and takes voice input
   transcribed on your machine.

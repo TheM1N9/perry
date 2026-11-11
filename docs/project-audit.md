@@ -4,7 +4,7 @@ The findings recorded on 10 November below have now been implemented. The follow
 
 UI behavior, product familiarity and predicted visual attention are covered in the [UI and UX audit](ui-ux-audit.md), with an [interactive attention forecast](ui-attention-map.html).
 
-The later [spacing audit](spacing-audit.md) covers 183 current UI/template files, implemented fixes and 448 passing browser assertions. The [spacing rules](design-spacing.md) and [source coverage ledger](spacing-coverage.md) record the system for future work.
+The later [spacing audit](spacing-audit.md) covers 187 current UI/template files, implemented fixes and 448 passing browser assertions. The [spacing rules](design-spacing.md) and [source coverage ledger](spacing-coverage.md) record the system for future work.
 
 Perry should remain a local personal assistant: one owner, one SQLite backend, a same-origin dashboard, and an optional desktop companion. Reliable delivery, recoverable writes and bounded resource use take priority over adding engines or more interface features.
 
@@ -127,7 +127,7 @@ The failure inventory above preceded the disposable replays. No paid model invoc
 | Build/dependencies | Product, backend and artifact-harness typechecks passed; production build passed without build warnings; frozen root install accepted. SDK/transformers/native ONNX imports and all 9 smoke checks passed. All four dependency audits report zero advisories. |
 | Film | Real-source still rendered then skipped on rerun. Injected nonzero encoder exit retained cache without a completed video. Synthetic one-second render then succeeded and skipped on rerun. Full creative-film rendering was not required. |
 
-The dashboard replay passed 29 assertions covering widths 320/390/768/1024/1440, light/dark and short height; stable composer position, approval anchors/paths/collapsed rules, delivery review, privacy consent/revocation and editor formatting/table/slash/Markdown/Brain-link behavior. The UI implementation report records its final assertion count.
+The dashboard replay passed 34 assertions covering widths 320/390/768/1024/1440, light/dark and short height; stable composer position, approval anchors/paths/collapsed rules, delivery review, privacy consent/revocation and editor formatting/table/slash/Markdown/Brain-link behavior. Five additional merge checks cover the Riff surface integrated from main: image support with aligned Tiptap, narrow/wide layouts, autosave and Brain redirects. The onboarding replay passed all 25 checks against the merged production build. No microphone capture or provider editing was invoked.
 
 Reports and images were inspected. Existing project tests and historical result records were preserved. Existing CI commands are repeatable; the scenarios above describe the additional failure-injection recipes and their limits.
 

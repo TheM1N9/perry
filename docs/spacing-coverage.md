@@ -1,6 +1,6 @@
 # Spacing source coverage
 
-Updated 11 November 2026. 183 files; 28,362 source lines. Groups: app 27, client 1, components 123, docs 2, film 1, lib 3, pet 3, site 23.
+Updated 11 November 2026. 187 files; 28,946 source lines. Groups: app 29, client 1, components 125, docs 2, film 1, lib 3, pet 3, site 23.
 
 This ledger records source review, not a claim that every conditional branch was rendered. The audit lists execution and limits. Counts inventory spacing/dimension utility tokens and CSS margin/padding/gap declarations; they are not violations. Hashes identify the current reviewed source. The added CSS file preserves upstream MIT control utilities after removing the CLI package.
 
@@ -18,6 +18,8 @@ This ledger records source review, not a claim that every conditional branch was
 | [app/(app)/layout.tsx](../app/(app)/layout.tsx) | 6 | 0 | `17723e2ac160` | No local spacing; delegate/context or drawing geometry. |
 | [app/(app)/library/[id]/page.tsx](../app/(app)/library/[id]/page.tsx) | 9 | 0 | `b39b34230305` | No local spacing; delegate/context or drawing geometry. |
 | [app/(app)/library/page.tsx](../app/(app)/library/page.tsx) | 9 | 0 | `6a29f1a45f5b` | No local spacing; delegate/context or drawing geometry. |
+| [app/(app)/live/[id]/page.tsx](../app/(app)/live/[id]/page.tsx) | 7 | 0 | `9e2537350e81` | No local spacing; delegates to the Riff screen merged from main. |
+| [app/(app)/live/page.tsx](../app/(app)/live/page.tsx) | 7 | 0 | `92b13e8c158b` | No local spacing; delegates to the Riff screen merged from main. |
 | [app/(app)/meetings/[id]/page.tsx](../app/(app)/meetings/[id]/page.tsx) | 7 | 0 | `55d50691a026` | No local spacing; delegate/context or drawing geometry. |
 | [app/(app)/meetings/page.tsx](../app/(app)/meetings/page.tsx) | 7 | 0 | `4ca22d7d48de` | No local spacing; delegate/context or drawing geometry. |
 | [app/(app)/page.tsx](../app/(app)/page.tsx) | 5 | 0 | `d039002901a3` | No local spacing; delegate/context or drawing geometry. |
@@ -28,13 +30,13 @@ This ledger records source review, not a claim that every conditional branch was
 | [app/(app)/welcome/page.tsx](../app/(app)/welcome/page.tsx) | 9 | 0 | `e9d0c0acf285` | No local spacing; delegate/context or drawing geometry. |
 | [app/(app)/work/page.tsx](../app/(app)/work/page.tsx) | 9 | 0 | `9be40c7ba8d6` | No local spacing; delegate/context or drawing geometry. |
 | [app/control-utilities.css](../app/control-utilities.css) | 653 | 1 | `2d84ad34aff6` | Vendored MIT utility definitions preserved for compatibility; no new product spacing scale. |
-| [app/globals.css](../app/globals.css) | 411 | 49 | `16fff04d7ec6` | Reviewed; see shared rules and findings. |
+| [app/globals.css](../app/globals.css) | 412 | 51 | `e12498f59033` | Reviewed; see shared rules and findings. |
 | [app/layout.tsx](../app/layout.tsx) | 45 | 0 | `f6768a9bc484` | No local spacing; delegate/context or drawing geometry. |
 | [app/not-found.tsx](../app/not-found.tsx) | 18 | 8 | `3255cdd57373` | Reviewed; see shared rules and findings. |
 | [app/pet/page.tsx](../app/pet/page.tsx) | 8 | 0 | `c9d55c6558fc` | No local spacing; delegate/context or drawing geometry. |
 | [app/providers.tsx](../app/providers.tsx) | 52 | 2 | `7905f074607b` | No local spacing; delegate/context or drawing geometry. |
 | [client/react.tsx](../client/react.tsx) | 126 | 0 | `1e756bb9eb62` | No local spacing; delegate/context or drawing geometry. |
-| [components/dashboard/app-sidebar.tsx](../components/dashboard/app-sidebar.tsx) | 492 | 36 | `506e49f09bad` | Reviewed; see shared rules and findings. |
+| [components/dashboard/app-sidebar.tsx](../components/dashboard/app-sidebar.tsx) | 498 | 36 | `94581d73f4a5` | Reviewed; see shared rules and findings. |
 | [components/dashboard/approval-card.tsx](../components/dashboard/approval-card.tsx) | 158 | 50 | `5c4eafcd88f9` | Reviewed; see shared rules and findings. |
 | [components/dashboard/autosave.tsx](../components/dashboard/autosave.tsx) | 169 | 1 | `749cae38363c` | No local spacing; delegate/context or drawing geometry. |
 | [components/dashboard/brain-map/brain-map.tsx](../components/dashboard/brain-map/brain-map.tsx) | 173 | 24 | `0908740cca1c` | Reviewed; see shared rules and findings. |
@@ -68,7 +70,7 @@ This ledger records source review, not a claim that every conditional branch was
 | [components/dashboard/chat/up-next.tsx](../components/dashboard/chat/up-next.tsx) | 205 | 25 | `4bce9db6a970` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/work-log.tsx](../components/dashboard/chat/work-log.tsx) | 179 | 30 | `426d34f0da61` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/work.tsx](../components/dashboard/chat/work.tsx) | 200 | 28 | `84b218e86579` | Reviewed; see shared rules and findings. |
-| [components/dashboard/command-palette.tsx](../components/dashboard/command-palette.tsx) | 199 | 10 | `bf95f41b86b6` | Reviewed; see shared rules and findings. |
+| [components/dashboard/command-palette.tsx](../components/dashboard/command-palette.tsx) | 200 | 10 | `9f4ad02d61b7` | Reviewed; see shared rules and findings. |
 | [components/dashboard/common.tsx](../components/dashboard/common.tsx) | 417 | 80 | `7d8a215f144b` | Reviewed; see shared rules and findings. |
 | [components/dashboard/default-engine.tsx](../components/dashboard/default-engine.tsx) | 92 | 5 | `f15ee6d9676f` | Reviewed; see shared rules and findings. |
 | [components/dashboard/gate.tsx](../components/dashboard/gate.tsx) | 67 | 15 | `2e6ae9c62f2e` | Reviewed; see shared rules and findings. |
@@ -85,13 +87,14 @@ This ledger records source review, not a claim that every conditional branch was
 | [components/dashboard/screens/apps.tsx](../components/dashboard/screens/apps.tsx) | 56 | 4 | `d270cfef0988` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/brain.tsx](../components/dashboard/screens/brain.tsx) | 272 | 31 | `57b6ce6e5a2b` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/computer.tsx](../components/dashboard/screens/computer.tsx) | 167 | 25 | `ee2f7c2b201c` | Reviewed; see shared rules and findings. |
-| [components/dashboard/screens/connectors.tsx](../components/dashboard/screens/connectors.tsx) | 447 | 44 | `e170ad165617` | Reviewed; see shared rules and findings. |
+| [components/dashboard/screens/connectors.tsx](../components/dashboard/screens/connectors.tsx) | 567 | 49 | `e2781fb574c5` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/inbox.tsx](../components/dashboard/screens/inbox.tsx) | 104 | 9 | `5f23f1a94d3b` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/internet.tsx](../components/dashboard/screens/internet.tsx) | 73 | 19 | `9711cf98b9d9` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/library.tsx](../components/dashboard/screens/library.tsx) | 315 | 45 | `9a035932013d` | Reviewed; see shared rules and findings. |
+| [components/dashboard/screens/live-documents.tsx](../components/dashboard/screens/live-documents.tsx) | 289 | 62 | `f6d7c512521c` | Merged Riff surface; reviewed shared controls and responsive document/aside spacing. |
 | [components/dashboard/screens/meetings.tsx](../components/dashboard/screens/meetings.tsx) | 289 | 109 | `d31047ad15db` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/memory.tsx](../components/dashboard/screens/memory.tsx) | 405 | 68 | `5ed8429f5197` | Reviewed; see shared rules and findings. |
-| [components/dashboard/screens/notes.tsx](../components/dashboard/screens/notes.tsx) | 353 | 68 | `415ab56282d4` | Reviewed; see shared rules and findings. |
+| [components/dashboard/screens/notes.tsx](../components/dashboard/screens/notes.tsx) | 355 | 68 | `6548dfa5b1a9` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/project.tsx](../components/dashboard/screens/project.tsx) | 148 | 8 | `c19ffea683f9` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/settings.tsx](../components/dashboard/screens/settings.tsx) | 1149 | 181 | `3e85775ce7a9` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/skills.tsx](../components/dashboard/screens/skills.tsx) | 197 | 32 | `a53885721e27` | Reviewed; see shared rules and findings. |
@@ -108,6 +111,7 @@ This ledger records source review, not a claim that every conditional branch was
 | [components/dashboard/updates.tsx](../components/dashboard/updates.tsx) | 182 | 23 | `a6ef5132ccd0` | Reviewed; see shared rules and findings. |
 | [components/dashboard/version-notice.tsx](../components/dashboard/version-notice.tsx) | 10 | 0 | `a39f609220c5` | No local spacing; delegate/context or drawing geometry. |
 | [components/notes/editor.tsx](../components/notes/editor.tsx) | 167 | 16 | `92c28425610b` | Reviewed; see shared rules and findings. |
+| [components/notes/live-speech.ts](../components/notes/live-speech.ts) | 151 | 0 | `85c2e523417c` | No local spacing; speech lifecycle helper merged from main. |
 | [components/notes/slash-commands.ts](../components/notes/slash-commands.ts) | 148 | 10 | `a587e299e75f` | Reviewed; see shared rules and findings. |
 | [components/pet/chat.tsx](../components/pet/chat.tsx) | 381 | 75 | `70c8fde068bb` | Reviewed; see shared rules and findings. |
 | [components/pet/empty.tsx](../components/pet/empty.tsx) | 14 | 6 | `2144a4d231d6` | Reviewed; see shared rules and findings. |

@@ -89,4 +89,4 @@ The later [UI/UX implementation](ui-ux-implementation.md) fixes the pet activati
 
 ## Follow-up, 11 November
 
-The current ledger includes 183 sources after adding the alternate-path attention map and vendored control CSS. It refreshes every source hash and spacing inventory after the follow-up changes. The latest 29-assertion browser replay covers new-chat grouping and stable composer position, approval paths and collapsed permission rules, notification review, browser-local privacy settings and editor compatibility. The original 448 assertions and 219-assertion UI pass retain their recorded scope and limits.
+The current ledger includes 187 sources after adding the alternate-path attention map, vendored control CSS and four Riff sources integrated from main. It refreshes every source hash and spacing inventory after the follow-up changes. The latest 29-assertion browser replay covers new-chat grouping and stable composer position, approval paths and collapsed permission rules, notification review, browser-local privacy settings and editor compatibility. The original 448 assertions and 219-assertion UI pass retain their recorded scope and limits.
