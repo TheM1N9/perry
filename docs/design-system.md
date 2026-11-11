@@ -11,7 +11,7 @@ Use the existing Tailwind utilities and components. Do not add a second styling 
 ## Interaction hierarchy
 
 - Keep Access in the composer; place model and thinking controls under Reply options. Explain immediate versus next-reply effects where each is chosen.
-- Keep setup optional and collapsed on a new chat. A first useful text task takes precedence over personalization or enabling the desktop pet.
+- Keep the new-chat surface focused on the task: center the greeting and headline, then the composer, then the centered starter prompts. Leave optional personalization, desktop, voice and calendar setup in their existing welcome/settings screens.
 - Use Needs you for pending decisions, Tasks for executing work and Plan for a task's steps. Keep existing URL values stable.
 - Use Allow once for one request, Always allow this rule for persistent permission and Apply change for a reviewed Brain proposal. Keep the request visible until acknowledgement.
 - Blocking waits and failures need a complete reason and recovery action. Ordinary progress can stay quiet.

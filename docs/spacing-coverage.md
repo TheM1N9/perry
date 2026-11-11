@@ -1,6 +1,6 @@
 # Spacing source coverage
 
-Updated 11 November 2026. 187 files; 28,946 source lines. Groups: app 29, client 1, components 125, docs 2, film 1, lib 3, pet 3, site 23.
+Updated 11 November 2026. 186 files; 28,862 source lines. Groups: app 29, client 1, components 124, docs 2, film 1, lib 3, pet 3, site 23.
 
 This ledger records source review, not a claim that every conditional branch was rendered. The audit lists execution and limits. Counts inventory spacing/dimension utility tokens and CSS margin/padding/gap declarations; they are not violations. Hashes identify the current reviewed source. The added CSS file preserves upstream MIT control utilities after removing the CLI package.
 
@@ -36,7 +36,7 @@ This ledger records source review, not a claim that every conditional branch was
 | [app/pet/page.tsx](../app/pet/page.tsx) | 8 | 0 | `c9d55c6558fc` | No local spacing; delegate/context or drawing geometry. |
 | [app/providers.tsx](../app/providers.tsx) | 52 | 2 | `7905f074607b` | No local spacing; delegate/context or drawing geometry. |
 | [client/react.tsx](../client/react.tsx) | 126 | 0 | `1e756bb9eb62` | No local spacing; delegate/context or drawing geometry. |
-| [components/dashboard/app-sidebar.tsx](../components/dashboard/app-sidebar.tsx) | 498 | 36 | `94581d73f4a5` | Reviewed; see shared rules and findings. |
+| [components/dashboard/app-sidebar.tsx](../components/dashboard/app-sidebar.tsx) | 498 | 37 | `35c883bc31bd` | Reviewed; see shared rules and findings. |
 | [components/dashboard/approval-card.tsx](../components/dashboard/approval-card.tsx) | 158 | 50 | `5c4eafcd88f9` | Reviewed; see shared rules and findings. |
 | [components/dashboard/autosave.tsx](../components/dashboard/autosave.tsx) | 169 | 1 | `749cae38363c` | No local spacing; delegate/context or drawing geometry. |
 | [components/dashboard/brain-map/brain-map.tsx](../components/dashboard/brain-map/brain-map.tsx) | 173 | 24 | `0908740cca1c` | Reviewed; see shared rules and findings. |
@@ -47,7 +47,7 @@ This ledger records source review, not a claim that every conditional branch was
 | [components/dashboard/chat/attachments.tsx](../components/dashboard/chat/attachments.tsx) | 120 | 54 | `a693ec43d132` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/browser-import-dialog.tsx](../components/dashboard/chat/browser-import-dialog.tsx) | 60 | 9 | `8a7b1dce5219` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/browser-panel.tsx](../components/dashboard/chat/browser-panel.tsx) | 274 | 78 | `9b253abdee0e` | Reviewed; see shared rules and findings. |
-| [components/dashboard/chat/chat-screen.tsx](../components/dashboard/chat/chat-screen.tsx) | 1131 | 79 | `b90fab67dc83` | Reviewed; see shared rules and findings. |
+| [components/dashboard/chat/chat-screen.tsx](../components/dashboard/chat/chat-screen.tsx) | 1116 | 72 | `90626feacd03` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/citations.tsx](../components/dashboard/chat/citations.tsx) | 101 | 17 | `f65006c3443b` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/composer.tsx](../components/dashboard/chat/composer.tsx) | 351 | 74 | `3e4997c1e545` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/interactive-answer.tsx](../components/dashboard/chat/interactive-answer.tsx) | 249 | 52 | `7e07aabda37a` | Reviewed; see shared rules and findings. |
@@ -55,7 +55,6 @@ This ledger records source review, not a claim that every conditional branch was
 | [components/dashboard/chat/markdown.tsx](../components/dashboard/chat/markdown.tsx) | 202 | 15 | `e10dc06f4b16` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/message-editor.tsx](../components/dashboard/chat/message-editor.tsx) | 91 | 4 | `1fc2ad87c0a2` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/message.tsx](../components/dashboard/chat/message.tsx) | 189 | 29 | `5e0d0eb33754` | Reviewed; see shared rules and findings. |
-| [components/dashboard/chat/next-step.tsx](../components/dashboard/chat/next-step.tsx) | 71 | 9 | `ebf967e502ba` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/panel/chat-panel.tsx](../components/dashboard/chat/panel/chat-panel.tsx) | 509 | 76 | `670c3f7795ad` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/panel/details.tsx](../components/dashboard/chat/panel/details.tsx) | 73 | 21 | `cd72469e5023` | Reviewed; see shared rules and findings. |
 | [components/dashboard/chat/panel/files.tsx](../components/dashboard/chat/panel/files.tsx) | 229 | 103 | `1e639546c98c` | Reviewed; see shared rules and findings. |
@@ -77,7 +76,7 @@ This ledger records source review, not a claim that every conditional branch was
 | [components/dashboard/home.tsx](../components/dashboard/home.tsx) | 29 | 0 | `cd43c76a59f5` | No local spacing; delegate/context or drawing geometry. |
 | [components/dashboard/needs-you-count.tsx](../components/dashboard/needs-you-count.tsx) | 15 | 0 | `fc44f4473c74` | No local spacing; delegate/context or drawing geometry. |
 | [components/dashboard/page-error.tsx](../components/dashboard/page-error.tsx) | 43 | 13 | `5365a08dd444` | Reviewed; see shared rules and findings. |
-| [components/dashboard/pause.tsx](../components/dashboard/pause.tsx) | 114 | 26 | `1548fdf888c5` | Reviewed; see shared rules and findings. |
+| [components/dashboard/pause.tsx](../components/dashboard/pause.tsx) | 113 | 23 | `f18f2a18b2e3` | Reviewed; see shared rules and findings. |
 | [components/dashboard/pet-control.tsx](../components/dashboard/pet-control.tsx) | 64 | 13 | `54d9956d26ee` | Reviewed; see shared rules and findings. |
 | [components/dashboard/pet-devices.tsx](../components/dashboard/pet-devices.tsx) | 196 | 35 | `95b626edd532` | Reviewed; see shared rules and findings. |
 | [components/dashboard/platypus.tsx](../components/dashboard/platypus.tsx) | 225 | 14 | `0e93c850a215` | Reviewed; drawing geometry retained. |
@@ -102,7 +101,7 @@ This ledger records source review, not a claim that every conditional branch was
 | [components/dashboard/screens/usage.tsx](../components/dashboard/screens/usage.tsx) | 185 | 22 | `e38c9cc17a1c` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/welcome.tsx](../components/dashboard/screens/welcome.tsx) | 434 | 89 | `0c2699924e66` | Reviewed; see shared rules and findings. |
 | [components/dashboard/screens/work-forms.tsx](../components/dashboard/screens/work-forms.tsx) | 356 | 2 | `b5471f3104fb` | No local spacing; delegate/context or drawing geometry. |
-| [components/dashboard/screens/work.tsx](../components/dashboard/screens/work.tsx) | 543 | 88 | `d49693f2e8bc` | Reviewed; see shared rules and findings. |
+| [components/dashboard/screens/work.tsx](../components/dashboard/screens/work.tsx) | 546 | 89 | `b579337464db` | Reviewed; see shared rules and findings. |
 | [components/dashboard/settings-shell.tsx](../components/dashboard/settings-shell.tsx) | 110 | 19 | `1200acb1c632` | Reviewed; see shared rules and findings. |
 | [components/dashboard/shell.tsx](../components/dashboard/shell.tsx) | 141 | 5 | `478533289d19` | Reviewed; see shared rules and findings. |
 | [components/dashboard/shortcuts.tsx](../components/dashboard/shortcuts.tsx) | 150 | 27 | `7a193fcb91ab` | Reviewed; see shared rules and findings. |

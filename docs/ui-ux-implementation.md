@@ -67,3 +67,9 @@ The follow-up browser replay passed 29 assertions, including narrow/short layout
 The existing onboarding CI replay now covers the task-first welcome page before entering optional personalization. All 25 checks pass against the production build: Start chatting persists the skip without voice or profile edits; personalization remains reachable; saved answers and the returning-owner review remain covered; optional setup stays collapsed on reload and its dismissed calendar prompt stays dismissed after reopening. The replay reports no browser errors and removes its disposable home.
 
 After integrating the newer main branch, the dashboard replay passed 34 assertions. Its five additional checks verify Riff images with the aligned Tiptap image extension, layouts at 320 and 1440 pixels, document autosave reaching the list, and Brain links redirecting to Riff. The merged production build, typechecks, frozen install and dependency audit also passed; microphone capture and provider editing were not invoked.
+
+## Requested chat and footer revision
+
+The greeting and headline are centered above the composer. The explanatory sentence and optional setup row are removed; starter prompts are centered below the composer and retain their footprint while typing. The unused setup-prompt component and its chat mutations are removed. Personalization remains available from welcome/settings.
+
+The sidebar footer matches primary navigation: 2px between rows, 32px desktop rows and 44px touch rows. Pause has no extra wrapper padding or repeated scope sentence; its existing confirmation retains the explanation. Browser verification covers landing alignment in both themes at five viewport sizes, starter selection/focus, stable composer position, footer geometry, collapsed and phone sidebars, confirmation/cancel and runtime errors. Requested screenshots are retained in `artifacts/layout-adjustments/`.

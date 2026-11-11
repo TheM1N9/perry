@@ -16,7 +16,7 @@ import { openChat, sleep } from "../browser.ts";
 //   3. The last step can be left without saying hello (a Continue there), or cannot be skipped at all.
 //   4. The step ignores the pet: no way to turn him on, the wrong keys, or it never notices he heard you.
 //   5. Coming back with a USER.md, saving replaces it unseen.
-//   6. Optional setup opens by default, suggests several things at once, or "Not now" does not stick after reopening it.
+//   6. New chat restores removed helper/setup content, misaligns its heading/prompts, overflows on phones, or starter selection shifts the composer.
 //   7. Start chatting requires personalization, voice or a pet, fails to persist skipping, or changes existing profile content.
 //   8. Personalization cannot be reached from the task-first page, or browser errors escape the replay.
 
@@ -142,25 +142,39 @@ try {
   report.checks.answersAreKept = /Maya/.test(persona.user);
   report.checks.firstChatAsksTheRest = (await call("dashboard:listChats")).some((chat) => chat.title === "Getting to know you");
 
-  // 6. Setup stays collapsed until requested; inside it, Not now persists.
+  // 6. The centered task area has its starter prompts below the composer.
   await browser.send("Page.navigate", { url: `${base}/chat` });
-  const setup = "Array.from(document.querySelectorAll('details')).find((item) => item.querySelector('summary')?.textContent.startsWith('Optional setup:'))";
-  await until(setup);
-  report.checks.setupStartsCollapsed = await browser.evaluate(`!${setup}.open`);
-  await screenshot("optional-setup-collapsed.png");
-  await browser.evaluate(`${setup}.querySelector('summary').click()`);
-  await until(has("Connect your calendar"));
-  report.checks.suggestsOneThing = await browser.evaluate(`!${has("Put Perry on your desktop")}`);
-  await screenshot("next-step.png");
-  await click("Not now");
-  await until(`!${has("Connect your calendar")}`);
-  await browser.send("Page.reload");
   await until("document.querySelector('#composer')");
-  await until(setup);
-  report.checks.setupStaysCollapsedAfterReload = await browser.evaluate(`!${setup}.open`);
-  await browser.evaluate(`${setup}.querySelector('summary').click()`);
-  await sleep(1_000);
-  report.checks.notNowSticks = !await browser.evaluate(has("Connect your calendar"));
+  report.checks.noLandingHelperOrSetup = await browser.evaluate(`!${has("Ask for a reminder, a plan or help with an idea.")} && !${has("Optional setup:")}`);
+  const prompts = ["Remind me to take a break in an hour", "Help me plan my day", "Help me think through an idea"];
+  for (const [width, height] of [[1440, 900], [768, 900], [390, 844], [320, 740], [390, 500]]) {
+    await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 600 });
+    for (const theme of ["light", "dark"]) {
+      await browser.evaluate(`document.documentElement.classList.toggle('dark', ${theme === "dark"})`);
+      await sleep(100);
+      report.checks[`centeredLanding${width}x${height}${theme}`] = await browser.evaluate(`(() => {
+        const heading = document.querySelector('#content h2').getBoundingClientRect();
+        const greeting = document.querySelector('#content h2').previousElementSibling.getBoundingClientRect();
+        const composer = document.querySelector('[data-composer]').getBoundingClientRect();
+        const center = composer.x + composer.width / 2;
+        const starters = Array.from(document.querySelectorAll('button')).filter(item => ${JSON.stringify(prompts)}.includes(item.textContent.trim()));
+        const rows = new Map();
+        for (const item of starters) { const rect = item.getBoundingClientRect(); const row = rows.get(rect.top) ?? []; row.push(rect); rows.set(rect.top, row); }
+        return document.documentElement.scrollWidth <= innerWidth + 1
+          && Math.abs(heading.x + heading.width / 2 - center) < 2
+          && Math.abs(greeting.x + greeting.width / 2 - center) < 2
+          && heading.bottom <= composer.top && starters.length === 3
+          && starters.every(item => item.getBoundingClientRect().top > composer.bottom)
+          && Array.from(rows.values()).every(row => Math.abs((Math.min(...row.map(r => r.left)) + Math.max(...row.map(r => r.right))) / 2 - center) < 2);
+      })()`);
+    }
+    if (width === 1440 || width === 320) await screenshot(`centered-landing-${width}.png`);
+  }
+  const composerTop = await browser.evaluate("document.querySelector('[data-composer]').getBoundingClientRect().top");
+  await click(prompts[0]);
+  await until(`document.querySelector('#composer').innerText.includes(${JSON.stringify(prompts[0])})`);
+  report.checks.starterFillsAndFocusesComposer = await browser.evaluate("document.activeElement === document.querySelector('#composer')");
+  report.checks.starterKeepsComposerPosition = await browser.evaluate(`Math.abs(document.querySelector('[data-composer]').getBoundingClientRect().top - ${composerTop}) < 2`);
 
   // 5. Coming back with a USER.md: the full questions and a review, since saving replaces it.
   await call("dashboard:redoOnboarding");

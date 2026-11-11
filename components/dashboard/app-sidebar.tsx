@@ -154,7 +154,7 @@ export function AppSidebar() {
         </SidebarGroup>
         <ChatGroups />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="gap-0.5">
         <PauseControl active={active > 0 || Boolean(chats?.some((chat) => ["running", "needs-approval"].includes(chat.status ?? "")))} />
         <PauseNotice />
         <DesktopPet />
@@ -456,7 +456,7 @@ function AccountMenu() {
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem className="flex min-h-12 items-center gap-3 px-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:px-0" data-account-row>
+      <SidebarMenuItem className="flex min-h-8 items-center gap-3 px-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:px-0" data-account-row>
         <div className="flex min-w-0 flex-1 items-center gap-2 group-data-[collapsible=icon]:flex-none">
           <Avatar size="sm" aria-hidden className="size-7 after:hidden"><AvatarFallback className="bg-muted text-xs font-medium text-foreground">{name.charAt(0).toUpperCase()}</AvatarFallback></Avatar>
           <span className="truncate text-sm font-medium group-data-[collapsible=icon]:hidden">{name}</span>

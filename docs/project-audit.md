@@ -4,7 +4,7 @@ The findings recorded on 10 November below have now been implemented. The follow
 
 UI behavior, product familiarity and predicted visual attention are covered in the [UI and UX audit](ui-ux-audit.md), with an [interactive attention forecast](ui-attention-map.html).
 
-The later [spacing audit](spacing-audit.md) covers 187 current UI/template files, implemented fixes and 448 passing browser assertions. The [spacing rules](design-spacing.md) and [source coverage ledger](spacing-coverage.md) record the system for future work.
+The later [spacing audit](spacing-audit.md) covers 186 current UI/template files, implemented fixes and 448 passing browser assertions. The [spacing rules](design-spacing.md) and [source coverage ledger](spacing-coverage.md) record the system for future work.
 
 Perry should remain a local personal assistant: one owner, one SQLite backend, a same-origin dashboard, and an optional desktop companion. Reliable delivery, recoverable writes and bounded resource use take priority over adding engines or more interface features.
 

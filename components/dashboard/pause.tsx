@@ -35,14 +35,13 @@ export function usePause(from: "web" | "pet" = "web") {
 export function PauseControl({ active }: { active: boolean }) {
   const { view, paused, setPaused } = usePause();
   if (!active || paused) return null;
-  return <div className="px-2 py-2 group-data-[collapsible=icon]:px-0" data-global-pause>
-    <ActionButton variant="outline" size="sm" className="w-full group-data-[collapsible=icon]:p-0" aria-label="Pause all work" title="Pause all work" disabled={!view}
+  return <SidebarMenu data-global-pause><SidebarMenuItem>
+    <ActionButton variant="outline" render={<SidebarMenuButton tooltip="Pause all work" />} className="h-8 justify-start gap-2 rounded-md px-2 font-normal group-data-[collapsible=icon]:justify-center" aria-label="Pause all work" disabled={!view}
       confirm={{ title: "Pause all work?", body: "This stops current replies and tasks, and prevents schedules, watches and new replies from starting until you resume. Completed actions are not undone.", label: "Pause all work" }}
       action={() => setPaused(true)} success={PAUSED_TOAST}>
       <PauseIcon /><span className="group-data-[collapsible=icon]:hidden">Pause all work</span>
     </ActionButton>
-    <p className="mt-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">All chats, tasks and schedules.</p>
-  </div>;
+  </SidebarMenuItem></SidebarMenu>;
 }
 
 /** In the sidebar, above the computer: paused, with Resume; back on, what was missed. */
