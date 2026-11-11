@@ -1743,25 +1743,42 @@ export const unclaim = mutation({
 
 export type WorkView = {
   tasks: Doc<"tasks">[];
+  activeCount: number;
   goals: Doc<"goals">[];
   monitors: Doc<"monitors">[];
 };
+
+export const getActiveTaskCount = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<number> => {
+    assertDashboardKey(args.key);
+    let count = 0;
+    for (const status of ["blocked", "running", "queued"] as const) {
+      count += (await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", status)).collect()).length;
+    }
+    return count;
+  },
+});
 
 export const getWork = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<WorkView> => {
     assertDashboardKey(args.key);
 
-    const tasks: Doc<"tasks">[] = await ctx.runQuery(internal.work.listTasks, {
+    const recent: Doc<"tasks">[] = await ctx.runQuery(internal.work.listTasks, {
       limit: 25,
     });
+    const active = (await Promise.all((["blocked", "running", "queued"] as const).map((status) =>
+      ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", status)).collect()))).flat();
+    const activeIds = new Set(active.map((task) => task._id));
+    const tasks = [...active.slice(0, 100), ...recent.filter((task) => !activeIds.has(task._id))];
     const goals: Doc<"goals">[] = await ctx.runQuery(internal.work.listGoals, {});
     const monitors: Doc<"monitors">[] = await ctx.runQuery(
       internal.work.listMonitors,
       {},
     );
 
-    return { tasks, goals, monitors };
+    return { tasks, activeCount: active.length, goals, monitors };
   },
 });
 
@@ -1868,6 +1885,7 @@ export const checkMonitorsNow = action({
  * error, and a watch that fired. Each stays until it is dealt with or dismissed.
  */
 export type InboxItem =
+  | { kind: "delivery"; id: Id<"sent">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
   | { kind: "question"; id: Id<"tasks">; title: string; text: string; at: number }
   | { kind: "task-failed"; id: Id<"tasks">; title: string; text: string; at: number }
   | { kind: "job-error"; id: Id<"jobs">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
@@ -1879,6 +1897,13 @@ export const getInbox = query({
   handler: async (ctx, args): Promise<InboxItem[]> => {
     assertDashboardKey(args.key);
     const items: InboxItem[] = [];
+    for (const state of ["failed", "uncertain"] as const) {
+      const deliveries = await ctx.db.query("sent").withIndex("by_delivery", q => q.eq("deliveryState", state)).order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100);
+      for (const row of deliveries) {
+        if (row.batchId !== row._id) continue;
+        items.push({ kind: "delivery", id: row._id, title: `${row.channel === "telegram" ? "Telegram" : row.channel === "whatsapp" ? "WhatsApp" : "Dashboard"} notification ${state === "uncertain" ? "unconfirmed" : "failed"}`, text: `${row.deliveryError ?? "Check the destination before sending again."}\n\nMessage: ${row.deliveryText ?? row.text}`, at: row.reservedAt ?? row.createdAt, ...(row.origin ? { chatId: row.origin } : {}) });
+      }
+    }
     for (const task of await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "blocked")).collect()) {
       if (task.question) items.push({ kind: "question", id: task._id, title: task.title, text: task.question, at: task.updatedAt });
     }
@@ -1910,7 +1935,7 @@ export const dismissInbox = mutation({
   args: {
     key: vKey,
     items: v.array(v.object({
-      kind: v.union(v.literal("task-failed"), v.literal("job-error"), v.literal("job-result"), v.literal("watch")),
+      kind: v.union(v.literal("task-failed"), v.literal("job-error"), v.literal("job-result"), v.literal("watch"), v.literal("delivery")),
       id: v.string(),
     })),
   },
@@ -1919,7 +1944,10 @@ export const dismissInbox = mutation({
     assertDashboardKey(args.key);
     const now = Date.now();
     for (const item of args.items) {
-      if (item.kind === "task-failed") {
+      if (item.kind === "delivery") {
+        const id = ctx.db.normalizeId("sent", item.id);
+        if (id && await ctx.db.get(id)) await ctx.db.patch(id, { seenAt: now });
+      } else if (item.kind === "task-failed") {
         const id = ctx.db.normalizeId("tasks", item.id);
         if (id) await ctx.db.patch(id, { seenAt: now });
       } else if (item.kind === "watch") {

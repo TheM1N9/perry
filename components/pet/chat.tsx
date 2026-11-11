@@ -223,7 +223,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       </div>
 
       <ScrollArea viewportRef={scroller} className="min-h-0 flex-1">
-      <div className="flex min-h-full flex-col space-y-3 px-3.5 pt-3 pb-2 [&_.prose-chat]:text-sm [&_.prose-chat]:leading-[1.6]" aria-live="polite">
+      <div className="flex min-h-full flex-col gap-3 px-4 pt-3 pb-2 [&_.prose-chat]:text-sm [&_.prose-chat]:leading-[1.6]" aria-live="polite">
         {!chatId && (<div className="flex flex-1 flex-col justify-center pb-3">
           <Empty title="What can I do for you?" awake className="pt-0">
             {voice && hotkey && teachKeys !== false ? (holdProblem(hold)
@@ -262,7 +262,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             <ReactionBadges {...message.reactions} assistant="Perry" />
             {!message.pending && chatId && (
               <PetTip label="Save as note">
-                <Button variant="ghost" size="icon-xs" aria-label="Save as note" className="-ml-1 text-muted-foreground opacity-0 group-hover/reply:opacity-100 focus-visible:opacity-100"
+                <Button variant="ghost" size="icon-xs" aria-label="Save as note" className="-ml-1 text-muted-foreground opacity-0 pointer-coarse:opacity-100 group-hover/reply:opacity-100 focus-visible:opacity-100"
                   onClick={() => void fromChat({ key, conversationId: chatId, messageId: message.id }).then((made) => setNoted({ text: `Saved as the note “${made.title}”.`, id: made.id }), (cause) => setError(errorText(cause)))}>
                   <FilePlusIcon />
                 </Button>

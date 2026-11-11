@@ -3,8 +3,8 @@
  * One command to install Perry: `pnpm run setup`, run by `perry setup`.
  *
  * Everything this touches belongs to whoever runs it: your bot, your keys,
- * your data, all on this computer. Anonymous setup analytics exclude all
- * credentials and content; PERRY_TELEMETRY_DISABLED=1 disables them. No account
+ * your data, all on this computer. Optional setup analytics are off by default; PERRY_TELEMETRY_ENABLED=1
+ * enables them without credentials or content. PERRY_TELEMETRY_DISABLED=1 always disables them. No account
  * is needed but the one of the engine you choose.
  *
  * Safe to re-run. It keeps what is already configured and only asks for what
@@ -389,6 +389,7 @@ async function main() {
   else if (choice.chosen) writeFileSync(PATHS.engineChoice, JSON.stringify({ engine: choice.engine }), "utf8");
 
   input.close();
+  say(dim("  Optional analytics are off unless enabled. Dashboard diagnostics: Settings > General > Privacy. Installer counts: PERRY_TELEMETRY_ENABLED=1."));
   await trackInstallation("Setup configured");
   // `perry setup` goes on to start Perry, pair the bot and open the dashboard.
   if (process.argv.includes("--from-perry")) return;

@@ -16,11 +16,39 @@ export const fromTelegram = internalAction({
   args: { update: v.any() },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+    if (Number.isSafeInteger(args.update?.update_id) && args.update.update_id >= 0) {
+      await ctx.runMutation(internal.ingest.acceptTelegram, { botId: token?.split(":")[0] ?? "legacy", update: args.update });
+    } else await ctx.runMutation(internal.ingest.handleTelegram, args);
+    return null;
+  },
+});
+
+/** Acceptance and all local effects share one transaction; replay only acknowledges the receipt. */
+export const acceptTelegram = internalMutation({
+  args: { botId: v.string(), update: v.any() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const updateId = args.update?.update_id;
+    if (!args.botId || !Number.isSafeInteger(updateId) || updateId < 0) throw new Error("Invalid Telegram update identity.");
+    if (await ctx.db.query("telegramReceipts").withIndex("by_bot_update", q => q.eq("botId", args.botId).eq("updateId", updateId)).first()) return null;
+    await ctx.runMutation(internal.ingest.handleTelegram, { update: args.update });
+    await ctx.db.insert("telegramReceipts", { botId: args.botId, updateId, acceptedAt: Date.now() });
+    for (const old of await ctx.db.query("telegramReceipts").withIndex("by_accepted", q => q.lt("acceptedAt", Date.now() - 2 * 86_400_000)).take(100)) await ctx.db.delete(old._id);
+    return null;
+  },
+});
+
+export const handleTelegram = internalMutation({
+  args: { update: v.any() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
     const reaction = (args.update as { message_reaction?: { chat: { id: number }; message_id: number; user?: { id: number; is_bot?: boolean }; date: number; new_reaction: Array<{ type: string; emoji?: string; custom_emoji_id?: string }> } }).message_reaction;
     if (reaction) {
       const owner = await ctx.runQuery(internal.installation.get, {});
       if (reaction.user?.is_bot || !reaction.user || owner?.ownerChannel !== "telegram" || String(reaction.user.id) !== owner.ownerExternalId) return null;
-      await ctx.runAction(internal.reactions.receive, { channel: "telegram", externalId: String(reaction.chat.id), messageId: String(reaction.message_id), at: reaction.date * 1000, emojis: reaction.new_reaction.map(item => item.emoji ?? `custom:${item.custom_emoji_id ?? item.type}`) });
+      const changed: { text: string } | null = await ctx.runMutation(internal.reactions.changed, { channel: "telegram", externalId: String(reaction.chat.id), messageId: String(reaction.message_id), at: reaction.date * 1000, emojis: reaction.new_reaction.map(item => item.emoji ?? `custom:${item.custom_emoji_id ?? item.type}`) });
+      if (changed) await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel: "telegram", externalId: String(reaction.chat.id), text: changed.text, reactionEvent: true, outside: true });
       return null;
     }
     const inbound = parseUpdate(args.update as TelegramUpdate);
@@ -58,7 +86,7 @@ export const fromTelegram = internalAction({
 });
 
 /** The bot, asked of Telegram once per process: in a group, "@its_name" or a reply to it is for Perry. */
-let bot: { id: string; username?: string } | null = null;
+let bot: { token: string; id: string; username?: string; expiresAt: number } | null = null;
 
 /**
  * A message from anyone but the owner's own chat with Perry: someone's direct
@@ -75,10 +103,11 @@ export const receiveOther = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     if (args.chatType === "channel") return null;
-    if (!bot) {
-      const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+    const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+    if (!bot || bot.token !== token || bot.expiresAt <= Date.now()) {
+      bot = null;
       const me = await getMe(token).catch(() => null);
-      if (me) bot = { id: String(me.id), username: me.username?.toLowerCase() };
+      if (me && token) bot = { token, id: String(me.id), username: me.username?.toLowerCase(), expiresAt: Date.now() + 30 * 60_000 };
     }
     const facts: { name: string; owner?: string } = await ctx.runQuery(internal.ingest.otherFacts, {});
     const group = args.chatType === "group" || args.chatType === "supergroup";

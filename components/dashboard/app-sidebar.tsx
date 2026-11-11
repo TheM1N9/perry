@@ -41,7 +41,7 @@ import { ChannelIcon, PerryMark } from "./common";
 import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateControl } from "./updates";
-import { PauseMenuItem, PauseNotice, usePause } from "./pause";
+import { PauseControl, PauseMenuItem, PauseNotice, usePause } from "./pause";
 import { PlatypusArt } from "./platypus";
 import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
 import { Spinner } from "@/components/ui/spinner";
@@ -58,6 +58,9 @@ export function AppSidebar() {
   const { label } = useShortcuts();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
+  const count = useNeedsYouCount();
+  const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
+  const active = useQuery(api.dashboard.getActiveTaskCount, { key: dashboardKey }) ?? 0;
 
   // On a phone the sidebar is a sheet; going somewhere closes it.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
@@ -97,6 +100,13 @@ export function AppSidebar() {
                 </Tooltip>
               </SidebarMenuItem>
               <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} tooltip="Needs you · Approvals and updates" aria-label={count ? `Needs you: ${count} pending` : "Needs you"}>
+                  <BellIcon />
+                  <span>Needs you</span>
+                </SidebarMenuButton>
+                {count > 0 && <SidebarMenuBadge className="bg-warning-soft px-1.5 text-warning" aria-hidden>{count}</SidebarMenuBadge>}
+              </SidebarMenuItem>
+              <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/todos" />} isActive={pathname === "/todos"} tooltip="To-dos">
                   <CheckCircle2Icon />
                   <span>To-dos</span>
@@ -109,22 +119,23 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/brain" />} isActive={pathname.startsWith("/brain")} tooltip="Brain">
+                <SidebarMenuButton render={<Link href="/brain" />} isActive={pathname.startsWith("/brain")} tooltip="Brain · Memory and notes" aria-label="Brain: memory and notes">
                   <BrainIcon />
                   <span>Brain</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/library" />} isActive={pathname.startsWith("/library")} tooltip="Library">
+                <SidebarMenuButton render={<Link href="/library" />} isActive={pathname.startsWith("/library")} tooltip="Library · Files" aria-label="Library: files">
                   <LibraryIcon />
                   <span>Library</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/work" />} isActive={pathname.startsWith("/work")} tooltip="Work">
+                <SidebarMenuButton render={<Link href="/work" />} isActive={pathname.startsWith("/work")} tooltip="Work · Tasks and schedules" aria-label={active ? `Work: ${active} active tasks` : "Work: tasks and schedules"}>
                   <ListChecksIcon />
                   <span>Work</span>
                 </SidebarMenuButton>
+                {active > 0 && <SidebarMenuBadge aria-hidden>{active}</SidebarMenuBadge>}
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/apps/connectors" />} isActive={pathname.startsWith("/apps")} tooltip="Apps & skills">
@@ -138,6 +149,7 @@ export function AppSidebar() {
         <ChatGroups />
       </SidebarContent>
       <SidebarFooter>
+        <PauseControl active={active > 0 || Boolean(chats?.some((chat) => ["running", "needs-approval"].includes(chat.status ?? "")))} />
         <PauseNotice />
         <DesktopPet />
         <AccountMenu />
@@ -435,8 +447,6 @@ function AccountMenu() {
   const line = status === undefined || engines === undefined ? " " : paused ? "Perry is paused" : pairing ? "Telegram not paired"
     : first ? (first.account ? `${first.account} · ${first.label}` : first.label) : "No engine signed in";
   const go = (href: string) => router.push(href);
-  const pathname = usePathname();
-  const count = useNeedsYouCount();
 
   return (
     <SidebarMenu>
@@ -476,15 +486,6 @@ function AccountMenu() {
             <DropdownMenuItem onClick={lock}><LockIcon />Lock dashboard</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon" nativeButton={false} render={<Link href="/inbox" />} aria-current={pathname === "/inbox" ? "page" : undefined}
-            aria-label={count > 0 ? `Notifications: ${count} need your attention` : "Notifications"}
-            className="relative shrink-0 touch-manipulation text-muted-foreground before:absolute before:-inset-1.5 aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground" />}>
-            <BellIcon className="size-4" />
-            {count > 0 && <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-destructive ring-2 ring-sidebar" aria-hidden />}
-          </TooltipTrigger>
-          <TooltipContent side="top">{count > 0 ? `${count} need your attention` : "Notifications"}</TooltipContent>
-        </Tooltip>
       </SidebarMenuItem>
     </SidebarMenu>
   );

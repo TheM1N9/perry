@@ -18,7 +18,7 @@ function PopoverContent({
   alignOffset = 0,
   side = "bottom",
   sideOffset = 4,
-  collisionPadding,
+  collisionPadding = 8,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<
@@ -38,7 +38,7 @@ function PopoverContent({
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
-            "popup-motion z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden",
+            "popup-motion z-50 flex w-72 max-w-(--available-width) origin-(--transform-origin) flex-col gap-3 rounded-lg bg-popover p-3 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden",
             className
           )}
           {...props}

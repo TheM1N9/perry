@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { TaskSteering } from "../task-steering";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
@@ -41,22 +41,34 @@ type Tab = (typeof TABS)[number];
  */
 export function Work() {
   const { dashboardKey } = useSession();
-  const [tab, setTab] = useTab(TABS, "schedules");
+  const [tab, setTab] = useTab(TABS, "plans");
+  useEffect(() => {
+    const followAnchor = () => {
+      if (new URLSearchParams(window.location.search).has("tab")) return;
+      const destination = window.location.hash.startsWith("#job-") ? "schedules"
+        : window.location.hash.startsWith("#goal-") ? "goals"
+          : window.location.hash.startsWith("#watch-") ? "watches" : undefined;
+      if (destination) setTab(destination);
+    };
+    followAnchor();
+    window.addEventListener("hashchange", followAnchor);
+    return () => window.removeEventListener("hashchange", followAnchor);
+  }, [setTab]);
   const work = useQuery(api.dashboard.getWork, { key: dashboardKey });
   const jobs = useQuery(api.jobs.listForDashboard, { key: dashboardKey });
-  const active = work?.tasks.filter((task) => task.status === "running" || task.status === "blocked" || task.status === "queued").length;
+  const active = work?.activeCount;
 
   return (
-    <Page title="Work" wide>
-      <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)}>
-        <TabsList variant="line" className="mb-5 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
+    <Page title="Work" description="Background tasks, schedules, goals and watched pages." wide>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="gap-6">
+        <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b [&>button]:flex-none [&>button]:px-0">
+          <TabsTrigger value="plans"><TabCount count={active}>Tasks</TabCount></TabsTrigger>
           <TabsTrigger value="schedules"><TabCount count={jobs?.jobs.filter((job) => !job.builtin).length}>Schedules</TabCount></TabsTrigger>
-          <TabsTrigger value="plans"><TabCount count={active}>Plans</TabCount></TabsTrigger>
           <TabsTrigger value="goals"><TabCount count={work?.goals.filter((goal) => goal.status === "active").length}>Goals</TabCount></TabsTrigger>
           <TabsTrigger value="watches"><TabCount count={work?.monitors.filter((monitor) => monitor.active).length}>Watches</TabCount></TabsTrigger>
         </TabsList>
         <TabsContent value="schedules"><Schedules /></TabsContent>
-        <TabsContent value="plans">{work ? <Plans tasks={work.tasks} goals={work.goals} /> : <ListSkeleton />}</TabsContent>
+        <TabsContent value="plans">{work ? <><Plans tasks={work.tasks} goals={work.goals} />{work.activeCount > 100 && <p className="mt-4 text-sm text-muted-foreground">Showing the first 100 of {work.activeCount} active tasks, followed by recent work.</p>}</> : <ListSkeleton />}</TabsContent>
         <TabsContent value="goals">{work ? <Goals goals={work.goals} /> : <ListSkeleton />}</TabsContent>
         <TabsContent value="watches">{work ? <Watches monitors={work.monitors} /> : <ListSkeleton />}</TabsContent>
       </Tabs>
@@ -310,14 +322,14 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
   if (!tasks.length) return (
     <div className="space-y-4">
       {intro}
-      <EmptyState title="No plans yet" />
+      <EmptyState title="No background tasks yet">Ask Perry to work on something, or create a task here.</EmptyState>
       <TaskDialog open={adding !== null} goals={goals} onClose={() => setAdding(null)} />
     </div>
   );
   return (
     <div className="space-y-4">
       {intro}
-      <List label="Plans">
+      <List label="Tasks">
         {sorted.map((task) => {
           const done = task.plan.filter((step) => step.status === "done").length;
           const live = task.status === "running" || task.status === "blocked";

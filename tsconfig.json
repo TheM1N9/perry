@@ -36,7 +36,10 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "site"
+    "**/node_modules",
+    "site",
+    "film",
+    "pet",
+    "artifacts"
   ]
 }

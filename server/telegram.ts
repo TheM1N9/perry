@@ -8,14 +8,13 @@ import { setTimeout as delay } from "node:timers/promises";
  * While Perry is not running, Telegram keeps a bot's updates for 24 hours and
  * they are handled when it starts again.
  *
- * Each update is handed to ingest.fromTelegram, and only then is its id saved
- * as the next offset, so an update is never lost; one that was being handled
- * as Perry stopped is handled again.
+ * Acceptance records a per-bot receipt and queues local effects atomically.
+ * Failed acceptance leaves the offset unchanged; replay finds the receipt.
  */
 
 const api = () => (process.env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/+$/, "");
 const POLL_SECONDS = 30;
-const OFFSET_KEY = "telegram.offset";
+const offsetKey = (botId: string) => `telegram.offset.${botId}`;
 
 type Update = { update_id: number } & Record<string, unknown>;
 type Reply<T> = { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
@@ -38,6 +37,7 @@ export function pollTelegram(runtime: Runtime): () => void {
   const stop = new AbortController();
   void (async () => {
     let cleared: string | null = null;
+    let botId: string | null = null;
     let quietSince = 0;
     while (!stop.signal.aborted) {
       const token = await runtime.runQuery("secrets:get", { name: "TELEGRAM_BOT_TOKEN" }, { internal: true })
@@ -50,6 +50,9 @@ export function pollTelegram(runtime: Runtime): () => void {
       try {
         // A bot set up for Convex had a webhook, and getUpdates refuses to run while one is set.
         if (cleared !== token) {
+          const identity = await call<{ id: number }>(token, "getMe", {}, stop.signal);
+          if (!identity.ok || !identity.result?.id) throw new Error("Telegram could not identify this bot.");
+          botId = String(identity.result.id);
           const removed = await call<boolean>(token, "deleteWebhook", { drop_pending_updates: false }, stop.signal);
           if (!removed.ok) throw new Error(removed.description ?? "Telegram refused to remove the old webhook.");
           cleared = token;
@@ -59,7 +62,8 @@ export function pollTelegram(runtime: Runtime): () => void {
             .catch((error): Reply<boolean> => ({ ok: false, description: error instanceof Error ? error.message : String(error) }));
           if (!listed.ok) console.error(`[perry] Telegram: could not list the commands: ${listed.description ?? "refused"}`);
         }
-        const offset = Number(await runtime.kv.get(OFFSET_KEY) ?? 0) || undefined;
+        const key = offsetKey(botId!);
+        const offset = Number(await runtime.kv.get(key) ?? 0) || undefined;
         const reply = await call<Update[]>(token, "getUpdates", {
           offset,
           timeout: POLL_SECONDS,
@@ -78,9 +82,11 @@ export function pollTelegram(runtime: Runtime): () => void {
           continue;
         }
         for (const update of reply.result ?? []) {
-          await runtime.runAction("ingest:fromTelegram", { update }, { internal: true })
-            .catch((error) => console.error(`[perry] Telegram update ${update.update_id} failed: ${error instanceof Error ? error.message : String(error)}`));
-          await runtime.kv.set(OFFSET_KEY, String(update.update_id + 1));
+          if (stop.signal.aborted) break;
+          const current = await runtime.runQuery("secrets:get", { name: "TELEGRAM_BOT_TOKEN" }, { internal: true });
+          if (current.value !== token) break;
+          await runtime.runMutation("ingest:acceptTelegram", { botId: botId!, update }, { internal: true });
+          await runtime.kv.set(key, String(update.update_id + 1));
         }
       } catch (error) {
         if (stop.signal.aborted) break;

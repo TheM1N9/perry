@@ -61,7 +61,8 @@ export class Runtime {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private cronTimers: Array<ReturnType<typeof setInterval>> = [];
   private running = new Set<Promise<unknown>>();
-  private stopped = false;
+  private ticking: Promise<void> | null = null;
+  private stopped = true;
 
   constructor(
     readonly sql: DatabaseSync,
@@ -238,17 +239,19 @@ export class Runtime {
       validateArgs(args, def.args, (id) => this.store.idTable(id));
       const tx: Tx = { reads: new Set(), writes: new Set(), scheduled: false };
       this.sql.exec("BEGIN IMMEDIATE");
+      let value: unknown;
       try {
         options.before?.();
-        const value = await def.handler(this.mutationCtx(tx), args);
+        value = await def.handler(this.mutationCtx(tx), args);
         this.sql.exec("COMMIT");
-        this.committed(tx);
-        options.onCommit?.([...tx.writes]);
-        return value;
       } catch (error) {
         this.sql.exec("ROLLBACK");
         throw error;
       }
+      this.committed(tx);
+      try { options.onCommit?.([...tx.writes]); }
+      catch { console.error("[perry] a post-commit callback failed; the write is saved"); }
+      return value;
     });
   }
 
@@ -283,8 +286,15 @@ export class Runtime {
   }
 
   private committed(tx: Tx) {
-    this.collectDeletedFiles();
-    if (tx.writes.size) this.events.emit("change", [...tx.writes]);
+    try { this.collectDeletedFiles(); }
+    catch { console.error("[perry] deferred file cleanup failed; the write is saved"); }
+    if (tx.writes.size) {
+      const writes = [...tx.writes];
+      for (const listener of this.events.rawListeners("change")) {
+        try { listener.call(this.events, writes); }
+        catch { console.error("[perry] a change listener failed; the write is saved"); }
+      }
+    }
     if (tx.scheduled) this.wake();
   }
 
@@ -303,17 +313,25 @@ export class Runtime {
     this.timer = setTimeout(() => void this.tick(), 0);
   }
 
-  private async tick() {
+  private tick(): Promise<void> {
     this.timer = null;
-    if (this.stopped) return;
+    if (this.stopped) return Promise.resolve();
+    if (this.ticking) return this.ticking;
+    this.ticking = this.drainScheduled().finally(() => { this.ticking = null; });
+    return this.ticking;
+  }
+
+  private async drainScheduled() {
+    const cancelled = Symbol("Scheduled call cancelled");
     try {
       // The sweeper must never see tombstones in another mutation's open transaction.
       await this.exclusive(() => this.collectDeletedFiles());
       const due = await this.exclusive(() => this.sql.prepare("SELECT id, name, args FROM _scheduled WHERE runAt <= ? ORDER BY runAt LIMIT 100").all(Date.now()) as Array<{ id: string; name: string; args: string }>);
       for (const row of due) {
+        if (this.stopped) return;
         const def = this.registry.get(row.name);
         const args = JSON.parse(row.args);
-        const remove = () => { this.sql.prepare("DELETE FROM _scheduled WHERE id = ?").run(row.id); };
+        const remove = () => Number(this.sql.prepare("DELETE FROM _scheduled WHERE id = ?").run(row.id).changes) > 0;
         if (!def) {
           console.error(`Scheduled function ${row.name} no longer exists; dropping it.`);
           await this.exclusive(remove);
@@ -321,14 +339,18 @@ export class Runtime {
         }
         if (def.kind === "mutation") {
           // Exactly once: taken off the queue in the transaction that runs it.
-          await this.runMutation(row.name, args, { internal: true, before: remove }).catch((error) => {
+          await this.runMutation(row.name, args, { internal: true, before: () => {
+            // Cancellation may have removed a row since this batch was read.
+            if (this.stopped || !remove()) throw cancelled;
+          } }).catch((error) => {
+            if (error === cancelled) return;
             console.error(`Scheduled ${row.name} failed: ${error instanceof Error ? error.stack : String(error)}`);
             return this.exclusive(remove);
           });
           continue;
         }
         // Actions run at most once, alongside each other, as in Convex.
-        await this.exclusive(remove);
+        if (!await this.exclusive(() => !this.stopped && remove())) continue;
         const run = this.call(row.name, args, { internal: true }).catch((error) => {
           console.error(`Scheduled ${row.name} failed: ${error instanceof Error ? error.stack : String(error)}`);
         });
@@ -338,16 +360,21 @@ export class Runtime {
       const next = await this.exclusive(() => (this.sql.prepare("SELECT MIN(runAt) AS next FROM _scheduled").get() as { next: number | null }).next);
       if (!this.stopped) {
         const wait = next === null ? 60_000 : Math.max(0, Math.min(next - Date.now(), 60_000));
+        if (this.timer) clearTimeout(this.timer);
         this.timer = setTimeout(() => void this.tick(), due.length === 100 ? 0 : wait);
       }
     } catch (error) {
       console.error(`The scheduler failed: ${String(error)}`);
-      if (!this.stopped) this.timer = setTimeout(() => void this.tick(), 5_000);
+      if (!this.stopped) {
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = setTimeout(() => void this.tick(), 5_000);
+      }
     }
   }
 
   /** Scheduled functions and crons start; before this, functions only run when called. */
   start() {
+    if (!this.stopped) return;
     this.stopped = false;
     this.wake();
     for (const [label, cron] of Object.entries(this.options.crons?.crons ?? {})) {
@@ -358,9 +385,11 @@ export class Runtime {
       this.cronTimers.push(setInterval(() => {
         if (busy || this.stopped) return;
         busy = true;
-        void this.call(cron.name, cron.args[0] ?? {}, { internal: true })
+        const run = this.call(cron.name, cron.args[0] ?? {}, { internal: true })
           .catch((error) => console.error(`Cron "${label}" failed: ${error instanceof Error ? error.stack : String(error)}`))
           .finally(() => { busy = false; });
+        this.running.add(run);
+        void run.finally(() => this.running.delete(run));
       }, every));
     }
   }
@@ -368,8 +397,10 @@ export class Runtime {
   async stop() {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
     for (const timer of this.cronTimers) clearInterval(timer);
     this.cronTimers = [];
+    await this.ticking;
     await Promise.allSettled([...this.running]);
   }
 

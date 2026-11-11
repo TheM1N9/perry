@@ -8,8 +8,8 @@ import { TurnError } from "./turn-error";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ActivityIcon, ArrowDownIcon, ArrowUpLeftIcon, BotIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
-  SquarePenIcon, Trash2Icon, TriangleAlertIcon,
+  ActivityIcon, ArrowDownIcon, ArrowUpLeftIcon, BotIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon,
+  SquarePenIcon, Trash2Icon,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -38,7 +38,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
-import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
+import { APPS, ChannelIcon, EmptyState, TopBar } from "../common";
 import { MoveToProject, NewProjectDialog } from "../projects";
 import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
@@ -81,8 +81,8 @@ type QueueEdit = { id: Id<"codexTurns">; conversationId: ChatId; stash: string }
 const NO_FILES: ReadonlyArray<{ path: string; url: string }> = [];
 
 const STARTERS = [
-  "Plan my day",
-  "What did we work on this week?",
+  "Remind me to take a break in an hour",
+  "Help me plan my day",
   "Help me think through an idea",
 ];
 
@@ -727,18 +727,19 @@ export function ChatScreen() {
   // What the chat is doing now, at the end of the timeline, after the reply and before what is queued (thread-now.tsx).
   const nowLines: NowLine[] = [
     ...(chat?.waiting ? [{
-      id: "reset-wait", icon: <ClockIcon />, title: chat.waiting.why, data: { "data-reset-wait": true },
-      actions: <NowAction onClick={stop}>Stop</NowAction>,
+      id: "reset-wait", icon: <ClockIcon />, title: chat.waiting.why, tone: "warning" as const, announce: true, data: { "data-reset-wait": true },
+      actions: <NowAction onClick={stop}>Stop this reply</NowAction>,
     }] : []),
     ...(chat?.unresponsive && waiting ? [{
-      id: "unresponsive", icon: <UnplugIcon />, title: "Your computer is unresponsive", detail: "Waiting for it to reconnect…", data: { "data-turn-health": "unresponsive" },
+      id: "unresponsive", icon: <UnplugIcon />, title: "Your computer is unresponsive", detail: "Reconnect the computer to continue, or stop this reply.", tone: "warning" as const, announce: true, data: { "data-turn-health": "unresponsive" },
+      actions: <NowAction onClick={stop}>Stop this reply</NowAction>,
     }] : []),
     // Over, it is said until the next reply starts, so it never sits below a reply that came after it.
     ...(compacting && (compacting.status === "running" || (!liveWork && lastReply < (compacting.finishedAt ?? 0))) ? [{
       id: "compaction", icon: <Minimize2Icon />, data: { "data-compaction": compacting.status },
       ...(compacting.status === "running" ? { title: "Compacting context", live: true }
         : compacting.status === "ok" ? { title: "Context compacted", detail: `${assistant} works from a summary of this chat now; the messages are unchanged` }
-          : { title: "Couldn't compact the context" }),
+          : { title: "Couldn't compact the context", detail: "The messages are still here.", tone: "error" as const, announce: true, actions: <NowAction onClick={() => void runCommand("/compact")}>Try again</NowAction> }),
     }] : []),
   ];
   // Only what is in the history can be regenerated, edited or branched from.
@@ -811,8 +812,14 @@ export function ChatScreen() {
         )}
       </TopBar>
 
-      <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto" id="content" tabIndex={-1}>
-        <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
+      <div className={cn("flex min-h-0 flex-1 flex-col", !selectedId && "justify-center-safe overflow-y-auto")}>
+      <div ref={scroller} onScroll={onScroll} className={cn("relative min-h-0", selectedId ? "flex-1 overflow-y-auto" : "shrink-0")} id="content" tabIndex={-1}>
+        <div className={cn("mx-auto flex w-full max-w-3xl flex-col px-4 sm:px-6", selectedId && "min-h-full")}>
+          {selectedId && here.length > 0 && <Alert variant="quiet" className="mt-4" role="status">
+            <AlertTitle>{here.length} {here.length === 1 ? "action needs" : "actions need"} your review</AlertTitle>
+            <AlertDescription>Check the requested changes before allowing them.</AlertDescription>
+            <AlertAction><Button size="sm" variant="outline" nativeButton={false} render={<a href={`#approval-${here[0].id}`} />}>Review</Button></AlertAction>
+          </Alert>}
           {noEngine && (
             <Alert variant="quiet" className="mt-4" role="alert">
               <AlertTitle>Choose the engine {assistant} thinks with</AlertTitle>
@@ -822,22 +829,23 @@ export function ChatScreen() {
               </AlertAction>
             </Alert>
           )}
-          {status?.onboarding === "offer" && (
-            <Alert variant="quiet" className="mt-4">
-              <AlertTitle>Tell {assistant} about yourself</AlertTitle>
-              <AlertDescription>About two minutes.</AlertDescription>
-              <AlertAction className="flex gap-2">
-                <Button size="sm" variant="ghost" onClick={() => void skipOnboarding({ key: dashboardKey }).catch(fail)}>Not now</Button>
-                <Button size="sm" onClick={() => void redoOnboarding({ key: dashboardKey }).then(() => router.push("/welcome"), fail)}>Start</Button>
-              </AlertAction>
-            </Alert>
-          )}
 
           {!selectedId ? (
-            <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
-              <PerryMark className="size-14" />
-              <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
-              {!project && !noEngine && status?.onboarding !== "offer" && <NextStep assistant={assistant} />}
+            <div className="flex flex-col py-6 text-left">
+              <p className="text-sm text-muted-foreground">{greeting(status?.displayName)}</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-balance">{project ? `What should we work on in ${project.name}?` : "What would you like to get done?"}</h2>
+              <p className="mt-2 text-sm text-pretty text-muted-foreground">Ask for a reminder, a plan or help with an idea.</p>
+              {!project && !noEngine && <details className="mt-4 w-full max-w-md text-left">
+                <summary className="cursor-pointer rounded-md py-2 text-left text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11">{status?.onboarding === "offer" ? "Optional setup: tell Perry about you" : "Optional setup: desktop, voice and calendar"}</summary>
+                {status?.onboarding === "offer" ? <Alert variant="quiet">
+                  <AlertTitle>Tell {assistant} about yourself</AlertTitle>
+                  <AlertDescription>About two minutes. You can start chatting now and do this later.</AlertDescription>
+                  <AlertAction className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => void skipOnboarding({ key: dashboardKey }).catch(fail)}>Not now</Button>
+                    <Button size="sm" onClick={() => void redoOnboarding({ key: dashboardKey }).then(() => router.push("/welcome"), fail)}>Personalize</Button>
+                  </AlertAction>
+                </Alert> : <NextStep assistant={assistant} />}
+              </details>}
             </div>
           ) : (
             <ChatFiles.Provider value={chatFiles ?? NO_FILES}>
@@ -913,7 +921,7 @@ export function ChatScreen() {
         </div>
       </div>
 
-      <div className="relative shrink-0 px-3 pb-3 sm:px-6 sm:pb-5">
+      <div className="relative shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6">
         {!atBottom && selectedId && (
           <div className="pointer-events-none absolute inset-x-0 -top-12 flex justify-center">
             <Button variant="outline" size="sm" className="pointer-events-auto rounded-full bg-background shadow-md" onClick={jumpToLatest}>
@@ -1036,8 +1044,8 @@ export function ChatScreen() {
               )}
               {/* Last, so the queued messages sit on the box they were typed in. Keyed per chat: its "show all" and drag reset. */}
               {selectedId && <UpNext key={selectedId} items={upNext} editing={queueEdit?.id ?? null} onEdit={startQueueEdit} onCancelEdit={endQueueEdit} />}
-              {!selectedId && !draft && files.length === 0 && (
-                <div className="mb-3 flex flex-wrap justify-center gap-2">
+              {!selectedId && (
+                <div className={cn("mb-3 flex flex-wrap justify-start gap-2", (Boolean(draft) || files.length > 0) && "invisible")} aria-hidden={Boolean(draft) || files.length > 0}>
                   {STARTERS.map((text) => (
                     <Button key={text} variant="outline" className="h-9 rounded-full px-4 font-normal text-muted-foreground hover:text-foreground" onClick={() => { setDraft(text); composer.current?.focus(); }}>
                       {text}
@@ -1057,6 +1065,7 @@ export function ChatScreen() {
           </>);
           }}</ComposerDraft>}
         </div>
+      </div>
       </div>
 
     </div>

@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { CronDate } from "cron-parser";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -6,6 +7,7 @@ import { targetOf, type Target } from "./channels";
 import { nextRun, ownerClock, timezoneOf } from "./jobs";
 import { assertDashboardKey } from "./lib/auth";
 import { editButtons } from "./lib/telegram";
+import { previousDay, startOfDay } from "./lib/calendar";
 import { followTodo, linkNotes, notesOf, onClock } from "./memories";
 
 /**
@@ -62,8 +64,9 @@ const endOfToday = (timezone: string, now = Date.now()) => nextRun("0 0 * * *", 
 /** The same time of day, whole days on until it is past today, so a late one does not fire the moment it moves. */
 function tomorrowsTime(at: number, timezone: string): number {
   const midnight = endOfToday(timezone);
-  while (at < midnight) at += 86_400_000;
-  return at;
+  if (at >= midnight) return at;
+  const clock = new CronDate(at, timezone);
+  return nextRun(`${clock.getSeconds()} ${clock.getMinutes()} ${clock.getHours()} * * *`, timezone, midnight - 1);
 }
 
 async function open(ctx: QueryCtx): Promise<Doc<"todos">[]> {
@@ -79,10 +82,10 @@ async function streakOf(ctx: QueryCtx, timezone: string): Promise<number> {
   const days = new Set(done.map((todo) => dayOf(todo.doneAt!, timezone)));
   let streak = 0;
   let at = Date.now();
-  if (!days.has(dayOf(at, timezone))) at -= 86_400_000;
+  if (!days.has(dayOf(at, timezone))) at = previousDay(timezone, at);
   while (days.has(dayOf(at, timezone))) {
     streak++;
-    at -= 86_400_000;
+    at = previousDay(timezone, at);
   }
   return streak;
 }
@@ -297,7 +300,7 @@ export const board = query({
     assertDashboardKey(args.key);
     const timezone = await timezoneOf(ctx);
     const today = dayOf(Date.now(), timezone);
-    const recent = await ctx.db.query("todos").withIndex("by_done", (q) => q.gt("doneAt", Date.now() - 86_400_000)).order("desc").collect();
+    const recent = await ctx.db.query("todos").withIndex("by_done", (q) => q.gte("doneAt", startOfDay(timezone))).order("desc").collect();
     return {
       timezone,
       open: (await open(ctx)).map(view),

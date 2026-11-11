@@ -24,7 +24,7 @@ export function Nav() {
   return (
     <header data-pill={pill || undefined} data-dark={(pill && dark) || undefined} className="pointer-events-none sticky top-0 z-40 flex h-14 items-start">
       <div
-        className={`pointer-events-auto mx-auto flex items-center justify-between transition-all duration-300 ease-out ${
+        className={`pointer-events-auto mx-auto flex items-center justify-between transition-[color,background-color,border-color,box-shadow] duration-200 ease-out ${
           !pill
             ? "mt-0 h-14 w-full max-w-[1180px] rounded-none border border-transparent bg-white px-6 text-ink"
             : dark

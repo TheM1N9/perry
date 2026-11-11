@@ -188,7 +188,7 @@ export function Section({ title, description, tip, icon, actions, children, clas
 }) {
   const settings = useContext(InPage) === "settings";
   return (
-    <section id={id} className={cn("scroll-mt-16 first:mt-0", settings ? "mt-6 border-t pt-6 first:border-t-0 first:pt-0" : "mt-10", className)} aria-label={title}>
+    <section id={id} className={cn("scroll-mt-16 first:mt-0", settings ? "mt-6 border-t pt-6 first-of-type:mt-0 first-of-type:border-t-0 first-of-type:pt-0" : "mt-10", className)} aria-label={title}>
       <div className="mb-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
           <h2 className={cn("flex items-center gap-2 font-semibold", settings ? "text-sm" : "text-md tracking-[-0.01em]")}>{icon && <span aria-hidden className="text-muted-foreground [&>svg]:size-4 [&>svg]:stroke-[1.75]">{icon}</span>}{title}{tip && <InfoTip>{tip}</InfoTip>}</h2>
@@ -360,7 +360,7 @@ export function ActionButton({ action, success, error, confirm, children, ...pro
               <AlertDialogDescription>{confirm.body}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Keep it</AlertDialogCancel>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction variant="destructive" onClick={() => void run()}>{confirm.label}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

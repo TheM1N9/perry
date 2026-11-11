@@ -24,6 +24,7 @@ let playing: HTMLMediaElement | null = null;
 const positions = new Map<string, number>();
 /** Each audio file's waveform, worked out once a session. */
 const waveforms = new Map<string, Promise<number[]>>();
+const MEDIA_CACHE_LIMIT = 100;
 
 const SPEEDS_VIDEO = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const SPEEDS_AUDIO = [1, 1.5, 2];
@@ -77,7 +78,8 @@ function waveformOf(src: string): Promise<number[]> {
     }
   })();
   waveforms.set(src, work);
-  work.catch(() => waveforms.delete(src));
+  if (waveforms.size > MEDIA_CACHE_LIMIT) waveforms.delete(waveforms.keys().next().value!);
+  work.catch(() => { if (waveforms.get(src) === work) waveforms.delete(src); });
   return work;
 }
 
@@ -114,7 +116,11 @@ function useMedia<T extends HTMLMediaElement>(src: string) {
     const onTime = () => {
       if (probing) return;
       setTime(media.currentTime);
-      if (media.currentTime > 0) positions.set(src, media.currentTime);
+      if (media.currentTime > 0) {
+        positions.delete(src);
+        positions.set(src, media.currentTime);
+        if (positions.size > MEDIA_CACHE_LIMIT) positions.delete(positions.keys().next().value!);
+      }
     };
     // A recording made in a browser (a WebM) can say nothing of its length: asking for a time past its end makes it work it out.
     let probing = false;

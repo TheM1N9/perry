@@ -11,7 +11,9 @@ pnpm build && pnpm start
 
 ## Analytics, speed and logs
 
-The site uses [Vercel Web Analytics](https://vercel.com/docs/analytics) and [Speed Insights](https://vercel.com/docs/speed-insights), added in `app/layout.tsx` with `<Analytics />` and `<SpeedInsights />`. Both are cookieless, so there's no cookie banner, and both send to the site's own `/_vercel/*` paths, so the page still talks only to its own origin.
+The public site uses Vercel Web Analytics and Speed Insights through its `/_vercel/*` routes. These are separate from the local dashboard and do not read its data. Their scripts are loaded by `app/layout.tsx`.
+
+PostHog is an additional, optional provider in `instrumentation-client.ts`, enabled only when the deployer builds with `NEXT_PUBLIC_POSTHOG_ENABLED=true`. When enabled it sends page views, interactions, click heatmaps, exception and performance data to `us.i.posthog.com`; it respects Do Not Track and masks inputs and personal-data properties. It is not restricted to the site's own origin. Dashboard diagnostics and installer milestones have their own consent/defaults, documented in the root README.
 
 **One manual step:** in the Vercel dashboard, open the project and turn on **Analytics** (Analytics tab → Enable) and **Speed Insights** (Speed Insights tab → Enable), then redeploy. Until then the scripts load but Vercel records nothing.
 

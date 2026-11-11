@@ -60,6 +60,7 @@ export function Welcome() {
   const heading = useRef<HTMLHeadingElement>(null);
 
   const [step, setStep] = useState(0);
+  const [customizing, setCustomizing] = useState(false);
   // Whether this visit asks for the engine, settled once, so choosing one does not move the steps under the owner.
   const [steps, setSteps] = useState<readonly Step[]>();
   const [engine, setEngine] = useState<EngineKind>();
@@ -86,7 +87,7 @@ export function Welcome() {
     setSteps(status.defaultEngine ? asked : [ENGINE_STEP, ...asked]);
     setLoaded(true);
   }, [loaded, persona, status]);
-  useEffect(() => { if (loaded) heading.current?.focus(); }, [step, loaded]);
+  useEffect(() => { if (loaded) heading.current?.focus(); }, [step, loaded, customizing]);
   // With exactly one engine ready to answer, it is picked to begin with; the owner still confirms it.
   const ready = engines?.filter((item) => item.ready) ?? [];
   const onlyReady = ready.length === 1 ? ready[0].kind : undefined;
@@ -141,6 +142,41 @@ export function Welcome() {
   // The way on appears once the thing has been done, so the only place to look is the thing.
   const waitingToHear = at === SAY_HELLO && !pet?.heardVoice;
   const leaving = at === ENGINE_STEP || at === "Meet your assistant";
+
+  const startTextChat = async () => {
+    if (busy) return;
+    if (!status?.defaultEngine && !engine) return setError("Choose an engine to start chatting.");
+    setBusy("chat");
+    setError("");
+    try {
+      if (!status?.defaultEngine && engine) await chooseEngine({ key: dashboardKey, engine });
+      await skip({ key: dashboardKey });
+      router.replace("/chat");
+    } catch (cause) {
+      setError(errorText(cause));
+      setBusy("");
+    }
+  };
+
+  if (!customizing && !returning) return <main className="grid min-h-dvh place-items-center bg-muted/40 px-4 py-10 sm:py-16">
+    <form className="w-full max-w-xl space-y-6 rounded-2xl border bg-card p-6 shadow-float sm:p-8" onSubmit={(event) => { event.preventDefault(); void startTextChat(); }}>
+      <PerryMark className="size-12" />
+      <Heading ref={heading} title="Start with something useful">Ask for a reminder, plan your day or work through an idea. You can personalize Perry later.</Heading>
+      {!status?.defaultEngine && <FieldSet>
+        <FieldLegend variant="label">Choose the engine Perry uses</FieldLegend>
+        <FieldDescription>Use your existing plan. Your choice is saved for future chats.</FieldDescription>
+        {engines === undefined ? <Spinner /> : !engines.length ? <p className="text-sm text-muted-foreground">Start Perry&apos;s runner to see the engines on this computer.</p>
+          : <EngineChoice engines={engines} value={engine} onChange={(kind) => { setEngine(kind); setError(""); }} disabled={Boolean(busy)} />}
+        {picked && !picked.ready && <p className="text-sm text-warning">{picked.label} needs to be installed and signed in before it can answer. You can finish that in Settings → Engines.</p>}
+      </FieldSet>}
+      <p className="text-sm text-muted-foreground">Text chat works without a microphone or desktop pet. Voice, calendar and desktop setup are optional.</p>
+      {error && <Alert variant="destructive"><AlertTitle>Couldn&apos;t start</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" size="lg" disabled={Boolean(busy) || (!status?.defaultEngine && !engine)} aria-busy={busy === "chat"}>{busy === "chat" && <Spinner />}Start chatting</Button>
+        <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => setCustomizing(true)}>Personalize first (optional)</Button>
+      </div>
+    </form>
+  </main>;
 
   return (
     <main className="min-h-dvh bg-muted/40 px-4 py-10 sm:py-16">

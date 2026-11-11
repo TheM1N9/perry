@@ -9,7 +9,7 @@ type Ledger = { installationId: string; events: Partial<Record<Milestone, Receip
 
 /** Best effort, once per installation/milestone. No credentials or machine names. */
 export async function trackInstallation(event: Milestone): Promise<void> {
-  if (process.env.PERRY_TELEMETRY_DISABLED === "1" || process.env.NEXT_PUBLIC_POSTHOG_ENABLED === "false") return;
+  if (process.env.PERRY_TELEMETRY_ENABLED !== "1" || process.env.PERRY_TELEMETRY_DISABLED === "1" || process.env.NEXT_PUBLIC_POSTHOG_ENABLED === "false") return;
   try {
     const file = join(HOME, "analytics.json");
     mkdirSync(HOME, { recursive: true });

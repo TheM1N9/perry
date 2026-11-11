@@ -31,8 +31,8 @@ export function Night() {
             Overnight Perry files the day into notes and keeps an eye on the pages you care about. It only wakes you if something matters.
           </p>
         </Reveal>
-        <div className="relative mx-auto">
-          <Phone theme="night" className="w-[320px] md:w-[340px]" clock={step >= 2 ? "02:13" : "23:00"}>
+        <div className="relative mx-auto w-full max-w-[320px] md:max-w-[340px]">
+          <Phone theme="night" className="w-full" clock={step >= 2 ? "02:13" : "23:00"}>
             <AnimatePresence initial={false} mode="popLayout">
               <Pill key="today">Today</Pill>
               {step >= 1 ? <Pill key="notes">22:30 · today&apos;s notes filed</Pill> : null}
@@ -44,7 +44,7 @@ export function Night() {
               ) : null}
             </AnimatePresence>
           </Phone>
-          <div className="absolute -bottom-6 -left-24 w-[150px] md:-left-32 md:w-[170px]">
+          <div className="pointer-events-none absolute -bottom-6 left-0 w-[120px] md:-left-32 md:w-[170px]">
             <PlatypusArt asleep className="h-auto w-full" />
           </div>
         </div>

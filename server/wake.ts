@@ -94,7 +94,7 @@ function keepAwake(): ChildProcess | null {
       ? ["caffeinate", ["-i", "-w", String(process.pid)]]
       : ["systemd-inhibit", ["--what=sleep:idle", "--who=Perry", "--why=Perry is working on something", "--mode=block", "sleep", "infinity"]];
   try {
-    const child = spawn(command, args, { windowsHide: true, stdio: ["pipe", "ignore", "ignore"] });
+    const child = spawn(/*turbopackIgnore: true*/ command, args, { windowsHide: true, stdio: ["pipe", "ignore", "ignore"] });
     child.on("error", () => {});
     child.stdin?.on("error", () => {});
     return child;
@@ -119,17 +119,21 @@ export function runWake(runtime: Runtime): () => void {
   let soon: ReturnType<typeof setTimeout> | null = null;
 
   const reconcile = async () => {
+    if (stopped) return;
     if (busy) { again = true; return; }
     busy = true;
     try {
       const next = (await runtime.runQuery("wake:next", {}, internal)).value as { at: number; what: string } | null;
+      if (stopped) return;
       // To the minute, so a job's next time moving by seconds does not set it again.
       const target = next ? Math.floor((next.at - EARLY_MS) / 60_000) * 60_000 : null;
       if (target !== timerFor && !stopped) {
-        timerFor = target;
         error = await setWakeTimer(target);
+        if (stopped) return;
+        if (!error) timerFor = target;
       }
       const working = (await runtime.runQuery("wake:busy", {}, internal)).value as boolean;
+      if (stopped) return;
       const due = next !== null && next.at - Date.now() < AHEAD_MS;
       if ((working || due) && !keeper && !stopped) keeper = keepAwake();
       else if (!working && !due && keeper) { letGo(keeper); keeper = null; }

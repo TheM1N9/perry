@@ -75,7 +75,7 @@ export function Brain() {
   return (
     <Page
       title="Brain"
-      description="All of it stays on this computer."
+      description="Memory and notes Perry can use again. Stored on this computer."
       wide={map ? "full" : false}
       actions={<>
         <ToggleGroup value={[map ? "map" : "list"]} onValueChange={(value) => setView(value[0])} size="sm" spacing={0} aria-label="View">

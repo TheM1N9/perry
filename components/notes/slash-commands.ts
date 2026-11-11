@@ -30,8 +30,8 @@ export const BLOCKS: Block[] = [
   { title: "Table", hint: "Three columns", run: command((e) => e.chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()) },
 ];
 
-const MENU = "fixed z-50 max-h-80 w-64 overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-raised";
-const ITEM = "flex w-full flex-col items-start rounded-lg px-2.5 py-1.5 text-left outline-none";
+const MENU = "fixed z-50 max-h-[min(20rem,calc(100dvh-1.5rem))] w-64 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-raised";
+const ITEM = "flex w-full flex-col items-start gap-0.5 rounded-lg px-2 py-1.5 text-left outline-none";
 
 export const SlashCommands = Extension.create({
   name: "slashCommands",
@@ -69,7 +69,7 @@ export const SlashCommands = Extension.create({
             menu.replaceChildren();
             if (!props.items.length) {
               const empty = document.createElement("p");
-              empty.className = "px-2.5 py-1.5 text-sm text-muted-foreground";
+              empty.className = "px-2 py-1.5 text-sm text-muted-foreground";
               empty.textContent = "No such block";
               menu.append(empty);
             }
@@ -93,8 +93,9 @@ export const SlashCommands = Extension.create({
             });
             const rect = props.clientRect?.();
             if (rect) {
-              menu.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - 268))}px`;
-              menu.style.top = `${Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - 330))}px`;
+              const bounds = menu.getBoundingClientRect();
+              menu.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - bounds.width - 12))}px`;
+              menu.style.top = `${Math.max(12, Math.min(rect.bottom + 8, window.innerHeight - bounds.height - 12))}px`;
             }
             props.editor.view.dom.setAttribute("aria-activedescendant", `note-block-${index}`);
             menu.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });

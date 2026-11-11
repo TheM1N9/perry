@@ -107,7 +107,7 @@ export function Library() {
     );
   }
   return (
-    <Page title="Library" wide description="Files you gave Perry and files he made.">
+    <Page title="Library" wide description="Your files: uploads, working documents and things Perry made.">
       <div className="space-y-3">
         <InputGroup>
           <InputGroupAddon><SearchIcon /></InputGroupAddon>

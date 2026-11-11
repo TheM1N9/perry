@@ -1,8 +1,7 @@
 import posthog from "posthog-js";
 
 const key = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "phc_qeCkb5s5b6x4T5adoyZWdCKsmwK27dKq3RginMwWAwqn";
-const enabled = process.env.NEXT_PUBLIC_POSTHOG_ENABLED !== "false"
-  && (process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_POSTHOG_ENABLED === "true");
+const enabled = process.env.NEXT_PUBLIC_POSTHOG_ENABLED === "true";
 
 if (enabled && key) {
   try {

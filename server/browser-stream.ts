@@ -77,6 +77,7 @@ export function streamBrowser(scope: string, importEnabled: boolean, width: numb
   let pendingFrame: Frame | undefined;
   let announced = "";
   let controller: ReadableStreamDefaultController<Uint8Array>;
+  let releaseView: (() => void) | undefined;
   const end = () => {
     if (ended) return;
     ended = true;
@@ -86,6 +87,8 @@ export function streamBrowser(scope: string, importEnabled: boolean, width: numb
     pendingFrame = undefined;
     const cast = casts.get(scope);
     if (cast && watcher) { cast.watchers.delete(watcher); void follow(scope); }
+    releaseView?.();
+    releaseView = undefined;
   };
   const abort = () => { end(); try { controller.close(); } catch {} };
   // ReadableStream owns the queue. While full, retain only the latest state
@@ -110,6 +113,7 @@ export function streamBrowser(scope: string, importEnabled: boolean, width: numb
     start(next) {
       controller = next;
       if (signal.aborted) { abort(); return; }
+      releaseView = browser.retainBrowserView(scope);
       watcher = { width, frame: (frame) => { if (!ended) { pendingFrame = frame; flush(); } } };
       const cast: Cast = casts.get(scope) ?? { watchers: new Set(), tabId: null, width: 0, stop: null, seen: "" };
       casts.set(scope, cast);

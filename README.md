@@ -26,9 +26,18 @@ a coding agent on your own subscription, the one you choose:
 Antigravity (experimental) on Google. There is no API bill and no extra
 account to make.
 
-Everything stays yours: Perry runs on your computer, keeps its data in a
-single file there, and has no server of its own to send anything to. Anyone
-can run their own copy, and every copy is separate.
+Perry runs on your computer and stores its data in a local SQLite database.
+The engine and connected services you choose receive the content needed for
+your requests. Optional dashboard diagnostics and installer analytics are off
+by default. Anyone can run their own separate copy.
+
+Dashboard diagnostics can be enabled in Settings > General > Privacy for that
+browser. They send structural routes, feature usage, performance and error
+categories to PostHog, excluding message/file contents, credentials and session
+recordings. Installer milestones are separate: set `PERRY_TELEMETRY_ENABLED=1`
+to opt in; `PERRY_TELEMETRY_DISABLED=1` always disables them. A custom dashboard
+build may explicitly enable diagnostics with `NEXT_PUBLIC_POSTHOG_ENABLED=true`,
+or force them off with `false`; public build variables take effect at build time.
 
 ## What you can do with it
 

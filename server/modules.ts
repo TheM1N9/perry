@@ -32,6 +32,7 @@ import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
 import * as lib_browser from "../convex/lib/browser";
 import * as lib_budget from "../convex/lib/budget";
+import * as lib_calendar from "../convex/lib/calendar";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
 import * as lib_connected_error from "../convex/lib/connected-error";
@@ -134,6 +135,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/auth": lib_auth,
   "lib/browser": lib_browser,
   "lib/budget": lib_budget,
+  "lib/calendar": lib_calendar,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
   "lib/connected-error": lib_connected_error,

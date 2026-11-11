@@ -9,6 +9,6 @@
     "preview": "node render.mjs --page perry.html --serve"
   },
   "dependencies": {
-    "puppeteer-core": "^25.12.0"
+    "puppeteer-core": "^25.17.0"
   }
 }

@@ -62,7 +62,7 @@ export function ProjectScreen() {
       </>}
     >
       <Section title="Instructions" tip="Every chat in the project follows them, from your next message.">
-        <Instructions project={project} />
+        <Instructions key={project.id} project={project} />
       </Section>
       <Section title="Brain" tip="What Perry remembers here and the pages you keep here. Only this project's chats see them, except its Journey, which all your chats can read." actions={<NewPage project={project} />}>
         <ProjectBrain project={project} />
@@ -80,7 +80,7 @@ export function ProjectScreen() {
 function Instructions({ project }: { project: ProjectView }) {
   const { dashboardKey } = useSession();
   const save = useMutation(api.projects.setInstructions);
-  const instructions = useAutosave({ saved: project.instructions, save: (text) => save({ key: dashboardKey, id: project.id, instructions: text }) });
+  const instructions = useAutosave({ draftKey: `project.${project.id}`, saved: project.instructions, save: (text) => save({ key: dashboardKey, id: project.id, instructions: text }) });
   return (
     <Field>
       <FieldLabel htmlFor="project-instructions" className="sr-only">Instructions for {project.name}</FieldLabel>

@@ -170,17 +170,17 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
       </div>
     </div>}
     <Tabs value={tab} onValueChange={(value) => setTab(String(value))} className="mx-auto max-w-4xl gap-6">
-      <TabsList variant="line" className="h-12 w-full justify-start gap-3 overflow-x-auto border-b sm:gap-5">
-        <TabsTrigger className="min-h-11 flex-none px-1" value="summary">Summary</TabsTrigger>
-        <TabsTrigger className="min-h-11 flex-none px-1" value="thoughts">My thoughts</TabsTrigger>
-        <TabsTrigger className="min-h-11 flex-none px-1" value="transcript">Transcript</TabsTrigger>
-        <TabsTrigger className="min-h-11 flex-none px-1" value="tasks">Tasks{meeting.actions.length > 0 && <span className="text-muted-foreground">{meeting.actions.length}</span>}</TabsTrigger>
+      <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b">
+        <TabsTrigger className="flex-none px-0" value="summary">Summary</TabsTrigger>
+        <TabsTrigger className="flex-none px-0" value="thoughts">My thoughts</TabsTrigger>
+        <TabsTrigger className="flex-none px-0" value="transcript">Transcript</TabsTrigger>
+        <TabsTrigger className="flex-none px-0" value="tasks">Tasks{meeting.actions.length > 0 && <span className="text-muted-foreground">{meeting.actions.length}</span>}</TabsTrigger>
       </TabsList>
-      <TabsContent value="summary" className="min-h-80 py-4">
+      <TabsContent value="summary" className="min-h-80">
         {writing || live ? <div className="py-12 text-center"><FileTextIcon className="mx-auto mb-4 size-7 text-muted-foreground" aria-hidden /><h2 className="text-lg font-medium">{writing ? `Turning your ${minutes}-minute call into a two-minute read` : "Stay in the conversation"}</h2><p role="status" className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{writing ? waiting ? "This is taking longer than usual. Perry needs a connected engine to write it, and will finish as soon as one is free." : "Perry is writing the summary and next steps from the transcript and your thoughts." : "Add your thoughts as you go. When you finish, Perry will write the summary and next steps."}</p></div>
           : meeting.summary ? <>{note && <div className="mb-6 flex justify-end"><Button variant="ghost" size="sm" render={<Link href={noteHref(note.id)} />}>Edit in Brain</Button></div>}<Markdown text={meeting.summary} /></> : <EmptyState title="No summary yet">Your transcript is still available. Try writing up the meeting again.</EmptyState>}
       </TabsContent>
-      <TabsContent value="thoughts" className="min-h-80 py-4">
+      <TabsContent value="thoughts" className="min-h-80">
         <p className="mb-6 text-sm text-muted-foreground">The things you want to remember. Perry includes these in the summary.</p>
         {live && note ? <MeetingNotes key={note.id} note={note} /> : thoughts ? <Markdown text={thoughts} /> : <EmptyState title="No personal notes">Thoughts you add while recording will stay here after the meeting.</EmptyState>}
       </TabsContent>
@@ -195,12 +195,12 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
           {search && segments?.length && !segments.some((segment) => matches(segment.text)) ? <p className="text-sm text-muted-foreground">No matching speech.</p> : null}
         </div>
       </TabsContent>
-      <TabsContent value="tasks" className="min-h-80 py-4">
+      <TabsContent value="tasks" className="min-h-80">
         {!meeting.actions.length ? <EmptyState title="No action items yet">{live || writing ? "Perry will pull out the next steps when the meeting is written up." : "No action items were found in this meeting."}</EmptyState> : <List label="Action items">{meeting.actions.map((action, index) => <li key={index} className="flex items-start justify-between gap-4 py-4"><div><p className="text-base leading-relaxed">{action.text}</p>{action.owner && <p className="mt-1 text-xs text-muted-foreground">{action.owner}</p>}</div><ActionButton variant="outline" size="sm" disabled={action.added} action={() => add({ key, id: meeting.id, index })}>{action.added ? "Added" : <><PlusIcon />Add to to-dos</>}</ActionButton></li>)}</List>}
       </TabsContent>
     </Tabs>
-    <div className="mt-8 flex flex-wrap items-end gap-3 border-t pt-5">
-      <div className="grid gap-1.5"><label htmlFor="meeting-template" className="text-xs text-muted-foreground">Notes template</label>
+    <div className="mt-8 flex flex-wrap items-end gap-3 border-t pt-6">
+      <div className="grid min-w-0 gap-2"><label htmlFor="meeting-template" className="text-xs text-muted-foreground">Notes template</label>
         <select id="meeting-template" value={template} disabled={writing} onChange={(event) => {
           const next = event.target.value as typeof template;
           setTemplate(next);
@@ -276,14 +276,14 @@ function SpeechSettings({ speech }: { speech: { provider: "local" | "groq"; mode
   return <div className="mb-6 space-y-4 border-b pb-6">
     <div><h3 className="font-medium">Transcription</h3><p className="mt-1 text-sm text-muted-foreground">Applies to your next recording. The language is also used when you talk to the desktop pet. Cloud mode sends meeting audio to Groq; local mode keeps audio on your computer.</p></div>
     <div className="grid gap-4 sm:grid-cols-2">
-      <div className="grid gap-1.5"><label htmlFor="speech-provider" className="text-sm">Speech model</label><select id="speech-provider" value={draft.provider === "groq" ? "groq" : draft.model} onChange={(event) => {
+      <div className="grid min-w-0 gap-2"><label htmlFor="speech-provider" className="text-sm">Speech model</label><select id="speech-provider" value={draft.provider === "groq" ? "groq" : draft.model} onChange={(event) => {
           const choice = event.target.value;
           setDraft({ ...draft, provider: choice === "groq" ? "groq" : "local", model: choice === "large-v3-turbo" ? "large-v3-turbo" : "small", language: choice !== "groq" && draft.language === "auto" ? "en" : draft.language });
-        }} className="h-11 rounded-md border bg-background px-3 text-base focus-visible:outline-2 focus-visible:outline-ring"><option value="small">Whisper Small (local, balanced)</option><option value="large-v3-turbo">Whisper Large v3 Turbo (local, higher accuracy)</option><option value="groq">Whisper Large v3 (Groq cloud, optional)</option></select></div>
-      <div className="grid gap-1.5"><label htmlFor="speech-language" className="text-sm">Language</label><select id="speech-language" value={draft.language} onChange={(event) => setDraft({ ...draft, language: event.target.value })} className="h-11 rounded-md border bg-background px-3 text-base focus-visible:outline-2 focus-visible:outline-ring">{draft.provider === "groq" && <option value="auto">Detect automatically</option>}{[["en", "English"], ["hi", "Hindi"], ["te", "Telugu"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["ja", "Japanese"], ["zh", "Chinese"]].map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></div>
+        }} className="h-11 w-full min-w-0 rounded-md border bg-background px-3 text-base focus-visible:outline-2 focus-visible:outline-ring"><option value="small">Whisper Small (local, balanced)</option><option value="large-v3-turbo">Whisper Large v3 Turbo (local, higher accuracy)</option><option value="groq">Whisper Large v3 (Groq cloud, optional)</option></select></div>
+      <div className="grid min-w-0 gap-2"><label htmlFor="speech-language" className="text-sm">Language</label><select id="speech-language" value={draft.language} onChange={(event) => setDraft({ ...draft, language: event.target.value })} className="h-11 w-full min-w-0 rounded-md border bg-background px-3 text-base focus-visible:outline-2 focus-visible:outline-ring">{draft.provider === "groq" && <option value="auto">Detect automatically</option>}{[["en", "English"], ["hi", "Hindi"], ["te", "Telugu"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["ja", "Japanese"], ["zh", "Chinese"]].map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></div>
     </div>
     {draft.provider === "local" && <p className="text-xs text-muted-foreground">Models download once and then run offline. Large v3 Turbo uses more memory and may finish behind the conversation on slower computers. Local transcription needs a chosen language.</p>}
-    {draft.provider === "groq" && <><div className="grid gap-1.5"><label htmlFor="speech-vocabulary" className="text-sm">Names and vocabulary</label><Textarea id="speech-vocabulary" value={draft.vocabulary} maxLength={800} onChange={(event) => setDraft({ ...draft, vocabulary: event.target.value })} placeholder="Perry, Composio, product names, people…" className="text-base" /></div><p className="text-xs text-muted-foreground">Add your Groq speech key below. Groq bills transcription separately from your chat subscription.</p></>}
+    {draft.provider === "groq" && <><div className="grid min-w-0 gap-2"><label htmlFor="speech-vocabulary" className="text-sm">Names and vocabulary</label><Textarea id="speech-vocabulary" value={draft.vocabulary} maxLength={800} onChange={(event) => setDraft({ ...draft, vocabulary: event.target.value })} placeholder="Perry, Composio, product names, people…" className="text-base" /></div><p className="text-xs text-muted-foreground">Add your Groq speech key below. Groq bills transcription separately from your chat subscription.</p></>}
     <ActionButton size="sm" variant="outline" disabled={JSON.stringify(draft) === JSON.stringify(speech)} action={() => save({ key, speech: draft })}>Save speech settings</ActionButton>
   </div>;
 }

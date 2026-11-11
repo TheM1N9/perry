@@ -112,3 +112,11 @@
     transition-duration: 0s !important;
   }
 }
+
+@media (pointer: coarse) {
+  button, nav a, a[class*="inline-flex"] {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+}

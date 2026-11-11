@@ -159,7 +159,7 @@
         bun --cwd $dir (Join-Path $dir 'scripts\perry.ts') setup; Check 'perry setup'
         Refresh-Path
       }
-      # Anonymous successful-install count. Opt out with PERRY_TELEMETRY_DISABLED=1.
+      # Optional install count: off unless PERRY_TELEMETRY_ENABLED=1; PERRY_TELEMETRY_DISABLED=1 overrides.
       bun --cwd $dir (Join-Path $dir 'scripts\telemetry.ts') 'Installation completed'
     } finally { Pop-Location }
   } catch {

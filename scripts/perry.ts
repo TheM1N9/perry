@@ -29,7 +29,7 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
@@ -43,7 +43,6 @@ import { bold, dim, done, green, red, run, spinner, tail, yellow } from "./lib";
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PORT = Number(process.env.PERRY_PORT ?? 7377);
 const BIN_DIR = join(HOME, "bin");
-const WORKSPACE = join(HOME, "workspace");
 const NEXT_CLI = join(REPO, "node_modules", "next", "dist", "bin", "next");
 const BUILD_ID = join(REPO, ".next", "BUILD_ID");
 

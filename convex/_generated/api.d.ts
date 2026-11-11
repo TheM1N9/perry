@@ -33,6 +33,7 @@ import type * as lib_agent from "../lib/agent.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_browser from "../lib/browser.js";
 import type * as lib_budget from "../lib/budget.js";
+import type * as lib_calendar from "../lib/calendar.js";
 import type * as lib_checkout from "../lib/checkout.js";
 import type * as lib_commands from "../lib/commands.js";
 import type * as lib_connected_error from "../lib/connected-error.js";
@@ -137,6 +138,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/browser": typeof lib_browser;
   "lib/budget": typeof lib_budget;
+  "lib/calendar": typeof lib_calendar;
   "lib/checkout": typeof lib_checkout;
   "lib/commands": typeof lib_commands;
   "lib/connected-error": typeof lib_connected_error;

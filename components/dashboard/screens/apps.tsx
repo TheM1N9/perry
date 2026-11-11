@@ -26,8 +26,8 @@ export function AppsShell({ children }: { children: ReactNode }) {
   const tab = TABS.find((item) => pathname.startsWith(`/apps/${item.value}`))?.value ?? "connectors";
   return (
     <Page title="Apps & skills" wide>
-      <Tabs value={tab} onValueChange={(value) => router.push(`/apps/${value}`)}>
-        <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
+      <Tabs value={tab} onValueChange={(value) => router.push(`/apps/${value}`)} className="gap-6">
+        <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b [&>button]:flex-none [&>button]:px-0">
           {TABS.map((item) => <TabsTrigger key={item.value} value={item.value}>{item.label}</TabsTrigger>)}
         </TabsList>
         <TabsContent value={tab}><PageInPage>{children}</PageInPage></TabsContent>
