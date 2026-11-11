@@ -330,6 +330,8 @@ export const deleteChat = mutation({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const chat = webChat(await ctx.db.get(args.id));
+    const document = await ctx.db.query("notes").withIndex("by_live_chat", (q) => q.eq("liveChatId", args.id)).first();
+    if (document) throw new Error("This chat belongs to a Riff document. Delete the document in Riff before deleting its editing chat.");
     if ((chat.pendingTurns ?? 0) > 0) {
       throw new Error("Wait for this chat to finish before deleting it.");
     }

@@ -321,6 +321,7 @@
   .prose-note li + li { @apply mt-1; }
   .prose-note li > p { @apply m-0; }
   .prose-note a { @apply link; }
+  .prose-note img { @apply h-auto max-w-full rounded-lg; }
   .prose-note strong { @apply font-semibold; }
   .prose-note blockquote { @apply border-l-2 pl-4 text-muted-foreground; }
   .prose-note hr { @apply my-6 border-border; }

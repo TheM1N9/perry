@@ -797,6 +797,10 @@ export default defineSchema({
    */
   notes: defineTable({
     title: v.string(),
+    /** A live document's editing chat; these documents have their own workspace. */
+    liveChatId: v.optional(v.id("conversations")),
+    /** Recent speech batches accepted by the editing chat, bounded to 32 retry receipts. */
+    liveBatches: v.optional(v.array(v.string())),
     /** Markdown. */
     content: v.string(),
     /** Bumped by every save; a save from an older one is refused. */
@@ -852,6 +856,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_updated", ["updatedAt"])
+    .index("by_live_chat", ["liveChatId"])
     .index("by_project", ["projectId", "updatedAt"])
     .index("by_title", ["title"])
     .index("by_kind", ["kind", "day"])
