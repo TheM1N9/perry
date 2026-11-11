@@ -33,6 +33,14 @@ export const LOCKED_DOWN_BEFORE: EngineKind = "codex";
 /** Perry's tools a chat with someone else gets (convex/mcp.ts), and nothing else: by name, for the runner too. */
 export const GUEST_TOOLS = ["remember", "recall", "read_memory", "forget", "tell_owner"] as const;
 
+/** Preparation writes its own plan/result and verified milestones only; MCP checks the linked task and goal. */
+export const PREPARATION_TOOLS = [
+  "brain_search", "brain_read", "brain_list", "brain_neighbors", "recall", "search_chats", "read_chat", "read_page",
+  "list_connectors", "find_action", "run_action", "internet_read", "internet_search", "internet_status", "status_report",
+  "list_jobs", "list_engines", "list_todos", "library_list", "library_find", "list_meetings", "read_meeting_transcript",
+  "set_plan", "finish_task", "update_goal",
+] as const;
+
 /** What a turn is refused with while the owner has not chosen an engine for Perry, nor a model for the chat. */
 export const NO_ENGINE = "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.";
 

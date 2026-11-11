@@ -24,6 +24,7 @@ import type * as engines from "../engines.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
+import type * as initiative from "../initiative.js";
 import type * as installation from "../installation.js";
 import type * as interactive from "../interactive.js";
 import type * as internet from "../internet.js";
@@ -129,6 +130,7 @@ declare const fullApi: ApiFromModules<{
   history: typeof history;
   http: typeof http;
   ingest: typeof ingest;
+  initiative: typeof initiative;
   installation: typeof installation;
   interactive: typeof interactive;
   internet: typeof internet;

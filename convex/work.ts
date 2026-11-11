@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { parseTarget } from "./lib/price";
 import { pausedAt } from "./pause";
 
@@ -92,6 +92,9 @@ export const updateTask = internalMutation({
     if (!id) return null;
     const task = await ctx.db.get(id);
     if (!task) return null;
+    if (task.initiative && task.goalId && rest.status !== "cancelled" && (await ctx.db.get(task.goalId))?.status !== "active") {
+      throw new Error("This goal is no longer active; keep its work for when the owner resumes it.");
+    }
     // The check and update serialize with owner cancellation, including late tool results.
     if (task.status === "cancelled") {
       if (rest.status === "cancelled") return null;
@@ -146,6 +149,18 @@ export const listTasks = internalQuery({
 
 // --- Goals ---------------------------------------------------------------
 
+async function goalTasks(ctx: MutationCtx, id: Doc<"goals">["_id"], status: Doc<"goals">["status"]) {
+  if (status !== "active") {
+    const tasks = await ctx.db.query("tasks").withIndex("by_goal", q => q.eq("goalId", id)).collect();
+    for (const task of tasks) {
+      if (!task.initiative || !(status === "done" ? ["queued", "running", "blocked", "failed"] : ["queued", "running"]).includes(task.status)) continue;
+      if (task.conversationId) await ctx.runMutation(internal.codex.requestStop, { conversationId: task.conversationId });
+      await ctx.db.patch(task._id, { status: status === "paused" ? "queued" : "cancelled", updatedAt: Date.now() });
+    }
+  }
+  await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
+}
+
 export const createGoal = internalMutation({
   args: {
     title: v.string(),
@@ -192,6 +207,7 @@ export const updateGoal = internalMutation({
       ),
       updatedAt: Date.now(),
     });
+    if (args.status) await goalTasks(ctx, args.id, args.status);
     return null;
   },
 });
@@ -226,6 +242,7 @@ export const saveGoal = internalMutation({
     const goal = await ctx.db.get(args.id);
     if (!goal) throw new Error("That goal no longer exists.");
     await ctx.db.patch(goal._id, { ...fields, status: args.status ?? goal.status });
+    if (args.status) await goalTasks(ctx, goal._id, args.status);
     return goal._id;
   },
 });
@@ -450,6 +467,8 @@ export const snapshot = internalQuery({
         id: t._id,
         title: t.title,
         status: t.status,
+        goalId: t.goalId,
+        initiative: t.initiative,
         plan: t.plan,
         ownerUpdates: (t.steering ?? []).map((update) => ({ text: update.text, createdAt: update.createdAt })),
         question: t.question,

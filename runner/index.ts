@@ -1034,7 +1034,7 @@ async function main() {
         const update = tooOld(kind);
         if (update) throw Object.assign(new Error(refusal(engine.label, update)), { errorCode: "engine_old" });
         // Someone else's words never reach an engine that cannot be locked down for them, whatever the server asked.
-        if (job.guest && !engine.capabilities.guestLockdown) throw new Error(`${engine.label} can't be locked down for a chat with someone else, so it doesn't run one.`);
+        if ((job.guest || job.preparation) && !engine.capabilities.guestLockdown) throw new Error(`${engine.label} cannot disable native tools for this ${job.preparation ? "autonomous preparation" : "guest chat"}. Use Codex or Claude Code for this work.`);
         // Stopped between its claim and its start (/stop, or Perry paused): it never reaches the engine.
         if (stopRequested.has(job._id)) {
           console.log(yellow("  stopped before it started, as asked"));
@@ -1043,7 +1043,7 @@ async function main() {
           if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
           console.log(dim(`  compacting a chat's ${engine.label} session`));
           dog = watchdog(engine, { maxMs: COMPACT_TIMEOUT_MS }, () => undefined, { end: () => endTurn(job._id) });
-          await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel, job.guest)).finally(() => { dog?.done(); releaseEngine(); });
+          await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel, job.guest || job.preparation)).finally(() => { dog?.done(); releaseEngine(); });
           result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
         } else {
           const sink: TurnSink = {
@@ -1092,14 +1092,15 @@ async function main() {
             // In a chat with someone else, what they wrote (and what was kept from it) reaches the engine defused, like the message.
             history: job.guest && job.history ? defuse(job.history) : job.history,
             recalled: job.guest && job.recalled ? defuse(job.recalled) : job.recalled,
-            ...withSkills(engine, job.prompt, job.guest),
-            attachments: guestFiles(await localise(job.attachments), job.guest),
-            cwd: job.guest ? guestDir() : workdir,
+            ...withSkills(engine, job.prompt, job.guest || job.preparation),
+            attachments: guestFiles(await localise(job.attachments), job.guest || job.preparation),
+            cwd: job.guest || job.preparation ? guestDir() : workdir,
             model: job.requestedModel,
             effort: job.requestedEffort,
             access: job.access ?? "supervised",
             tools: toolsFor(job.mcpUrl, job.conversationId),
             ...(job.guest ? { guest: true } : {}),
+            ...(job.preparation ? { preparation: true } : {}),
           }, sink)).catch((error) => {
             // What it wrote before it was given up on is kept, as for a failed turn.
             if (!dog?.expired() && !endedOnStop.has(job._id)) throw error;

@@ -339,7 +339,9 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{task.title}</h3>
                   <StatusBadge tone={TASK[task.status].tone} pulse={task.status === "running"}>{TASK[task.status].label}</StatusBadge>
+                  {task.initiative && <span className="text-xs text-muted-foreground">Started by Perry</span>}
                 </div>
+                {task.initiative && <p className="mt-1 text-sm text-muted-foreground">{task.initiative.reason}</p>}
                 <p className="mt-1 text-sm text-muted-foreground">
                   Updated {ago(task.updatedAt, now)}{task.plan.length > 0 && <span className="nums"> · {done} of {task.plan.length} steps</span>}
                 </p>

@@ -240,6 +240,8 @@ export const enqueueTurn = internalMutation({
     // Perry never picks an engine for the owner: with none for the chat and no default chosen, it asks.
     const engine = args.engine ?? await engineFor(ctx, conversation);
     if (!engine) throw new Error(NO_ENGINE);
+    const task = conversation.taskId ? await ctx.db.get(conversation.taskId) : null;
+    const job = conversation.jobId ? await ctx.db.get(conversation.jobId) : null;
     // A web chat made before the owner chose keeps the engine of its first turn, as one made after would have.
     if (conversation.channel === "web" && !conversation.engine && !conversation.jobId && !conversation.taskId && !conversation.contactId) {
       await ctx.db.patch(conversation._id, { engine });
@@ -260,6 +262,7 @@ export const enqueueTurn = internalMutation({
       ...(args.hidden ? { hidden: true } : {}),
       // Every turn in a chat with someone else is one, whoever queued it.
       ...(args.guest || conversation.contactId ? { guest: true } : {}),
+      preparation: Boolean(task?.initiative && !task.initiative.ownerDirectedAt) || job?.builtin === "heartbeat",
       requestedModel: args.model,
       requestedEffort: args.effort,
       access: args.access,
@@ -345,6 +348,7 @@ export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, gi
     ...(isInteractiveInput(steer.prompt) ? { outsideAt: Date.now() } : {}),
     history: steer.history,
     instructions: steer.instructions,
+    preparation: steer.preparation,
     requestedModel: steer.requestedModel,
     requestedEffort: steer.requestedEffort,
     access: steer.access,
@@ -585,8 +589,10 @@ export const claimTurn = mutation({
       ...job,
       ...(job.resetResumes ? { prompt: `Continue the previous request after the usage reset. Use the recorded progress and do not repeat completed actions.\n\nOriginal owner request:\n${job.prompt}` } : {}),
       engine,
-      // A turn in a chat with someone else runs locked down, however it was queued (a steer that became a turn, a retry).
-      guest: job.guest || Boolean(conversation.contactId),
+      // Older runners already honor guest lockdown; keep native tools disabled even before they understand preparation.
+      // MCP owner/guest context is resolved separately from the persisted turn and conversation.
+      guest: job.guest || Boolean(conversation.contactId) || job.preparation,
+      preparation: job.preparation,
       resumeCursor,
       // The chat's access now, not when the turn was queued: the owner may have changed it since.
       access: conversation.access ?? "supervised",
@@ -1101,6 +1107,7 @@ export const retryOn = internalMutation({
       ...(turn.outsideAt !== undefined ? { outsideAt: turn.outsideAt } : {}),
       ...(turn.hidden ? { hidden: true } : {}),
       ...(turn.guest ? { guest: true } : {}),
+      ...(turn.preparation ? { preparation: true } : {}),
       requestedModel: args.route.model,
       requestedEffort: args.route.effort,
       access: turn.access,
@@ -1564,7 +1571,7 @@ export const internetMayRead = internalQuery({
  */
 export const mcpAccess = internalQuery({
   args: { token: v.string(), threads: v.optional(v.array(v.string())), chat: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations">; guest: boolean; unknown?: true; paused?: true; stopped?: true } | null> => {
+  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations">; guest: boolean; initiativeTaskId?: Id<"tasks">; heartbeat?: boolean; unknown?: true; paused?: true; stopped?: true } | null> => {
     const runner = await authenticate(ctx, args.token).catch(() => null);
     if (!runner) return null;
     const running = await ctx.db.query("codexTurns")
@@ -1585,15 +1592,20 @@ export const mcpAccess = internalQuery({
     const turn = named ?? only ?? turns[0];
     if (!turn) return null;
     const { job, conversation } = turn;
+    const task = conversation.taskId ? await ctx.db.get(conversation.taskId) : null;
+    const schedule = conversation.jobId ? await ctx.db.get(conversation.jobId) : null;
+    const goalInactive = task?.initiative && task.goalId && (await ctx.db.get(task.goalId))?.status !== "active";
     return {
       ...(named || only ? {} : { unknown: true as const }),
       // Paused, a turn still winding down acts on nothing more (mcp.ts).
       ...(await pausedAt(ctx) ? { paused: true as const } : {}),
-      ...(job.stopRequested || job.stopped ? { stopped: true as const } : {}),
+      ...(job.stopRequested || job.stopped || goalInactive ? { stopped: true as const } : {}),
       turnId: job._id,
       userId: conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`,
       threadId: conversation.threadId,
       fromJob: Boolean(conversation.jobId),
+      ...(job.preparation && task?.initiative ? { initiativeTaskId: task._id } : {}),
+      ...(schedule?.builtin === "heartbeat" ? { heartbeat: true } : {}),
       conversationId: conversation._id,
       // A chat with someone else gets only the guest tools (mcp.ts); when it cannot be told which chat is asking and
       // one of those is running, so does the caller, rather than risk handing it the owner's.

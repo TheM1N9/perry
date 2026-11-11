@@ -350,6 +350,17 @@ export default defineSchema({
       v.literal("cancelled"),
     ),
     goalId: v.optional(v.id("goals")),
+    /** Work Perry chose itself. Task status owns execution; this receipt owns deduplication and later checks. */
+    initiative: v.optional(v.object({
+      key: v.string(),
+      reason: v.string(),
+      sources: v.array(v.string()),
+      startedBy: v.id("codexTurns"),
+      attempts: v.array(v.number()),
+      nextCheckAt: v.number(),
+      closedAt: v.optional(v.number()),
+      ownerDirectedAt: v.optional(v.number()),
+    })),
     /** Where it was asked for: its question and result go back there (tasks.ts). Unset: the owner's messaging app. */
     origin: v.optional(v.id("conversations")),
     /** The chat a background task works in, a turn at a time. Unset for a task only tracked in a chat (start_task). */
@@ -398,6 +409,8 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_origin", ["origin", "updatedAt"])
     .index("by_conversation", ["conversationId"])
+    .index("by_initiative", ["initiative.key"])
+    .index("by_goal", ["goalId"])
     .index("by_updated", ["updatedAt"]),
 
   /**
@@ -1606,6 +1619,8 @@ export default defineSchema({
     hidden: v.optional(v.boolean()),
     /** In a chat with someone other than the owner: the runner gives the engine no shell, files or computer, only Perry's guest tools. */
     guest: v.optional(v.boolean()),
+    /** Immutable tool boundary for autonomous preparation, including after an owner answers the task. */
+    preparation: v.optional(v.boolean()),
     /** The engine's model id to run this turn with. Unset means the engine's default. */
     requestedModel: v.optional(v.string()),
     /** Reasoning effort for the turn. Unset leaves it to the engine, as before thinking levels. */
@@ -1734,6 +1749,7 @@ export default defineSchema({
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
+    preparation: v.optional(v.boolean()),
     requestedModel: v.optional(v.string()),
     requestedEffort: v.optional(v.string()),
     access: v.optional(vAccess),

@@ -9,7 +9,7 @@ import {
   type SDKUserMessage, type SpawnOptions, type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import { ACCESSES } from "../../convex/lib/commands";
-import { GUEST_TOOLS, updateOf } from "../../convex/lib/engines";
+import { GUEST_TOOLS, PREPARATION_TOOLS, updateOf } from "../../convex/lib/engines";
 import type {
   Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
   LoginFlow, PlanLimits, PlanWindow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
@@ -517,7 +517,7 @@ export class ClaudeEngine implements Engine {
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
     const { resumeCursor, instructions, history, recalled, prompt, attachments, cwd, model, effort, tools } = input;
-    const guest = input.guest === true;
+    const guest = input.guest === true || input.preparation === true;
     // A chat with someone else asks the owner about nothing: there is nothing in it to ask about.
     const access: Access = guest ? "supervised" : input.access;
     const binary = findClaude();
@@ -563,7 +563,7 @@ export class ClaudeEngine implements Engine {
       },
     } : {};
     // What the process is started with and cannot change: another of any of these starts a new one.
-    const key = JSON.stringify({ path: binary.sdkPath ?? binary.command, instructions, home, model, effort, cwd, tools: chatTools, sandboxed, guest });
+    const key = JSON.stringify({ path: binary.sdkPath ?? binary.command, instructions, home, model, effort, cwd, tools: chatTools, sandboxed, guest, preparation: input.preparation });
 
     /**
      * A chat with someone else (issue #200): none of Claude Code's own tools
@@ -577,7 +577,7 @@ export class ClaudeEngine implements Engine {
      * anyway, allows nothing else. The server gives such a chat only the guest
      * tools (convex/mcp.ts).
      */
-    const guestOnly = new Set(perry ? GUEST_TOOLS.map((name) => `mcp__${perry}__${name}`) : []);
+    const guestOnly = new Set(perry ? (input.preparation ? [...PREPARATION_TOOLS, "take_initiative", "review_initiative"] : GUEST_TOOLS).map((name) => `mcp__${perry}__${name}`) : []);
     const lockedDown = (live: Live): Options => ({
       ...this.base(binary, (text) => { live.stderr = (live.stderr + text).slice(-4000); }),
       cwd,

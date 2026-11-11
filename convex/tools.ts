@@ -1369,6 +1369,8 @@ type Snapshot = {
     id: string;
     title: string;
     status: string;
+    goalId?: string;
+    initiative?: { key: string; reason: string; sources: string[]; nextCheckAt: number; closedAt?: number };
     plan: Array<{ title: string; status: string; note?: string }>;
     ownerUpdates: Array<{ text: string; createdAt: number }>;
     question?: string;
@@ -1430,6 +1432,39 @@ const start_task = createTool({
 
 /** A background task runs apart from this turn and takes a while: waiting for it here would hold the reply up. */
 const NO_WAIT = "It runs by itself, apart from this reply; its result, or a question, comes back to you in this chat, and you tell the owner what came of it. Do not wait for it or check on it now: tell the owner it is under way and end your reply.";
+
+const take_initiative = createTool({
+  description: "Heartbeat only: independently start useful research, a draft fix, comparison or next step for an active goal. Include verified facts and stable source references. The task starts without an owner prompt, uses read tools only, and brings back a concrete result or decision. Repeated calls for the same source or goal return the existing task. At most one start per check and four per day. Do not use queue_task to bypass these bounds.",
+  inputSchema: z.object({
+    title: z.string().min(2).max(160),
+    prompt: z.string().min(10).max(8000),
+    reason: z.string().min(3).max(1000).describe("Why this is useful now, supported by the owner's goal or verified account facts."),
+    sources: z.array(z.string().min(1).max(1200)).min(1).max(4).describe("Concrete facts with their message, event, chat, goal or page references."),
+    source: z.string().min(1).max(1200).optional().describe("Stable primary message/event ID or URL for an issue; reuse this reference on later checks, without dates or revisions added."),
+    goalId: z.string().optional(),
+  }),
+  execute: async (ctx, input): Promise<{ taskId?: Id<"tasks">; started?: boolean; error?: string }> => {
+    if (!ctx.turnId) return { error: "This tool needs a running Heartbeat." };
+    const goal = input.goalId ? await ctx.runQuery(internal.work.getGoal, { goalId: input.goalId }) : null;
+    if (input.goalId && !goal) return { error: "No goal with that id." };
+    return await ctx.runMutation(internal.initiative.prepare, { ...input, goalId: goal?._id, turnId: ctx.turnId });
+  },
+});
+
+const review_initiative = createTool({
+  description: "Heartbeat only: follow through on an initiative due for review. Read the current sources first. Record unchanged to check tomorrow, resolved only with evidence the underlying issue/outcome is resolved, or next_step to continue a completed task when there is useful new work. Never treat preparing a draft as sending it or a goal as achieved. Never approve or resume a blocked task for the owner. Cancelled work stays cancelled.",
+  inputSchema: z.object({
+    taskId: z.string(), outcome: z.enum(["unchanged", "resolved", "next_step"]),
+    sources: z.array(z.string().min(1).max(1200)).min(1).max(4),
+    prompt: z.string().min(10).max(8000).optional(),
+  }),
+  execute: async (ctx, input): Promise<{ continued?: boolean; error?: string }> => {
+    if (!ctx.turnId) return { error: "This tool needs a running Heartbeat." };
+    const task = await ctx.runQuery(internal.work.getTask, { taskId: input.taskId });
+    if (!task) return { error: "No task with that id." };
+    return await ctx.runMutation(internal.initiative.review, { ...input, taskId: task._id, turnId: ctx.turnId });
+  },
+});
 
 const queue_task = createTool({
   description:
@@ -1586,8 +1621,7 @@ const update_goal = createTool({
     status: z.enum(["active", "paused", "done"]).optional(),
   }),
   execute: async (ctx, input): Promise<{ ok: boolean; error?: string }> => {
-    const goals: Array<{ _id: Id<"goals"> }> = await ctx.runQuery(internal.work.listGoals, {});
-    const goal = goals.find((item) => item._id === input.goalId);
+    const goal = await ctx.runQuery(internal.work.getGoal, { goalId: input.goalId });
     if (!goal) return { ok: false, error: "No goal with that id; status_report shows them." };
     await ctx.runMutation(internal.work.updateGoal, { id: goal._id, status: input.status, completeMilestones: input.completeMilestones });
     return { ok: true };
@@ -1825,6 +1859,8 @@ export const ALL_TOOLS = {
   status_report,
   start_task,
   queue_task,
+  take_initiative,
+  review_initiative,
   resume_task,
   steer_task,
   set_plan,

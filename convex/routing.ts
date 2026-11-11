@@ -44,6 +44,7 @@ type Ask = {
   avoid?: EngineKind[];
   /** The chat's computer, whose engines it can use. */
   runnerId?: Id<"runners">;
+  lockdown?: boolean;
 };
 
 /**
@@ -57,7 +58,7 @@ export async function choose(ctx: QueryCtx, ask: Ask): Promise<Choice | null> {
   const pinned = ask.runnerId ? runners.find((runner) => runner._id === ask.runnerId) : undefined;
   // A chat stays on its computer (codex.pickRunner): only the engines there will take it.
   const here = runners.filter((runner) => isOnline(runner) && (!pinned || (runner.hostname === pinned.hostname && runner.platform === pinned.platform)));
-  const engines = ENGINES.filter((engine) => here.some((runner) => engineUsable(runner, engine)));
+  const engines = ENGINES.filter((engine) => here.some((runner) => engineUsable(runner, engine) && (!ask.lockdown || engineLockable(runner, engine))));
   const timeZone = (await ctx.db.query("installation").first())?.timezone;
   return route({ ...ask, ...(preferred ? { preferred } : {}), engines, models: await engineModels(ctx), usage: usageByEngine(runners), now: Date.now(), ...(timeZone ? { timeZone } : {}) });
 }
@@ -144,6 +145,7 @@ export async function jobAsk(_ctx: QueryCtx, job: Doc<"jobs">, avoid?: EngineKin
     ? { engine: job.engine, ...(job.model ? { model: job.model } : {}), ...(job.stay ? { stay: true } : {}) } : undefined;
   return {
     work: { kind: "job", ...(job.builtin ? { builtin: job.builtin } : {}), once: job.runAt !== undefined, event: Boolean(job.trigger) },
+    ...(job.builtin === "heartbeat" ? { lockdown: true } : {}),
     ...(owner ? { owner } : {}),
     ...(job.pick ? { perry: job.pick } : {}),
     ...(avoid?.length ? { avoid } : {}),
@@ -169,6 +171,7 @@ export async function taskAsk(ctx: QueryCtx, task: Doc<"tasks">, avoid?: EngineK
   }
   return {
     work: { kind: "task", brief: task.prompt.length },
+      ...(task.initiative && !task.initiative.ownerDirectedAt ? { lockdown: true } : {}),
     ...(Object.keys(perry).length ? { perry } : {}),
     ...(Object.keys(owner).length ? { owner } : {}),
     ...(own?.codexRunnerId ? { runnerId: own.codexRunnerId } : {}),
