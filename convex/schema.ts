@@ -1650,7 +1650,7 @@ export default defineSchema({
     /**
      * When the turn first read something from outside (a web page, an app's
      * data, a web search), which may carry instructions of its own. From then
-     * on it may not act outward without the owner's go-ahead (mcp.ts).
+     * on it retains outside provenance and standing-instruction protection (mcp.ts).
      */
     outsideAt: v.optional(v.number()),
     /** The memories the reply said it relied on (its last line, taken off; memories.MEMORY_LINE). */

@@ -599,7 +599,7 @@ export const search = internalAction({
   },
 });
 
-/** Bounded/outside-data calls fail closed unless provider metadata identifies the exact operation as read-only. */
+/** Bounded preparation calls fail closed unless provider metadata identifies the exact operation as read-only. */
 export const execute = internalAction({
   args: { slug: v.string(), args: v.optional(v.any()), readOnly: v.optional(v.boolean()) },
   handler: async (
