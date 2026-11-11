@@ -44,3 +44,11 @@ Both passed
 The first real upload remains the already-created Pepsi v3 reservation; its file bytes have not been transferred. Release and activation have not happened. A successful local receipt alone is not a submitted review version: finalization and a review-status readback remain required.
 
 Single PUTs restart the interrupted file; this is not multipart byte-range resumption. Recovery of an uncertain committed PUT needs Channel Desk's signed HEAD URL. Production storage and live review behavior remain unverified until that first approved upload.
+
+## Release continuation on 12 November
+
+Published Perry issue #359 and PR #360, plus ProStackLabs/channel-desk PR #114. Perry main advanced to 2004605, which removes the blanket account-write hold in issue #353. Merged it locally and resolved the MCP conflict by retaining main's standing-instruction guard and the native tool's existing owner/read-only/outside checks. The updated branch passes typecheck, all nine smoke checks and another complete production build with all 37 static pages. The temporary additional dependency root and generated build were removed afterwards.
+
+Channel Desk main advanced to 2cbfc30. Its local merge is clean; the 16 upload/storage/review integration tests and application/Convex typechecks passed again. The published PR's Vercel preview was blocked because GitHub could not verify the commit email pranav@prostacklabs.com. This is a deployment access failure, not a passing preview build. No account settings were changed.
+
+The existing Pepsi package was rechecked locally: all 12 expected file sizes match, totalling 76,568,117 bytes, and SHA-256 hashes were saved to PEPSI-PREFLIGHT.json in the release checkpoint folder. No file bytes have been transferred, no version finalized, and no publication or QC started. The local merge updates have not been pushed or activated.
