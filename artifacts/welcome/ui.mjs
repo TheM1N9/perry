@@ -19,6 +19,7 @@ import { openChat, sleep } from "../browser.ts";
 //   6. New chat restores removed helper/setup content, misaligns its heading/prompts, overflows on phones, or starter selection shifts the composer.
 //   7. Start chatting requires personalization, voice or a pet, fails to persist skipping, or changes existing profile content.
 //   8. Personalization cannot be reached from the task-first page, or browser errors escape the replay.
+//   9. Full-width centered boxes hide left-aligned text, or duplicate starter labels replace a required prompt.
 
 const output = resolve(process.argv[2]);
 mkdirSync(output, { recursive: true });
@@ -153,8 +154,10 @@ try {
       await browser.evaluate(`document.documentElement.classList.toggle('dark', ${theme === "dark"})`);
       await sleep(100);
       report.checks[`centeredLanding${width}x${height}${theme}`] = await browser.evaluate(`(() => {
-        const heading = document.querySelector('#content h2').getBoundingClientRect();
-        const greeting = document.querySelector('#content h2').previousElementSibling.getBoundingClientRect();
+        const headingElement = document.querySelector('#content h2');
+        const greetingElement = headingElement.previousElementSibling;
+        const heading = headingElement.getBoundingClientRect();
+        const greeting = greetingElement.getBoundingClientRect();
         const composer = document.querySelector('[data-composer]').getBoundingClientRect();
         const center = composer.x + composer.width / 2;
         const starters = Array.from(document.querySelectorAll('button')).filter(item => ${JSON.stringify(prompts)}.includes(item.textContent.trim()));
@@ -163,7 +166,13 @@ try {
         return document.documentElement.scrollWidth <= innerWidth + 1
           && Math.abs(heading.x + heading.width / 2 - center) < 2
           && Math.abs(greeting.x + greeting.width / 2 - center) < 2
+          && [headingElement, greetingElement].every(item => {
+            const range = document.createRange(); range.selectNodeContents(item);
+            const text = range.getBoundingClientRect();
+            return Math.abs(text.x + text.width / 2 - center) < 2;
+          })
           && heading.bottom <= composer.top && starters.length === 3
+          && ${JSON.stringify(prompts)}.every(prompt => starters.filter(item => item.textContent.trim() === prompt).length === 1)
           && starters.every(item => item.getBoundingClientRect().top > composer.bottom)
           && Array.from(rows.values()).every(row => Math.abs((Math.min(...row.map(r => r.left)) + Math.max(...row.map(r => r.right))) / 2 - center) < 2);
       })()`);
