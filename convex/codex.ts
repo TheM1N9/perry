@@ -1525,7 +1525,7 @@ async function readOutside(ctx: Pick<QueryCtx, "db">, conversationId: Id<"conver
 }
 
 /** Who may use the MCP endpoint: a runner, while it has a Codex turn running. */
-/** The turn read something from outside (mcp.ts): from now on, acting outward waits for the owner. */
+/** Record outside evidence for memory provenance and standing-instruction protections (mcp.ts). */
 export const markOutside = internalMutation({
   args: { turnId: v.id("codexTurns") },
   returns: v.null(),
@@ -1537,7 +1537,7 @@ export const markOutside = internalMutation({
 });
 
 /**
- * Whether this turn may act outward: it has read nothing from outside, or the
+ * Whether standing changes need no fresh owner response: the turn read nothing from outside, or the
  * owner has written since it did (a message that joined it, a steer). The
  * owner's next message is a new turn, so their go-ahead always counts.
  */

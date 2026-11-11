@@ -41,7 +41,7 @@ Failure modes to cover:
 - HTTP 401/403/429, rate-limit reset, deadlines, cancellation, bounded retries and oversized responses.
 - Duplicates versus distinct reply IDs, pagination limits, truncation, missing dates and authors, automatic versus manual captions.
 - Discovery failure isolated from other adapters, revoked auth, current slugs, explicit account scope, and refusal of writes/secret-related operations.
-- Hostile source instructions remain untrusted and hold back writes, saved-login use and installation in the same turn.
+- Hostile source instructions remain untrusted and cannot authorize new actions. Existing owner-authorized account workflows and site-scoped login use can continue after reads; standing-instruction changes and installation still wait for the owner, and tool-specific consequential-action confirmations remain.
 - Diagnostic metadata contains no source text, tokens or cookies; dependency readiness is separate from a successful operation probe; refresh invalidates discovery checks.
 
 ## Limits
