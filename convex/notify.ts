@@ -8,7 +8,7 @@ import { ownerClock, timezoneOf } from "./jobs";
 import { saveMessages } from "./lib/agent";
 import { sendButtons, sendMessage, TelegramError } from "./lib/telegram";
 import { startOfDay } from "./lib/calendar";
-import { decisionActive } from "./taskDecisions";
+import { decisionActive, vDecisionReview, type DecisionReviewResult } from "./taskDecisions";
 
 /**
  * Assistant speaking first.
@@ -33,7 +33,7 @@ const vButtons = v.array(v.array(v.object({ text: v.string(), data: v.string() }
 const vFrom = v.object({ kind: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder")), id: v.optional(v.string()), name: v.optional(v.string()) });
 
 const vRow = {
-  taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string() })),
+  taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string(), turnId: v.optional(v.id("codexTurns")) })),
   from: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder"), v.literal("offer"), v.literal("other")),
   fromId: v.optional(v.string()),
   name: v.optional(v.string()),
@@ -85,22 +85,28 @@ export const deliver = internalAction({
   },
 });
 
-/** A question reminder uses the owner's phone home, falling back to its existing web chat. */
-export const remindTask = internalAction({
-  args: { id: v.id("tasks") }, returns: v.null(),
-  handler: async (ctx, args) => {
+/** Only an explicit Heartbeat judgment admits a follow-up; a clock alone never sends one. */
+export const reviewDecision = internalAction({
+  args: vDecisionReview,
+  handler: async (ctx, args): Promise<DecisionReviewResult> => {
+    if (args.action !== "notify") {
+      await ctx.runMutation(internal.taskDecisions.review, args);
+      return { status: args.action === "wait" ? "waiting" : "stopped" };
+    }
     const task = await ctx.runQuery(internal.tasks.get, { id: args.id });
-    if (!task) return null;
+    if (!task) throw new Error("That task no longer exists.");
     let target: Target | null = await ctx.runQuery(internal.channels.target, {});
     let origin: Id<"conversations"> | undefined;
     if (!target) {
       origin = task.origin ?? task.conversationId;
       target = origin ? await ctx.runQuery(internal.channels.target, { conversationId: origin }) : null;
     }
-    if (!target) return null;
-    const receipt = await ctx.runMutation(internal.taskDecisions.claim, { id: task._id, channel: target.channel, ...(origin ? { origin } : {}), ...(target.channel !== "web" ? { recipient: target.externalId } : {}) });
-    if (receipt && !receipt.held) await send(ctx, target, receipt.text, receipt.buttons, [receipt.id]);
-    return null;
+    if (!target) throw new Error("No owner channel is available. Leave the decision waiting in Work.");
+    const reviewed = await ctx.runMutation(internal.taskDecisions.review, { ...args, channel: target.channel, ...(origin ? { origin } : {}), ...(target.channel !== "web" ? { recipient: target.externalId } : {}) });
+    if (!("receipt" in reviewed)) return reviewed;
+    const { receipt } = reviewed;
+    if (receipt.held) return { status: "queued" };
+    return { status: await send(ctx, target, receipt.text, receipt.buttons, [receipt.id]) };
   },
 });
 

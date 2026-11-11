@@ -392,6 +392,8 @@ export default defineSchema({
     /** One question generation; answers and snoozes invalidate every older phone control. */
     decision: v.optional(v.object({
       version: v.string(), dueAt: v.number(), attempts: v.number(), deliveryId: v.optional(v.id("sent")),
+      reviewedAt: v.optional(v.number()), reason: v.optional(v.string()), stoppedAt: v.optional(v.number()),
+      snoozedUntil: v.optional(v.number()),
     })),
     expiredApprovalId: v.optional(v.id("approvals")),
     approvalRecheck: v.optional(v.boolean()),
@@ -1475,7 +1477,7 @@ export default defineSchema({
    * day's limit) is here with no sentAt until it goes, grouped with the rest.
    */
   sent: defineTable({
-    taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string() })),
+    taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string(), turnId: v.optional(v.id("codexTurns")) })),
     from: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder"), v.literal("offer"), v.literal("other")),
     /** The job or watch it came from; an offer names what it offers to pause. */
     fromId: v.optional(v.string()),
@@ -1501,6 +1503,8 @@ export default defineSchema({
     .index("by_sent", ["sentAt"])
     .index("by_reserved", ["reservedAt"])
     .index("by_delivery", ["deliveryState", "reservedAt"])
+    .index("by_decision_task", ["taskDecision.taskId", "createdAt"])
+    .index("by_decision_turn", ["taskDecision.turnId"])
     .index("by_from", ["fromId", "createdAt"]),
 
   /**

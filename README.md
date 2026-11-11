@@ -65,7 +65,9 @@ or force them off with `false`; public build variables take effect at build time
   follow-through checks wait at least a day. Pause or reschedule Heartbeat under
   Work → Schedules; Pause Perry, quiet hours and notification limits still apply.
 - **Follows up on unanswered decisions.** A blocked task waits for your answer,
-  with a reminder after four hours and one more a day after delivery. Answer
+  while Perry weighs whether another message would help, using the context,
+  urgency, deadlines and earlier follow-ups. He chooses what to say and when
+  to reconsider; elapsed time alone never sends a reminder. Answer
   from the web, WhatsApp or Telegram; it continues the same task. Snooze in Work
   or ask Perry to remind you later. Cancel or say to drop it to stop asking.
   Expired execution approvals become recheck requests and require fresh approval.

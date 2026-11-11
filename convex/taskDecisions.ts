@@ -2,13 +2,15 @@ import { randomBytes } from "node:crypto";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { pausedAt } from "./pause";
+import { heartbeat } from "./initiative";
+import { presenceOf } from "./todos";
 
 const HOUR = 60 * 60_000;
-/** A new question or an explicit snooze gets its own controls and a bounded follow-up budget. */
-export const decisionReceipt = (dueAt = Date.now() + 4 * HOUR): NonNullable<Doc<"tasks">["decision"]> => ({ version: randomBytes(6).toString("hex"), dueAt, attempts: 0 });
+/** dueAt is an earliest reconsideration time, never a scheduled send. */
+export const decisionReceipt = (dueAt = Date.now()): NonNullable<Doc<"tasks">["decision"]> => ({ version: randomBytes(6).toString("hex"), dueAt, attempts: 0 });
 
 /** Checks the question generation again when a held notification is finally sent. */
 export async function decisionActive(ctx: QueryCtx, ref: { taskId: Id<"tasks">; version: string }): Promise<boolean> {
@@ -38,7 +40,7 @@ async function change(ctx: MutationCtx, args: { id: string; version?: string; un
     return "Dropped. I won’t ask again.";
   }
   if (!Number.isFinite(args.until) || args.until! < Date.now() + 60_000 || args.until! > Date.now() + 90 * 24 * HOUR) throw new Error("Choose a reminder between a minute and 90 days from now.");
-  await ctx.db.patch(task._id, { decision: decisionReceipt(args.until), updatedAt: Date.now() });
+  await ctx.db.patch(task._id, { decision: { ...decisionReceipt(args.until), snoozedUntil: args.until, reason: "The owner asked to wait until this time." }, updatedAt: Date.now() });
   return "Snoozed. I’ll wait until the chosen time.";
 }
 
@@ -83,21 +85,25 @@ export const fromPhone = internalMutation({
   },
 });
 
-export const due = internalQuery({
+/** Heartbeat weighs each question against its actual delivery history and current owner context. */
+export const context = internalQuery({
   args: {},
-  handler: async (ctx): Promise<Doc<"tasks">[]> => {
-    if (await pausedAt(ctx)) return [];
-    return await ctx.db.query("tasks").withIndex("by_decision_due", q => q.eq("status", "blocked").gt("decision.dueAt", 0).lte("decision.dueAt", Date.now())).take(20);
-  },
-});
-
-export const tick = internalAction({
-  args: {}, returns: v.null(),
   handler: async (ctx) => {
-    await ctx.runMutation(internal.taskDecisions.armWaiting, {});
-    const tasks = await ctx.runQuery(internal.taskDecisions.due, {});
-    for (const task of tasks) await ctx.runAction(internal.notify.remindTask, { id: task._id });
-    return null;
+    const owner = await ctx.db.query("installation").first();
+    const candidates = await ctx.db.query("tasks").withIndex("by_decision_due", q => q.eq("status", "blocked").gte("decision.dueAt", 0).lte("decision.dueAt", Date.now())).filter(q => q.eq(q.field("decision.stoppedAt"), undefined)).take(100);
+    const decisions = [];
+    for (const task of candidates) {
+      if (task.goalId && (await ctx.db.get(task.goalId))?.status !== "active") continue;
+      const history = await ctx.db.query("sent").withIndex("by_decision_task", q => q.eq("taskDecision.taskId", task._id)).order("desc").take(3);
+      decisions.push({ taskId: task._id, version: task.decision!.version, title: task.title, question: task.question?.slice(0, 1600),
+        askedAt: task.updatedAt, origin: task.origin, taskChat: task.conversationId, goalId: task.goalId,
+        brief: task.prompt.slice(0, 800), result: task.result?.slice(0, 800), review: task.decision,
+        sources: task.initiative?.sources.map(source => source.slice(0, 400)),
+        followups: history.map(row => ({ text: row.text.slice(0, 700), channel: row.channel, status: row.deliveryState, createdAt: row.createdAt, sentAt: row.sentAt })),
+      });
+      if (decisions.length >= 12) break;
+    }
+    return { ownerLastWroteAt: owner?.ownerWroteAt, presence: await presenceOf(ctx), decisions };
   },
 });
 
@@ -110,38 +116,54 @@ export const armWaiting = internalMutation({
   },
 });
 
-/** Reserve the reminder and its receipt in the same transaction, including quiet-hour admission. */
-export const claim = internalMutation({
-  args: { id: v.id("tasks"), origin: v.optional(v.id("conversations")), channel: v.union(v.literal("web"), v.literal("telegram"), v.literal("whatsapp")), recipient: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ id: Id<"sent">; held: boolean; text: string; buttons: Array<Array<{ text: string; data: string }>> } | null> => {
+export const vDecisionReview = {
+  id: v.id("tasks"), version: v.string(), turnId: v.id("codexTurns"),
+  action: v.union(v.literal("notify"), v.literal("wait"), v.literal("stop")), reason: v.string(),
+  message: v.optional(v.string()), nextCheckAt: v.optional(v.number()),
+};
+export type DecisionReviewResult = { status: "waiting" | "stopped" | "queued" | "delivered" | "failed" | "uncertain"; error?: string };
+type Receipt = { id: Id<"sent">; held: boolean; text: string; buttons: Array<Array<{ text: string; data: string }>> };
+
+/** The live model chooses whether to speak, what to say and when to reconsider; admission stays atomic. */
+export const review = internalMutation({
+  args: { ...vDecisionReview, origin: v.optional(v.id("conversations")), channel: v.optional(v.union(v.literal("web"), v.literal("telegram"), v.literal("whatsapp"))), recipient: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ status: "waiting" | "stopped" } | { receipt: Receipt }> => {
+    await heartbeat(ctx, args.turnId);
     const task = await ctx.db.get(args.id);
-    if (!task?.decision || task.status !== "blocked" || task.decision.dueAt <= 0 || task.decision.dueAt > Date.now() || task.decision.attempts >= 2) return null;
-    if (!await decisionActive(ctx, { taskId: task._id, version: task.decision.version })) {
-      await ctx.db.patch(task._id, { decision: { ...task.decision, dueAt: Date.now() + HOUR } });
-      return null;
+    if (!task?.decision || task.decision.version !== args.version || (task.decision.snoozedUntil ?? 0) > Date.now() || !await decisionActive(ctx, { taskId: task._id, version: args.version })) throw new Error("That question changed, is snoozed, or is no longer open for review.");
+    if (args.action === "notify" && (task.decision.stoppedAt !== undefined || task.decision.dueAt > Date.now())) throw new Error("This decision is waiting for a later review or is no longer being pursued. Reconsider the plan quietly before choosing another message.");
+    const reason = args.reason.trim();
+    if (reason.length < 3 || reason.length > 1000) throw new Error("Explain why this is the right choice in at most 1000 characters.");
+    if (args.nextCheckAt !== undefined && (!Number.isFinite(args.nextCheckAt) || args.nextCheckAt <= Date.now())) throw new Error("Choose a future time to reconsider it.");
+    if (args.action === "wait" && args.nextCheckAt === undefined) throw new Error("Choose when to reconsider this question.");
+    const decision = { ...task.decision, snoozedUntil: undefined, reason, reviewedAt: Date.now(), dueAt: args.action === "stop" ? 0 : args.nextCheckAt ?? 0, stoppedAt: args.action === "stop" || args.nextCheckAt === undefined ? Date.now() : undefined };
+    if (args.action !== "notify") {
+      const previous = task.decision.deliveryId ? await ctx.db.get(task.decision.deliveryId) : null;
+      if (previous?.deliveryState === "held") {
+        await ctx.db.patch(previous._id, { deliveryState: "failed", seenAt: Date.now(), deliveryError: "Perry reconsidered this follow-up before delivery." });
+        decision.deliveryId = undefined;
+      }
+      await ctx.db.patch(task._id, { decision });
+      return { status: args.action === "wait" ? "waiting" : "stopped" };
     }
     if (task.decision.deliveryId) {
       const previous = await ctx.db.get(task.decision.deliveryId);
-      if (previous && previous.deliveryState !== "delivered") {
-        await ctx.db.patch(task._id, { decision: { ...task.decision, dueAt: ["held", "sending"].includes(previous.deliveryState ?? "") ? Date.now() + HOUR : 0 } });
-        return null;
-      }
-      if (previous?.sentAt && previous.sentAt + 24 * HOUR > Date.now()) {
-        await ctx.db.patch(task._id, { decision: { ...task.decision, dueAt: previous.sentAt + 24 * HOUR } });
-        return null;
-      }
+      if (previous && previous.deliveryState !== "delivered") throw new Error("Its last follow-up is held, in flight or unconfirmed. Do not send another; choose wait or stop.");
     }
+    if (await ctx.db.query("sent").withIndex("by_decision_turn", q => q.eq("taskDecision.turnId", args.turnId)).first()) throw new Error("This Heartbeat already chose a decision follow-up. Leave the others for another check.");
+    const message = args.message?.trim();
+    if (!message || message.length > 1600 || !args.channel) throw new Error("Write a useful follow-up of at most 1600 characters for an available owner channel.");
     const { version } = task.decision;
     const command = `/decision ${version}`;
-    const text = `Still waiting on: ${task.title}\n\n${(task.question ?? "What should I do next?").slice(0, 1800)}\n\nYou can answer here or in Work. I’ll keep waiting until you decide.${task.expiredApprovalId ? " I’ll check the facts and ask for a new approval before acting." : ""}${args.channel === "whatsapp" ? `\n\n${command} answer <your answer>\n${command} tomorrow\n${command} drop` : ""}`;
+    const text = `${message}${args.channel === "whatsapp" ? `\n\n${command} answer <your answer>\n${command} tomorrow\n${command} drop` : ""}`;
     const buttons = [[{ text: "Remind in a day", data: `tq:${task._id}:${version}:s` }, { text: "Drop it", data: `tq:${task._id}:${version}:d` }]];
     if (task.expiredApprovalId) buttons.unshift([{ text: "Recheck request", data: `tq:${task._id}:${version}:r` }]);
     const receipt: { id: Id<"sent">; held: boolean } = await ctx.runMutation(internal.notify.admit, {
-      from: "other", text, buttons, taskDecision: { taskId: task._id, version },
+      from: "other", text, buttons, taskDecision: { taskId: task._id, version, turnId: args.turnId },
       ...(args.origin ? { origin: args.origin } : {}), channel: args.channel, ...(args.recipient ? { recipient: args.recipient } : {}), keepsRules: args.channel !== "web",
     });
-    await ctx.db.patch(task._id, { decision: { ...task.decision, attempts: task.decision.attempts + 1, dueAt: task.decision.attempts === 0 ? Date.now() + 24 * HOUR : 0, deliveryId: receipt.id } });
-    return { ...receipt, text, buttons };
+    await ctx.db.patch(task._id, { decision: { ...decision, attempts: task.decision.attempts + 1, deliveryId: receipt.id } });
+    return { receipt: { ...receipt, text, buttons } };
   },
 });
 

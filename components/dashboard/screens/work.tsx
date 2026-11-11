@@ -381,9 +381,10 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                     {task.status === "blocked" && task.decision && (
                       <div className="mt-2 flex flex-wrap items-center gap-3" data-decision>
                         <ActionButton variant="outline" size="sm" action={() => snoozeTask({ key: dashboardKey, id: task._id, version: task.decision!.version, until: Date.now() + 86_400_000 })} success="Snoozed for a day.">Remind in a day</ActionButton>
-                        <span className="text-muted-foreground">{task.decision.dueAt === 0 ? "Waiting for you. Automatic follow-ups have stopped." : task.decision.dueAt > now ? `Next follow-up ${fullDate(task.decision.dueAt)}` : "Follow-up waiting for delivery."}</span>
+                        <span className="text-muted-foreground">{task.decision.stoppedAt !== undefined ? "Waiting for you. Perry isn’t pursuing another follow-up." : task.decision.dueAt > now ? `Reconsider after ${fullDate(task.decision.dueAt)}` : "Perry will weigh whether a follow-up would help."}</span>
                       </div>
                     )}
+                    {task.status === "blocked" && task.decision?.reason && <p className="mt-2 text-muted-foreground" data-decision-reason>{task.decision.reason}</p>}
                   </div>
                 )}
                 {task.plan.length > 0 && (

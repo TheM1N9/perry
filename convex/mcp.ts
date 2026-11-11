@@ -30,7 +30,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "save_secret", "list_secrets", "use_secret", "update_identity", "review_skill", "install_skill", "search_chats", "read_chat", "read_page", "browser",
   "list_connectors", "find_action", "run_action", "internet_read", "internet_search", "internet_status",
   "status_report", "start_task", "queue_task", "resume_task", "manage_task_decision", "steer_task", "set_plan", "finish_task", "set_goal", "update_goal",
-  "take_initiative", "review_initiative",
+  "take_initiative", "review_initiative", "review_decision",
   "watch_page", "update_watch", "delete_watch", "check_watches",
   "create_job", "find_triggers", "list_jobs", "update_job", "delete_job", "run_job", "list_engines",
   "add_todo", "list_todos", "update_todo", "delete_todo",
@@ -215,9 +215,9 @@ export const handle = httpAction(async (ctx, request) => {
   const bounded = Boolean(access.initiativeTaskId || access.heartbeat);
   const tools: readonly ToolName[] = access.guest ? GUEST_TOOLS
     : bounded ? [...PREPARATION_TOOLS.filter(name => name !== "set_plan" && name !== "finish_task" && name !== "update_goal"),
-      ...(access.heartbeat ? ["take_initiative", "review_initiative"] as const : ["set_plan", "finish_task", "update_goal"] as const)]
+      ...(access.heartbeat ? ["take_initiative", "review_initiative", "review_decision"] as const : ["set_plan", "finish_task", "update_goal"] as const)]
     : (interactiveEnabled() ? CODEX_TOOLS : CODEX_TOOLS.filter((name) => !name.startsWith("interactive_")))
-      .filter(name => name !== "take_initiative" && name !== "review_initiative");
+      .filter(name => name !== "take_initiative" && name !== "review_initiative" && name !== "review_decision");
   switch (message.method) {
     case "initialize":
       return reply(message.id, {

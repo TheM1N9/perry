@@ -20,6 +20,7 @@ import type { Artifact } from "./interactive";
 import { fetchPage, fetchPublic } from "./web";
 import { internetRead, recheckInternetConnections } from "./composio";
 import { diagnostics, executeInternet, requestSchema, type InternetRequest } from "./lib/internet";
+import type { DecisionReviewResult } from "./taskDecisions";
 
 /**
  * The full tool catalogue. Which of these a given turn can reach is decided in
@@ -1467,6 +1468,22 @@ const review_initiative = createTool({
   },
 });
 
+const review_decision = createTool({
+  description: "Heartbeat only: decide whether an unanswered owner decision merits a contextual follow-up. Read its source chat, current facts and previous delivery history first. Choose notify with your own concise message, wait with a future time to reconsider, or stop to leave the decision open without pursuing it. Explain why. This never approves or resumes the task. An owner snooze is binding. There is no automatic reminder cadence or retry count. At most one decision notification per Heartbeat; queued means delivery is held by notification rules, not that the owner received it.",
+  inputSchema: z.object({
+    taskId: z.string(), decisionVersion: z.string(), action: z.enum(["notify", "wait", "stop"]),
+    reason: z.string().min(3).max(1000).describe("Your judgment based on relevance, urgency, source context, past follow-ups and owner availability."),
+    message: z.string().min(1).max(1600).optional().describe("For notify: the actual useful message, written for the owner. Silence is never consent."),
+    nextCheckAt: z.number().optional().describe("Unix milliseconds: when reconsidering would be useful, in the owner's timezone. Required for wait. Omit after notify to stop pursuing it unless the owner reopens it."),
+  }),
+  execute: async (ctx, input): Promise<DecisionReviewResult | { error: string }> => {
+    if (!ctx.turnId) return { error: "This tool needs a running Heartbeat." };
+    const task = await ctx.runQuery(internal.work.getTask, { taskId: input.taskId });
+    if (!task) return { error: "No task with that id." };
+    return await ctx.runAction(internal.notify.reviewDecision, { id: task._id, version: input.decisionVersion, turnId: ctx.turnId, action: input.action, reason: input.reason, ...(input.message ? { message: input.message } : {}), ...(input.nextCheckAt !== undefined ? { nextCheckAt: input.nextCheckAt } : {}) });
+  },
+});
+
 const queue_task = createTool({
   description:
     "Take on a piece of work to do by yourself in the background, apart from this chat: research, " +
@@ -1873,6 +1890,7 @@ export const ALL_TOOLS = {
   queue_task,
   take_initiative,
   review_initiative,
+  review_decision,
   resume_task,
   manage_task_decision,
   steer_task,
