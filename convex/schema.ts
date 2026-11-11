@@ -389,6 +389,14 @@ export default defineSchema({
     ),
     /** What it needs from the owner, when status is blocked. */
     question: v.optional(v.string()),
+    /** One question generation; answers and snoozes invalidate every older phone control. */
+    decision: v.optional(v.object({
+      version: v.string(), dueAt: v.number(), attempts: v.number(), deliveryId: v.optional(v.id("sent")),
+      reviewedAt: v.optional(v.number()), reason: v.optional(v.string()), stoppedAt: v.optional(v.number()),
+      snoozedUntil: v.optional(v.number()),
+    })),
+    expiredApprovalId: v.optional(v.id("approvals")),
+    approvalRecheck: v.optional(v.boolean()),
     result: v.optional(v.string()),
     error: v.optional(v.string()),
     /** When the owner dismissed its failure from Needs you. */
@@ -407,6 +415,9 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
+    .index("by_decision_due", ["status", "decision.dueAt"])
+    .index("by_decision_version", ["decision.version"])
+    .index("by_expired_approval", ["expiredApprovalId"])
     .index("by_origin", ["origin", "updatedAt"])
     .index("by_conversation", ["conversationId"])
     .index("by_initiative", ["initiative.key"])
@@ -1402,6 +1413,8 @@ export default defineSchema({
     nextRunAt: v.number(),
     lastRunAt: v.optional(v.number()),
     lastResult: v.optional(v.string()),
+    /** Native query cursor rotates pending-decision context across Heartbeats. */
+    decisionCursor: v.optional(v.string()),
     lastError: v.optional(v.string()),
     /** When the owner dismissed its last error from Needs you. */
     seenAt: v.optional(v.number()),
@@ -1466,6 +1479,7 @@ export default defineSchema({
    * day's limit) is here with no sentAt until it goes, grouped with the rest.
    */
   sent: defineTable({
+    taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string(), turnId: v.optional(v.id("codexTurns")) })),
     from: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder"), v.literal("offer"), v.literal("other")),
     /** The job or watch it came from; an offer names what it offers to pause. */
     fromId: v.optional(v.string()),
@@ -1481,6 +1495,8 @@ export default defineSchema({
     reservedAt: v.optional(v.number()),
     deliveryText: v.optional(v.string()),
     deliveryState: v.optional(v.union(v.literal("held"), v.literal("sending"), v.literal("delivered"), v.literal("failed"), v.literal("uncertain"))),
+    cancelledAt: v.optional(v.number()),
+    externalStartedAt: v.optional(v.number()),
     deliveryError: v.optional(v.string()),
     seenAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -1491,6 +1507,8 @@ export default defineSchema({
     .index("by_sent", ["sentAt"])
     .index("by_reserved", ["reservedAt"])
     .index("by_delivery", ["deliveryState", "reservedAt"])
+    .index("by_decision_task", ["taskDecision.taskId", "createdAt"])
+    .index("by_decision_turn", ["taskDecision.turnId"])
     .index("by_from", ["fromId", "createdAt"]),
 
   /**

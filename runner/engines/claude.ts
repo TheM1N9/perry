@@ -577,7 +577,7 @@ export class ClaudeEngine implements Engine {
      * anyway, allows nothing else. The server gives such a chat only the guest
      * tools (convex/mcp.ts).
      */
-    const guestOnly = new Set(perry ? (input.preparation ? [...PREPARATION_TOOLS, "take_initiative", "review_initiative"] : GUEST_TOOLS).map((name) => `mcp__${perry}__${name}`) : []);
+    const guestOnly = new Set(perry ? (input.preparation ? [...PREPARATION_TOOLS, "take_initiative", "review_initiative", "review_decision"] : GUEST_TOOLS).map((name) => `mcp__${perry}__${name}`) : []);
     const lockedDown = (live: Live): Options => ({
       ...this.base(binary, (text) => { live.stderr = (live.stderr + text).slice(-4000); }),
       cwd,

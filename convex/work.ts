@@ -4,6 +4,7 @@ import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { parseTarget } from "./lib/price";
 import { pausedAt } from "./pause";
+import { decisionReceipt } from "./taskDecisions";
 
 /**
  * Tasks, goals and monitors: the things that outlive a single message.
@@ -105,6 +106,8 @@ export const updateTask = internalMutation({
       throw new Error("The owner sent an update still awaiting delivery. Keep completed work and let its follow-up turn finish the task.");
     }
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
+    if (rest.status === "blocked" && (!task.decision || task.status !== "blocked" || rest.question !== undefined && rest.question !== task.question)) patch.decision = decisionReceipt();
+    if (rest.status && rest.status !== "blocked") patch.decision = undefined;
     for (const [key, value] of Object.entries(rest)) {
       if (value !== undefined) patch[key] = value;
     }
@@ -455,15 +458,21 @@ export const setMonitorActive = internalMutation({
 
 /** Everything the agent is allowed to know about its own workload. */
 export const snapshot = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const [tasks, goals, monitors] = await Promise.all([
+  args: { decisionCursor: v.optional(v.string()), taskId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const [recent, page, goals, monitors] = await Promise.all([
       ctx.db.query("tasks").withIndex("by_updated").order("desc").take(10),
+      ctx.db.query("tasks").withIndex("by_status", q => q.eq("status", "blocked")).order("desc").paginate({ numItems: 20, cursor: args.decisionCursor ?? null }),
       ctx.db.query("goals").order("desc").take(10),
       ctx.db.query("monitors").order("desc").take(10),
     ]);
+    const tasks = [...page.page, ...recent.filter(task => !page.page.some(waiting => waiting._id === task._id))];
+    const id = args.taskId ? ctx.db.normalizeId("tasks", args.taskId) : null;
+    const requested = id ? await ctx.db.get(id) : null;
+    if (requested && !tasks.some(task => task._id === requested._id)) tasks.unshift(requested);
 
     return {
+      nextDecisionCursor: page.isDone ? undefined : page.continueCursor,
       tasks: tasks.map((t) => ({
         id: t._id,
         title: t.title,
@@ -473,6 +482,7 @@ export const snapshot = internalQuery({
         plan: t.plan,
         ownerUpdates: (t.steering ?? []).map((update) => ({ text: update.text, createdAt: update.createdAt })),
         question: t.question,
+        decision: t.decision,
         result: t.result,
         error: t.error,
       })),

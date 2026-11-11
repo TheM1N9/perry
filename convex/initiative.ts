@@ -9,7 +9,7 @@ const DAY = 86_400_000;
 const vEvidence = v.array(v.string());
 
 /** Only a live Heartbeat can start or review work without an owner message. */
-async function heartbeat(ctx: MutationCtx, turnId: Id<"codexTurns">) {
+export async function heartbeat(ctx: MutationCtx, turnId: Id<"codexTurns">) {
   await assertRunning(ctx);
   const turn = await ctx.db.get(turnId);
   const chat = turn ? await ctx.db.get(turn.conversationId) : null;

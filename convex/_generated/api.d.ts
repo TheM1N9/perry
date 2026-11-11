@@ -92,6 +92,7 @@ import type * as screen from "../screen.js";
 import type * as secrets from "../secrets.js";
 import type * as skills from "../skills.js";
 import type * as speech from "../speech.js";
+import type * as taskDecisions from "../taskDecisions.js";
 import type * as tasks from "../tasks.js";
 import type * as titles from "../titles.js";
 import type * as todos from "../todos.js";
@@ -198,6 +199,7 @@ declare const fullApi: ApiFromModules<{
   secrets: typeof secrets;
   skills: typeof skills;
   speech: typeof speech;
+  taskDecisions: typeof taskDecisions;
   tasks: typeof tasks;
   titles: typeof titles;
   todos: typeof todos;
