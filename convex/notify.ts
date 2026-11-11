@@ -8,6 +8,7 @@ import { ownerClock, timezoneOf } from "./jobs";
 import { saveMessages } from "./lib/agent";
 import { sendButtons, sendMessage, TelegramError } from "./lib/telegram";
 import { startOfDay } from "./lib/calendar";
+import { decisionActive } from "./taskDecisions";
 
 /**
  * Assistant speaking first.
@@ -32,6 +33,7 @@ const vButtons = v.array(v.array(v.object({ text: v.string(), data: v.string() }
 const vFrom = v.object({ kind: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder")), id: v.optional(v.string()), name: v.optional(v.string()) });
 
 const vRow = {
+  taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string() })),
   from: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder"), v.literal("offer"), v.literal("other")),
   fromId: v.optional(v.string()),
   name: v.optional(v.string()),
@@ -80,6 +82,25 @@ export const deliver = internalAction({
     if (args.heartbeatAlert) await ctx.runMutation(internal.memories.noteAlert, { text: args.heartbeatAlert, at: ownerClock(await ctx.runQuery(internal.jobs.ownerTimezone, {})) });
     if (outcome === "delivered" && (args.from?.kind === "job" || args.from?.kind === "watch") && args.from.id) await offerPause(ctx, target, args.origin, args.from);
     return true;
+  },
+});
+
+/** A question reminder uses the owner's phone home, falling back to its existing web chat. */
+export const remindTask = internalAction({
+  args: { id: v.id("tasks") }, returns: v.null(),
+  handler: async (ctx, args) => {
+    const task = await ctx.runQuery(internal.tasks.get, { id: args.id });
+    if (!task) return null;
+    let target: Target | null = await ctx.runQuery(internal.channels.target, {});
+    let origin: Id<"conversations"> | undefined;
+    if (!target) {
+      origin = task.origin ?? task.conversationId;
+      target = origin ? await ctx.runQuery(internal.channels.target, { conversationId: origin }) : null;
+    }
+    if (!target) return null;
+    const receipt = await ctx.runMutation(internal.taskDecisions.claim, { id: task._id, channel: target.channel, ...(origin ? { origin } : {}), ...(target.channel !== "web" ? { recipient: target.externalId } : {}) });
+    if (receipt && !receipt.held) await send(ctx, target, receipt.text, receipt.buttons, [receipt.id]);
+    return null;
   },
 });
 
@@ -250,7 +271,14 @@ export const held = internalQuery({
 
 export const attemptRows = internalQuery({
   args: { ids: v.array(v.id("sent")) },
-  handler: async (ctx, args): Promise<Doc<"sent">[]> => (await Promise.all(args.ids.map(id => ctx.db.get(id)))).filter((row): row is Doc<"sent"> => row !== null),
+  handler: async (ctx, args): Promise<Doc<"sent">[]> => {
+    const rows: Doc<"sent">[] = [];
+    for (const id of args.ids) {
+      const row = await ctx.db.get(id);
+      if (row && (!row.taskDecision || await decisionActive(ctx, row.taskDecision))) rows.push(row);
+    }
+    return rows;
+  },
 });
 
 export const claimHeld = internalMutation({
@@ -258,6 +286,14 @@ export const claimHeld = internalMutation({
   handler: async (ctx, args): Promise<boolean> => {
     if (!args.ids.length || new Set(args.ids).size !== args.ids.length) return false;
     const rows = await Promise.all(args.ids.map(id => ctx.db.get(id)));
+    for (const row of rows) {
+      if (row?.taskDecision && !await decisionActive(ctx, row.taskDecision)) {
+        // Paused decisions may wait; settled and snoozed generations are discarded.
+        const task = await ctx.db.get(row.taskDecision.taskId);
+        if (task?.status !== "blocked" || task.decision?.version !== row.taskDecision.version) await ctx.db.patch(row._id, { deliveryState: "failed", seenAt: Date.now(), deliveryError: "This question was answered, dropped or snoozed." });
+        return false;
+      }
+    }
     if (rows.some(row => !row || row.sentAt !== undefined || row.deliveryState && row.deliveryState !== "held")) return false;
     if (rows.some(row => row!.origin !== rows[0]!.origin || row!.channel !== rows[0]!.channel || row!.recipient !== rows[0]!.recipient)) return false;
     if (rows[0]!.channel !== "web" && await holdReasonOf(ctx)) return false;
@@ -321,7 +357,7 @@ export const releaseHeld = internalAction({
     if (!waiting.length) return null;
     if (await ctx.runQuery(internal.notify.holdReason, {})) return null;
     const groups = new Map<string, Doc<"sent">[]>();
-    for (const row of waiting) { const key = JSON.stringify([row.origin, row.channel, row.recipient]); groups.set(key, [...(groups.get(key) ?? []), row]); }
+    for (const row of waiting) { const key = JSON.stringify([row.origin, row.channel, row.recipient, row.taskDecision]); groups.set(key, [...(groups.get(key) ?? []), row]); }
     for (const rows of groups.values()) {
       const origin = rows[0].origin;
       const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: origin });

@@ -34,6 +34,7 @@ crons.interval("release held messages", { minutes: 1 }, internal.notify.releaseH
 
 // Background tasks: start the next queued one when none is running (tasks.ts).
 crons.interval("start queued tasks", { minutes: 1 }, internal.tasks.tick, {});
+crons.interval("follow up unanswered decisions", { minutes: 1 }, internal.taskDecisions.tick, {});
 
 // Durable turns: retry unfinished finalizing, and release what an offline runner abandoned.
 crons.interval("recover turns", { seconds: 30 }, internal.recovery.sweep, {});

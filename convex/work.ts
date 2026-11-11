@@ -4,6 +4,7 @@ import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { parseTarget } from "./lib/price";
 import { pausedAt } from "./pause";
+import { decisionReceipt } from "./taskDecisions";
 
 /**
  * Tasks, goals and monitors: the things that outlive a single message.
@@ -105,6 +106,8 @@ export const updateTask = internalMutation({
       throw new Error("The owner sent an update still awaiting delivery. Keep completed work and let its follow-up turn finish the task.");
     }
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
+    if (rest.status === "blocked" && (!task.decision || task.status !== "blocked" || rest.question !== undefined && rest.question !== task.question)) patch.decision = decisionReceipt();
+    if (rest.status && rest.status !== "blocked") patch.decision = undefined;
     for (const [key, value] of Object.entries(rest)) {
       if (value !== undefined) patch[key] = value;
     }
@@ -457,14 +460,15 @@ export const setMonitorActive = internalMutation({
 export const snapshot = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const [tasks, goals, monitors] = await Promise.all([
+    const [recent, blocked, goals, monitors] = await Promise.all([
       ctx.db.query("tasks").withIndex("by_updated").order("desc").take(10),
+      ctx.db.query("tasks").withIndex("by_status", q => q.eq("status", "blocked")).order("desc").take(20),
       ctx.db.query("goals").order("desc").take(10),
       ctx.db.query("monitors").order("desc").take(10),
     ]);
 
     return {
-      tasks: tasks.map((t) => ({
+      tasks: [...blocked, ...recent.filter(task => !blocked.some(waiting => waiting._id === task._id))].map((t) => ({
         id: t._id,
         title: t.title,
         status: t.status,
@@ -473,6 +477,7 @@ export const snapshot = internalQuery({
         plan: t.plan,
         ownerUpdates: (t.steering ?? []).map((update) => ({ text: update.text, createdAt: update.createdAt })),
         question: t.question,
+        decision: t.decision,
         result: t.result,
         error: t.error,
       })),

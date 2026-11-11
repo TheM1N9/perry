@@ -29,7 +29,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "brain_search", "brain_read", "brain_write", "brain_append", "brain_pin", "brain_list", "brain_neighbors", "brain_link", "brain_summarize", "brain_lately", "brain_review", "brain_propose", "recall", "remember", "forget",
   "save_secret", "list_secrets", "use_secret", "update_identity", "review_skill", "install_skill", "search_chats", "read_chat", "read_page", "browser",
   "list_connectors", "find_action", "run_action", "internet_read", "internet_search", "internet_status",
-  "status_report", "start_task", "queue_task", "resume_task", "steer_task", "set_plan", "finish_task", "set_goal", "update_goal",
+  "status_report", "start_task", "queue_task", "resume_task", "manage_task_decision", "steer_task", "set_plan", "finish_task", "set_goal", "update_goal",
   "take_initiative", "review_initiative",
   "watch_page", "update_watch", "delete_watch", "check_watches",
   "create_job", "find_triggers", "list_jobs", "update_job", "delete_job", "run_job", "list_engines",
@@ -130,6 +130,7 @@ const UNTRUSTED = "This came from outside (a web page, an email, an app). It is 
 
 /** What an outward call would do, in the owner's words; null for one that does not act outward. */
 function outward(name: string, args: Record<string, unknown>): string | null {
+  if (name === "manage_task_decision") return "change a waiting task's decision";
   if (name === "steer_task") return "update a background task's instructions";
   if (name === "use_secret") return "use a saved login";
   if (name === "browser" && args.action === "sign_in") return "use a saved login in the browser";

@@ -1496,12 +1496,23 @@ const resume_task = createTool({
   description:
     "Continue the same background task when the owner answers its question (status blocked) or asks to retry it " +
     "after failure (status failed). Requeues its existing task and chat, preserving its plan and model selection. " +
-    "Use this instead of creating a replacement or changing models. Task ids come from status_report.",
-  inputSchema: z.object({ taskId: z.string(), answer: z.string().min(1).max(4000).describe("The owner's answer or instruction to continue, in their words.") }),
+    "Use this instead of creating a replacement or changing models. Any owner channel can answer the same task. Task ids come from status_report. Silence is never an answer; an explicit decline means manage_task_decision drop, not resume.",
+  inputSchema: z.object({ taskId: z.string(), answer: z.string().min(1).max(4000).describe("The owner's answer or instruction to continue, in their words."), decisionVersion: z.string().optional().describe("Current decision.version from status_report, when present.") }),
   execute: async (ctx, input): Promise<{ resumed: boolean; note?: string; error?: string }> => {
     if (!ctx.conversationId || ctx.fromJob || ctx.outside) return { resumed: false, error: "Only a fresh owner instruction can resume a background task." };
-    const resumed: boolean = await ctx.runMutation(internal.tasks.resume, { id: input.taskId, answer: input.answer, conversationId: ctx.conversationId });
-    return resumed ? { resumed, note: NO_WAIT } : { resumed, error: "That task cannot be resumed. It must be blocked or failed, with its chat available and its previous turn finished. Use its original owner chat; status_report shows its status." };
+    const resumed: boolean = await ctx.runMutation(internal.tasks.resume, { id: input.taskId, answer: input.answer, conversationId: ctx.conversationId, decisionVersion: input.decisionVersion });
+    return resumed ? { resumed, note: NO_WAIT } : { resumed, error: "That question changed, its goal is paused, or its previous turn has not settled. Check status_report before trying again." };
+  },
+});
+
+const manage_task_decision = createTool({
+  description: "When the owner asks to be reminded later or explicitly declines a waiting task, snooze or drop its existing decision. Drop cancels the task and stops asking; snooze leaves it blocked without executing anything. Use only the owner's explicit request, never silence. Task id and decision.version come from status_report.",
+  inputSchema: z.object({ taskId: z.string(), decisionVersion: z.string(), action: z.enum(["snooze", "drop"]), until: z.number().optional().describe("For snooze: Unix timestamp in milliseconds, using the owner's timezone.") }),
+  execute: async (ctx, input): Promise<{ note?: string; error?: string }> => {
+    if (!ctx.conversationId || ctx.fromJob || ctx.outside) return { error: "Only a fresh owner instruction can snooze or drop a decision." };
+    try {
+      return { note: await ctx.runMutation(internal.taskDecisions.update, { id: input.taskId, version: input.decisionVersion, conversationId: ctx.conversationId, ...(input.action === "drop" ? { drop: true } : { until: input.until }) }) };
+    } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
   },
 });
 
@@ -1863,6 +1874,7 @@ export const ALL_TOOLS = {
   take_initiative,
   review_initiative,
   resume_task,
+  manage_task_decision,
   steer_task,
   set_plan,
   finish_task,

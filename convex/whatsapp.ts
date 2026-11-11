@@ -398,6 +398,11 @@ export const receive = internalAction({
     if (args.messageId) await ctx.runMutation(internal.reactions.record, { channel: "whatsapp", externalId: chatId, messageId: args.messageId, text: args.text || "(attachment)", isPerry: false, fromMe: args.fromMe, remoteJid: args.remoteJid });
     // "1", "2" or "3" (or yes, no, always) answers an approval asked in this chat.
     if (!args.media?.length) {
+      const decision: string | null = await ctx.runMutation(internal.taskDecisions.fromPhone, { channel: "whatsapp", senderId: chatId, text: args.text });
+      if (decision) {
+        await ctx.runMutation(internal.whatsapp.send, { to: chatId, text: decision });
+        return null;
+      }
       const note: string | null = await ctx.runMutation(internal.approvals.answerFromWhatsApp, { chatId, text: args.text });
       if (note) {
         await ctx.runMutation(internal.whatsapp.send, { to: chatId, text: note });

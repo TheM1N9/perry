@@ -389,6 +389,12 @@ export default defineSchema({
     ),
     /** What it needs from the owner, when status is blocked. */
     question: v.optional(v.string()),
+    /** One question generation; answers and snoozes invalidate every older phone control. */
+    decision: v.optional(v.object({
+      version: v.string(), dueAt: v.number(), attempts: v.number(), deliveryId: v.optional(v.id("sent")),
+    })),
+    expiredApprovalId: v.optional(v.id("approvals")),
+    approvalRecheck: v.optional(v.boolean()),
     result: v.optional(v.string()),
     error: v.optional(v.string()),
     /** When the owner dismissed its failure from Needs you. */
@@ -407,6 +413,9 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
+    .index("by_decision_due", ["status", "decision.dueAt"])
+    .index("by_decision_version", ["decision.version"])
+    .index("by_expired_approval", ["expiredApprovalId"])
     .index("by_origin", ["origin", "updatedAt"])
     .index("by_conversation", ["conversationId"])
     .index("by_initiative", ["initiative.key"])
@@ -1466,6 +1475,7 @@ export default defineSchema({
    * day's limit) is here with no sentAt until it goes, grouped with the rest.
    */
   sent: defineTable({
+    taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string() })),
     from: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder"), v.literal("offer"), v.literal("other")),
     /** The job or watch it came from; an offer names what it offers to pause. */
     fromId: v.optional(v.string()),

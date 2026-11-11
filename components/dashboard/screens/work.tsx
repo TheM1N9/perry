@@ -308,6 +308,7 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
   const { dashboardKey } = useSession();
   const cancelTask = useMutation(api.dashboard.cancelTask);
   const answerTask = useMutation(api.tasks.answerFromDashboard);
+  const snoozeTask = useMutation(api.taskDecisions.snoozeFromDashboard);
   const now = useNow();
   const [adding, setAdding] = useState<Editing<never>>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -360,11 +361,11 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                 {task.question && (
                   <div className="mt-3 text-sm text-pretty">
                     <p><span className="font-medium text-warning">Needs you: </span>{task.question}</p>
-                    {task.status === "blocked" && task.conversationId && (
+                    {task.status === "blocked" && (
                       <form className="mt-2 max-w-md" onSubmit={(event) => {
                         event.preventDefault();
                         const answer = answers[task._id]?.trim();
-                        if (answer) void attempt(() => answerTask({ key: dashboardKey, id: task._id, answer }), { success: "Answered. It carries on." }).then((ok) => { if (ok) setAnswers((all) => ({ ...all, [task._id]: "" })); });
+                        if (answer) void attempt(() => answerTask({ key: dashboardKey, id: task._id, answer, decisionVersion: task.decision?.version }), { success: "Answered. It carries on." }).then((ok) => { if (ok) setAnswers((all) => ({ ...all, [task._id]: "" })); });
                       }}>
                         <InputGroup>
                           <InputGroupInput aria-label={`Answer for ${task.title}`} placeholder="Your answer" value={answers[task._id] ?? ""}
@@ -376,6 +377,12 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                           )}
                         </InputGroup>
                       </form>
+                    )}
+                    {task.status === "blocked" && task.decision && (
+                      <div className="mt-2 flex flex-wrap items-center gap-3" data-decision>
+                        <ActionButton variant="outline" size="sm" action={() => snoozeTask({ key: dashboardKey, id: task._id, version: task.decision!.version, until: Date.now() + 86_400_000 })} success="Snoozed for a day.">Remind in a day</ActionButton>
+                        <span className="text-muted-foreground">{task.decision.dueAt === 0 ? "Waiting for you. Automatic follow-ups have stopped." : task.decision.dueAt > now ? `Next follow-up ${fullDate(task.decision.dueAt)}` : "Follow-up waiting for delivery."}</span>
+                      </div>
                     )}
                   </div>
                 )}

@@ -282,7 +282,7 @@ export const decision = query({
  * a yes; a decline is never remembered. A Telegram prompt is edited to show
  * the outcome, whichever side answered.
  */
-async function settleRow(ctx: MutationCtx, row: Doc<"approvals">, answer: { approved: boolean; by: Person; always?: boolean }) {
+async function settleRow(ctx: MutationCtx, row: Doc<"approvals">, answer: { approved: boolean; by: Person; always?: boolean; followUp?: boolean }) {
   const now = Date.now();
   const offer = answer.approved && answer.always && answer.by !== "timeout" ? row.alwaysAllow : undefined;
   const ruleId = offer
@@ -304,6 +304,7 @@ async function settleRow(ctx: MutationCtx, row: Doc<"approvals">, answer: { appr
     decidedAt: now,
     ...(ruleId ? { ruleId } : {}),
   });
+  if (answer.by === "timeout" && answer.followUp !== false) await ctx.runMutation(internal.taskDecisions.expiredApproval, { id: row._id });
   // A change to Brain, made or not (compaction.ts).
   if (row.kind === "brain" && row.proposalId) {
     await ctx.scheduler.runAfter(0, internal.compaction.decided, { id: row.proposalId, approved: answer.approved && answer.by !== "timeout", ...(answer.by === "timeout" ? { expired: true } : {}) });
@@ -350,7 +351,7 @@ export const settle = mutation({
     const row = await ctx.db.get(args.id);
     // A timeout settles a request even at the very end of its life.
     if (row?.runnerId !== runner._id || row.status !== "pending") return null;
-    await settleRow(ctx, row, { approved: args.approved, by: args.by, always: args.always });
+    await settleRow(ctx, row, !answerable(row) ? { approved: false, by: "timeout" } : { approved: args.approved, by: args.by, always: args.always });
     return null;
   },
 });
@@ -403,7 +404,7 @@ export const cancelBrowser = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
-    if (row?.kind === "browser" && row.status === "pending") await settleRow(ctx, row, { approved: false, by: "timeout" });
+    if (row?.kind === "browser" && row.status === "pending") await settleRow(ctx, row, { approved: false, by: "timeout", followUp: false });
     return null;
   },
 });
@@ -451,10 +452,22 @@ export async function askAboutBrain(ctx: MutationCtx, args: { proposalId: Id<"br
 
 /** Ask where the request's conversation speaks, and see whether the owner is around to answer it there. */
 async function ask(ctx: MutationCtx, id: Id<"approvals">) {
+  const row = await ctx.db.get(id);
+  if (row) await ctx.scheduler.runAfter(Math.max(0, row.createdAt + ttlOf(row) - Date.now() + 1), internal.approvals.expireUnanswered, { id });
   await ctx.scheduler.runAfter(0, internal.approvals.promptOnTelegram, { id });
   await ctx.scheduler.runAfter(0, internal.approvals.promptOnWhatsApp, { id });
   await ctx.scheduler.runAfter(0, internal.approvals.escalate, { id });
 }
+
+/** The deadline survives an offline runner; a late answer can only request a fresh recheck. */
+export const expireUnanswered = internalMutation({
+  args: { id: v.id("approvals") }, returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const row = await ctx.db.get(args.id);
+    if (row?.status === "pending" && !answerable(row)) await settleRow(ctx, row, { approved: false, by: "timeout" });
+    return null;
+  },
+});
 
 /**
  * A request from a web chat (or a job reporting to one) is asked there and on

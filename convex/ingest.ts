@@ -53,6 +53,11 @@ export const handleTelegram = internalMutation({
     }
     const inbound = parseUpdate(args.update as TelegramUpdate);
     if (!inbound) return null;
+    if ("callbackId" in inbound && inbound.data.startsWith("tq:")) {
+      const note: string | null = await ctx.runMutation(internal.taskDecisions.fromPhone, { channel: "telegram", senderId: inbound.senderId, text: inbound.data });
+      await ctx.scheduler.runAfter(0, internal.approvals.acknowledgeTap, { callbackId: inbound.callbackId, note: note ?? "That decision is no longer available." });
+      return null;
+    }
     // A tap on a to-do reminder's button: done, or pushed back. The mutation checks the tapper is the owner.
     if ("callbackId" in inbound && inbound.data.startsWith("td:")) {
       const answer: { note: string; card?: string } = await ctx.runMutation(internal.todos.answerFromTelegram, { senderId: inbound.senderId, data: inbound.data });
@@ -222,6 +227,13 @@ export const receive = internalMutation({
     }
 
     if (args.messageId !== undefined) await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: args.chatId, messageId: String(args.messageId), text: args.text || "(attachment)", isPerry: false });
+    if (!args.media?.length && args.chatId === args.senderId) {
+      const note: string | null = await ctx.runMutation(internal.taskDecisions.fromPhone, { channel: "telegram", senderId: args.senderId, text: args.text });
+      if (note) {
+        await ctx.scheduler.runAfter(0, internal.brain.sendDirect, { chatId: args.chatId, text: note });
+        return null;
+      }
+    }
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
       channel: "telegram",
       externalId: args.chatId,
