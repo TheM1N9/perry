@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { describeError, errorText } from "./lib/errors";
 import { PAUSED_ERROR } from "./lib/commands";
-import { GUEST_TOOLS as GUEST_TOOL_NAMES } from "./lib/engines";
+import { GUEST_TOOLS as GUEST_TOOL_NAMES, PREPARATION_TOOLS } from "./lib/engines";
 import { HELD_FOR_OWNER } from "./lib/provenance";
 import { LOOK_WAIT_MS } from "./screen";
 import { TAKE_LONGER_MAX_MIN, TURN_IDLE_MIN, TURN_MAX_MIN } from "./lib/turnLimits";
@@ -30,6 +30,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "save_secret", "list_secrets", "use_secret", "update_identity", "review_skill", "install_skill", "search_chats", "read_chat", "read_page", "browser",
   "list_connectors", "find_action", "run_action", "internet_read", "internet_search", "internet_status",
   "status_report", "start_task", "queue_task", "resume_task", "steer_task", "set_plan", "finish_task", "set_goal", "update_goal",
+  "take_initiative", "review_initiative",
   "watch_page", "update_watch", "delete_watch", "check_watches",
   "create_job", "find_triggers", "list_jobs", "update_job", "delete_job", "run_job", "list_engines",
   "add_todo", "list_todos", "update_todo", "delete_todo",
@@ -210,7 +211,12 @@ export const handle = httpAction(async (ctx, request) => {
   // Paused, a turn still winding down does nothing more: the owner's pause holds mid-turn too (pause.ts).
   if (access.paused && message.method === "tools/call") return toolError(message.id, new Error(PAUSED_ERROR));
 
-  const tools = access.guest ? GUEST_TOOLS : interactiveEnabled() ? CODEX_TOOLS : CODEX_TOOLS.filter((name) => !name.startsWith("interactive_"));
+  const bounded = Boolean(access.initiativeTaskId || access.heartbeat);
+  const tools: readonly ToolName[] = access.guest ? GUEST_TOOLS
+    : bounded ? [...PREPARATION_TOOLS.filter(name => name !== "set_plan" && name !== "finish_task" && name !== "update_goal"),
+      ...(access.heartbeat ? ["take_initiative", "review_initiative"] as const : ["set_plan", "finish_task", "update_goal"] as const)]
+    : (interactiveEnabled() ? CODEX_TOOLS : CODEX_TOOLS.filter((name) => !name.startsWith("interactive_")))
+      .filter(name => name !== "take_initiative" && name !== "review_initiative");
   switch (message.method) {
     case "initialize":
       return reply(message.id, {
@@ -228,7 +234,7 @@ export const handle = httpAction(async (ctx, request) => {
             const tool = ALL_TOOLS[name] as unknown as Bindable;
             return { name, description: tool.description ?? name, inputSchema: z.toJSONSchema(tool.inputSchema) };
           }),
-          ...(access.guest ? [] : [
+          ...(access.guest || bounded ? [] : [
             { name: SHARE_FILE.name, description: SHARE_FILE.description, inputSchema: z.toJSONSchema(SHARE_FILE.inputSchema) },
             { name: TAKE_LONGER.name, description: TAKE_LONGER.description, inputSchema: z.toJSONSchema(TAKE_LONGER.inputSchema) },
             { name: LOOK_AT_SCREEN.name, description: LOOK_AT_SCREEN.description, inputSchema: z.toJSONSchema(LOOK_AT_SCREEN.inputSchema) },
@@ -236,7 +242,7 @@ export const handle = httpAction(async (ctx, request) => {
         ],
       });
     case "tools/call": {
-      if (!access.guest && message.params?.name === SHARE_FILE.name) {
+      if (!access.guest && !bounded && message.params?.name === SHARE_FILE.name) {
         const parsed = SHARE_FILE.inputSchema.safeParse(message.params?.arguments ?? {});
         if (!parsed.success) return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
         try {
@@ -249,7 +255,7 @@ export const handle = httpAction(async (ctx, request) => {
           return toolError(message.id, error);
         }
       }
-      if (!access.guest && message.params?.name === TAKE_LONGER.name) {
+      if (!access.guest && !bounded && message.params?.name === TAKE_LONGER.name) {
         const parsed = TAKE_LONGER.inputSchema.safeParse(message.params?.arguments ?? {});
         if (!parsed.success) return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
         try {
@@ -259,7 +265,7 @@ export const handle = httpAction(async (ctx, request) => {
           return toolError(message.id, error);
         }
       }
-      if (!access.guest && message.params?.name === LOOK_AT_SCREEN.name) {
+      if (!access.guest && !bounded && message.params?.name === LOOK_AT_SCREEN.name) {
         const parsed = LOOK_AT_SCREEN.inputSchema.safeParse(message.params?.arguments ?? {});
         if (!parsed.success) return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
         try {
@@ -286,15 +292,24 @@ export const handle = httpAction(async (ctx, request) => {
         }
       }
       const name = String(message.params?.name ?? "") as ToolName;
-      if (!tools.includes(name) && (access.guest || !OLD_NAMES.includes(name))) return fail(message.id, -32602, `Unknown tool: ${name}`);
+      if (!tools.includes(name) && (access.guest || bounded || !OLD_NAMES.includes(name))) return fail(message.id, -32602, `Unknown tool: ${name}`);
       const tool = ALL_TOOLS[name] as unknown as Bindable;
       const parsed = tool.inputSchema.safeParse(message.params?.arguments ?? {});
       if (!parsed.success) {
         return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
       }
+      const input = parsed.data as Record<string, unknown>;
+      if (access.initiativeTaskId && (name === "set_plan" || name === "finish_task") && input.taskId !== access.initiativeTaskId) return toolError(message.id, new Error("Only update this autonomous task's own plan and result."));
+      if (access.initiativeTaskId && name === "update_goal") {
+        const task = await ctx.runQuery(internal.work.getTask, { taskId: access.initiativeTaskId });
+        if (!task?.goalId || input.goalId !== task.goalId || input.status !== undefined || task.status !== "done" || !task.result?.trim()) {
+          return toolError(message.id, new Error("First finish this task with its verified result. Only record milestones actually fulfilled for its linked goal; do not change goal status."));
+        }
+      }
       // Whether the turn read something from outside before this call: what it writes is from outside (issue #136).
       const outside = !(await ctx.runQuery(internal.codex.outwardAllowed, { turnId: access.turnId }));
-      const acting = outward(name, parsed.data as Record<string, unknown>);
+      // Bounded app calls are classified from provider metadata inside the executor, not from words in their name.
+      const acting = bounded && name === "run_action" ? null : outward(name, parsed.data as Record<string, unknown>);
       if (acting && outside) {
         return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ refused: true, error: HELD_FOR_OWNER(acting) }) }] });
       }
@@ -314,7 +329,7 @@ export const handle = httpAction(async (ctx, request) => {
         const cancellable = internet || name === "browser";
         const timer = cancellable ? setInterval(() => void check(), 500) : undefined;
         const signal = AbortSignal.any([request.signal, controller.signal]);
-        const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId, turnId: access.turnId, outside, signal } };
+        const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId, turnId: access.turnId, outside, readOnly: bounded || outside, signal } };
         let output: unknown;
         try {
           if (cancellable) await check();
@@ -329,7 +344,7 @@ export const handle = httpAction(async (ctx, request) => {
           const succeeded = output && typeof output === "object" && !("error" in output) && (!("ok" in output) || output.ok === true);
           const routed = name === "internet_read" ? z.object({ status: z.enum(["ok", "partial"]), items: z.array(z.unknown()).min(1), canonicalUrl: z.string().optional(), requestedUrl: z.string().optional(), backend: z.string().nullable() }).safeParse(output) : null;
           const sourceUrl = routed?.success ? routed.data.canonicalUrl ?? routed.data.requestedUrl : name === "read_page" ? String((parsed.data as { url?: string }).url) : undefined;
-          const read = name === "read_page" || routed?.success || (name === "run_action" && READ_ACTION.test(String((parsed.data as { slug?: string }).slug ?? "")));
+          const read = name === "read_page" || routed?.success || (name === "run_action" && (bounded || READ_ACTION.test(String((parsed.data as { slug?: string }).slug ?? ""))));
           const sourceReceipt = succeeded && read && access.conversationId ? await ctx.runMutation(internal.interactive.recordSource, {
             conversationId: access.conversationId,
             label: sourceUrl ?? (routed?.success ? routed.data.backend ?? "Internet source" : String((parsed.data as { slug?: string }).slug ?? "Connected account")),

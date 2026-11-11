@@ -484,7 +484,8 @@ export class CodexEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest, skills } = input;
+    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, skills } = input;
+    const guest = input.guest || input.preparation;
     const app = await this.ensure();
     const broken = guest ? [] : await app.reloadSkills(cwd).catch(() => []);
     // A chat with someone else gets none of the skills Codex would find, Perry's or the owner's own (issue #163): Codex

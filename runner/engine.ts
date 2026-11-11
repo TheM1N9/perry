@@ -310,6 +310,8 @@ export type TurnInput = {
    * touches nothing here), in an empty folder. Only for an engine with `capabilities.guestLockdown`.
    */
   guest?: boolean;
+  /** Owner-context preparation with no native tools; Perry's server exposes read tools and this task's plan/result only. */
+  preparation?: boolean;
   /** The skills the message names, for an engine with `capabilities.skills`. */
   skills?: NamedSkill[];
 };

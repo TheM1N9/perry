@@ -19,7 +19,8 @@ import { resetsText, usedNow, type EngineUsage } from "./usage";
  *      else the owner's default engine (installation.defaultEngine), while that has room.
  *
  * The owner's pick wins over 1 and 2, and Perry's own (create_job, queue_task) over the tier's.
- * Routing steps in only for a plan's limit: when the engine has no room, the work moves to the
+ * Required native-tool lockdown excludes incompatible engines first. Otherwise routing steps in for a plan's limit:
+ * when the engine has no room, the work moves to the
  * default engine if that has room, else to the signed-in engine with the most of its plan left,
  * and says why; work the owner said to keep on its engine (`stay`) waits for its reset instead.
  * Background work with nowhere to go waits for the earliest reset rather than failing. A chat
@@ -174,6 +175,8 @@ export type RouteInput = {
   currentIs?: string;
   /** Signed in and recent enough on a computer that is online. */
   engines: EngineKind[];
+  /** A required capability, separate from sign-in/availability. */
+  lockable?: EngineKind[];
   models: ModelOption[];
   usage: Partial<Record<EngineKind, EngineUsage>>;
   /** The owner is waiting on it (a chat): an engine is used until it is out, never left for its last tenth. */
@@ -199,13 +202,16 @@ export function route(input: RouteInput): Choice | null {
   const { tier, why: kind } = given ? { tier: given, why: "Perry's pick" } : tierOf(work);
   const cap = input.attended ? 100 : BACKGROUND_CAP;
   const avoid = new Set(input.avoid ?? []);
-  const usable = input.engines.filter((engine) => !avoid.has(engine));
+  const lockable = input.lockable;
+  const eligible = lockable ? input.engines.filter(engine => lockable.includes(engine)) : input.engines;
+  const usable = eligible.filter((engine) => !avoid.has(engine));
   const rooms = new Map(ENGINES.map((engine) => [engine, roomOf(engine, usage[engine], now, cap, timeZone)]));
   const room = (engine: EngineKind) => rooms.get(engine)!;
   const home = owner?.engine ?? perry?.engine ?? input.current ?? input.preferred;
   if (!home) return null;
   const whyNot = (engine: EngineKind) => avoid.has(engine) ? `${ENGINE_LABELS[engine]} refused it for its plan's limit`
     : !input.engines.includes(engine) ? `${ENGINE_LABELS[engine]} isn't signed in on a computer that is online`
+      : !eligible.includes(engine) ? `${ENGINE_LABELS[engine]} cannot disable native tools for preparation`
       : room(engine).why ?? `${ENGINE_LABELS[engine]} has no room`;
 
   const pick = (engine: EngineKind): Pick<Choice, "model" | "effort" | "by"> & { said: string } => {
@@ -240,13 +246,14 @@ export function route(input: RouteInput): Choice | null {
   if (usable.includes(home) && room(home).state === "room") {
     return choose(home, `On ${ENGINE_LABELS[home]}, ${where}, which has room.`);
   }
-  // Routing is for a plan's limit only: work is not moved for an engine that is only signed out. It stays, and says so.
-  if (!input.engines.includes(home)) return choose(home, `On ${ENGINE_LABELS[home]}, ${where}.`);
-  if (input.waitForReset && room(home).state === "out" && room(home).resetKnown && room(home).until! > now) {
+  // A compatible engine that is only signed out keeps its selection; an incompatible engine cannot run preparation.
+  if (!input.engines.includes(home) && (!lockable || lockable.includes(home))) return choose(home, `On ${ENGINE_LABELS[home]}, ${where}.`);
+  if (!eligible.length) return null;
+  if (eligible.includes(home) && input.waitForReset && room(home).state === "out" && room(home).resetKnown && room(home).until! > now) {
     const until = room(home).until! + RESET_MARGIN_MS;
     return { ...choose(home, `Waiting for ${ENGINE_LABELS[home]}'s reported usage reset.`), wait: { until, why: `${ENGINE_LABELS[home]} resumes after its usage reset at ${clockAt(until - RESET_MARGIN_MS, timeZone)}.` } };
   }
-  if (owner?.stay && !input.attended) {
+  if (eligible.includes(home) && owner?.stay && !input.attended) {
     // Refused just now, before its plan says so, it is given the hour a refusal holds an engine.
     const held = room(home).state === "room" ? now + HIT_HOLD_MS : room(home).until ?? now + HIT_HOLD_MS;
     const until = Math.max(now, held) + RESET_MARGIN_MS;
@@ -265,9 +272,9 @@ export function route(input: RouteInput): Choice | null {
   }
   // Nowhere has room. A chat stays where it is, and its engine has the last word (a chat refused by it is not
   // moved to one that is out too).
-  if (input.attended) return choose(home, `Every engine is at its plan's limit, so it stays on ${ENGINE_LABELS[home]}.`);
+  if (input.attended && eligible.includes(home)) return choose(home, `Every engine is at its plan's limit, so it stays on ${ENGINE_LABELS[home]}.`);
   // Other work waits for the first engine to have room again: one that just refused it, after the hour a refusal holds.
-  const soonest = input.engines.map((engine) => ({
+  const soonest = eligible.map((engine) => ({
     engine,
     until: avoid.has(engine) && room(engine).state === "room" ? now + HIT_HOLD_MS : room(engine).until ?? now + HIT_HOLD_MS,
   })).sort((a, b) => a.until - b.until)[0];
@@ -276,7 +283,7 @@ export function route(input: RouteInput): Choice | null {
   return {
     ...choice,
     // What refused it is said already, by whoever tells of it (jobs.recoverJob, tasks.recoverTask): the others are why it waits.
-    wait: { until, why: `No engine has room: ${(usable.length ? usable : input.engines).map(whyNot).join("; ")}. It runs at ${clockAt(until, timeZone)}, when ${ENGINE_LABELS[soonest.engine]} has room again.` },
+    wait: { until, why: `No engine has room: ${(usable.length ? usable : eligible).map(whyNot).join("; ")}. It runs at ${clockAt(until, timeZone)}, when ${ENGINE_LABELS[soonest.engine]} has room again.` },
   };
 }
 

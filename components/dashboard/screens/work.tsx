@@ -333,13 +333,16 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
         {sorted.map((task) => {
           const done = task.plan.filter((step) => step.status === "done").length;
           const live = task.status === "running" || task.status === "blocked";
+          const canCancel = live || Boolean(task.initiative && task.status === "queued");
           return (
             <Row key={task._id} id={`task-${task._id}`}>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{task.title}</h3>
                   <StatusBadge tone={TASK[task.status].tone} pulse={task.status === "running"}>{TASK[task.status].label}</StatusBadge>
+                  {task.initiative && <span className="text-xs text-muted-foreground">Started by Perry</span>}
                 </div>
+                {task.initiative && <p className="mt-1 text-sm text-muted-foreground">{task.initiative.reason}</p>}
                 <p className="mt-1 text-sm text-muted-foreground">
                   Updated {ago(task.updatedAt, now)}{task.plan.length > 0 && <span className="nums"> · {done} of {task.plan.length} steps</span>}
                 </p>
@@ -406,10 +409,10 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                 {task.result && <p className="mt-3 text-sm text-pretty whitespace-pre-line text-foreground/80">{task.result}</p>}
                 {task.error && <p className="mt-3 text-sm text-pretty text-destructive">{task.error}</p>}
               </div>
-              {(live || task.conversationId) && (
+              {(canCancel || task.conversationId) && (
                 <div className="flex shrink-0 items-center gap-1">
                   {task.conversationId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${task.conversationId}`} />}><MessageSquareIcon />Its chat</Button>}
-                  {live && <ActionButton variant="ghost" size="sm" className="text-destructive hover:text-destructive" action={() => cancelTask({ key: dashboardKey, taskId: task._id })} success="Plan cancelled."
+                  {canCancel && <ActionButton variant="ghost" size="sm" className="text-destructive hover:text-destructive" action={() => cancelTask({ key: dashboardKey, taskId: task._id })} success="Plan cancelled."
                     confirm={{ title: "Cancel this plan?", body: `Perry stops working on “${task.title}”. What it already did stays done.`, label: "Cancel plan" }}>
                     Cancel
                   </ActionButton>}

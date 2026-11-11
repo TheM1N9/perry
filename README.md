@@ -52,10 +52,18 @@ or force them off with `false`; public build variables take effect at build time
   Google Calendar, Notion and more through [Composio](https://composio.dev).
 - **Notices things without a prompt.** Every half hour from 8am to 10:30pm,
   Perry checks recent activity in connected email and calendars against your
-  plans. If a reply gets a meeting date wrong, he can read the original thread
-  and alert you. He stays quiet when there is nothing new worth saying and
-  asks before sending a correction. Pause or reschedule Heartbeat under
-  Work → Schedules; quiet hours and your notification limit still apply.
+  plans and active goals. He can start research, compare options, or prepare
+  a correction himself, then bring back the result or a concrete decision.
+  Work → Tasks shows what he started and why. Each issue or goal keeps one
+  task, with later checks continuing it rather than starting over.
+  Automatic preparation reads accounts and records its work and verified goal
+  milestones; your answer continues the same task
+  under Ask access before sending, booking or changing accounts. Later automatic
+  checks return to read-only preparation. This currently uses Codex or Claude
+  Code, whose native tools can be disabled for preparation. Perry starts at most
+  one task per check, two at once, and four work sessions in 24 hours. Due
+  follow-through checks wait at least a day. Pause or reschedule Heartbeat under
+  Work → Schedules; Pause Perry, quiet hours and notification limits still apply.
 - **"From now on, keep replies short."** Remembers who you are, what you like
   and what you told it last week.
 - **"Send this to me on WhatsApp. I'll continue there."** Sends to your own

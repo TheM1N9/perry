@@ -23,6 +23,7 @@ import * as engines from "../convex/engines";
 import * as history from "../convex/history";
 import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
+import * as initiative from "../convex/initiative";
 import * as installation from "../convex/installation";
 import * as interactive from "../convex/interactive";
 import * as internet from "../convex/internet";
@@ -126,6 +127,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "history": history,
   "http": http,
   "ingest": ingest,
+  "initiative": initiative,
   "installation": installation,
   "interactive": interactive,
   "internet": internet,
