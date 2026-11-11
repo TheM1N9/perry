@@ -14,7 +14,6 @@ import {
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useConnection, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
-import { NextStep } from "./next-step";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Artifact } from "@/convex/interactive";
@@ -169,8 +168,6 @@ export function ChatScreen() {
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const markSeen = useMutation(api.dashboard.markChatSeen);
   const setReaction = useMutation(api.reactions.setWeb);
-  const skipOnboarding = useMutation(api.dashboard.skipOnboarding);
-  const redoOnboarding = useMutation(api.dashboard.redoOnboarding);
   const branchChat = useAction(api.dashboard.branchChat);
   const rewindChat = useMutation(api.dashboard.rewindChat);
   const resetChat = useAction(api.dashboard.resetChat);
@@ -831,21 +828,9 @@ export function ChatScreen() {
           )}
 
           {!selectedId ? (
-            <div className="flex flex-col py-6 text-left">
+            <div className="flex flex-col items-center gap-2 py-6 text-center">
               <p className="text-sm text-muted-foreground">{greeting(status?.displayName)}</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-balance">{project ? `What should we work on in ${project.name}?` : "What would you like to get done?"}</h2>
-              <p className="mt-2 text-sm text-pretty text-muted-foreground">Ask for a reminder, a plan or help with an idea.</p>
-              {!project && !noEngine && <details className="mt-4 w-full max-w-md text-left">
-                <summary className="cursor-pointer rounded-md py-2 text-left text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11">{status?.onboarding === "offer" ? "Optional setup: tell Perry about you" : "Optional setup: desktop, voice and calendar"}</summary>
-                {status?.onboarding === "offer" ? <Alert variant="quiet">
-                  <AlertTitle>Tell {assistant} about yourself</AlertTitle>
-                  <AlertDescription>About two minutes. You can start chatting now and do this later.</AlertDescription>
-                  <AlertAction className="flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => void skipOnboarding({ key: dashboardKey }).catch(fail)}>Not now</Button>
-                    <Button size="sm" onClick={() => void redoOnboarding({ key: dashboardKey }).then(() => router.push("/welcome"), fail)}>Personalize</Button>
-                  </AlertAction>
-                </Alert> : <NextStep assistant={assistant} />}
-              </details>}
+              <h2 className="text-2xl font-semibold tracking-tight text-balance">{project ? `What should we work on in ${project.name}?` : "What would you like to get done?"}</h2>
             </div>
           ) : (
             <ChatFiles.Provider value={chatFiles ?? NO_FILES}>
@@ -1044,15 +1029,6 @@ export function ChatScreen() {
               )}
               {/* Last, so the queued messages sit on the box they were typed in. Keyed per chat: its "show all" and drag reset. */}
               {selectedId && <UpNext key={selectedId} items={upNext} editing={queueEdit?.id ?? null} onEdit={startQueueEdit} onCancelEdit={endQueueEdit} />}
-              {!selectedId && (
-                <div className={cn("mb-3 flex flex-wrap justify-start gap-2", (Boolean(draft) || files.length > 0) && "invisible")} aria-hidden={Boolean(draft) || files.length > 0}>
-                  {STARTERS.map((text) => (
-                    <Button key={text} variant="outline" className="h-9 rounded-full px-4 font-normal text-muted-foreground hover:text-foreground" onClick={() => { setDraft(text); composer.current?.focus(); }}>
-                      {text}
-                    </Button>
-                  ))}
-                </div>
-              )}
             </>}
           />
           <p className="mt-2 text-center text-xs text-muted-foreground">
@@ -1062,6 +1038,15 @@ export function ChatScreen() {
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
                 : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills.</>}
           </p>
+          {!selectedId && (
+            <div className={cn("mt-4 flex flex-wrap justify-center gap-2", (Boolean(draft) || files.length > 0) && "invisible")} aria-hidden={Boolean(draft) || files.length > 0}>
+              {STARTERS.map((text) => (
+                <Button key={text} variant="outline" className="h-9 rounded-full px-4 font-normal text-muted-foreground hover:text-foreground" onClick={() => { setDraft(text); composer.current?.focus(); }}>
+                  {text}
+                </Button>
+              ))}
+            </div>
+          )}
           </>);
           }}</ComposerDraft>}
         </div>

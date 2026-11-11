@@ -90,3 +90,8 @@ The later [UI/UX implementation](ui-ux-implementation.md) fixes the pet activati
 ## Follow-up, 11 November
 
 The current ledger includes 187 sources after adding the alternate-path attention map, vendored control CSS and four Riff sources integrated from main. It refreshes every source hash and spacing inventory after the follow-up changes. The latest 29-assertion browser replay covers new-chat grouping and stable composer position, approval paths and collapsed permission rules, notification review, browser-local privacy settings and editor compatibility. The original 448 assertions and 219-assertion UI pass retain their recorded scope and limits.
+
+
+## Requested chat and sidebar adjustment
+
+The current ledger covers 186 sources after removing the unused new-chat setup component. The landing greeting and headline are centered; helper/setup text is removed and centered starter prompts follow the composer. The footer uses the same 2px row gap as primary navigation, with 32px desktop rows and 44px touch rows. Pause has no extra wrapper padding or repeated scope sentence; its confirmation keeps the full explanation. Native browser checks cover alignment, wrapping, starter focus/position, footer geometry and pause confirmation/cancel. Requested screenshots are retained in `artifacts/layout-adjustments/`.
