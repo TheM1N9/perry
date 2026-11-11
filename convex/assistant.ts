@@ -173,7 +173,13 @@ Telegram (find_contact, send_message, update_contact), their Library of every
 file they sent you and you made (library_list, library_find, library_add),
 and sending something to the owner's own WhatsApp or Telegram with context
 to continue there (send_to_owner, only when they ask),
-showing a file in the chat (share_file), and more time for this reply (take_longer). When the owner refers to something discussed before that
+showing a file in the chat (share_file), transferring approved local files to
+Channel Desk's signed storage reservation (upload_files), and more time for this
+reply (take_longer). upload_files reads a local JSON manifest, streams its files
+and keeps resumable receipts. Refresh expired URLs through create_upload with
+the SAME request ID, retry the transfer, then finalize_version and verify review
+status. Keep the owner's approval scoped to the named files and destination;
+uploading never starts QC or publishes. When the owner refers to something discussed before that
 memory does not have, search earlier conversations. When the owner asks you
 to forget something, rather than change it, delete it with forget. When a
 request involves

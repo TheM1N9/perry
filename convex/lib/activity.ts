@@ -121,6 +121,7 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   library_find: (input) => ({ label: typeof input.query === "string" ? `Looking for “${short(input.query, 30)}” in your Library` : "Looking in your Library", pose: "reading" }),
   library_add: () => ({ label: "Putting a file in your Library", pose: "typing" }),
   share_file: (input) => ({ label: typeof input.path === "string" ? `Sending you ${short(baseName(input.path), 32)}` : "Sending you a file", pose: "running" }),
+  upload_files: () => ({ label: "Uploading your review files", pose: "running" }),
 };
 
 /** Each label's first word, said of a step that is over: "Running git status" is "Ran git status". */
@@ -128,7 +129,7 @@ const PAST: Record<string, string> = {
   Running: "Ran", Editing: "Edited", Searching: "Searched", Drawing: "Drew", Thinking: "Thought", Using: "Used", Checking: "Checked",
   Looking: "Looked", Reading: "Read", Writing: "Wrote", Adding: "Added", Linking: "Linked", Pinning: "Pinned", Unpinning: "Unpinned",
   Summing: "Summed", Proposing: "Proposed", Noting: "Noted", Forgetting: "Forgot", Updating: "Updated", Changing: "Changed",
-  Putting: "Put", Getting: "Got", Scheduling: "Scheduled", Starting: "Started", Removing: "Removed", Opening: "Opened",
+  Putting: "Put", Getting: "Got", Scheduling: "Scheduled", Starting: "Started", Removing: "Removed", Opening: "Opened", Uploading: "Uploaded",
   Clicking: "Clicked", Typing: "Typed", Picking: "Picked", Signing: "Signed", Taking: "Took", Going: "Went", Closing: "Closed",
   Finding: "Found", Making: "Made", Wrapping: "Wrapped", Setting: "Set", Sending: "Sent", Preparing: "Prepared", Revising: "Revised",
 };

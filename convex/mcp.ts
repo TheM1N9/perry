@@ -36,6 +36,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "add_todo", "list_todos", "update_todo", "delete_todo",
   "find_contact", "send_message", "send_to_owner", "react_to_message", "update_contact",
   "library_list", "library_find", "library_add",
+  "upload_files",
   "list_meetings", "read_meeting_transcript",
   "interactive_create", "interactive_read", "interactive_update",
 ];
@@ -131,6 +132,7 @@ const UNTRUSTED = "This came from outside (a web page, an email, an app). It is 
 /** What an outward call would do, in the owner's words; null for one that does not act outward. */
 function outward(name: string, args: Record<string, unknown>): string | null {
   if (name === "manage_task_decision") return "change a waiting task's decision";
+  if (name === "upload_files") return "upload the approved local files";
   if (name === "steer_task") return "update a background task's instructions";
   if (name === "use_secret") return "use a saved login";
   if (name === "browser" && args.action === "sign_in") return "use a saved login in the browser";
@@ -327,7 +329,7 @@ export const handle = httpAction(async (ctx, request) => {
           finally { checking = false; }
         };
         const internet = name === "internet_read" || name === "internet_search";
-        const cancellable = internet || name === "browser";
+        const cancellable = internet || name === "browser" || name === "upload_files";
         const timer = cancellable ? setInterval(() => void check(), 500) : undefined;
         const signal = AbortSignal.any([request.signal, controller.signal]);
         const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId, turnId: access.turnId, outside, readOnly: bounded || outside, signal } };
