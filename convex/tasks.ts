@@ -71,13 +71,11 @@ function promptFor(task: Doc<"tasks">): string {
   return `🧩 Background task: ${task.title}\n\n${task.prompt}\n\n${rules}`;
 }
 
-/** A turn of the chat queued or running, besides compactions and memory checkpoints: it will end in afterTurn itself. */
+/** Unfinished delivery also owns the task until markFinalized calls afterTurn in the same transaction. */
 async function turnAhead(ctx: QueryCtx, conversationId: Id<"conversations">): Promise<boolean> {
-  for (const status of ["queued", "running"] as const) {
-    const turns = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", conversationId).eq("status", status)).collect();
-    if (turns.some((turn) => turn.kind !== "compact" && !turn.flush && !turn.checkpoint)) return true;
-  }
-  return false;
+  const turns = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", conversationId))
+    .filter(q => q.eq(q.field("finalizedAt"), undefined)).collect();
+  return turns.some(turn => turn.kind !== "compact" && !turn.flush && !turn.checkpoint);
 }
 
 export const hasTurnAhead = internalQuery({
@@ -136,6 +134,7 @@ export const tick = internalMutation({
     for (const next of queued) {
       if (!available) break;
       if (next.initiative && next.goalId && (await ctx.db.get(next.goalId))?.status !== "active") continue;
+      if (next.conversationId && await turnAhead(ctx, next.conversationId)) continue;
       await ctx.db.patch(next._id, { status: "running", turns: (next.turns ?? 0) + 1, question: undefined, waiting: undefined, updatedAt: Date.now() });
       await ctx.scheduler.runAfter(0, internal.tasks.work, { id: next._id });
       available -= 1;

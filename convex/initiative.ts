@@ -44,7 +44,7 @@ function sourceKey(source: string) {
 
 async function budget(ctx: MutationCtx, turnId: Id<"codexTurns">, tasks: Doc<"tasks">[]) {
   if (tasks.some(task => task.initiative?.startedBy === turnId)) throw new Error("Take at most one initiative per Heartbeat check.");
-  const active = await Promise.all(tasks.filter(task => task.initiative && ["queued", "running"].includes(task.status))
+  const active = await Promise.all(tasks.filter(task => task.initiative && !task.initiative.ownerDirectedAt && ["queued", "running"].includes(task.status))
     .map(async task => !task.goalId || (await ctx.db.get(task.goalId))?.status === "active"));
   if (active.filter(Boolean).length >= 2) {
     throw new Error("Two autonomous tasks are already under way. Wait for them to finish.");

@@ -599,9 +599,9 @@ export const search = internalAction({
   },
 });
 
-/** Run one action on a connected account. */
+/** Bounded/outside-data calls fail closed unless provider metadata identifies the exact operation as read-only. */
 export const execute = internalAction({
-  args: { slug: v.string(), args: v.optional(v.any()) },
+  args: { slug: v.string(), args: v.optional(v.any()), readOnly: v.optional(v.boolean()) },
   handler: async (
     ctx,
     input,
@@ -624,6 +624,10 @@ export const execute = internalAction({
       stage = "tool_metadata";
       // Resolve metadata from the SDK, never infer the toolkit from a slug prefix.
       const tool = await composio.tools.getRawComposioToolBySlug(input.slug).catch(() => null);
+      if (input.readOnly && (!tool || tool.slug !== input.slug || !tool.tags?.includes("readOnlyHint")
+        || tool.tags.some(tag => ["createHint", "updateHint", "destructiveHint"].includes(tag)))) {
+        return { ok: false, error: "This operation is not verified as read-only. Prepare a proposal for the owner instead; missing, conflicting or unavailable tool metadata cannot authorize execution." };
+      }
       // Router helper tools may not have standalone metadata. They still execute,
       // but without an exact account we do not infer or persist account health.
       const toolkit = tool?.toolkit?.slug;

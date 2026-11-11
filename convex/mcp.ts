@@ -299,7 +299,6 @@ export const handle = httpAction(async (ctx, request) => {
         return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
       }
       const input = parsed.data as Record<string, unknown>;
-      if (bounded && name === "run_action" && !READ_ACTION.test(String(input.slug ?? ""))) return toolError(message.id, new Error("Autonomous preparation only reads connected accounts. Bring the proposed action to the owner."));
       if (access.initiativeTaskId && (name === "set_plan" || name === "finish_task") && input.taskId !== access.initiativeTaskId) return toolError(message.id, new Error("Only update this autonomous task's own plan and result."));
       if (access.initiativeTaskId && name === "update_goal") {
         const task = await ctx.runQuery(internal.work.getTask, { taskId: access.initiativeTaskId });
@@ -309,7 +308,8 @@ export const handle = httpAction(async (ctx, request) => {
       }
       // Whether the turn read something from outside before this call: what it writes is from outside (issue #136).
       const outside = !(await ctx.runQuery(internal.codex.outwardAllowed, { turnId: access.turnId }));
-      const acting = outward(name, parsed.data as Record<string, unknown>);
+      // Bounded app calls are classified from provider metadata inside the executor, not from words in their name.
+      const acting = bounded && name === "run_action" ? null : outward(name, parsed.data as Record<string, unknown>);
       if (acting && outside) {
         return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ refused: true, error: HELD_FOR_OWNER(acting) }) }] });
       }
@@ -329,7 +329,7 @@ export const handle = httpAction(async (ctx, request) => {
         const cancellable = internet || name === "browser";
         const timer = cancellable ? setInterval(() => void check(), 500) : undefined;
         const signal = AbortSignal.any([request.signal, controller.signal]);
-        const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId, turnId: access.turnId, outside, signal } };
+        const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId, turnId: access.turnId, outside, readOnly: bounded || outside, signal } };
         let output: unknown;
         try {
           if (cancellable) await check();
@@ -344,7 +344,7 @@ export const handle = httpAction(async (ctx, request) => {
           const succeeded = output && typeof output === "object" && !("error" in output) && (!("ok" in output) || output.ok === true);
           const routed = name === "internet_read" ? z.object({ status: z.enum(["ok", "partial"]), items: z.array(z.unknown()).min(1), canonicalUrl: z.string().optional(), requestedUrl: z.string().optional(), backend: z.string().nullable() }).safeParse(output) : null;
           const sourceUrl = routed?.success ? routed.data.canonicalUrl ?? routed.data.requestedUrl : name === "read_page" ? String((parsed.data as { url?: string }).url) : undefined;
-          const read = name === "read_page" || routed?.success || (name === "run_action" && READ_ACTION.test(String((parsed.data as { slug?: string }).slug ?? "")));
+          const read = name === "read_page" || routed?.success || (name === "run_action" && (bounded || READ_ACTION.test(String((parsed.data as { slug?: string }).slug ?? ""))));
           const sourceReceipt = succeeded && read && access.conversationId ? await ctx.runMutation(internal.interactive.recordSource, {
             conversationId: access.conversationId,
             label: sourceUrl ?? (routed?.success ? routed.data.backend ?? "Internet source" : String((parsed.data as { slug?: string }).slug ?? "Connected account")),

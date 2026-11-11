@@ -58,9 +58,12 @@ export async function choose(ctx: QueryCtx, ask: Ask): Promise<Choice | null> {
   const pinned = ask.runnerId ? runners.find((runner) => runner._id === ask.runnerId) : undefined;
   // A chat stays on its computer (codex.pickRunner): only the engines there will take it.
   const here = runners.filter((runner) => isOnline(runner) && (!pinned || (runner.hostname === pinned.hostname && runner.platform === pinned.platform)));
-  const engines = ENGINES.filter((engine) => here.some((runner) => engineUsable(runner, engine) && (!ask.lockdown || engineLockable(runner, engine))));
+  const engines = ENGINES.filter((engine) => here.some((runner) => engineUsable(runner, engine)));
+  const lockable = ask.lockdown ? ENGINES.filter(engine => here.some(runner => engineLockable(runner, engine))) : undefined;
+  const home = ask.owner?.engine ?? ask.perry?.engine ?? ask.current ?? preferred;
+  if (lockable && home && !lockable.includes(home) && !engines.some(engine => lockable.includes(engine))) throw new Error("No signed-in engine can disable native tools for preparation. Sign in to Codex or Claude Code.");
   const timeZone = (await ctx.db.query("installation").first())?.timezone;
-  return route({ ...ask, ...(preferred ? { preferred } : {}), engines, models: await engineModels(ctx), usage: usageByEngine(runners), now: Date.now(), ...(timeZone ? { timeZone } : {}) });
+  return route({ ...ask, ...(preferred ? { preferred } : {}), engines, ...(lockable ? { lockable } : {}), models: await engineModels(ctx), usage: usageByEngine(runners), now: Date.now(), ...(timeZone ? { timeZone } : {}) });
 }
 
 /**

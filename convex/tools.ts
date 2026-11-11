@@ -1358,6 +1358,7 @@ const run_action = createTool({
     return await ctx.runAction(internal.composio.execute, {
       slug: input.slug,
       args: input.args ?? {},
+      readOnly: ctx.readOnly,
     });
   },
 });
