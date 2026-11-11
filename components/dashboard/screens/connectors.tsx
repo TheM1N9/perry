@@ -1,18 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { PlusIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { KeyIcon, PlusIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useAction } from "@/client/react";
 import { api } from "@/convex/_generated/api";
-import type { CatalogApp, ConnectedAccount } from "@/convex/composio";
+import type { CatalogApp, ConnectedAccount, TokenAuthOption } from "@/convex/composio";
 import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, Section, StatusBadge, type Tone } from "../common";
@@ -21,6 +24,8 @@ type FoundAction = { slug: string; description?: string; toolkit?: string };
 
 /** The ones people reach for first, in this order; the rest are under All apps. */
 const POPULAR = ["gmail", "googlecalendar", "slack", "notion", "googledrive", "googlesheets", "github", "outlook", "linear", "googledocs"];
+/** Toolkits with a working "paste a token" option (mirrors UNCATALOGUED_TOKEN_OPTIONS in convex/composio.ts). Everything else only offers signing in. */
+const TOKEN_TOOLKITS = new Set(["github"]);
 /** All apps shows this many at a time; search finds the rest. */
 const PAGE = 40;
 
@@ -93,7 +98,9 @@ function AppLogo({ name, logo, className }: { name: string; logo?: string; class
 }
 
 /** One app in the catalogue: its logo, name and a line about it, and + to connect an account. */
-function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connected: number; busy: string | null; onConnect: (slug: string, from: string) => void }) {
+function AppRow({ app, connected, busy, onConnect, onToken }: {
+  app: CatalogApp; connected: number; busy: string | null; onConnect: (slug: string, from: string) => void; onToken: (app: { slug: string; name: string }) => void;
+}) {
   return (
     <li className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-muted/50">
       <AppLogo name={app.name} logo={app.logo} />
@@ -104,6 +111,15 @@ function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connecte
         </p>
         {app.description && <p className="truncate text-sm text-muted-foreground" title={app.description}>{app.description}</p>}
       </div>
+      {TOKEN_TOOLKITS.has(app.slug) && (
+        <Tooltip>
+          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Connect ${app.name} with a token you already have`}
+            disabled={busy !== null} onClick={() => onToken({ slug: app.slug, name: app.name })} />}>
+            <KeyIcon />
+          </TooltipTrigger>
+          <TooltipContent>Use a token you already have</TooltipContent>
+        </Tooltip>
+      )}
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={connected ? `Connect another ${app.name} account` : `Connect ${app.name}`}
           disabled={busy !== null} aria-busy={busy === `app:${app.slug}` || undefined} onClick={() => onConnect(app.slug, `app:${app.slug}`)} />}>
@@ -119,8 +135,8 @@ function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connecte
 const TONE_TEXT: Record<Tone, string> = { neutral: "text-muted-foreground", success: "text-success", warning: "text-warning", danger: "text-destructive", info: "text-primary" };
 
 /** An app you've connected, drawn like a catalogue row, with its accounts listed under its name. */
-function AppGroup({ app, busy, onConnect, onRemove }: {
-  app: AppAccounts; busy: string | null; onConnect: (slug: string, from: string) => void; onRemove: (items: ConnectedAccount[]) => Promise<void>;
+function AppGroup({ app, busy, onConnect, onRemove, onToken }: {
+  app: AppAccounts; busy: string | null; onConnect: (slug: string, from: string) => void; onRemove: (items: ConnectedAccount[]) => Promise<void>; onToken: (app: { slug: string; name: string }) => void;
 }) {
   return (
     <li aria-label={app.name}>
@@ -134,6 +150,11 @@ function AppGroup({ app, busy, onConnect, onRemove }: {
             {app.finishing > 0 && <> · {app.finishing} finishing sign-in</>}
           </p>
         </div>
+        {TOKEN_TOOLKITS.has(app.toolkit) && (
+          <Button variant="ghost" size="sm" className="text-muted-foreground" aria-label={`Connect ${app.name} with a token you already have`} disabled={busy !== null} onClick={() => onToken({ slug: app.toolkit, name: app.name })}>
+            <KeyIcon /><span className="hidden sm:inline">Use a token</span>
+          </Button>
+        )}
         <Button variant="ghost" size="sm" className="text-muted-foreground" aria-label={`Add another ${app.name} account`} disabled={busy !== null} aria-busy={busy === `add:${app.toolkit}` || undefined} onClick={() => onConnect(app.toolkit, `add:${app.toolkit}`)}>
           {busy === `add:${app.toolkit}` ? <Spinner /> : <PlusIcon />}<span className="hidden sm:inline">Add another account</span>
         </Button>
@@ -217,6 +238,7 @@ export function Connectors() {
   const [shown, setShown] = useState(PAGE);
   /** The toolkit Composio just sent you back from, read off the callback address. */
   const [returned, setReturned] = useState<{ slug: string; status: string | null; accountId: string | null } | null>(null);
+  const [tokenApp, setTokenApp] = useState<{ slug: string; name: string } | null>(null);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -354,7 +376,7 @@ export function Connectors() {
             ? <p className="text-sm text-muted-foreground" role="status">No connected app or account matches &ldquo;{search.trim()}&rdquo;.</p>
             : (
               <ul aria-label="Connected apps" className="-mx-3 space-y-4">
-                {shownApps.map((app) => <AppGroup key={app.toolkit} app={app} busy={busy} onConnect={(slug, from) => void connect(slug, from)} onRemove={remove} />)}
+                {shownApps.map((app) => <AppGroup key={app.toolkit} app={app} busy={busy} onConnect={(slug, from) => void connect(slug, from)} onRemove={remove} onToken={setTokenApp} />)}
               </ul>
             )}
       </Section>
@@ -364,7 +386,7 @@ export function Connectors() {
           {!term && popular.length > 0 && (
             <Section title="Popular">
               <ul aria-label="Popular apps" className="grid gap-1 sm:grid-cols-2">
-                {popular.map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug, from) => void connect(slug, from)} />)}
+                {popular.map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug, from) => void connect(slug, from)} onToken={setTokenApp} />)}
               </ul>
             </Section>
           )}
@@ -374,7 +396,7 @@ export function Connectors() {
               : (
                 <>
                   <ul aria-label={term ? "Matching apps" : "All apps"} className="grid gap-1 sm:grid-cols-2">
-                    {rest.slice(0, shown).map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug, from) => void connect(slug, from)} />)}
+                    {rest.slice(0, shown).map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug, from) => void connect(slug, from)} onToken={setTokenApp} />)}
                   </ul>
                   {rest.length > shown && (
                     <div className="mt-4 flex justify-center">
@@ -388,7 +410,105 @@ export function Connectors() {
       )}
 
       <ActionLookup />
+      {tokenApp && <TokenConnectDialog
+        key={tokenApp.slug}
+        app={tokenApp}
+        onClose={() => setTokenApp(null)}
+        onConnected={() => void refresh()}
+      />}
     </Page>
+  );
+}
+
+/**
+ * Connect an app by pasting a credential it already accepts (a personal
+ * access token, say) instead of going through OAuth. Composio still owns the
+ * connection either way; this only changes how it gets created.
+ */
+function TokenConnectDialog({ app, onClose, onConnected }: {
+  app: { slug: string; name: string };
+  onClose: () => void;
+  onConnected: () => void;
+}) {
+  const { dashboardKey } = useSession();
+  const getOptions = useAction(api.dashboard.getTokenAuthOptions);
+  const connectWithToken = useAction(api.dashboard.connectToolkitWithToken);
+  const [options, setOptions] = useState<TokenAuthOption[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getOptions({ key: dashboardKey, toolkit: app.slug }).then((result) => {
+      if (cancelled) return;
+      setOptions(result.options);
+      setError(result.options.length === 0 ? (result.error ?? `${app.name} only offers signing in, not a pasted token.`) : null);
+    }, (cause) => { if (!cancelled) { setOptions([]); setError(errorText(cause)); } });
+    return () => { cancelled = true; };
+  }, [app.slug, app.name, dashboardKey, getOptions]);
+
+  const option = options?.[0] ?? null;
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!option || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await connectWithToken({ key: dashboardKey, toolkit: app.slug, mode: option.mode, credentials: values });
+      if (!mounted.current) return;
+      if (result.error) { setError(result.error); return; }
+      if (result.status !== "ACTIVE") { setError(`${app.name} hasn't confirmed the connection. Refresh connected accounts before trying again.`); return; }
+      toast.success(`${app.name} is connected.`);
+      onConnected();
+      onClose();
+    } catch (cause) {
+      if (mounted.current) setError(errorText(cause));
+    } finally {
+      if (mounted.current) setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => { if (!next && !submitting) onClose(); }}>
+      <DialogContent aria-label={`Connect ${app.name} with a token`} showCloseButton={!submitting}>
+        <DialogHeader>
+          <DialogTitle>Connect {app.name} with a token</DialogTitle>
+          <DialogDescription>
+            {option?.authHintUrl
+              ? <>Paste a token from <a href={option.authHintUrl} target="_blank" rel="noopener noreferrer" className="link">{app.name}</a> that already has the access you want Perry to use.</>
+              : `Paste a token ${app.name} already accepts.`}
+            {" "}It is sent through this Perry to Composio and isn't saved locally.
+          </DialogDescription>
+        </DialogHeader>
+        {options === null
+          ? <div className="flex justify-center py-4"><Spinner /></div>
+          : option && (
+            <form className="space-y-3" onSubmit={(event) => void submit(event)}>
+              {option.fields.map((field) => (
+                <div key={field.name} className="space-y-1.5">
+                  <Label htmlFor={`token-${field.name}`}>{field.displayName}{!field.required && " (optional)"}</Label>
+                  <Input id={`token-${field.name}`} type={field.isSecret ? "password" : "text"} required={field.required} autoComplete="off" spellCheck={false} disabled={submitting}
+                    value={values[field.name] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} />
+                  {field.description && <p className="text-xs text-muted-foreground">{field.description}</p>}
+                </div>
+              ))}
+              {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+              <DialogFooter className="gap-2 pt-2">
+                <Button type="submit" disabled={submitting}>{submitting && <Spinner />}Connect</Button>
+              </DialogFooter>
+            </form>
+          )}
+        {options?.length === 0 && error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+      </DialogContent>
+    </Dialog>
   );
 }
 
