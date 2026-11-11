@@ -42,6 +42,7 @@ function sourceKey(source: string) {
   return `issue:${createHash("sha256").update(value).digest("hex")}`;
 }
 
+/** Count starts/continuations over a rolling day; owner-directed and paused-goal work does not occupy preparation slots. */
 async function budget(ctx: MutationCtx, turnId: Id<"codexTurns">, tasks: Doc<"tasks">[]) {
   if (tasks.some(task => task.initiative?.startedBy === turnId)) throw new Error("Take at most one initiative per Heartbeat check.");
   const active = await Promise.all(tasks.filter(task => task.initiative && !task.initiative.ownerDirectedAt && ["queued", "running"].includes(task.status))

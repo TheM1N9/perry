@@ -149,6 +149,7 @@ export const listTasks = internalQuery({
 
 // --- Goals ---------------------------------------------------------------
 
+/** Pauses leave work queued after Stop; tick waits for its old turn to finalize before admitting a restart. */
 async function goalTasks(ctx: MutationCtx, id: Doc<"goals">["_id"], status: Doc<"goals">["status"]) {
   if (status !== "active") {
     const tasks = await ctx.db.query("tasks").withIndex("by_goal", q => q.eq("goalId", id)).collect();
