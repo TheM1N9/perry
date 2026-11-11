@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Perry updated attention forecast</title>
+<style>
+:root{--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px}*{box-sizing:border-box}body{margin:0;color:var(--foreground, #1d1d1f);font:14px/1.5 var(--font-sans,system-ui)}button,input{font:inherit}button{cursor:pointer;color:inherit}button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--ring, #0c7a70);outline-offset:3px}.intro{margin:0 0 12px;max-width:72ch}.muted{color:var(--muted-foreground, #66666b)}.scenarios{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-bottom:12px}.scenarios button,.step-controls button,.zoom{border:1px solid var(--border, #e5e5ea);background:var(--card, #ffffff);border-radius:8px;padding:var(--space-2) var(--space-3);min-height:40px}.scenarios button[aria-pressed=true],.step-controls button[aria-pressed=true]{background:var(--primary, #0c7a70);border-color:var(--primary, #0c7a70);color:var(--primary-foreground, #ffffff)}.context{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);margin:0 0 8px}.context strong{font-size:13px}.context span{font-size:11px;color:var(--muted-foreground, #66666b)}.frame{border:1px solid var(--border, #e5e5ea);border-radius:var(--radius,12px);overflow:hidden;background:var(--card, #ffffff)}.viewport{overflow:auto;overscroll-behavior-x:contain}.viewport svg{display:block;width:100%;height:auto}.viewport.zoomed svg{width:100%;min-width:850px}.app-bg{fill:var(--card, #ffffff)}.sidebar-bg{fill:var(--secondary, #f5f5f7)}.panel-bg{fill:var(--background, #ffffff)}.soft{fill:var(--muted, #f5f5f7)}.line{stroke:var(--border, #e5e5ea);stroke-width:1}.ink{fill:var(--foreground, #1d1d1f)}.quiet{fill:var(--muted-foreground, #66666b)}.app-text{font-family:var(--font-sans,system-ui);font-size:14px}.small{font-size:12px}.heading{font-size:23px;font-weight:600;letter-spacing:-.5px}.subheading{font-size:16px;font-weight:600}.stroke-ink{stroke:var(--foreground, #1d1d1f);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.stroke-quiet{stroke:var(--muted-foreground, #66666b);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.forecast-path{fill:none;stroke:var(--foreground, #1d1d1f);stroke-width:2.3;stroke-dasharray:5 5;opacity:.72;marker-end:url(#arrow)}.gaze-dot{fill:var(--foreground, #1d1d1f);stroke:var(--card, #ffffff);stroke-width:2}.gaze-number{fill:var(--card, #ffffff);font-size:13px;font-weight:700;text-anchor:middle;dominant-baseline:central}.counter{fill:var(--destructive, #c4221a)}.tools{padding:var(--space-3);border-top:1px solid var(--border, #e5e5ea);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-3);font-size:12px}.tools label{display:inline-flex;align-items:center;gap:var(--space-2);min-height:40px}.toggles{display:flex;gap:12px;align-items:center}.zoom{font-size:12px;padding:var(--space-2) var(--space-3);min-height:40px}.scroll-controls{display:flex;gap:var(--space-3);align-items:center;padding:var(--space-3);border-top:1px solid var(--border, #e5e5ea);font-size:12px}.scroll-controls[hidden]{display:none}.scroll-controls input{flex:1;min-width:60px;accent-color:var(--primary, #0c7a70)}.scroll-controls output{min-width:52px;text-align:right;color:var(--muted-foreground, #66666b)}.legend{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-3);font-size:11px;color:var(--muted-foreground, #66666b);margin:var(--space-3) 0}.scale{width:100px;height:10px;border-radius:8px;background:linear-gradient(90deg,color-mix(in srgb,var(--info, #2769ac) 35%,transparent),var(--warning, #9a5200),var(--destructive, #c4221a))}.path-key{font-size:14px;color:var(--foreground, #1d1d1f)}.step-controls{display:flex;flex-wrap:wrap;gap:var(--space-2);margin:12px 0 8px}.step-controls button{padding:var(--space-2) var(--space-3);min-height:40px;font-size:12px}.forecast-copy{margin:0;padding-left:12px;border-left:2px solid var(--warning, #9a5200)}.forecast-copy strong{font-size:14px}.forecast-copy p{margin:var(--space-1) 0 0;color:var(--muted-foreground, #66666b);font-size:13px}.sequence{list-style:none;padding:0;margin:12px 0;display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2) var(--space-4)}.sequence li{font-size:12px;display:flex;gap:8px}.sequence .n{flex:none;width:24px;height:24px;border:1px solid var(--border, #e5e5ea);border-radius:50%;text-align:center;font-size:11px;line-height:22px}.sequence strong{font-weight:600}.sequence .reason{display:block;color:var(--muted-foreground, #66666b);font-size:11px}.missed{padding:var(--space-3) var(--space-4);background:var(--secondary, #f5f5f7);border-radius:var(--radius,10px);font-size:12px}.missed strong{display:block;margin-bottom:var(--space-1)}.missed p{margin:0;color:var(--muted-foreground, #66666b)}details{margin-top:12px;font-size:11px;color:var(--muted-foreground, #66666b)}summary{cursor:pointer;min-height:40px;display:list-item}details p{margin:var(--space-2) 0}a{color:var(--primary, #0c7a70);text-underline-offset:3px}.footnote{margin:var(--space-3) 0 0;font-size:11px;color:var(--muted-foreground, #66666b)}@media(pointer:coarse){button,.tools label,summary{min-height:44px}.scroll-controls{min-height:44px}}@media(max-width:480px){.scenarios{gap:var(--space-2)}.scenarios button{font-size:12px;padding:var(--space-2) var(--space-3)}.context{display:block}.context span{display:block;margin-top:var(--space-1)}.sequence{grid-template-columns:1fr}.intro{font-size:13px}.tools{gap:4px}.toggles{gap:8px}.legend{gap:var(--space-2)}}
+select{max-width:100%;min-height:44px;border:1px solid var(--border,#e5e5ea);border-radius:8px;background:var(--card,#fff);color:var(--foreground,#1d1d1f);padding:8px;font:inherit}select:focus-visible{outline:2px solid var(--ring,#0c7a70);outline-offset:2px}.tools>label{display:flex;flex-wrap:wrap;gap:8px}.sequence{margin:16px 0;gap:12px 16px}.sequence .n{border:0;border-radius:4px;background:var(--secondary,#f5f5f7)}.context span{max-width:none}.step-controls button{min-height:44px}.tools button{min-height:44px}.frame{overflow:hidden}.context{gap:8px}.legend{line-height:1.6}.app-text .emphasis{font-weight:600}.scenario-change{font-size:12px;color:var(--muted-foreground,#66666b)}@media(max-width:480px){.tools{align-items:stretch;gap:12px}.tools>label{width:100%;justify-content:space-between}.tools select{flex:1;min-width:180px}.toggles{justify-content:space-between}.sequence{gap:12px}.legend .scale{width:72px}}
+</style>
+</head>
+<body>
+<p class="intro">Design direction: bring the task forward, explain consequences before approval, and keep the next action in context. Choose an activity and compare possible attention paths.</p>
+<div class="scenarios" role="group" aria-label="Activity">
+<button type="button" data-scenario="land" aria-pressed="true">Landing</button>
+<button type="button" data-scenario="read" aria-pressed="false">Scrolling a reply</button>
+<button type="button" data-scenario="write" aria-pressed="false">Writing</button>
+<button type="button" data-scenario="wait" aria-pressed="false">Waiting</button>
+<button type="button" data-scenario="approve" aria-pressed="false">Reviewing an action</button>
+<button type="button" data-scenario="return" aria-pressed="false">Returning</button>
+</div>
+<div class="context"><strong id="context-title"></strong><span>Updated direction / illustrative attention forecast</span></div>
+<div class="frame">
+<div class="viewport" id="viewport">
+<svg id="map" viewBox="0 0 1000 650" role="img" aria-labelledby="svg-title svg-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="svg-title">Perry predicted attention on landing</title><desc id="svg-desc"></desc>
+<defs>
+<radialGradient id="heat"><stop offset="0" stop-color="var(--destructive, #c4221a)" stop-opacity=".72"/><stop offset=".27" stop-color="var(--destructive, #c4221a)" stop-opacity=".48"/><stop offset=".53" stop-color="var(--warning, #9a5200)" stop-opacity=".42"/><stop offset=".77" stop-color="var(--warning, #9a5200)" stop-opacity=".17"/><stop offset="1" stop-color="var(--info, #2769ac)" stop-opacity="0"/></radialGradient>
+<marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7" fill="var(--foreground, #1d1d1f)"/></marker>
+<clipPath id="conversation-clip"><rect x="238" y="62" width="734" height="439"/></clipPath>
+</defs>
+<rect width="1000" height="650" class="app-bg"/>
+<g id="sidebar" class="app-text">
+<rect width="208" height="650" class="sidebar-bg"/><path d="M208 0V650" class="line"/>
+<circle cx="30" cy="30" r="13" class="soft"/><text x="25" y="35" class="ink" font-weight="650">P</text><text x="52" y="35" class="ink" font-weight="650">Perry</text>
+<rect id="new-chat-selected" x="10" y="65" width="145" height="34" rx="6" fill="var(--accent, #f0f0f3)"/>
+<path d="M23 78v12h12 M25 83l12-12 4 4-12 12-5 1z" class="stroke-ink"/><text x="49" y="87" class="ink">New chat</text>
+<circle cx="179" cy="79" r="6" class="stroke-ink"/><path d="M184 84l5 5" class="stroke-ink"/>
+<g class="quiet"><text x="49" y="126">Needs you</text><text x="49" y="164">To-dos</text><text x="49" y="202">Meetings</text><text x="49" y="240">Brain</text><text x="49" y="278">Library</text><text x="49" y="316">Work</text><text x="49" y="354">Apps &amp; skills</text></g>
+<g class="stroke-quiet"><circle cx="30" cy="121" r="6"/><circle cx="30" cy="159" r="6"/><circle cx="30" cy="197" r="6"/><circle cx="30" cy="235" r="6"/><circle cx="30" cy="273" r="6"/><circle cx="30" cy="311" r="6"/><circle cx="30" cy="349" r="6"/></g>
+<text x="18" y="399" class="quiet small">Projects</text><text x="182" y="399" class="quiet">+</text><text x="27" y="426" class="quiet">+ New project</text>
+<text x="18" y="461" class="quiet small">Chats</text><rect id="recent-chat-selected" x="10" y="470" width="188" height="31" rx="6" fill="var(--accent, #f0f0f3)"/><g id="recent-chats"><text x="21" y="492" class="quiet">Weekly planning</text><text x="21" y="525" class="quiet">Reply to Sam</text></g>
+<circle cx="28" cy="588" r="5" fill="var(--info, #2769ac)" opacity=".6"/><text x="44" y="593" class="quiet small">Desktop pet</text><circle cx="29" cy="625" r="12" class="ink"/><text x="25" y="630" fill="var(--card, #ffffff)" class="small">Y</text><text x="49" y="624" class="ink small">You</text><text x="49" y="639" class="quiet" font-size="10">Account &amp; settings</text>
+<g id="notification-dot"><rect x="173" y="111" width="23" height="22" rx="6" fill="var(--warning, #9a5200)" opacity=".2"/><text x="181" y="127" class="ink small">1</text></g><g id="pause-control"><rect x="13" y="549" width="182" height="29" rx="6" class="panel-bg" stroke="var(--border, #e5e5ea)"/><text x="55" y="568" class="ink small">Pause all work</text></g>
+</g>
+<g class="app-text"><path d="M208 53h792" class="line"/><path d="M228 21h13v12h-13z M232 21v12" class="stroke-quiet"/><text id="chat-title" x="255" y="32" class="ink">New chat</text><text x="915" y="33" class="quiet">▧  ◉  ···</text></g>
+<g id="scene" class="app-text" clip-path="url(#conversation-clip)"></g>
+<g id="composer" class="app-text">
+<rect x="286" y="529" width="638" height="91" rx="19" class="panel-bg" stroke="var(--border, #e5e5ea)"/>
+<text x="307" y="559" id="draft-text" class="quiet">Message Perry</text>
+<path d="M307 599l10-11c5-5 9 0 5 4l-9 10c-2 2-5 0-3-2l8-9" class="stroke-quiet"/>
+<text x="340" y="602" class="quiet small">Reply options</text><text x="465" y="602" class="quiet small">Access: Ask</text>
+<circle cx="897" cy="594" r="14" class="soft"/><path id="send-icon" d="M897 601v-14m-5 5 5-5 5 5" class="stroke-ink"/>
+</g>
+<g id="heat-layer" aria-hidden="true"></g><g id="path-layer" aria-hidden="true"></g>
+</svg>
+</div>
+<div id="scroll-controls" class="scroll-controls" hidden><label for="scroll-position">Scroll reply</label><input id="scroll-position" type="range" min="0" max="2" step="1" value="0"><output id="scroll-label" for="scroll-position">Top</output></div>
+<div class="tools"><label for="route-choice">Possible behavior <select id="route-choice" aria-label="Possible behavior"></select></label><div class="toggles"><label><input id="show-heat" type="checkbox" checked> Heat</label><label><input id="show-path" type="checkbox"> Possible order</label></div><button class="zoom" id="zoom" type="button" aria-pressed="false">Enlarge layout</button></div>
+</div>
+<div class="legend"><span>Illustrative emphasis</span><span class="scale" aria-hidden="true"></span><span>Lower to stronger / revisited</span><span>No measured probability or timing</span></div>
+<div class="step-controls" id="step-controls" role="group" aria-label="Inspect attention regions"></div>
+<div class="forecast-copy" id="forecast-copy" aria-live="polite" aria-atomic="true"></div>
+<ol class="sequence" id="sequence"></ol>
+<div class="missed"><strong>What could still be missed</strong><p id="missed"></p></div>
+<p class="footnote">These are hypotheses about looking behavior, including shortcuts and omissions. Heat is manually chosen; looking at a control does not prove understanding. Task grouping, approval context and permission hierarchy are implemented; the diagram remains illustrative and does not reproduce every screen or state.</p>
+<details><summary>Scope and assumptions</summary><p>This is a design proposal, not a capture of the shipping interface. It reduces the central greeting, groups the task prompt with its examples, expands permission language, prioritizes the exact write and destination, strengthens work status, and surfaces pending decisions when returning.</p><p>Scenarios assume a sighted, English-reading desktop user with the sidebar expanded. Prior product experience and task intent can change the route. Each alternate path is conditional, not a measured user segment. Mobile and assistive-technology routes need separate validation.</p><p>Regions, heat intensity and optional numbered paths are manual predictions. Counts vary by activity; a person may jump directly to an action, revisit a region, ignore it or leave the app. Scroll controls show paused checkpoints, not continuous eye tracking.</p></details>
+<!-- QA failure cases: runtime errors; stale scenario or route state; fixed route counts; heat/path toggles disagreeing with controls; incorrect scroll coordinates; lost step focus; clipped SVG labels; viewport overflow; indistinguishable proposed/current status. -->
+<script>
+const $ = id => document.getElementById(id);
+const region = (x,y,rx,ry,title,reason,weight=1) => ({x,y,rx,ry,title,reason,weight});
+const txt = (x,y,words,cls='ink',size=14) => `<text x="${x}" y="${y}" class="${cls}" font-size="${size}">${words}</text>`;
+const box = (x,y,w,h,soft=false) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" class="${soft?'soft':'panel-bg'}" stroke="var(--border,#e5e5ea)"/>`;
+const button = (x,y,w,label,primary=false) => `<rect x="${x}" y="${y}" width="${w}" height="34" rx="7" fill="${primary?'var(--primary,#0c7a70)':'var(--card,#fff)'}" stroke="var(--border,#e5e5ea)"/><text x="${x+w/2}" y="${y+22}" text-anchor="middle" fill="${primary?'var(--primary-foreground,#fff)':'var(--foreground,#1d1d1f)'}" font-size="12" font-weight="550">${label}</text>`;
+function compose(y,draft='Describe your task…') {
+  const hasDraft=draft.startsWith('Draft');
+  return `${box(286,y,638,116)}${txt(306,y+31,draft,draft.startsWith('Draft')?'ink':'quiet',16)}${txt(306,y+70,'Attach','quiet',12)}${txt(373,y+70,'Reply options','quiet',12)}${txt(485,y+70,'Ask before extra access','ink',12)}<circle cx="897" cy="${y+66}" r="16" fill="${hasDraft?'var(--primary,#0c7a70)':'var(--muted,#f5f5f7)'}"/><path d="M897 ${y+73}v-14m-5 5 5-5 5 5" stroke="${hasDraft?'var(--primary-foreground,#fff)':'var(--muted-foreground,#66666b)'}" fill="none" stroke-width="1.7"/>${txt(306,y+99,'Works in its sandbox; extra access needs review.','quiet',12)}`;
+}
+let active='land',variant=0,step=-1,scrollPosition=0;
+function readingScene() {
+ const offset=[0,180,365][scrollPosition];
+ const headings=['Weekly plan · overview','Weekly plan · Tuesday','Weekly plan · next action'];
+ return `${box(270,67,670,34,true)}${txt(286,89,headings[scrollPosition],'ink',12)}<g clip-path="url(#reply-clip)"><g transform="translate(0 ${-offset})">${txt(286,139,'Your week at a glance','ink emphasis',20)}${txt(286,173,'Keep mornings for focused work.')}${txt(286,221,'Monday · finish the proposal','ink emphasis',17)}${txt(286,253,'09:00 — Outline the proposal and confirm the scope.')}${txt(286,285,'11:00 — Review the numbers with the team.')}${txt(286,349,'Tuesday · prepare the review','ink emphasis',17)}${txt(286,381,'Gather the open questions before the meeting.')}${txt(286,413,'Send the draft to Sam when you are ready.')}${txt(286,477,'Wednesday · close the loop','ink emphasis',17)}${txt(286,509,'Finish the revisions and check outstanding tasks.')}${txt(286,577,'Start with Monday’s first task','ink emphasis',17)}${txt(286,609,'Set aside 30 minutes to outline the proposal.')}${txt(286,637,'No reminders have been created yet.','quiet',12)}${button(286,657,268,'Make this task a reminder')}${txt(286,730,'Or ask me to change the plan below.','quiet',12)}</g></g>${scrollPosition<2?button(650,459,274,'2 new updates below · Jump to latest'):''}`;
+}
+function readingRegions(alternate) {
+ const normal=[
+  [region(454,140,184,42,'Answer heading','A descriptive heading gives someone a starting point.'),region(505,173,229,38,'Opening recommendation','A person checking the overview may read this sentence.',.85),region(485,221,210,40,'Monday heading','A task-matching heading can stop the scan.',.75)],
+  [region(468,169,196,41,'Tuesday heading','The heading is near the top at this scroll checkpoint.'),region(505,215,231,57,'Tuesday details','Relevant content stays close to its heading.'),region(785,475,139,36,'New updates, if relevant','Someone interrupted while reading may jump to newer content.',.35)],
+  [region(476,212,199,43,'Next action heading','The task-specific next step stays next to the relevant content.'),region(505,257,230,48,'What will happen','The next step and its not-yet-done qualifier can be read together.',.85),region(421,309,145,42,'Contextual action','The local action identifies which task becomes a reminder.'),region(497,560,216,48,'Composer, if changing the plan','Someone wanting a different outcome can continue below.',.45)]
+ ];
+ return alternate
+  ? [region(472,[221,169,212][scrollPosition],205,44,'Heading scan only','A hurried reader may read headings and skip the supporting details.'),region(510,560,239,58,'Ask a follow-up','They may ask again rather than read the whole answer.',.7)]
+  : normal[scrollPosition];
+}
+const states = {
+ land: {
+  title:'Landing · start a useful task', chat:'New chat', change:'Smaller welcome; input and examples form one task area.',
+  scene:()=>`${txt(286,143,'Good afternoon','quiet',14)}${txt(286,185,'What would you like to get done?','ink emphasis',24)}${compose(212)}${button(286,352,239,'Remind me to take a break')}${button(537,352,150,'Plan my day')}${button(699,352,225,'Think through an idea')}${txt(286,430,'Optional setup: about you, desktop, voice and calendar','quiet',12)}`,
+  labels:['Exploring a first task','Experienced · goes straight to input'],
+  points:alt=>alt?[region(518,244,239,65,'Composer and caret','A chat-experienced person can go straight to typing.'),region(897,278,43,40,'Send, if using a pointer','Enter-to-send can bypass this glance.',.45)]:[region(529,183,244,54,'Task invitation','The central message now asks for an outcome rather than emphasizing the mascot.'),region(603,368,300,46,'Concrete examples','A newcomer may use an example to recognize a useful request.',.85),region(519,244,240,60,'Composer','The examples and input are in the same compact area.')],
+  summary:'The useful task is the main landmark.',
+  detail:'The forecast allows a newcomer to inspect examples and an experienced user to bypass them. The smaller greeting and optional setup no longer split the task area.',
+  missed:'Optional setup and navigation may receive no attention. A reminder example still needs to match something the person wants.'
+ },
+ read: {
+  title:'Scrolling · keep the next action in context',chat:'Weekly planning',change:'Heading context, local next action and a separate route to newer updates.',
+  scene:readingScene,labels:['Reading for a useful next step','Skims headings · asks again'],points:readingRegions,
+  summary:'Attention can follow relevant headings and nearby actions.',
+  detail:'Move the scroll control to see the answer at three pauses. At the end, Make this task a reminder sits beside the task it refers to. The fixed composer stays available for changes.',
+  missed:'A reader may skip qualifiers such as No reminders have been created yet. A local action helps identify the task; it does not prove the person read its details.'
+ },
+ write: {
+  title:'Writing · make permission scope understandable',chat:'New chat',change:'Permission language explains the behavior beside the request.',
+  scene:()=>`${txt(286,176,'Draft your request','ink emphasis',23)}${compose(212,'Draft a reply to Sam, but do not send it.')}`,
+  labels:['Composing and checking','Checks permission scope'],
+  points:alt=>alt?[region(605,282,139,38,'Permission mode','A concerned person may check whether extra access needs review.'),region(526,311,240,36,'Plain-language consequence','The explanation states what the current mode means.',.85),region(561,244,268,51,'Request wording','They may check their own do-not-send instruction again.')]:[region(534,244,244,60,'Draft and caret','Most attention may stay around the words being entered.'),region(686,244,171,43,'Wording check','A reread can catch a missing constraint.',.8),region(897,278,43,40,'Send, when needed','Keyboard users may send without looking here.',.55)],
+  summary:'Writing remains primary; permission meaning is available nearby.',
+  detail:'The permission explanation is separate from the user’s instruction not to send. It describes a review gate; it is not a guarantee that every requested outcome is safe.',
+  missed:'Someone focused on wording may never inspect permissions. Visible explanatory text is not evidence of comprehension.'
+ },
+ wait: {
+  title:'Waiting · distinguish progress from a block',chat:'Reply to Sam',change:'A readable status card explains what is happening and how to intervene.',
+  scene:()=>`${txt(286,121,'Draft a reply to Sam. Do not send it.','quiet',14)}${box(286,159,638,158)}${txt(306,191,'Working · reading Sam’s messages','ink emphasis',18)}${txt(306,220,'Last update 6 seconds ago. Nothing has been sent.','ink',14)}${txt(306,246,'You can leave this chat; the work can continue.','quiet',13)}${button(306,267,151,'Stop this reply')}${txt(286,374,'The draft will appear here when it is ready.','quiet',14)}`,
+  labels:['Checks progress','Brief glance · leaves the app'],
+  points:alt=>alt?[region(522,193,233,50,'Progress glance','The person may check that work is active, then look elsewhere.',.65)]:[region(550,192,265,53,'Readable work state','The card gives a clear place to check what is happening.'),region(551,224,267,39,'Latest update and consequence','A person waiting for a draft can check freshness and whether anything was sent.',.85),region(382,283,91,42,'Stop, if the direction is wrong','There is one local Stop action in this illustration; ordinary waiting may never lead here.',.5)],
+  summary:'A quick status check may be enough; attention can leave the app.',
+  detail:'If the runner disconnects, this same status area should change to a blocked reason and reconnect guidance. It should not keep claiming that work is progressing. This view illustrates the working state.',
+  missed:'People who leave may miss the exact moment the state changes. Completion and requests for a decision need a persistent return path.'
+ },
+ approve: {
+  title:'Approval · understand the change before deciding',chat:'Weekly planning',change:'Exact operation, destination, effect and one-time scope precede the decision.',
+  scene:()=>`${txt(286,111,'Review file change','ink emphasis',20)}${box(286,131,638,350)}${txt(306,165,'Create weekly-plan.md','ink emphasis',18)}${txt(306,193,'Destination','quiet',12)}${txt(306,218,'C:/Users/You/Documents/planning/weekly-plan.md','ink emphasis',13)}${box(306,237,598,68,true)}${txt(322,263,'Creates one new file. No existing file is replaced.','ink',14)}${txt(322,286,'Stays on this computer. Nothing is sent to anyone.','ink',13)}${txt(306,331,'Permission: this write only. Future writes still ask.','ink emphasis',13)}${txt(306,359,'Request expires in 4:58. No change has happened yet.','quiet',12)}<path d="M306 380h598" class="line"/>${button(306,398,96,'Decline')}${button(704,398,200,'Allow this write once',true)}${txt(306,458,'Persistent permission rules are managed separately.','quiet',12)}`,
+  labels:['Checks the consequences','Rushed · may skip details'],
+  points:alt=>alt?[region(490,167,207,47,'Operation headline','A hurried reviewer may recognize the filename and stop reading.'),region(805,415,119,46,'Approval shortcut','Even this layout cannot stop someone jumping to the primary button.')]:[region(494,165,213,48,'Exact operation','The operation carries more weight than a generic permission header.'),region(578,217,286,40,'Full destination','The path is part of the main information hierarchy.'),region(575,271,278,50,'Effect and data movement','The card states replacement and sharing consequences before the buttons.',.9),region(551,331,264,39,'One-time scope','The explanation distinguishes one write from a persistent rule.',.85),region(805,415,119,46,'Decision','The action names the operation and its scope.',.85)],
+  summary:'Operation and consequences are the main reading landmarks.',
+  detail:'The cautious route has five checks; the rushed route has only two. These are plausible alternatives, not expected compliance. A checkbox or forced delay would not establish that the person understood.',
+  missed:'The full path, effect or expiry can still be skipped. The synthetic example is a new local file; replacement or external sharing would need different, accurate consequences.'
+ },
+ return: {
+  title:'Returning · recover both result and pending decisions',chat:'Weekly planning',change:'A contextual pending-decision summary appears with the saved result.',
+  scene:()=>`${box(286,95,638,83,true)}${txt(306,123,'1 decision waiting · Weekly planning','ink emphasis',16)}${txt(306,149,'Review the file destination before Perry saves the plan.','ink',13)}${button(812,119,92,'Review')}${txt(286,231,'Your weekly plan is ready','ink emphasis',22)}${txt(286,264,'Draft saved in this conversation. File write not approved yet.','ink',14)}${box(286,289,360,51)}${txt(306,320,'weekly-plan.md · draft preview','ink emphasis',14)}${txt(286,386,'Work: 2 tasks running · last update 12 seconds ago','quiet',13)}`,
+  labels:['Checks what needs attention','Looks only for the result'],
+  points:alt=>alt?[region(512,231,232,55,'Latest outcome','Someone returning for the result may go straight to the answer.'),region(466,316,187,43,'Draft preview','They may inspect the artifact and overlook the pending review.')]:[region(571,131,281,55,'Pending decision in context','The waiting action is near the current work, not only in the sidebar.'),region(527,235,248,55,'Latest saved result','The result helps restore context.'),region(574,266,280,37,'What is still unapproved','The qualifier distinguishes a draft from a completed write.',.8),region(857,136,63,37,'Review, if ready','The contextual action goes to the specific pending decision.',.75)],
+  summary:'The result and what still needs the owner are visible together.',
+  detail:'Needs you in navigation remains the global destination. This local summary connects the pending decision to the current result without interrupting with a modal.',
+  missed:'The alternate route still bypasses the decision. Someone seeking a different task may use recent chats or Work instead.'
+ }
+};
+$('map').querySelector('defs').insertAdjacentHTML('beforeend','<clipPath id="reply-clip"><rect x="270" y="111" width="670" height="337"/></clipPath>');
+function render(resetOptions=false) {
+ const state=states[active],points=state.points(Boolean(variant));
+ if(resetOptions) $('route-choice').innerHTML=state.labels.map((label,i)=>`<option value="${i}">${label}</option>`).join('');
+ $('route-choice').value=String(variant);
+ $('context-title').textContent=state.title;
+ $('svg-title').textContent='Illustrative attention forecast: '+state.title;
+ $('svg-desc').textContent=state.change+' Possible attention regions: '+points.map(p=>p.title).join('; ')+'. Not measured gaze.';
+ $('chat-title').textContent=state.chat;
+ $('new-chat-selected').style.display=state.chat==='New chat'?'':'none';
+ $('recent-chat-selected').style.display=state.chat==='New chat'?'none':'';
+ $('recent-chat-selected').setAttribute('y',state.chat==='Reply to Sam'?'503':'470');
+ $('scene').innerHTML=state.scene();
+ $('composer').style.display=active==='land'||active==='write'?'none':'';
+ if(active!=='land'&&active!=='write') $('composer').innerHTML=compose(519,active==='wait'?'Add an instruction while Perry works…':'Ask about this result or change the next step…');
+ $('pause-control').style.display=active==='wait'?'':'none';
+ $('notification-dot').style.display=active==='return'||active==='approve'?'':'none';
+ $('scroll-controls').hidden=active!=='read';
+ $('scroll-label').textContent=['Top','Middle','Next step'][scrollPosition];
+ $('scroll-position').value=String(scrollPosition);
+ const selected=points.filter((p,i)=>step<0||i===step);
+ $('heat-layer').innerHTML=selected.map(p=>`<ellipse cx="${p.x}" cy="${p.y}" rx="${p.rx}" ry="${p.ry}" fill="url(#heat)" opacity="${p.weight*.8}"/>`).join('');
+ let paths='';
+ if(step<0) for(let i=1;i<points.length;i++) {
+  const a=points[i-1],b=points[i],dist=Math.hypot(b.x-a.x,b.y-a.y);
+  if(dist<40) continue;
+  const ux=(b.x-a.x)/dist,uy=(b.y-a.y)/dist;
+  paths+=`<path d="M${a.x+ux*18} ${a.y+uy*18} L${b.x-ux*21} ${b.y-uy*21}" class="forecast-path"/>`;
+ }
+ $('path-layer').innerHTML=paths+points.map((p,i)=>step<0||i===step?`<circle cx="${p.x}" cy="${p.y}" r="15" class="gaze-dot"/><text x="${p.x}" y="${p.y}" class="gaze-number">${i+1}</text>`:'').join('');
+ $('heat-layer').style.display=$('show-heat').checked?'':'none';
+ $('path-layer').style.display=$('show-path').checked?'':'none';
+ document.querySelectorAll('[data-scenario]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scenario===active)));
+ $('step-controls').innerHTML=`<button type="button" data-step="-1" aria-pressed="${step<0}">All regions</button>`+points.map((p,i)=>`<button type="button" data-step="${i}" title="${p.title}" aria-label="Inspect ${p.title}" aria-pressed="${step===i}">${i+1}</button>`).join('');
+ $('forecast-copy').innerHTML=step<0?`<strong>${state.summary}</strong><p>${state.change} ${state.detail}</p>`:`<strong>${points[step].title}</strong><p>${points[step].reason}</p>`;
+ $('sequence').innerHTML=points.map((p,i)=>`<li><span class="n">${i+1}</span><span><strong>${p.title}</strong><span class="reason">${p.reason}</span></span></li>`).join('');
+ $('missed').textContent=state.missed;
+}
+document.querySelector('.scenarios').onclick=event=>{const b=event.target.closest('[data-scenario]');if(!b)return;active=b.dataset.scenario;variant=0;step=-1;render(true);};
+$('route-choice').onchange=event=>{variant=Number(event.target.value);step=-1;render();};
+$('step-controls').onclick=event=>{const b=event.target.closest('[data-step]');if(!b)return;step=Number(b.dataset.step);render();$('step-controls').querySelector(`[data-step="${step}"]`).focus({preventScroll:true});};
+$('scroll-position').oninput=event=>{scrollPosition=Number(event.target.value);step=-1;render();};
+$('show-heat').onchange=()=>render();
+$('show-path').onchange=()=>render();
+$('zoom').onclick=()=>{const enlarged=$('viewport').classList.toggle('zoomed');$('zoom').setAttribute('aria-pressed',String(enlarged));$('zoom').textContent=enlarged?'Fit layout':'Enlarge layout';};
+render(true);
+</script>
+</body>
+</html>

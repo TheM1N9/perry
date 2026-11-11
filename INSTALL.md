@@ -12,7 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh 
 powershell -c "irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"   # Windows: Command Prompt or PowerShell
 ```
 
-The installer adds what is missing: Git (Windows, through winget), Node.js 20.9
+The installer adds what is missing: Git (Windows, through winget), Node.js 22.13
 or newer (winget on Windows; on macOS and Linux, Node's own build in
 `~/.perry/node`, checked against its published checksum), pnpm and Bun. No
 engine: `perry setup` asks which one Perry thinks with and installs that one.

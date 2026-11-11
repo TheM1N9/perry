@@ -28,12 +28,12 @@ export function Close() {
 export function Footer() {
   return (
     <footer className="border-t border-hair bg-mist">
-      <div className="mx-auto flex max-w-[1180px] items-center justify-between gap-6 px-6 py-8">
+      <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-6 px-6 py-8">
         <div className="flex items-center gap-3">
           <PlatypusArt asleep className="w-11" />
           <p className="text-[14px] text-ink-3">Off the clock. Your data stays put.</p>
         </div>
-        <nav aria-label="Footer" className="flex gap-6 text-[14px] text-ink-3">
+        <nav aria-label="Footer" className="flex flex-wrap gap-6 text-[14px] text-ink-3">
           <TrackLink href={INSTALL_GUIDE} target="_blank" rel="noopener noreferrer" event="GitHub click" data={{ link: "install_guide" }} className="hover:text-ink">
             Install guide
           </TrackLink>

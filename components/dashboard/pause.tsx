@@ -11,6 +11,7 @@ import { useDashboardKey } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { ActionButton } from "./common";
 
 /**
  * Pause Perry (convex/pause.ts), wherever it shows: a note in the sidebar
@@ -28,6 +29,20 @@ export function usePause(from: "web" | "pet" = "web") {
   const set = useMutation(api.pause.set);
   const setPaused = useCallback((paused: boolean) => set({ key, paused, from }), [key, set, from]);
   return { view, paused: Boolean(view?.paused), setPaused };
+}
+
+/** Global scope is explicit; stopping one reply stays beside that reply. */
+export function PauseControl({ active }: { active: boolean }) {
+  const { view, paused, setPaused } = usePause();
+  if (!active || paused) return null;
+  return <div className="px-2 py-2 group-data-[collapsible=icon]:px-0" data-global-pause>
+    <ActionButton variant="outline" size="sm" className="w-full group-data-[collapsible=icon]:p-0" aria-label="Pause all work" title="Pause all work" disabled={!view}
+      confirm={{ title: "Pause all work?", body: "This stops current replies and tasks, and prevents schedules, watches and new replies from starting until you resume. Completed actions are not undone.", label: "Pause all work" }}
+      action={() => setPaused(true)} success={PAUSED_TOAST}>
+      <PauseIcon /><span className="group-data-[collapsible=icon]:hidden">Pause all work</span>
+    </ActionButton>
+    <p className="mt-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">All chats, tasks and schedules.</p>
+  </div>;
 }
 
 /** In the sidebar, above the computer: paused, with Resume; back on, what was missed. */
@@ -93,7 +108,7 @@ export function PauseMenuItem() {
   );
   return (
     <DropdownMenuItem disabled={view === undefined} onClick={flip}>
-      {paused ? <PlayIcon /> : <PauseIcon />}{paused ? "Resume Perry" : "Pause Perry"}
+      {paused ? <PlayIcon /> : <PauseIcon />}{paused ? "Resume Perry" : "Pause all work"}
     </DropdownMenuItem>
   );
 }

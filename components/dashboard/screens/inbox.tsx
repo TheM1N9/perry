@@ -16,8 +16,9 @@ import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Secti
 type Dismissable = Exclude<InboxItem, { kind: "question" }>;
 
 const KIND: Record<InboxItem["kind"], { label: string; icon: typeof CircleHelpIcon; tone: string }> = {
-  question: { label: "A plan needs your answer", icon: CircleHelpIcon, tone: "text-warning" },
-  "task-failed": { label: "A plan failed", icon: OctagonXIcon, tone: "text-destructive" },
+  delivery: { label: "Delivery needs review", icon: OctagonXIcon, tone: "text-warning" },
+  question: { label: "A task needs your answer", icon: CircleHelpIcon, tone: "text-warning" },
+  "task-failed": { label: "A task failed", icon: OctagonXIcon, tone: "text-destructive" },
   "job-error": { label: "A schedule failed", icon: OctagonXIcon, tone: "text-destructive" },
   "job-result": { label: "New from a schedule", icon: AlarmClockIcon, tone: "text-primary" },
   watch: { label: "A watch fired", icon: EyeIcon, tone: "text-primary" },
@@ -79,8 +80,10 @@ function InboxRow({ item, onDismiss }: { item: InboxItem; onDismiss?: () => void
     action = <Button size="sm" variant="outline" render={<Link href={`/chat/${item.chatId}`} />}><MessageSquareIcon />Open</Button>;
   } else if (item.kind === "watch") {
     action = <Button size="sm" variant="outline" render={<a href={item.url} target="_blank" rel="noopener noreferrer" />}><ExternalLinkIcon />Open page</Button>;
+  } else if (item.kind === "delivery") {
+    action = <Button size="sm" variant="outline" render={<Link href={item.chatId ? `/chat/${item.chatId}` : "/settings/notifications"} />}>Review</Button>;
   } else if (item.kind === "task-failed") {
-    action = <Button size="sm" variant="outline" render={<Link href="/work?tab=plans" />}>See plan</Button>;
+    action = <Button size="sm" variant="outline" render={<Link href="/work?tab=plans" />}>See task</Button>;
   }
   return (
     <li className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start">

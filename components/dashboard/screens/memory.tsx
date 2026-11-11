@@ -145,7 +145,7 @@ export function OlderMemories() {
         {listed && listed.length > 0 && (
           <List label="Memories">
             {listed.map((memory) => (
-              <li key={memory.id} className="group/memory flex items-start gap-4 px-4 py-3.5">
+              <li key={memory.id} className="group/memory flex items-start gap-4 px-4 py-4">
                 {editing?.id === memory.id ? (
                   <form className="min-w-0 flex-1" onSubmit={(event) => void saveEdit(event)}>
                     <Field data-invalid={Boolean(editing.error) || undefined}>
@@ -305,24 +305,24 @@ export function YourAssistant() {
   const { dashboardKey } = useSession();
   const persona = useQuery(api.dashboard.getPersona, { key: dashboardKey });
   const saveIdentity = useMutation(api.dashboard.saveIdentity);
-  const name = useAutosave({ saved: persona?.name ?? "", save: (text) => saveIdentity({ key: dashboardKey, name: text }) });
-  const personality = useAutosave({ saved: persona?.personality ?? "", save: (text) => saveIdentity({ key: dashboardKey, personality: text }) });
+  const name = useAutosave({ draftKey: "identity.name", saved: persona?.name ?? "", save: (text) => saveIdentity({ key: dashboardKey, name: text }) });
+  const personality = useAutosave({ draftKey: "identity.personality", saved: persona?.personality ?? "", save: (text) => saveIdentity({ key: dashboardKey, personality: text }) });
   // The two fields save on their own; one line says how both went.
   const both = [name.state, personality.state];
-  const identity: SaveState = both.find((state) => state.status === "error") ?? both.find((state) => state.status === "saving")
+  const identity: SaveState = both.find((state) => state.status === "error") ?? both.find((state) => state.status === "recovered") ?? both.find((state) => state.status === "saving")
     ?? both.find((state) => state.status === "saved") ?? { status: "idle" };
 
   return (
     <Section title="Assistant" icon={<UserRoundIcon />} actions={<SaveStatus state={identity} onRetry={() => { void name.flush(); void personality.flush(); }} />}>
       {persona === undefined ? <ListSkeleton rows={2} /> : (
         <div className="grid gap-4">
-          <Field className="sm:grid sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-x-4">
+          <Field className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-x-4">
             <FieldLabel htmlFor="identity-name" className="text-muted-foreground">Name</FieldLabel>
             <Input id="identity-name" value={name.value} maxLength={40} placeholder={persona.defaultName} className="h-10 max-w-xs text-base md:text-sm" {...name.field}
               onChange={(event) => name.change(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void name.flush(); } }} />
           </Field>
-          <Field className="sm:grid sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-x-4">
+          <Field className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-x-4">
             <FieldLabel htmlFor="identity-personality" className="text-muted-foreground sm:pt-2">Personality</FieldLabel>
             <Textarea id="identity-personality" rows={2} className="min-h-20 text-base md:text-sm" maxLength={600} value={personality.value} placeholder="Direct, clear and concise" {...personality.field}
               onChange={(event) => personality.change(event.target.value)}

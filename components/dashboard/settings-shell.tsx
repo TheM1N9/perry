@@ -27,11 +27,11 @@ export function SettingsShell({ children }: { children: ReactNode }) {
   const current = selected?.slug;
   return (
     <Page title="Settings" wide>
-      <div className="md:grid md:grid-cols-[12rem_minmax(0,1fr)] md:gap-8 lg:gap-10">
+      <div className="lg:grid lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-8 xl:gap-10">
         <SectionNav current={current} />
         <SectionSwitcher current={current} />
-        <div className="min-w-0 max-w-2xl text-sm [&_input]:text-base [&_textarea]:text-base md:[&_input]:text-sm md:[&_textarea]:text-sm">
-          <h2 className="mb-6 hidden text-xl font-semibold tracking-tight md:block">{selected?.label}</h2>
+        <div className="min-w-0 max-w-2xl text-sm [&_input]:text-base [&_textarea]:text-base md:pointer-fine:[&_input]:text-sm md:pointer-fine:[&_textarea]:text-sm">
+          <h2 className="mb-6 hidden text-xl font-semibold tracking-tight lg:block">{selected?.label}</h2>
           <PageInPage variant="settings">{children}</PageInPage>
         </div>
       </div>
@@ -55,7 +55,7 @@ function SectionNav({ current }: { current?: string }) {
     links[Math.max(0, Math.min(links.length - 1, to))]?.focus();
   };
   return (
-    <nav ref={nav} aria-label="Settings" className="max-md:hidden" onKeyDown={move}>
+    <nav ref={nav} aria-label="Settings" className="max-lg:hidden" onKeyDown={move}>
       <div className="grid gap-4">
         {SETTINGS_GROUPS.map((group) => {
           const id = `settings-group-${group.label.toLowerCase().replace(/\W+/g, "-")}`;
@@ -89,7 +89,7 @@ function SectionNav({ current }: { current?: string }) {
 function SectionSwitcher({ current }: { current?: string }) {
   const router = useRouter();
   return (
-    <div className="mb-6 md:hidden">
+    <div className="mb-6 lg:hidden">
       <Select modal={false} items={SETTINGS_SECTIONS.map((section) => ({ value: section.slug, label: section.label }))} value={current ?? null}
         onValueChange={(value) => { if (value && value !== current) router.push(`/settings/${value}`); }}>
         <SelectTrigger aria-label="Settings section" className="min-h-11 w-full"><SelectValue placeholder="Choose a section" /></SelectTrigger>

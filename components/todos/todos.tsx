@@ -109,7 +109,7 @@ export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: 
         const late = !done && todo.dueAt !== undefined && todo.dueAt <= now;
         const soon = !done && todo.dueAt !== undefined && !late && todo.dueAt - now < 3_600_000;
         return (
-          <li key={todo.id} className={cn("group flex items-center gap-2.5 rounded-lg", compact ? "px-1.5 py-1.5" : "px-2 py-2.5", "hover:bg-muted/60")}>
+          <li key={todo.id} className={cn("group flex items-center gap-2.5 rounded-lg", compact ? "px-1.5 py-1.5" : "px-2 py-2.5", "hover:bg-muted/60 pointer-coarse:min-h-12 pointer-coarse:gap-4 pointer-coarse:pl-4")}>
             {/* Perry's checkbox, kept round: a to-do ticked off, not a setting. */}
             <Checkbox
               checked={done}
@@ -132,7 +132,7 @@ export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: 
               </span>
             )}
             <Button variant="ghost" size="icon-xs" aria-label={`Remove “${todo.title}”`} onClick={() => removeTodo(todo)}
-              className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100">
+              className="text-muted-foreground opacity-0 pointer-coarse:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
               <XIcon className="size-3.5" />
             </Button>
           </li>
@@ -163,7 +163,7 @@ function RepeatMenu({ todo }: { todo: TodoView }) {
         <TooltipTrigger
           render={<DropdownMenuTrigger aria-label={todo.repeat ? `Repeats ${repeatLabel(todo.repeat).toLowerCase()}: change` : `Make “${todo.title}” repeat`} />}
           className={cn(
-            "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 data-popup-open:opacity-100",
+            "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 data-popup-open:opacity-100 pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:opacity-100",
             todo.repeat ? "px-1.5" : "w-6 justify-center opacity-0 transition-opacity group-hover:opacity-100",
           )}
         >

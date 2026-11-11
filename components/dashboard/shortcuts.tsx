@@ -33,7 +33,7 @@ export function Shortcuts() {
       {data === undefined ? <ListSkeleton rows={SHORTCUT_IDS.length} /> : (
         <List label="Keyboard shortcuts">
           {SHORTCUT_IDS.map((id) => (
-            <li key={id} className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4">
+            <li key={id} className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 font-medium">{SHORTCUTS[id].label}{SHORTCUTS[id].description && <InfoTip>{SHORTCUTS[id].description}</InfoTip>}</p>
                 {SHORTCUTS[id].global && <PetStatus pet={{ running: data.pet.running, ...data.pet.keys[id] }} wanted={data.shortcuts[id]} mac={mac} />}

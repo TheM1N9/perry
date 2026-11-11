@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { z } from "zod";
 import { browserIdentity } from "@/lib/browser-protocol";
 import * as browser from "@/convex/lib/browser";
 import { PATHS } from "@/runner/home";

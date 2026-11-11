@@ -3,6 +3,9 @@ import * as browser from "../convex/lib/browser";
 import type { BrowserRequest, BrowserState } from "../lib/browser-protocol";
 
 export async function browserStatus(scope: string, importEnabled: boolean): Promise<BrowserState> {
+  return browser.withBrowserView(scope, () => statusInScope(scope, importEnabled));
+}
+async function statusInScope(scope: string, importEnabled: boolean): Promise<BrowserState> {
   const state = browser.browserControl(scope);
   const result: BrowserState = { importEnabled, source: state.source, state: state.error ? "disconnected" : "closed", identity: browser.identity(scope), tabs: [], loading: state.loading, error: state.error, dialog: state.dialog, upload: state.upload !== null, private: state.private, downloads: [...state.downloads.values()].slice(-30) };
   if (!state.current) return result;
@@ -22,6 +25,9 @@ export async function browserStatus(scope: string, importEnabled: boolean): Prom
   }
 }
 export async function controlBrowser(scope: string, request: BrowserRequest, importEnabled: boolean) {
+  return browser.withBrowserView(scope, () => controlInScope(scope, request, importEnabled));
+}
+async function controlInScope(scope: string, request: BrowserRequest, importEnabled: boolean) {
   const state = browser.browserControl(scope);
   if (request.action === "status") return browserStatus(scope, importEnabled);
   if (state.ownerBusy && request.action !== "frame") throw new Error("Another browser action is still running. Wait for it to finish.");

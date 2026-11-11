@@ -125,7 +125,7 @@ function RunRow({ run }: { run: RunView }) {
   return (
     <li>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="group flex w-full cursor-pointer items-start gap-3 py-3.5 text-left outline-none hover:[&_.run-title]:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset">
+        <CollapsibleTrigger className="group flex w-full cursor-pointer items-start gap-3 py-4 text-left outline-none hover:[&_.run-title]:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset">
           <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90" />
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-2">

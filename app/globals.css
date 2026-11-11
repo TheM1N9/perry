@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./control-utilities.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -250,6 +250,48 @@
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Dense desktop controls keep a real 44px target on touch screens. */
+@media (pointer: coarse) {
+  :is(button:not([data-slot="checkbox"], [data-slot="switch"]), [data-slot="button"], [data-slot="select-trigger"], [data-slot="tabs-trigger"],
+      [data-slot="dropdown-menu-item"], [data-slot="dropdown-menu-checkbox-item"],
+      [data-slot="dropdown-menu-radio-item"], [data-slot="dropdown-menu-sub-trigger"],
+      [data-slot="command-item"], [data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]) {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+  :is([data-slot="select-item"], [data-slot="input"], [data-slot="input-group"], [data-slot="input-group-control"]) {
+    min-height: 44px;
+  }
+  :is(input, textarea, [contenteditable="true"]) {
+    font-size: 16px;
+  }
+  [data-slot="tabs-list"] { height: auto; min-height: 48px; }
+  [data-slot="input-group-addon"]:is([data-align="inline-start"], [data-align="inline-end"]) { padding-block: 0; }
+  [data-sidebar="menu-action"] {
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+  }
+  [data-sidebar="menu-action"]::after { inset: 0; }
+  [data-sidebar="menu-action"].right-7 { right: 44px; }
+  [data-sidebar="menu-item"]:has(> [data-sidebar="menu-action"]) > [data-sidebar="menu-button"] { padding-right: 48px; }
+  [data-sidebar="menu-item"]:has(> [data-sidebar="menu-action"].right-7) > [data-sidebar="menu-button"] { padding-right: 92px; }
+  [data-slot="checkbox"]::after { inset: -14px; }
+  [data-slot="switch"]::after { inset: -13px -6px; }
+  [data-slot="switch"][data-size="sm"]::after { inset: -15px -10px; }
+  [data-slot="calendar"] { --cell-size: 44px; padding: 2px; }
+  [data-collapsible="icon"] :is([data-sidebar="header"], [data-sidebar="footer"], [data-sidebar="group"]) {
+    padding-inline: 2px;
+  }
+  [data-collapsible="icon"] [data-sidebar="menu-button"] {
+    width: 44px !important;
+    height: 44px !important;
   }
 }
 

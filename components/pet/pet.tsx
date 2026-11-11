@@ -794,7 +794,7 @@ function Pet() {
     bubble = (
       <Bubble tone="ask" title={`${ask.runner} wants to ${ASKS[ask.kind]}`} code={ask.title}
         detail={[ask.chat && `In ${ask.chat.title}`, asking.length > 1 && `${asking.length - 1} more waiting`].filter(Boolean).join(" · ") || undefined}>
-        <BubbleButton primary onClick={() => attempt(decide({ key, id: ask.id, approved: true }))}>Approve</BubbleButton>
+        <BubbleButton primary onClick={() => attempt(decide({ key, id: ask.id, approved: true }))}>Allow once</BubbleButton>
         <BubbleButton onClick={() => attempt(decide({ key, id: ask.id, approved: false }))}>Decline</BubbleButton>
         <BubbleButton onClick={() => { setTab("needs"); setOpen(true); }}>More</BubbleButton>
       </Bubble>
@@ -1103,6 +1103,13 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
   const [blink, setBlink] = useState(false);
   const [tip, setTip] = useState(false);
   const drag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
+  const dragEvents = useRef<AbortController | null>(null);
+  const dragged = useRef(false);
+  useEffect(() => () => {
+    dragEvents.current?.abort();
+    if (drag.current?.moved) window.perryPet?.dragEnd();
+    drag.current = null;
+  }, []);
   // Held over the circle that hides him, he looks down at it, worried.
   const [armed, setArmed] = useState(false);
   useEffect(() => window.perryPet?.onArmed(setArmed), []);
@@ -1162,13 +1169,17 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
   }, [cheer, controls]);
 
   const down = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !event.isPrimary) return;
+    dragEvents.current?.abort();
+    dragged.current = false;
     onTouch?.();
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { x: event.screenX, y: event.screenY, left: window.screenX + place.x, top: window.screenY + place.y, moved: false };
     // Letting go ends the drag wherever the pointer is, even if something took the capture from him on the way.
-    const release = () => { window.removeEventListener("pointerup", release, true); if (drag.current) up(); };
-    window.addEventListener("pointerup", release, true);
+    const controller = new AbortController();
+    dragEvents.current = controller;
+    window.addEventListener("pointerup", up, { capture: true, once: true, signal: controller.signal });
+    window.addEventListener("pointercancel", cancelDrag, { capture: true, once: true, signal: controller.signal });
   };
   const move = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const start = drag.current;
@@ -1184,10 +1195,17 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
     window.perryPet?.moveTo(Math.round(start.left + dx), Math.round(start.top + dy));
   };
   const up = () => {
+    dragEvents.current?.abort();
+    dragEvents.current = null;
     const start = drag.current;
     drag.current = null;
-    if (start?.moved) window.perryPet?.dragEnd();
-    else if (start) onClick();
+    if (start?.moved) { dragged.current = true; window.perryPet?.dragEnd(); }
+  };
+  const cancelDrag = () => {
+    dragEvents.current?.abort();
+    dragEvents.current = null;
+    if (drag.current?.moved) window.perryPet?.dragEnd();
+    drag.current = null;
   };
 
   // Asleep, he breathes, even with less motion asked for; awake, the bob and fidgets stop then.
@@ -1212,7 +1230,11 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
-        onPointerCancel={() => { if (drag.current?.moved) window.perryPet?.dragEnd(); drag.current = null; }}
+        onPointerCancel={cancelDrag}
+        onClick={(event) => {
+          if (event.detail > 0 && dragged.current) { dragged.current = false; return; }
+          onClick();
+        }}
         className="block w-[104px] cursor-pointer touch-none rounded-3xl outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
         animate={bob}
         style={{ transformOrigin: "50% 100%" }}
@@ -1294,9 +1316,9 @@ function Panel({ tab, onTab, needs, status, mode, menu, onClose, onOpenApp, chil
       exit={{ opacity: 0, y: below ? -8 : 8, scale: 0.97 }}
       transition={{ type: "spring", stiffness: 420, damping: 30 }}
       style={{ transformOrigin: below ? "85% 0%" : "85% 100%" }}
-      className="flex h-[480px] max-h-full w-[372px] shrink-0 flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-overlay"
+      className="flex h-[480px] max-h-full w-[372px] max-w-[calc(100vw-1.5rem)] shrink-0 flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-overlay"
     >
-      <header className="flex items-center gap-2.5 px-3.5 pt-3 pb-2.5">
+      <header className="flex items-center gap-3 px-4 pt-3 pb-3">
         <span className="relative shrink-0">
           <PlatypusArt head className="size-9 rounded-full bg-brand-soft" />
           <span className={cn("absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-background", mode === "call" ? "bg-destructive" : mode === "you" ? "animate-pulse bg-primary" : mode === "busy" ? "animate-pulse bg-muted-foreground" : "bg-success")} aria-hidden />
@@ -1410,9 +1432,9 @@ function PetTodos({ board, now, onDone, onAdded }: {
         )}
       </div>
       </ScrollArea>
-      {problem && <p className="px-3.5 pb-2 text-xs text-destructive" role="alert">{problem}</p>}
+      {problem && <p className="px-4 pb-2 text-xs text-destructive" role="alert">{problem}</p>}
       {removed && (
-        <p className="truncate px-3.5 pb-2 text-xs text-muted-foreground" role="status">
+        <p className="truncate px-4 pb-2 text-xs text-muted-foreground" role="status">
           Removed “{removed.title}”.{" "}
           <button type="button" className="font-medium underline underline-offset-2 hover:text-foreground" onClick={() => { removed.undo(); setRemoved(null); }}>Undo</button>
         </p>

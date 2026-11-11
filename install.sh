@@ -240,5 +240,5 @@ else
   bun --cwd "$DIR" "$DIR/scripts/perry.ts" link
 fi
 
-# Anonymous successful-install count. Opt out with PERRY_TELEMETRY_DISABLED=1.
+# Optional install count: off unless PERRY_TELEMETRY_ENABLED=1; PERRY_TELEMETRY_DISABLED=1 overrides.
 bun --cwd "$DIR" "$DIR/scripts/telemetry.ts" "Installation completed" || true

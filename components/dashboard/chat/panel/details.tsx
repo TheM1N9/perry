@@ -24,7 +24,7 @@ export function Details({ details }: { details?: ChatDetails }) {
   const now = Date.now();
   const used = details?.context;
   const windows = details?.usage?.limits?.windows ?? [];
-  return <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm" data-surface="details">
+  return <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4 text-sm" data-surface="details">
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-xs" data-chat-details>
       {details?.status && <><dt className="text-muted-foreground">Status</dt><dd className="flex min-w-0 items-center justify-end gap-1.5">
         <span className="truncate">{statusLabel(details.status) ?? "Ready"}</span><StatusIndicator status={details.status} />

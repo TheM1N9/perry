@@ -60,9 +60,9 @@ export const SELF_MARK = "🤖 ";
 
 /** The slice of a Baileys socket this uses, so a test can stand in for WhatsApp (PERRY_WHATSAPP_DRIVER). */
 export type Socket = {
-  ev: { on(event: string, listener: (data: any) => void): void };
+  ev: { on(event: string, listener: (data: any) => void): void; off(event: string, listener: (data: any) => void): void };
   /** The WebSocket underneath, which emits "frame" for everything WhatsApp's servers send, the keep-alive answers included. */
-  ws?: { on(event: string, listener: (...args: any[]) => void): unknown };
+  ws?: { on(event: string, listener: (...args: any[]) => void): unknown; off(event: string, listener: (...args: any[]) => void): unknown };
   user?: { id: string; lid?: string; name?: string };
   sendMessage(jid: string, content: object): Promise<unknown>;
   sendPresenceUpdate(presence: "composing" | "paused" | "available", jid?: string): Promise<void>;
@@ -184,43 +184,47 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
 
   function flush(): Promise<void> {
     if (flushing || !socket || !connected || stop.signal.aborted) return flushing ?? Promise.resolve();
+    const current = socket;
+    const sendingMode = mode;
+    const isCurrent = () => socket === current && connected && !stop.signal.aborted;
     flushing = (async () => {
       for (;;) {
         const rows = (await runtime.runQuery("whatsapp:pending", {}, internal)).value as Outgoing[];
-        if (!rows.length || !socket || !connected || stop.signal.aborted) break;
+        if (!rows.length || !isCurrent()) break;
         for (const row of rows) {
-          if (stop.signal.aborted) return;
+          if (!isCurrent()) return;
           let error: string | undefined;
           try {
             if (row.kind === "typing") {
-              await socket.sendPresenceUpdate("composing", row.to);
+              await current.sendPresenceUpdate("composing", row.to);
             } else if (row.kind === "reaction" && row.reaction) {
               const { emoji, ...key } = row.reaction;
-              const sent = await socket.sendMessage(row.to, { react: { text: emoji, key: { ...key, remoteJid: key.remoteJid ?? row.to } } }) as { key?: { id?: string } } | undefined;
+              const sent = await current.sendMessage(row.to, { react: { text: emoji, key: { ...key, remoteJid: key.remoteJid ?? row.to } } }) as { key?: { id?: string } } | undefined;
               if (sent?.key?.id) remember(sentIds, sent.key.id);
-              await socket.sendPresenceUpdate("paused", row.to).catch(() => {});
+              if (isCurrent()) await current.sendPresenceUpdate("paused", row.to).catch(() => {});
             } else if (row.kind === "text" && row.text) {
               // Only in the owner's own chat, where it tells Perry's messages from theirs; to anyone else it writes as it is.
-              const own = [bare(socket.user?.id), bare(socket.user?.lid)].filter(Boolean);
-              const text = mode === "self" && own.includes(bare(row.to)) ? `${SELF_MARK}${row.text}` : row.text;
-              const sent = await socket.sendMessage(row.to, { text }) as { key?: { id?: string } } | undefined;
+              const own = [bare(current.user?.id), bare(current.user?.lid)].filter(Boolean);
+              const text = sendingMode === "self" && own.includes(bare(row.to)) ? `${SELF_MARK}${row.text}` : row.text;
+              const sent = await current.sendMessage(row.to, { text }) as { key?: { id?: string } } | undefined;
               if (sent?.key?.id) {
                 remember(sentIds, sent.key.id);
                 await runtime.runMutation("reactions:record", { channel: "whatsapp", externalId: row.to, messageId: sent.key.id, text: row.text, isPerry: true, fromMe: true }, internal);
               }
-              await socket.sendPresenceUpdate("paused", row.to).catch(() => {});
+              if (isCurrent()) await current.sendPresenceUpdate("paused", row.to).catch(() => {});
               await sleep(PACE_MS, stop.signal);
             } else if (row.kind === "file" && row.file) {
               const path = row.file.storageId ? join(HOME, "storage", row.file.storageId) : row.file.localPath;
               if (!path || !existsSync(path)) throw new Error(`${row.file.fileName} is not on this computer`);
               const bytes = await readFile(path);
               if (bytes.byteLength > 64 * 1024 * 1024) throw new Error(`${row.file.fileName} is too big for WhatsApp`);
+              if (!isCurrent()) return;
               const type = row.file.contentType;
               const content = type.startsWith("image/") && !type.includes("svg") ? { image: bytes, mimetype: type }
                 : type.startsWith("video/") ? { video: bytes, mimetype: type }
                   : type.startsWith("audio/") ? { audio: bytes, mimetype: type }
                     : { document: bytes, mimetype: type, fileName: row.file.fileName };
-              const sent = await socket.sendMessage(row.to, content) as { key?: { id?: string } } | undefined;
+              const sent = await current.sendMessage(row.to, content) as { key?: { id?: string } } | undefined;
               if (sent?.key?.id) {
                 remember(sentIds, sent.key.id);
                 await runtime.runMutation("reactions:record", { channel: "whatsapp", externalId: row.to, messageId: sent.key.id, text: row.file.fileName, isPerry: true, fromMe: true }, internal);
@@ -235,7 +239,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
           if (error && !connected) return;
         }
       }
-    })().finally(() => { flushing = null; });
+    })().catch(error => console.error(`[perry] WhatsApp outbox could not be processed: ${String(error)}`)).finally(() => { flushing = null; });
     return flushing;
   }
 
@@ -245,12 +249,18 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
 
   /** Group names, asked of WhatsApp once each. */
   const groupNames = new Map<string, string>();
-  async function groupName(jid: string): Promise<string | undefined> {
-    if (!groupNames.has(jid) && socket?.groupMetadata) {
-      const subject = await socket.groupMetadata(jid).then((meta) => meta.subject, () => undefined);
-      if (subject) groupNames.set(jid, subject);
+  let account = "";
+  const rememberGroup = (id: string, name: string) => {
+    groupNames.delete(id);
+    groupNames.set(id, name);
+    while (groupNames.size > 500) groupNames.delete(groupNames.keys().next().value!);
+  };
+  async function groupName(jid: string, current: Socket): Promise<string | undefined> {
+    if (!groupNames.has(jid) && current.groupMetadata) {
+      const subject = await current.groupMetadata(jid).then((meta) => meta.subject, () => undefined);
+      if (subject && socket === current && !stop.signal.aborted) rememberGroup(jid, subject);
     }
-    return groupNames.get(jid);
+    return socket === current ? groupNames.get(jid) : undefined;
   }
 
   /**
@@ -258,7 +268,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
    * direct message (linked as the owner), or a group. Who wrote it, and whether
    * it was for Perry, go with it; contacts.ts decides the rest.
    */
-  async function handleOther(message: Record<string, any>, mode: "self" | "separate", remote: string, mine: string[]) {
+  async function handleOther(message: Record<string, any>, mode: "self" | "separate", remote: string, mine: string[], current: Socket) {
     const key = message.key ?? {};
     const group = remote.endsWith("@g.us");
     // In a group, WhatsApp's own echo of what Perry wrote as its own number is not news.
@@ -270,11 +280,13 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     const text = textOf(message.message) || (mediaOf(message.message) ? "(sent a file, which you cannot open here)" : "");
     if (!text) return;
     // Who wrote it: the owner, linked as them and writing from their phone; else the sender, by number when WhatsApp gives it.
-    const sender = key.fromMe ? bare(socket?.user?.id) : bare(group ? key.participantAlt ?? key.participant : key.remoteJidAlt ?? remote);
+    const sender = key.fromMe ? bare(current.user?.id) : bare(group ? key.participantAlt ?? key.participant : key.remoteJidAlt ?? remote);
+    const name = group ? await groupName(remote, current) : undefined;
+    if (socket !== current || stop.signal.aborted) return;
     await runtime.runAction("whatsapp:receiveOther", {
       chatId: bare(group ? remote : remote.endsWith("@lid") && key.remoteJidAlt ? key.remoteJidAlt : remote),
       group,
-      ...(group ? { groupName: await groupName(remote) } : {}),
+      ...(name ? { groupName: name } : {}),
       from: sender,
       ...(message.pushName && !key.fromMe ? { fromName: String(message.pushName) } : {}),
       fromOwner: Boolean(key.fromMe),
@@ -284,8 +296,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     }, internal).catch((error) => console.error(`[perry] WhatsApp message failed: ${error instanceof Error ? error.message : String(error)}`));
   }
 
-  async function handle(message: Record<string, any>, mode: "self" | "separate") {
-    if (stop.signal.aborted) return;
+  async function handle(message: Record<string, any>, mode: "self" | "separate", current: Socket) {
+    if (stop.signal.aborted || socket !== current) return;
     if (message.message?.reactionMessage || message.message?.ephemeralMessage?.message?.reactionMessage) return;
     const key = message.key ?? {};
     const id = key.id as string | undefined;
@@ -294,10 +306,10 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     remember(seen, id);
     // Broadcasts, status updates and channels are never Perry's to answer.
     if (remote.endsWith("@broadcast") || remote === "status@broadcast" || remote.endsWith("@newsletter")) return;
-    const me = socket?.user;
+    const me = current.user;
     const mine = [bare(me?.id), bare(me?.lid)].filter(Boolean);
     if (remote.endsWith("@g.us") || (mode === "self" && !mine.includes(bare(remote)))) {
-      await handleOther(message, mode, remote, mine);
+      await handleOther(message, mode, remote, mine, current);
       return;
     }
     let chatId: string;
@@ -316,9 +328,9 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     if (!text && !media) return;
     const files: Array<{ base64: string; fileName: string; contentType: string }> = [];
     let note = "";
-    if (media && socket) {
+    if (media) {
       try {
-        const bytes = await (await driver).download(message, socket);
+        const bytes = await (await driverOf()).download(message, current);
         if (bytes.byteLength > MEDIA_LIMIT) note = `\n\n(${media.fileName} was too big to download: WhatsApp files up to 20 MB.)`;
         else files.push({ base64: bytes.toString("base64"), fileName: media.fileName, contentType: media.contentType });
       } catch (error) {
@@ -326,8 +338,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
         console.error(`[perry] WhatsApp: could not download a file: ${String(error)}`);
       }
     }
-    if (mode === "separate" && socket?.readMessages) await socket.readMessages([key]).catch(() => {});
-    if (stop.signal.aborted) return;
+    if (mode === "separate" && current.readMessages) await current.readMessages([key]).catch(() => {});
+    if (stop.signal.aborted || socket !== current) { seen.delete(id); return; }
     await runtime.runAction("whatsapp:receive", {
       chatId,
       text: `${text}${note}`.trim(),
@@ -337,7 +349,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     }, internal).catch((error) => console.error(`[perry] WhatsApp message failed: ${error instanceof Error ? error.message : String(error)}`));
   }
 
-  const driver = loadDriver();
+  let driver: Promise<Driver> | null = null;
+  const driverOf = () => driver ??= loadDriver().catch(error => { driver = null; throw error; });
 
   const loop = (async () => {
     let failures = 0;
@@ -348,6 +361,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
         linkingSince = null;
         // Not linked, or unlinked from the dashboard: forget the device, then wait to be asked.
         if (socket) { await socket.logout().catch(() => {}); socket.end(); socket = null; connected = false; }
+        groupNames.clear(); sentIds.clear(); seen.clear(); account = "";
         if (existsSync(AUTH_DIR) && wanted && !wanted.wanted) rmSync(AUTH_DIR, { recursive: true, force: true });
         await sleep(3_000, stop.signal);
         continue;
@@ -355,46 +369,58 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
       mkdirSync(AUTH_DIR, { recursive: true });
       mode = wanted.mode;
       type Ending = "logged-out" | "dropped" | "unlinked" | "refresh" | "restart";
+      const listeners: Array<() => void> = [];
+      const listen = (emitter: Socket["ev"] | NonNullable<Socket["ws"]>, event: string, listener: (data: any) => void) => {
+        emitter.on(event, listener);
+        listeners.push(() => emitter.off(event, listener));
+      };
+      let active = true;
       let closed: (reason: Ending) => void = () => {};
-      const ended = new Promise<Ending>((resolve) => { closed = resolve; });
+      const ended = new Promise<Ending>((resolve) => { closed = reason => { if (!active) return; active = false; resolve(reason); }; });
       try {
-        const d = await driver;
+        const d = await driverOf();
         const current = await d.connect({ authDir: AUTH_DIR });
         if (stop.signal.aborted) { current.end(); break; }
         socket = current;
+        const isCurrent = () => active && socket === current && !stop.signal.aborted;
+        let qrRevision = 0;
         let asked = false;
         let opened = false;
         let showing = false;
         lastEvent = Date.now();
         // Any frame is a sign of life: only messages counted before, so a quiet account reconnected every half hour.
-        current.ws?.on("frame", () => { lastEvent = Date.now(); });
-        current.ev.on("connection.update", (update: { connection?: string; qr?: string; lastDisconnect?: { error?: unknown } }) => {
-          if (stop.signal.aborted) return;
+        if (current.ws) listen(current.ws, "frame", () => { if (isCurrent()) lastEvent = Date.now(); });
+        listen(current.ev, "connection.update", (update: { connection?: string; qr?: string; lastDisconnect?: { error?: unknown } }) => {
+          if (!isCurrent()) return;
           lastEvent = Date.now();
           if (update.qr) {
+            const revision = ++qrRevision;
             showing = true;
             linkingSince ??= Date.now();
             if (wanted.phone && !asked) {
               // Linking with a code typed on the phone instead of scanning.
               asked = true;
               void current.requestPairingCode(wanted.phone)
-                .then((code) => report("code", { code: code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code }))
-                .catch((error) => report("qr", { error: `Could not get a code (${String(error)}); scan the QR instead.` }));
+                .then((code) => { if (isCurrent() && !opened) return report("code", { code: code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code }); })
+                .catch((error) => { if (isCurrent() && !opened) return report("qr", { error: `Could not get a code (${String(error)}); scan the QR instead.` }); });
             } else if (!wanted.phone) {
-              void d.qrPng(update.qr).then((png) => report("qr", { qr: png }));
+              void d.qrPng(update.qr).then((png) => { if (isCurrent() && !opened && revision === qrRevision) return report("qr", { qr: png }); }).catch(error => { if (isCurrent()) console.error(`[perry] WhatsApp QR could not be rendered: ${String(error)}`); });
             }
           }
           if (update.connection === "open") {
             connected = true;
             opened = true;
+            const nextAccount = bare(current.user?.id);
+            if (account !== nextAccount) { groupNames.clear(); sentIds.clear(); seen.clear(); account = nextAccount; }
             linkingSince = null;
             failures = 0;
             console.log("[perry] WhatsApp: connected");
             void current.groupFetchAllParticipating?.().then((groups) => {
-              for (const group of Object.values(groups)) if (group.subject) groupNames.set(group.id, group.subject);
+              if (!isCurrent()) return;
+              for (const group of Object.values(groups)) if (group.subject) rememberGroup(group.id, group.subject);
               learn(Object.values(groups).map((group) => ({ externalId: group.id, kind: "group" as const, name: group.subject })));
             }).catch(() => {});
-            void report("connected", { me: current.user?.id ?? "" }).then(() => flush());
+            void report("connected", { me: current.user?.id ?? "" }).then(() => { if (isCurrent()) return flush(); });
           }
           if (update.connection === "close") {
             connected = false;
@@ -405,7 +431,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
         });
         // WhatsApp's address book and groups, so a contact can be found by name (contacts.learn).
         const learn = (items: Array<{ externalId: string; kind: "person" | "group"; name?: string; handle?: string }>) => {
-          if (items.length) void runtime.runMutation("contacts:learn", { items: items.map((item) => ({ channel: "whatsapp", ...item })) }, internal).catch(() => {});
+          if (isCurrent() && items.length) void runtime.runMutation("contacts:learn", { items: items.map((item) => ({ channel: "whatsapp", ...item })) }, internal).catch(() => {});
         };
         const people = (list: Array<{ id?: string; name?: string; notify?: string; verifiedName?: string; phoneNumber?: string }>) => learn(list
           .filter((contact) => contact.id && (contact.id.endsWith("@s.whatsapp.net") || contact.id.endsWith("@lid")))
@@ -414,10 +440,11 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
             const digits = bare(phone).split("@")[0];
             return { externalId: bare(phone), kind: "person" as const, name: contact.name ?? contact.notify ?? contact.verifiedName, ...(/^\d+$/.test(digits) ? { handle: `+${digits}` } : {}) };
           }));
-        current.ev.on("contacts.upsert", (list: never[]) => people(list));
-        current.ev.on("messaging-history.set", (history: { contacts?: never[] }) => people(history.contacts ?? []));
+        listen(current.ev, "contacts.upsert", (list: never[]) => people(list));
+        listen(current.ev, "messaging-history.set", (history: { contacts?: never[] }) => people(history.contacts ?? []));
         // Calls ringing, answered and ended, kept as they happen (convex/whatsapp.ts, callEvent).
-        current.ev.on("call", (calls: Array<{ id: string; from: string; chatId: string; status: string; isVideo?: boolean; isGroup?: boolean }>) => {
+        listen(current.ev, "call", (calls: Array<{ id: string; from: string; chatId: string; status: string; isVideo?: boolean; isGroup?: boolean }>) => {
+          if (!isCurrent()) return;
           lastEvent = Date.now();
           for (const call of calls) {
             void runtime.runMutation("whatsapp:callEvent", {
@@ -425,15 +452,16 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
             }, internal).catch((error) => console.error(`[perry] WhatsApp: could not keep a call: ${String(error)}`));
           }
         });
-        current.ev.on("messages.upsert", (event: { type: string; messages: Array<Record<string, any>> }) => {
+        listen(current.ev, "messages.upsert", (event: { type: string; messages: Array<Record<string, any>> }) => {
           lastEvent = Date.now();
+          if (!isCurrent()) return;
           // "append" is history caught up after a reconnect: read, not answered (as OpenClaw does).
           if (event.type !== "notify") return;
           if (stop.signal.aborted) return;
-          for (const message of event.messages) track(handle(message, wanted.mode));
+          for (const message of event.messages) track(handle(message, wanted.mode, current));
         });
-        current.ev.on("messages.reaction", (events: Array<{ key: { id?: string; fromMe?: boolean; remoteJid?: string }; reaction: { key?: { id?: string; remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean }; text?: string; senderTimestampMs?: number } }>) => {
-          if (stop.signal.aborted) return;
+        listen(current.ev, "messages.reaction", (events: Array<{ key: { id?: string; fromMe?: boolean; remoteJid?: string }; reaction: { key?: { id?: string; remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean }; text?: string; senderTimestampMs?: number } }>) => {
+          if (!isCurrent()) return;
           lastEvent = Date.now();
           for (const event of events) {
             const key = event.reaction.key;
@@ -449,26 +477,33 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
         dropped = () => closed("dropped");
         // Unlinked from the dashboard, or quiet for too long: end this connection.
         const watch = setInterval(() => {
-          void link().then((now) => { if (!now?.wanted) closed("unlinked"); }).catch(() => {});
+          void link().then((now) => { if (isCurrent() && (!now?.wanted || now.mode !== wanted.mode || now.phone !== wanted.phone)) closed("unlinked"); }).catch(() => {});
           if (connected && Date.now() - lastEvent > QUIET_MS) { console.warn("[perry] WhatsApp: quiet for too long; reconnecting"); closed("dropped"); }
         }, 5_000);
-        const reason = await Promise.race([ended, new Promise<"unlinked">((resolve) => stop.signal.addEventListener("abort", () => resolve("unlinked"), { once: true }))]);
-        clearInterval(watch);
+        const onAbort = () => closed("unlinked");
+        stop.signal.addEventListener("abort", onAbort, { once: true });
+        if (stop.signal.aborted) onAbort();
+        let reason: Ending;
+        try { reason = await ended; }
+        finally {
+          clearInterval(watch);
+          stop.signal.removeEventListener("abort", onAbort);
+          active = false;
+          for (const remove of listeners.splice(0)) remove();
+          current.end();
+          if (socket === current) socket = null;
+        }
         dropped = null;
         connected = false;
         if (reason === "logged-out") {
           // Unlinked on the phone: the saved session is dead, and linking starts again from the dashboard.
           console.warn("[perry] WhatsApp: logged out; link again from the dashboard");
-          current.end();
-          socket = null;
           rmSync(AUTH_DIR, { recursive: true, force: true });
           await report("logged-out", { error: "WhatsApp was unlinked on the phone. Link it again to keep using it." });
           await runtime.runMutation("whatsapp:stop", {}, internal).catch(() => {});
           continue;
         }
         if (reason === "unlinked") continue;
-        current.end();
-        socket = null;
         if (reason === "restart") {
           // Just linked: finish on a new connection, as WhatsApp asks.
           await report("starting");
@@ -494,7 +529,10 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
         await report("disconnected", { error: `Reconnecting (try ${failures}).` });
         await sleep(wait, stop.signal);
       } catch (error) {
+        for (const remove of listeners.splice(0)) remove();
+        active = false;
         connected = false;
+        socket?.end();
         socket = null;
         failures += 1;
         console.error(`[perry] WhatsApp: ${error instanceof Error ? error.message : String(error)}; trying again shortly`);
@@ -510,6 +548,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     runtime.events.off("change", onChange);
     sentIds.clear();
     seen.clear();
+    groupNames.clear();
     socket?.end();
     await Promise.allSettled([loop, ...incoming, ...(flushing ? [flushing] : [])]);
   };

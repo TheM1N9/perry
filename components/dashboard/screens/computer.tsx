@@ -95,7 +95,7 @@ export function ApprovalRules() {
       {rules && rules.length > 0 && (
         <List label="Rules">
           {rules.map((rule) => (
-            <li key={rule.id} className="flex items-start gap-4 py-3.5">
+            <li key={rule.id} className="flex items-start gap-4 py-4">
               <div className="min-w-0 flex-1">
                 {rule.command && <code className="line-clamp-4 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{rule.command}</code>}
                 <p className="mt-1.5 text-sm text-pretty">{rule.description}</p>

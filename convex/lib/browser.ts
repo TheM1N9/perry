@@ -25,6 +25,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const PROFILE = join(HOME, "browser");
 type Control = {
+  leases: number; viewers: number;
   scope: string; ownerBusy: boolean; sessionApprovalEpoch: number; id: string; revision: number; epoch: number; controller: "agent" | "owner";
   root: Session | null; promise: Promise<Tab> | null; current: Tab | null; busy: boolean; private: boolean;
   loading: boolean; error: string | null; dialog: { type: string; message: string } | null;
@@ -37,14 +38,36 @@ const states = (globalThis as typeof globalThis & { __perryBrowsers?: Map<string
 const context = states.__perryBrowserContext ??= new AsyncLocalStorage<Lease>();
 states.__perryBrowsers ??= new Map();
 function control(scope = context.getStore()?.control.scope ?? "public-reader"): Control {
+  const lease = context.getStore();
+  if (lease?.control.scope === scope) {
+    lease.control.leases ??= 0; lease.control.viewers ??= 0;
+    return lease.control;
+  }
   let found = states.__perryBrowsers!.get(scope);
   if (!found) {
-    let saved: { controller: "agent" | "owner"; private: boolean } = { controller: "agent", private: false };
-    try { saved = z.object({ controller: z.enum(["agent", "owner"]), private: z.boolean() }).parse(JSON.parse(readFileSync(/*turbopackIgnore: true*/ join(profileDirectory(scope), "perry-control.json"), "utf8"))); } catch {}
-    found = { scope, ownerBusy: false, sessionApprovalEpoch: -1, id: randomUUID(), revision: 0, epoch: 0, controller: saved.controller, root: null, promise: null, current: null, busy: false, private: saved.private, loading: false, error: null, dialog: null, upload: null, downloads: new Map(), connections: new Map(), source: "perry", ownedTargets: new Set() };
+    if (states.__perryBrowsers!.size >= 100) for (const old of states.__perryBrowsers!.values()) retire(old);
+    let saved: { controller: "agent" | "owner"; private: boolean; error?: string } = { controller: "agent", private: false };
+    try { saved = z.object({ controller: z.enum(["agent", "owner"]), private: z.boolean(), error: z.string().optional() }).parse(JSON.parse(readFileSync(/*turbopackIgnore: true*/ join(profileDirectory(scope), "perry-control.json"), "utf8"))); } catch {}
+    found = { scope, leases: 0, viewers: 0, ownerBusy: false, sessionApprovalEpoch: -1, id: randomUUID(), revision: 0, epoch: 0, controller: saved.controller, root: null, promise: null, current: null, busy: false, private: saved.private, loading: false, error: saved.error ?? null, dialog: null, upload: null, downloads: new Map(), connections: new Map(), source: "perry", ownedTargets: new Set() };
     states.__perryBrowsers!.set(scope, found);
   }
+  found.leases ??= 0; found.viewers ??= 0;
   return found;
+}
+function retire(state: Control) {
+  if (state.busy || state.ownerBusy || state.leases || state.viewers || state.promise || state.current || state.root || state.connections.size || states.__perryBrowsers!.get(state.scope) !== state) return;
+  if (state.controller !== "agent" || state.private || state.error) {
+    try { persistControl(state); } catch { return; }
+  }
+  state.downloads.clear();
+  states.__perryBrowsers!.delete(state.scope);
+}
+/** A streaming viewer pins its scope until cancellation, independently of individual frame reads. */
+export function retainBrowserView(scope: string): () => void {
+  const state = control(scope);
+  state.viewers++;
+  let released = false;
+  return () => { if (!released) { released = true; state.viewers--; retire(state); } };
 }
 export function profileDirectory(scope: string) { return join(PROFILE, "chats", createHash("sha256").update(scope).digest("hex")); }
 export function identity(scope?: string): BrowserIdentity | null {
@@ -58,7 +81,7 @@ export function checkIdentity(expected: BrowserIdentity, scope?: string) {
 function checkLease() {
   const lease = context.getStore();
   lease?.signal?.throwIfAborted();
-  if (lease && lease.controller !== "viewer" && (lease.epoch !== lease.control.epoch || lease.controller !== lease.control.controller || (!lease.started && lease.revision !== lease.control.revision))) throw new Error("Browser control changed. Look again; the owner must explicitly resume Perry.");
+  if (lease && (lease.epoch !== lease.control.epoch || (lease.controller !== "viewer" && (lease.controller !== lease.control.controller || (!lease.started && lease.revision !== lease.control.revision))))) throw new Error("Browser control changed. Look again; the owner must explicitly resume Perry.");
 }
 /** One agent step at a time, including its approval wait. Takeover invalidates it immediately. */
 export async function withAgentBrowser<T>(scope: string, expected: BrowserIdentity | undefined, run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -68,6 +91,7 @@ export async function withAgentBrowser<T>(scope: string, expected: BrowserIdenti
   if (state.busy) throw new Error("Another browser action is still running. Wait for it to finish.");
   if (expected) checkIdentity(expected, scope);
   state.busy = true;
+  state.leases++;
   const epoch = state.epoch;
   try { return await context.run({ control: state, controller: "agent", revision: state.revision, epoch, started: false, signal }, run); }
   finally {
@@ -88,25 +112,31 @@ export async function withAgentBrowser<T>(scope: string, expected: BrowserIdenti
           }
         });
       }
-    } finally { state.busy = false; }
+    } finally { state.busy = false; state.leases--; retire(state); }
   }
 }
 export async function withOwnerBrowser<T>(scope: string, run: () => Promise<T>): Promise<T> {
   const state = control(scope);
   if (state.ownerBusy) throw new Error("Another browser action is still running. Wait for it to finish.");
   state.ownerBusy = true;
+  state.leases++;
   try { return await context.run({ control: state, controller: "owner", revision: state.revision, epoch: state.epoch, started: true }, run); }
-  finally { state.ownerBusy = false; }
+  finally { state.ownerBusy = false; state.leases--; retire(state); }
 }
 export async function withBrowserView<T>(scope: string, run: () => Promise<T>): Promise<T> {
-  return await context.run({ control: control(scope), controller: "viewer", revision: 0, epoch: 0, started: true }, run);
+  const state = control(scope);
+  state.leases++;
+  try { return await context.run({ control: state, controller: "viewer", revision: state.revision, epoch: state.epoch, started: true }, run); }
+  finally { state.leases--; retire(state); }
 }
 export const browserControl = control;
 export function saveBrowserControl(scope?: string) {
-  const state = control(scope);
+  persistControl(control(scope));
+}
+function persistControl(state: Control) {
   const folder = profileDirectory(state.scope);
   mkdirSync(folder, { recursive: true, mode: 0o700 });
-  writeFileSync(/*turbopackIgnore: true*/ join(folder, "perry-control.json"), JSON.stringify({ controller: state.controller, private: state.private }), { mode: 0o600 });
+  writeFileSync(/*turbopackIgnore: true*/ join(folder, "perry-control.json"), JSON.stringify({ controller: state.controller, private: state.private, ...(state.error ? { error: state.error } : {}) }), { mode: 0o600 });
 }
 export function assertBrowserLease() { checkLease(); }
 export function importedSites() {
@@ -151,62 +181,91 @@ export function findBrowser(): string | null {
 
 async function launch(): Promise<Tab> {
   const state = control();
-  state.source = "perry";
-  state.id = randomUUID();
-  const profile = profileDirectory(state.scope);
-  (await import("../../server/browser-import")).recoverNativeImport(profile);
-  const path = await (await import("../../server/browser-runtime")).browserExecutable();
-  mkdirSync(profile, { recursive: true, mode: 0o700 });
-  rmSync(join(profile, "DevToolsActivePort"), { force: true });
-  let extensions: string[] = [];
-  try { extensions = z.array(z.string().regex(/^Default\/PerryExtensions\/[a-p]{32}\/[\d._]+$/)).parse(JSON.parse(readFileSync(join(profile, "perry-extensions.json"), "utf8"))).map(path => join(profile, path)); } catch {}
-  const child = spawn(/*turbopackIgnore: true*/ path, [
-    `--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check",
-    "--window-size=1280,900", ...(extensions.length ? [`--load-extension=${extensions.join(",")}`] : []), ...(process.env.PERRY_BROWSER_HEADED === "1" ? [] : ["--headless=new"]), "about:blank",
-  ], { stdio: "ignore", windowsHide: true });
-  child.on("error", () => {});
-  let port = 0;
-  for (let i = 0; i < 100 && !port; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    try { port = Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split(/\r?\n/)[0]); } catch {}
-  }
-  if (!port) { child.kill(); throw new Error("Perry's browser did not start."); }
-  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ id: string; type: string; webSocketDebuggerUrl: string }>;
-  const page = targets.find((target) => target.type === "page");
-  if (!page) { child.kill(); throw new Error("Perry's browser opened no tab."); }
-  const session = await connect(page.webSocketDebuggerUrl).catch((error) => { child.kill(); throw error; });
-  const tab: Tab = Object.assign(session, { targetId: page.id, child, port, idle: null });
-  const gone = () => {
-    if (state.current?.child !== child) return;
-    state.promise = null; state.current = null; state.revision++; state.epoch++; state.controller = "owner"; saveBrowserControl(state.scope); state.error = "Browser host disconnected. Reopen it; previous tabs were lost.";
-    for (const session of state.connections.values()) { session.ws.close(); for (const waiting of session.pending.values()) waiting.reject(new Error("Perry's browser closed.")); }
-    state.connections.clear(); state.root?.ws.close(); state.root = null;
-  };
-
-  child.on("exit", gone);
-  state.current = tab; state.connections.set(tab.targetId, tab); state.error = null;
-  await prepareTab(tab, state);
-  const downloadDir = join(PATHS.files, "browser-downloads", createHash("sha256").update(state.scope).digest("hex"));
-  mkdirSync(downloadDir, { recursive: true, mode: 0o700 });
-  const version = z.object({ webSocketDebuggerUrl: z.string() }).parse(await (await fetch(`http://127.0.0.1:${port}/json/version`)).json());
-  const root = state.root = await connect(version.webSocketDebuggerUrl);
-  root.ws.addEventListener("close", gone);
-  root.listeners.add((method, params) => {
-    if (method === "Browser.downloadWillBegin") state.downloads.set(String(params.guid), { id: String(params.guid), name: String(params.suggestedFilename).slice(0, 200), state: "inProgress" });
-    if (method === "Browser.downloadProgress") {
-      const item = state.downloads.get(String(params.guid));
-      if (item) {
-        item.state = String(params.state);
-        if (item.state === "completed") void withBrowserView(state.scope, async () => {
-          const values = z.object({ cookies: z.array(z.object({ value: z.string() })) }).parse(await hostCommand("Storage.getCookies"));
-          item.name = values.cookies.reduce((name, cookie) => cookie.value ? name.replaceAll(cookie.value, "[credential]") : name, item.name);
-          await (await import("../../server/browser-files")).registerBrowserDownload(state.scope, item.id, item.name);
-        }).catch(() => { state.error = "A browser download could not be registered. Refresh the browser view."; });
-      }
+  const epoch = state.epoch;
+  const ensureCurrent = () => { checkLease(); if (state.epoch !== epoch) throw new Error("Browser closed while it was starting."); };
+  let child: ChildProcess | null = null;
+  let session: Session | null = null;
+  let root: Session | null = null;
+  try {
+    state.source = "perry";
+    state.id = randomUUID();
+    const profile = profileDirectory(state.scope);
+    (await import("../../server/browser-import")).recoverNativeImport(profile);
+    const path = await (await import("../../server/browser-runtime")).browserExecutable();
+    ensureCurrent();
+    mkdirSync(profile, { recursive: true, mode: 0o700 });
+    rmSync(join(profile, "DevToolsActivePort"), { force: true });
+    let extensions: string[] = [];
+    try { extensions = z.array(z.string().regex(/^Default\/PerryExtensions\/[a-p]{32}\/[\d._]+$/)).parse(JSON.parse(readFileSync(join(profile, "perry-extensions.json"), "utf8"))).map(path => join(profile, path)); } catch {}
+    child = spawn(/*turbopackIgnore: true*/ path, [
+      `--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check",
+      "--window-size=1280,900", ...(extensions.length ? [`--load-extension=${extensions.join(",")}`] : []), ...(process.env.PERRY_BROWSER_HEADED === "1" ? [] : ["--headless=new"]), "about:blank",
+    ], { stdio: "ignore", windowsHide: true });
+    child.on("error", () => {});
+    let port = 0;
+    for (let i = 0; i < 100 && !port; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      ensureCurrent();
+      try { port = Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split(/\r?\n/)[0]); } catch {}
     }
-  });
-  await send(root, "Browser.setDownloadBehavior", { behavior: "allowAndName", downloadPath: downloadDir, eventsEnabled: true });
-  return tab;
+    if (!port) { child.kill(); throw new Error("Perry's browser did not start."); }
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ id: string; type: string; webSocketDebuggerUrl: string }>;
+    const page = targets.find((target) => target.type === "page");
+    if (!page) { child.kill(); throw new Error("Perry's browser opened no tab."); }
+    ensureCurrent();
+    session = await connect(page.webSocketDebuggerUrl);
+    ensureCurrent();
+    const ownedChild = child;
+    const tab: Tab = Object.assign(session, { targetId: page.id, child: ownedChild, port, idle: null });
+    const gone = () => {
+      if (state.current?.child !== ownedChild) return;
+      state.promise = null; state.current = null; state.revision++; state.epoch++; state.controller = "owner"; saveBrowserControl(state.scope); state.error = "Browser host disconnected. Reopen it; previous tabs were lost.";
+      for (const session of state.connections.values()) { session.ws.close(); for (const waiting of session.pending.values()) waiting.reject(new Error("Perry's browser closed.")); }
+      state.connections.clear(); state.root?.ws.close(); state.root = null;
+    };
+
+    child.on("exit", gone);
+    state.current = tab; state.connections.set(tab.targetId, tab); state.error = null;
+    await prepareTab(tab, state);
+    const downloadDir = join(PATHS.files, "browser-downloads", createHash("sha256").update(state.scope).digest("hex"));
+    mkdirSync(downloadDir, { recursive: true, mode: 0o700 });
+    const version = z.object({ webSocketDebuggerUrl: z.string() }).parse(await (await fetch(`http://127.0.0.1:${port}/json/version`)).json());
+    ensureCurrent();
+    root = await connect(version.webSocketDebuggerUrl);
+    ensureCurrent();
+    state.root = root;
+    root.ws.addEventListener("close", gone);
+    const downloadHost = root;
+    root.listeners.add((method, params) => {
+      if (state.root !== downloadHost) return;
+      if (method === "Browser.downloadWillBegin") state.downloads.set(String(params.guid), { id: String(params.guid), name: String(params.suggestedFilename).slice(0, 200), state: "inProgress" });
+      if (method === "Browser.downloadProgress") {
+        const item = state.downloads.get(String(params.guid));
+        if (item) {
+          item.state = String(params.state);
+          if (item.state === "completed") void withBrowserView(state.scope, async () => {
+            const values = z.object({ cookies: z.array(z.object({ value: z.string() })) }).parse(await hostCommand("Storage.getCookies"));
+            item.name = values.cookies.reduce((name, cookie) => cookie.value ? name.replaceAll(cookie.value, "[credential]") : name, item.name);
+            await (await import("../../server/browser-files")).registerBrowserDownload(state.scope, item.id, item.name);
+          }).catch(() => { if (state.root === downloadHost) state.error = "A browser download could not be registered. Refresh the browser view."; });
+        }
+        for (const [id, download] of state.downloads) {
+          if (state.downloads.size <= 100) break;
+          if (download.state !== "inProgress") state.downloads.delete(id);
+        }
+      }
+    });
+    await send(root, "Browser.setDownloadBehavior", { behavior: "allowAndName", downloadPath: downloadDir, eventsEnabled: true });
+    ensureCurrent();
+    return tab;
+  } catch (error) {
+    session?.ws.close(); root?.ws.close(); child?.kill();
+    if (state.epoch === epoch) {
+      state.current = null; state.root = null; state.connections.clear();
+      state.downloads.clear(); state.loading = false; state.dialog = null; state.upload = null;
+    }
+    throw error;
+  }
 }
 
 async function prepareTab(tab: Tab, state: Control) {
@@ -321,7 +380,10 @@ function send(tab: Session, method: string, params: object = {}, signal = contex
 async function tab(): Promise<Tab> {
   checkLease();
   const state = control();
-  state.promise ??= launch().catch((error) => { state.promise = null; throw error; });
+  if (!state.promise) {
+    const pending = launch().catch((error) => { if (state.promise === pending) state.promise = null; throw error; });
+    state.promise = pending;
+  }
   const launched = await state.promise;
   const current = state.current ?? launched;
   checkLease();
@@ -342,8 +404,10 @@ export function closeBrowser() {
   state.promise = null; state.current = null; state.revision++; state.epoch++;
   for (const open of state.connections.values()) { if (open.idle) clearTimeout(open.idle); if (state.source !== "chrome") open.ws.close(); }
   state.connections.clear(); state.root = null; state.ownedTargets.clear(); state.source = "perry";
+  state.downloads.clear(); state.dialog = null; state.upload = null; state.loading = false;
   void Promise.allSettled(cleanup).then(() => root?.ws.close());
   void current?.then((open) => { open.child?.kill(); }, () => {});
+  retire(state);
 }
 
 async function attachChromeTab(state: Control, targetId: string, port: number): Promise<Tab> {
@@ -394,10 +458,11 @@ export async function connectChrome(): Promise<void> {
       return tab;
     } catch (error) {
       if (created) await send(root, "Target.closeTarget", { targetId: created }).catch(() => {});
-      root.ws.close(); state.root = null; state.connections.clear(); state.ownedTargets.clear(); state.source = "perry";
+      root.ws.close();
+      if (state.root === root) { state.root = null; state.connections.clear(); state.ownedTargets.clear(); state.source = "perry"; }
       throw error;
     }
-  })().catch(error => { state.promise = null; throw error; });
+  })().catch(error => { if (state.epoch === epoch) state.promise = null; throw error; });
   await state.promise;
 }
 

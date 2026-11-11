@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Reveal } from "@/components/fx/Reveal";
 import { trackEvent } from "@/lib/analytics";
 
@@ -21,20 +21,30 @@ const RUN = [
 
 function CopyButton({ text, id, os }: { text: string; id: "install" | "run"; os: Os }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const generation = useRef(0);
+  useEffect(() => {
+    generation.current++;
+    setState("idle");
+    return () => { generation.current++; clearTimeout(timer.current); };
+  }, [text, os]);
   return (
     <button
       type="button"
       data-copy={id}
       onClick={async () => {
+        const request = ++generation.current;
+        clearTimeout(timer.current);
         let copied = true;
         try {
           await navigator.clipboard.writeText(text);
         } catch {
           copied = false;
         }
-        setState(copied ? "copied" : "failed");
         trackEvent("Copy command", { command: id, os, copied });
-        setTimeout(() => setState("idle"), 1800);
+        if (request !== generation.current) return;
+        setState(copied ? "copied" : "failed");
+        timer.current = setTimeout(() => setState("idle"), 1800);
       }}
       className="rounded-md px-2.5 py-1 text-[13px] font-medium text-[#c7c7cc] transition-colors hover:bg-white/10 hover:text-white"
     >

@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import { NumberField as NumberFieldPrimitive } from "@base-ui/react/number-field"
 import { cn } from "cn"
 import { ClockIcon } from "lucide-react"

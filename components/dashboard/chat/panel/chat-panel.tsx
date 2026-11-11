@@ -161,7 +161,7 @@ export function ChatPanel({ panel, conversationId, project, details }: {
 
   if (!mode) return null;
   if (mode === "sheet") return <Sheet open={state.open} onOpenChange={(open) => { if (!open) panel.close(); }}>
-    <SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none" data-chat-panel data-panel-mode="sheet">
+    <SheetContent showCloseButton={false} finalFocus={() => document.querySelector<HTMLButtonElement>("[data-chat-panel-toggle]")} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none" data-chat-panel data-panel-mode="sheet">
       <SheetTitle className="sr-only">Chat panel</SheetTitle><SheetDescription className="sr-only">Details, files, the live browser, agents and the work of this chat.</SheetDescription>
       {body(true)}
     </SheetContent>
@@ -181,7 +181,7 @@ function Overlay({ panel, wide, children }: { panel: ChatPanelControl; wide: boo
   return <aside ref={host} id="chat-panel" aria-label="Chat panel" data-chat-panel data-panel-mode="overlay"
     className="absolute top-14 right-3 z-30 flex h-[min(44rem,calc(100%-4.5rem))] min-h-0 flex-col overflow-hidden rounded-2xl bg-popover text-popover-foreground shadow-float ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150 motion-reduce:animate-none"
     style={{ width: wide ? "min(780px, calc(100% - 1.5rem))" : "min(400px, calc(100% - 1.5rem))" }}
-    onKeyDown={(event) => { if (event.key === "Escape" && !(event.target as HTMLElement).closest('[role="application"]')) { event.stopPropagation(); panel.close(); } }}>
+    onKeyDown={(event) => { if (!event.defaultPrevented && event.key === "Escape" && !(event.target as HTMLElement).closest('[role="application"]')) { event.stopPropagation(); panel.close(); } }}>
     {children}
   </aside>;
 }
@@ -232,6 +232,7 @@ function Docked({ panel, wide, children }: { panel: ChatPanelControl; wide: bool
   }, [open]);
 
   return <div ref={attach} id="chat-panel" role="complementary" aria-label="Chat panel" data-chat-panel data-panel-mode="docked" data-open={open || undefined}
+    onKeyDown={(event) => { if (!event.defaultPrevented && event.key === "Escape" && !(event.target as HTMLElement).closest('[role="application"]')) { event.stopPropagation(); panel.close(); } }}
     className={cn("relative flex h-full min-h-0 max-w-full min-w-0 shrink-0 flex-col self-stretch bg-background transition-[width] duration-200 ease-out motion-reduce:transition-none",
       open ? "border-l" : "pointer-events-none")}
     style={{ [WIDTH]: `${width}px`, width: open ? `var(${WIDTH})` : "0px", transitionDuration: motion.animate ? undefined : "0ms" } as CSSProperties}>
@@ -363,7 +364,7 @@ function PanelBody({ panel, mode, reasons, conversationId, project, details, wid
         {state.tabs.map((id) => {
           const { label, icon: Icon } = SURFACE[id];
           const selected = id === active;
-          return <div key={id} className={cn("group/tab flex h-7 shrink-0 items-center rounded-md text-xs", selected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
+          return <div key={id} className={cn("group/tab flex h-7 shrink-0 items-center rounded-md text-xs pointer-coarse:h-11", selected ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
             onMouseDown={(event) => { if (event.button === 1) event.preventDefault(); }}
             onAuxClick={(event) => { if (event.button === 1) { event.preventDefault(); panel.closeSurface(id); } }}>
             <button type="button" role="tab" id={`chat-panel-tab-${id}`} aria-selected={selected} aria-controls="chat-panel-surface" tabIndex={selected ? 0 : -1} data-panel-tab={id}

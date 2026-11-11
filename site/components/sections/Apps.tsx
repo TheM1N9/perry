@@ -13,7 +13,7 @@ const APPS: SimpleIcon[] = [
 export function Apps() {
   return (
     <section aria-labelledby="apps-title" className="bg-paper">
-      <div className="mx-auto max-w-[1180px] px-6 py-28 text-center md:py-32">
+      <div className="mx-auto max-w-[1180px] px-6 py-28 text-center md:py-36">
         <Reveal>
           <h2 id="apps-title" className="mx-auto max-w-[18ch] text-[40px] font-[600] leading-[1.04] tracking-[-0.035em] md:text-[56px]">
             Knows its way around your apps.

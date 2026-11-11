@@ -63,7 +63,7 @@ function DatePicker({
         <CalendarIcon className="text-muted-foreground" />
         {shown}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto gap-0 p-0">
+      <PopoverContent align="start" collisionPadding={4} className="w-auto gap-0 p-0">
         <Calendar
           mode="single"
           selected={value}

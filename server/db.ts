@@ -438,6 +438,7 @@ export class Query implements AsyncIterable<Doc> {
     const ordinary = this.table === "notes" && !this.search && this.indexFields?.[0] === "kind"
       && this.bounds.some((bound) => bound.field === "kind" && bound.op === "eq" && bound.value === undefined);
     this.reads?.add(ordinary ? ORDINARY_NOTES : this.table);
+    if (limit === 0) return;
     const where: string[] = [];
     const params: SQLInputValue[] = [];
     const bounds = this.search ? this.search.filters : this.bounds;
@@ -481,7 +482,10 @@ export class Query implements AsyncIterable<Doc> {
   }
 
   async collect(): Promise<Doc[]> { return [...this.run()]; }
-  async take(n: number): Promise<Doc[]> { return [...this.run(n)]; }
+  async take(n: number): Promise<Doc[]> {
+    if (!Number.isSafeInteger(n) || n < 0) throw new Error("take() needs a non-negative integer.");
+    return [...this.run(n)];
+  }
   async first(): Promise<Doc | null> {
     // Closed once it has its row: an unfinished statement keeps a read snapshot open,
     // which keeps the WAL from checkpointing and fails the next write once any other
@@ -644,9 +648,21 @@ export class VectorIndex {
   private remove(id: string) {
     const slot = this.slots.get(id);
     if (slot === undefined) return;
+    const last = this.ids.length - 1;
+    if (slot !== last) {
+      this.ids[slot] = this.ids[last];
+      this.rowids[slot] = this.rowids[last];
+      this.filters[slot] = this.filters[last];
+      this.dims[slot] = this.dims[last];
+      this.bits.copyWithin(slot * WORDS, last * WORDS, (last + 1) * WORDS);
+      this.slots.set(this.ids[slot], slot);
+    }
     this.slots.delete(id);
-    this.ids[slot] = "";
-    this.dims[slot] = 0;
+    this.ids.pop();
+    this.rowids.pop();
+    this.filters.pop();
+    this.dims[last] = 0;
+    this.bits.fill(0, last * WORDS, (last + 1) * WORDS);
   }
 
   /** Up to date with SQLite: everything again after another process wrote, else what this one touched. */

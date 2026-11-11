@@ -14,6 +14,7 @@ registerHooks({
   load(url, context, next) {
     if (url === "fixture:browser") return { format: "module", shortCircuit: true, source: `
       export const browserControl=(scope)=>globalThis.__streamFixture.control(scope);
+      export const retainBrowserView=(scope)=>globalThis.__streamFixture.retain(scope);
       export const identity=(scope)=>globalThis.__streamFixture.identity(scope);
       export const withBrowserView=async(scope,run)=>{await Promise.resolve();return run();};
       export const hostWatch=(listener)=>globalThis.__streamFixture.watch(listener);
@@ -29,7 +30,8 @@ const pause = (ms = 35) => new Promise(r => nativeTimeout(r, ms));
 const report = { checks: {}, notes: {} };
 const check = (name, condition, note) => { report.checks[name] = Boolean(condition); if (note !== undefined) report.notes[name] = note; };
 function driver() {
-  const d = { listeners:new Set(), starts:0, stops:0, controls:0, revision:1, active:0, maxActive:0, hold:null,
+  const d = { listeners:new Set(), starts:0, stops:0, controls:0, revision:1, active:0, maxActive:0, hold:null, viewers:0,
+    retain() { d.viewers++; let released=false; return () => { if (!released) { released=true; d.viewers--; } }; },
     control() { d.controls++; return {current:{targetId:"tab"},controller:"agent",downloads:new Map()}; },
     identity() { return {sessionId:"fake",tabId:"tab",revision:d.revision}; },
     async status() { if (d.hold) await d.hold; return {identity:d.identity(),state:"live"}; },
@@ -49,7 +51,7 @@ try {
     const reader=stream.getReader(); const first=decode(await reader.read()); const second=decode(await reader.read());
     check("slowReaderKeepsLatestFrame", Boolean(first?.state) && second?.frame?.image === "599", {first:first?.frame?.image ?? "state",second:second?.frame?.image});
     abort.abort(); await reader.cancel(); await pause();
-    check("lastReaderStopsCast", d.listeners.size===0 && d.active===0, {listeners:d.listeners.size,active:d.active});
+    check("lastReaderStopsCast", d.listeners.size===0 && d.active===0 && d.viewers===0, {listeners:d.listeners.size,active:d.active});
   }
   {
     const d=driver(); let release; d.hold=new Promise(r=>{release=r;});
@@ -77,7 +79,7 @@ try {
     const a=streamBrowser("shared",false,640,one.signal),b=streamBrowser("shared",false,640,two.signal);
     await pause(); check("oneCastForConcurrentReaders",d.maxActive===1,{maxActive:d.maxActive,starts:d.starts});
     one.abort(); await a.cancel(); await pause(); check("oneReaderLeavingKeepsOther",d.listeners.size===1 && d.active===1);
-    two.abort(); await b.cancel(); await pause(); check("allReadersLeavingStopSharedCast",d.listeners.size===0 && d.active===0);
+    two.abort(); await b.cancel(); await pause(); check("allReadersLeavingStopSharedCast",d.listeners.size===0 && d.active===0 && d.viewers===0);
   }
   {
     const d=driver(); const abort=new AbortController();abort.abort();

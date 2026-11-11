@@ -1463,12 +1463,21 @@ export default defineSchema({
     /** Where it went: a messaging app or a web chat. Only a messaging app is held back. */
     channel: v.union(v.literal("web"), v.literal("telegram"), v.literal("whatsapp")),
     buttons: v.optional(v.array(v.array(v.object({ text: v.string(), data: v.string() })))),
+    recipient: v.optional(v.string()),
+    batchId: v.optional(v.id("sent")),
+    reservedAt: v.optional(v.number()),
+    deliveryText: v.optional(v.string()),
+    deliveryState: v.optional(v.union(v.literal("held"), v.literal("sending"), v.literal("delivered"), v.literal("failed"), v.literal("uncertain"))),
+    deliveryError: v.optional(v.string()),
+    seenAt: v.optional(v.number()),
     createdAt: v.number(),
     sentAt: v.optional(v.number()),
     /** Why it waited. */
     heldFor: v.optional(v.union(v.literal("quiet"), v.literal("limit"))),
   })
     .index("by_sent", ["sentAt"])
+    .index("by_reserved", ["reservedAt"])
+    .index("by_delivery", ["deliveryState", "reservedAt"])
     .index("by_from", ["fromId", "createdAt"]),
 
   /**
@@ -1782,6 +1791,10 @@ export default defineSchema({
   }).index("by_message", ["channel", "externalId", "messageId"])
     .index("by_chat", ["channel", "externalId", "createdAt"])
     .index("by_created", ["createdAt"]),
+
+  telegramReceipts: defineTable({
+    botId: v.string(), updateId: v.number(), acceptedAt: v.number(),
+  }).index("by_bot_update", ["botId", "updateId"]).index("by_accepted", ["acceptedAt"]),
 
   agentThreads: defineTable({
     userId: v.optional(v.string()),

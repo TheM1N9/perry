@@ -66,6 +66,7 @@ export async function serveFile(request: NextRequest, file: { path: string; file
     }
     headers.set("Content-Range", `bytes ${start}-${end}/${size}`);
     headers.set("Content-Length", String(end - start + 1));
+    if (request.method === "HEAD") return new Response(null, { status: 206, headers });
     return new Response(Readable.toWeb(createReadStream(/*turbopackIgnore: true*/ path, { start, end })) as ReadableStream, { status: 206, headers });
   }
   headers.set("Content-Length", String(size));

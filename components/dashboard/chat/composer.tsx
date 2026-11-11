@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SparklesIcon, SquareIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SlidersHorizontalIcon, SparklesIcon, SquareIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, typingSkill, type Access, type ModelOption } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { InfoTip } from "../common";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AttachmentList, PickedFiles, type Attachment } from "./attachments";
 import { PromptEditor, type PromptHandle } from "./prompt-editor";
 import { CitationChips, type Citation } from "./citations";
@@ -200,7 +200,7 @@ export function Composer({
           autoFocus={Boolean(editing)}
           className="max-h-[40vh] min-h-[52px] w-full overflow-y-auto px-5 pt-4 pb-1"
         />
-        <div className={cn("flex items-center gap-1 px-2.5 pt-1 pb-2.5", editing && "flex-wrap justify-end")}>
+        <div className={cn("flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5", editing && "justify-end")}>
           <Tooltip>
             <TooltipTrigger render={<Button type="button" variant="ghost" size="icon" className="rounded-full text-muted-foreground" aria-label="Attach files"
               onClick={() => picker.current?.click()} disabled={busy || Boolean(uploading) || Boolean(editingQueued) || files.length + (editing?.attachments.length ?? 0) >= MAX_FILES} />}>
@@ -271,7 +271,15 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
   const AccessIcon = ACCESS_ICONS[access];
 
   return (
-    <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+      <Popover>
+        <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className="h-8 rounded-full text-muted-foreground" aria-label="Reply options" />}>
+          <SlidersHorizontalIcon className="size-3.5" />Reply options
+        </PopoverTrigger>
+        <PopoverContent side="top" align="start" className="w-80 gap-4 p-4" aria-label="Reply options">
+          <div><h3 className="text-sm font-medium">Reply options</h3><p className="mt-1 text-xs text-muted-foreground">Model and thinking choices apply to the next reply.</p></div>
+          <div className="grid gap-3">
+          <div className="grid gap-2"><span className="text-xs text-muted-foreground">Model</span>
       <Select items={modelItems} value={model ?? null} onValueChange={(value) => { if (value) onModel(value); }} disabled={!models?.length}>
         <SelectTrigger aria-label="Model" className={cn(pill, "max-w-64")}>
           <CpuIcon className="size-3.5" />
@@ -288,7 +296,9 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
             : (models ?? []).map(modelItem)}
         </SelectContent>
       </Select>
+          </div>
       {efforts.length > 0 && (
+        <div className="grid gap-2"><span className="text-xs text-muted-foreground">Thinking</span>
         <Select items={effortItems} value={effort ?? "default"} onValueChange={(value) => onEffort(!value || value === "default" ? undefined : value)}>
           <SelectTrigger aria-label="Thinking" className={pill}>
             <BrainIcon className="size-3.5" />
@@ -298,24 +308,30 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
             {effortItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
           </SelectContent>
         </Select>
+        </div>
       )}
+          </div>
+        </PopoverContent>
+      </Popover>
       {/* Not modal, so the ⓘ tips, which open outside the menu, get the pointer. */}
       <Select modal={false} items={accessItems} value={access} onValueChange={(value) => { if (value) onAccess(value as Access); }} disabled={accessDisabled}>
-        <SelectTrigger aria-label="Access" className={cn(pill, access === "full" && "text-warning hover:text-warning")}>
+        <SelectTrigger aria-label="Access" className={cn(pill, access === "full" && "text-warning hover:text-warning")} title="Access changes apply immediately, including to the reply already running.">
           <AccessIcon className="size-3.5" />
+          <span className="text-xs">Access:</span>
           <SelectValue />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="w-52">
+        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="w-72">
+          <SelectGroup><SelectLabel>Applies immediately, including current work</SelectLabel>
           {accessItems.map((item) => {
             const Icon = ACCESS_ICONS[item.value];
             return (
               <SelectItem key={item.value} value={item.value}>
                 <Icon className={cn("size-3.5", item.value === "full" && "text-warning")} />
-                <span className="flex-1">{item.label}</span>
-                <InfoTip>{`${ACCESS_HINTS[item.value]} A change applies at once, to a reply already running too.`}</InfoTip>
+                <span className="min-w-0 flex-1 whitespace-normal"><span className="block">{item.label}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{ACCESS_HINTS[item.value]}</span></span>
               </SelectItem>
             );
           })}
+          </SelectGroup>
         </SelectContent>
       </Select>
     </div>

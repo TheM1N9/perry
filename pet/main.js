@@ -58,10 +58,10 @@ const DISMISS_PAGE = `<!doctype html><html><head><title>Perry: drop here to hide
 :root{--popover:#ffffff;--foreground:#1d1d1f;--border:#e5e5ea;--destructive:#c4221a;--on-destructive:#ffffff}
 @media (prefers-color-scheme:dark){:root{--popover:#18181b;--foreground:#f2f2f4;--border:rgb(255 255 255/.09);--destructive:#ff7a70;--on-destructive:#0c0c0e}}
 body{margin:0;height:100vh;display:grid;place-items:center;background:transparent;font:600 12px system-ui,sans-serif}
-#all{display:grid;justify-items:center;gap:10px;margin-top:34px;opacity:0;transition:opacity .12s}
+#all{display:grid;justify-items:center;gap:12px;margin-top:32px;opacity:0;transition:opacity .12s}
 #ring,#label{background:var(--popover);color:var(--foreground);border:1px solid var(--border);box-shadow:0 16px 40px -12px rgb(0 0 0/.38)}
 #ring{width:110px;height:110px;box-sizing:border-box;border-radius:50%;display:grid;place-items:center;transition:transform .15s,background .15s,color .15s}
-#label{padding:3px 9px;border-radius:99px}
+#label{padding:4px 8px;border-radius:99px}
 body.armed #ring{transform:scale(1.2);background:var(--destructive);color:var(--on-destructive);border-color:transparent}
 </style></head><body>
 <div id="all"><div id="ring"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>

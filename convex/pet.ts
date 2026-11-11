@@ -139,7 +139,7 @@ function perryPet(args: string[], onStep: (text: string) => void): Promise<{ cod
   // The dashboard's server runs in the checkout (perry run starts it there), and `perry run` says where Bun is.
   const repo = process.cwd();
   return new Promise((resolve) => {
-    const child = spawn(process.env.PERRY_BUN || "bun", [join(repo, "scripts", "perry.ts"), "pet", ...args], {
+    const child = spawn(/*turbopackIgnore: true*/ process.env.PERRY_BUN || "bun", [join(repo, "scripts", "perry.ts"), "pet", ...args], {
       cwd: repo,
       env: { ...process.env, PERRY_PROGRESS: "1" },
       stdio: ["ignore", "pipe", "pipe"],

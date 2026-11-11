@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
+import { readdirSync, statSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Runtime } from "./runtime";
@@ -61,8 +61,10 @@ async function loadDriver(): Promise<TriggerDriver> {
 }
 
 /** Watch one folder for new files; `onFile` hears each once it has settled. */
-function watchFolder(path: string, onFile: (file: string) => void): FSWatcher | null {
-  if (!existsSync(path) || !statSync(path).isDirectory()) return null;
+type FolderWatch = { watcher: FSWatcher; dev: number; ino: number };
+function watchFolder(path: string, onFile: (file: string) => void, onClose: () => void): FolderWatch | null {
+  const stat = statSync(path, { throwIfNoEntry: false });
+  if (!stat?.isDirectory()) return null;
   // What is there already is not new.
   const known = new Set(readdirSync(path));
   const settling = new Map<string, ReturnType<typeof setTimeout>>();
@@ -81,41 +83,64 @@ function watchFolder(path: string, onFile: (file: string) => void): FSWatcher | 
       onFile(file);
     }, SETTLE_MS));
   });
-  watcher.on("error", (error) => console.error(`[perry] stopped watching ${path}: ${String(error)}`));
-  return watcher;
+  watcher.once("close", () => {
+    for (const timer of settling.values()) clearTimeout(timer);
+    settling.clear();
+    known.clear();
+    onClose();
+  });
+  watcher.on("error", (error) => {
+    console.error(`[perry] stopped watching ${path}: ${String(error)}`);
+    watcher.close();
+  });
+  return { watcher, dev: stat.dev, ino: stat.ino };
 }
 
 /** Start listening; returns a function that stops it. */
 export function runTriggers(runtime: Runtime): () => void {
   let stopped = false;
-  const watchers = new Map<string, FSWatcher | null>();
+  const watchers = new Map<string, FolderWatch | null>();
   let subscription: { key: string; close: () => Promise<void> } | null = null;
   let driver: Promise<TriggerDriver> | null = null;
   let busy = false;
   let again = false;
 
   const onEvent = (args: { instanceIds?: string[]; folder?: string; event: string }) => {
+    if (stopped) return;
     runtime.runMutation("jobs:onEvent", args, internal)
       .catch((error) => console.error(`[perry] an event could not start its job: ${String(error)}`));
   };
 
   const reconcile = async () => {
+    if (stopped) return;
     if (busy) { again = true; return; }
     busy = true;
     try {
       const { folders, apps } = (await runtime.runQuery("jobs:listening", {}, internal)).value as { folders: string[]; apps: number };
+      if (stopped) return;
       for (const [path, watcher] of watchers) {
-        if (!folders.includes(path)) { watcher?.close(); watchers.delete(path); }
+        if (!folders.includes(path)) { watcher?.watcher.close(); watchers.delete(path); }
       }
       for (const path of folders) {
         // A folder that is not there yet is looked for again next time.
-        if (watchers.get(path)) continue;
-        const watcher = watchFolder(path, (file) => onEvent({ folder: path, event: `A new file arrived: ${file}` }));
-        if (!watcher && !watchers.has(path)) console.error(`[perry] cannot watch ${path}: there is no such folder`);
-        watchers.set(path, watcher);
+        try {
+          const current = watchers.get(path);
+          const stat = statSync(path, { throwIfNoEntry: false });
+          if (current && stat?.isDirectory() && stat.dev === current.dev && stat.ino === current.ino) continue;
+          current?.watcher.close();
+          const watcher = watchFolder(path, (file) => onEvent({ folder: path, event: `A new file arrived: ${file}` }), () => {
+            if (watchers.get(path) === watcher) watchers.delete(path);
+          });
+          if (!watcher && !watchers.has(path)) console.error(`[perry] cannot watch ${path}: there is no such folder`);
+          watchers.set(path, watcher);
+        } catch (error) {
+          watchers.delete(path);
+          console.error(`[perry] cannot watch ${path}: ${String(error)}`);
+        }
       }
 
       const key = (await runtime.runQuery("secrets:get", { name: "COMPOSIO_API_KEY" }, internal)).value as string | null;
+      if (stopped) return;
       const custom = Boolean(process.env.PERRY_TRIGGER_DRIVER);
       const wanted = apps > 0 && (key || custom) ? key ?? "driver" : null;
       if (subscription && subscription.key !== wanted) {
@@ -123,8 +148,11 @@ export function runTriggers(runtime: Runtime): () => void {
         subscription = null;
       }
       if (wanted && !subscription && !stopped) {
-        driver ??= loadDriver();
-        const close = await (await driver).subscribe(key, (event) => onEvent(event));
+        driver ??= loadDriver().catch((error) => { driver = null; throw error; });
+        const loaded = await driver;
+        if (stopped) return;
+        const close = await loaded.subscribe(key, (event) => onEvent(event));
+        if (stopped) { await close(); return; }
         subscription = { key: wanted, close };
         console.log("[perry] listening for app events");
       }
@@ -142,10 +170,13 @@ export function runTriggers(runtime: Runtime): () => void {
   void reconcile();
 
   return () => {
+    if (stopped) return;
     stopped = true;
     clearInterval(timer);
     runtime.events.off("change", onChange);
-    for (const watcher of watchers.values()) watcher?.close();
+    for (const watcher of watchers.values()) watcher?.watcher.close();
+    watchers.clear();
     void subscription?.close().catch(() => {});
+    subscription = null;
   };
 }

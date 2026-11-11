@@ -1,10 +1,9 @@
 import posthog from "posthog-js";
-import { analyticsPath, scrubDashboardMetadata, trackDashboardEvent } from "./lib/analytics";
+import { analyticsPath, dashboardAnalyticsAllowed, scrubDashboardMetadata, trackDashboardEvent } from "./lib/analytics";
 
 // This is a public ingestion key, not a personal API key. Overrides are baked in at build time.
 const key = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "phc_qeCkb5s5b6x4T5adoyZWdCKsmwK27dKq3RginMwWAwqn";
-const enabled = process.env.NEXT_PUBLIC_POSTHOG_ENABLED !== "false"
-  && (process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_POSTHOG_ENABLED === "true");
+const enabled = dashboardAnalyticsAllowed();
 
 if (enabled && key) {
   try {
@@ -14,8 +13,9 @@ if (enabled && key) {
       defaults: "2026-01-30",
       capture_pageview: "history_change",
       capture_pageleave: true,
-      person_profiles: "always",
+      person_profiles: "identified_only",
       respect_dnt: true,
+      loaded: instance => { if (dashboardAnalyticsAllowed()) instance.opt_in_capturing(); },
       autocapture: { dom_event_allowlist: ["click"], capture_copied_text: false },
       mask_all_text: true,
       mask_all_element_attributes: true,
@@ -30,7 +30,7 @@ if (enabled && key) {
       disable_surveys: true,
       property_denylist: ["$title", "$initial_current_url", "$referrer", "$initial_referrer"],
       before_send: (event) => {
-        if (!event) return null;
+        if (!event || !dashboardAnalyticsAllowed()) return null;
         scrubDashboardMetadata(event.properties);
         if (event.$set) scrubDashboardMetadata(event.$set);
         if (event.$set_once) scrubDashboardMetadata(event.$set_once);
@@ -44,8 +44,14 @@ if (enabled && key) {
       },
     });
     // Keep error frequency and category without private exception messages/stacks.
-    window.addEventListener("error", () => trackDashboardEvent("Dashboard error", { kind: "uncaught_error" }));
-    window.addEventListener("unhandledrejection", () => trackDashboardEvent("Dashboard error", { kind: "unhandled_rejection" }));
+    const onError = () => trackDashboardEvent("Dashboard error", { kind: "uncaught_error" });
+    const onRejection = () => trackDashboardEvent("Dashboard error", { kind: "unhandled_rejection" });
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    window.addEventListener("pagehide", () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    }, { once: true });
   } catch {
     // Perry still starts when analytics is unavailable.
   }

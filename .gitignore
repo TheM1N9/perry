@@ -26,3 +26,7 @@ artifacts/telegram-delivery/received/
 film/*.mp4
 film/*.wav
 film/stills/
+film/.render-cache/
+
+# Historical UI snapshots are regenerated into a disposable output folder.
+artifacts/fewer-boxes/*.png

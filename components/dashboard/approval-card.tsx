@@ -33,10 +33,7 @@ function remaining(ms: number) {
  */
 export function ApprovalCard({ approval, now, showChat = true, bare }: { approval: PendingApproval; now: number; showChat?: boolean; bare?: boolean }) {
   const { dashboardKey } = useSession();
-  const decide = useMutation(api.approvals.decide).withOptimisticUpdate((store, args) => {
-    const list = store.getQuery(api.approvals.pending, { key: args.key });
-    if (list) store.setQuery(api.approvals.pending, { key: args.key }, list.filter((item) => item.id !== args.id));
-  });
+  const decide = useMutation(api.approvals.decide);
   const [answering, setAnswering] = useState<"approve" | "decline" | "always" | null>(null);
   // A change to Brain can be approved in the owner's own words: what the lines become, one per line.
   const [editing, setEditing] = useState<string | null>(null);
@@ -47,6 +44,7 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
   const left = approval.expiresAt - now;
 
   const answer = async (choice: "approve" | "decline" | "always") => {
+    if (answering !== null) return;
     setAnswering(choice);
     try {
       const edited = proposal && editing !== null && choice === "approve" ? editing.split("\n").map((line) => line.trim()).filter(Boolean) : undefined;
@@ -62,8 +60,8 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
   };
 
   return (
-    <article aria-label={`${approval.runner} wants to ${KIND[approval.kind]}`} data-bare={bare || undefined}
-      className={cn(!bare && "overflow-hidden rounded-2xl border border-warning/35 bg-card shadow-raised")}>
+    <article id={`approval-${approval.id}`} tabIndex={-1} aria-label={`${approval.runner} wants to ${KIND[approval.kind]}`} data-bare={bare || undefined}
+      className={cn("outline-none focus-visible:ring-2 focus-visible:ring-ring/50", !bare && "overflow-hidden rounded-2xl border border-warning/35 bg-card shadow-raised")}>
       <header className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 px-4 text-sm", bare ? "pt-1" : "bg-warning-soft py-2.5")}>
         <ShieldAlertIcon className="size-4 shrink-0 text-warning" aria-hidden />
         <span className="font-medium text-foreground">{approval.runner} wants to {KIND[approval.kind]}</span>
@@ -78,7 +76,7 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
         </TextTip>
       </header>
       {proposal ? (
-        <div className={cn("space-y-3 px-4 text-sm", bare ? "py-2.5" : "py-3.5")} data-proposal={proposal.kind}>
+        <div className={cn("space-y-3 px-4 text-sm", bare ? "py-2.5" : "py-4")} data-proposal={proposal.kind}>
           <p className="font-medium text-pretty">
             {approval.title}
             {proposal.page && <> · <Link href={`/brain/${proposal.page.id}`} className="font-normal text-muted-foreground underline-offset-2 hover:underline">{proposal.page.title}</Link></>}
@@ -114,20 +112,21 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
           )}
         </div>
       ) : (
-      <div className={cn("space-y-3 px-4", bare ? "py-2.5" : "py-3.5")}>
-        <pre className="flex gap-2.5 overflow-x-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
+      <div className={cn("space-y-3 px-4", bare ? "py-2.5" : "py-4")}>
+        <pre className="flex gap-2.5 overflow-x-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-base font-medium leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
           <Icon className="mt-[3px] size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <code>{approval.title}</code>
         </pre>
-        {(approval.cwd || approval.detail) && (
+        {(approval.cwd || approval.paths?.length || approval.detail) && (
           <dl className="grid gap-1 text-sm">
             {approval.cwd && (
               <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-                <dt className="sr-only">Folder</dt>
+                <dt className="text-xs">Working folder</dt>
                 <FolderIcon className="size-3.5 shrink-0" aria-hidden />
-                <dd className="min-w-0"><TextTip tip={approval.cwd} className="block truncate font-mono text-xs">{approval.cwd}</TextTip></dd>
+                <dd className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]">{approval.cwd}</dd>
               </div>
             )}
+            {approval.paths && approval.paths.length > 0 && <div className="grid gap-1"><dt className="text-xs text-muted-foreground">Affected paths</dt><dd><ul className="space-y-1">{approval.paths.map((path,index) => <li key={`${index}:${path}`} className="font-mono font-medium [overflow-wrap:anywhere]">{path}</li>)}</ul></dd></div>}
             {approval.detail && <div><dt className="sr-only">Detail</dt><dd className="text-pretty text-muted-foreground">{approval.detail}</dd></div>}
           </dl>
         )}
@@ -140,7 +139,8 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
       </div>
       )}
       <footer className={cn("flex flex-wrap items-center gap-2 px-4", bare ? "pb-1" : "border-t py-3")}>
-        {approval.alwaysAllow && <p className="mr-auto min-w-0 text-xs text-pretty text-muted-foreground">Always allow saves a rule for {approval.alwaysAllow}.</p>}
+        <p className="w-full text-xs text-pretty text-muted-foreground">{proposal ? "Applies the displayed change. You can undo it in Brain." : "Allow once applies only to this request and does not save a permission rule."}</p>
+        {approval.alwaysAllow && <details className="mr-auto min-w-0 text-sm"><summary className="min-h-8 cursor-pointer rounded-md py-1 text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11">Save a rule for future requests</summary><p className="mt-2 max-w-sm text-xs text-pretty text-muted-foreground">Always allow saves a rule for {approval.alwaysAllow}.</p><Button className="mt-2" variant="outline" disabled={answering !== null} onClick={() => void answer("always")}>{answering === "always" && <Spinner />}Always allow this rule</Button></details>}
         <div className="ml-auto flex flex-wrap gap-2">
           {proposal && !moves && editing === null && (
             <Button variant="ghost" disabled={answering !== null} onClick={() => setEditing(proposal.after.join("\n"))}>Edit</Button>
@@ -148,13 +148,8 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
           <Button variant="outline" disabled={answering !== null} onClick={() => void answer("decline")}>
             {answering === "decline" && <Spinner />}Decline
           </Button>
-          {approval.alwaysAllow && (
-            <Button variant="outline" disabled={answering !== null} onClick={() => void answer("always")}>
-              {answering === "always" && <Spinner />}Always allow
-            </Button>
-          )}
           <Button disabled={answering !== null} onClick={() => void answer("approve")}>
-            {answering === "approve" && <Spinner />}Approve
+            {answering === "approve" && <Spinner />}{proposal ? "Apply change" : approval.kind === "write" || approval.kind === "file" ? "Allow this write once" : "Allow once"}
           </Button>
         </div>
       </footer>

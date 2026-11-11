@@ -21,9 +21,9 @@ export default {
     let count = 0;
     const frames = [];
     const socket = {
-      ev: { on(event, listener) { if (!listeners.has(event)) listeners.set(event, []); listeners.get(event).push(listener); } },
+      ev: { on(event, listener) { if (!listeners.has(event)) listeners.set(event, []); listeners.get(event).push(listener); }, off(event, listener) { const list = listeners.get(event); if (list) listeners.set(event, list.filter(item => item !== listener)); } },
       // As Baileys' socket.ws: a "frame" for each thing WhatsApp's servers send, keep-alive answers included.
-      ws: { on(event, listener) { if (event === "frame") frames.push(listener); } },
+      ws: { on(event, listener) { if (event === "frame") frames.push(listener); }, off(event, listener) { if (event === "frame") { const index = frames.indexOf(listener); if (index >= 0) frames.splice(index, 1); } } },
       user: undefined,
       async sendMessage(jid, content) {
         const id = `OUT${Date.now()}${++count}`;

@@ -6,7 +6,7 @@ change goes in through a pull request against `main`.
 
 ## Running from source
 
-You need Node.js 20.9 or newer, [pnpm](https://pnpm.io), [Bun](https://bun.sh)
+You need Node.js 22.13 or newer, [pnpm](https://pnpm.io), [Bun](https://bun.sh)
 and one engine's CLI signed in: [Codex](https://github.com/openai/codex),
 [Claude Code](https://code.claude.com) or Grok Build. `perry setup` asks which
 one Perry uses by default (`--engine <name>` answers without asking). Use
@@ -94,6 +94,12 @@ cd site
 pnpm install
 pnpm dev
 ```
+
+## Verification evidence
+
+Keep executable checks and their required fixtures in `artifacts/`. Write new screenshots, recordings and large result bundles to a disposable output directory or CI storage; CI uploads expire after 14 days. The older `fewer-boxes` screenshots were removed because no check reads them; its seed, replay and compact result record remain. Recover the original pictures from Git history when comparing the October design. Other historical bundles stay until their fixtures and references have been separated.
+
+The product typecheck excludes historical harnesses. CI checks those separately with `pnpm exec tsc --noEmit -p artifacts`.
 
 ## License
 

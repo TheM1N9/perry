@@ -15,8 +15,9 @@ import { List } from "@/components/dashboard/common";
 import { Empty } from "./empty";
 
 const LABEL: Record<InboxItem["kind"], string> = {
-  question: "A plan needs your answer",
-  "task-failed": "A plan failed",
+  delivery: "Delivery needs review",
+  question: "A task needs your answer",
+  "task-failed": "A task failed",
   "job-error": "A schedule failed",
   "job-result": "New from a schedule",
   watch: "A watch fired",
@@ -47,9 +48,10 @@ export function PetNeedsYou({ now, onChat, open }: {
         <List label="Updates" className={cn("*:px-1.5", live.length > 0 && "border-t")}>
           {inbox.map((item) => {
             const act = item.kind === "question" ? { label: "Answer", run: () => onChat(null, `About “${item.title}”: `) }
+              : item.kind === "delivery" ? { label: "Review", run: () => item.chatId ? onChat(item.chatId) : open("/settings/notifications") }
               : item.kind === "job-result" || (item.kind === "job-error" && item.chatId) ? { label: "Open", run: () => onChat(item.chatId!) }
                 : item.kind === "watch" ? { label: "Open page", run: () => window.open(item.url, "_blank") }
-                  : { label: "See plan", run: () => open("/work?tab=plans") };
+                  : { label: "See task", run: () => open("/work?tab=plans") };
             return (
               <li key={`${item.kind}-${item.id}`} className="px-3 py-2.5">
                 <p className="text-2xs text-muted-foreground">{LABEL[item.kind]} · {ago(item.at, now)}</p>

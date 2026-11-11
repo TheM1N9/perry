@@ -126,7 +126,7 @@ function Tool({ label, active, disabled, onClick, children }: { label: string; a
   );
 }
 
-/** A link on the selection: a web address, or another note's (/notes/…); empty takes it off. */
+/** A link on the selection: a web address, or another note's (/brain/…); empty takes it off. */
 function LinkTool({ editor, active }: { editor: Editor; active?: boolean }) {
   const [open, setOpen] = useState(false);
   const [href, setHref] = useState("");
@@ -138,8 +138,8 @@ function LinkTool({ editor, active }: { editor: Editor; active?: boolean }) {
       setOpen(false);
       return;
     }
-    if (!/^(https?:\/\/|mailto:|\/notes\/)/i.test(url)) {
-      setProblem("Use a web address (https://…) or a note's link (/notes/…).");
+    if (!/^(https?:\/\/|mailto:|\/(?:brain|notes)\/)/i.test(url)) {
+      setProblem("Use a web address (https://…) or a note's link (/brain/…).");
       return;
     }
     editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
@@ -157,7 +157,7 @@ function LinkTool({ editor, active }: { editor: Editor; active?: boolean }) {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80">
         <form className="flex gap-1.5" onSubmit={(event) => { event.preventDefault(); apply(); }}>
-          <Input autoFocus aria-label="Link address" value={href} placeholder="https://… or /notes/…" onChange={(event) => { setHref(event.target.value); setProblem(""); }} />
+          <Input autoFocus aria-label="Link address" value={href} placeholder="https://… or /brain/…" onChange={(event) => { setHref(event.target.value); setProblem(""); }} />
           <Button type="submit" size="sm" className="h-8">Set</Button>
         </form>
         {problem && <p className="text-xs text-destructive">{problem}</p>}

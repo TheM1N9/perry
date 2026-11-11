@@ -2,9 +2,8 @@ import { setTimeout as waitForRetry } from "node:timers/promises";
 /**
  * Minimal Telegram Bot API client.
  *
- * Deliberately not grammY: Assistant never polls and never runs a handler loop.
- * Inbound arrives as an HTTP action, outbound is one POST. A framework here
- * would be weight without leverage.
+ * server/telegram.ts owns long polling. This module parses incoming updates
+ * and sends outbound requests without a separate bot framework.
  */
 
 import { balanceFences, toTelegramHtml } from "./telegramFormat";
@@ -39,8 +38,7 @@ const MAX_RETRY_AFTER_S = 30;
 function requireToken(token: string | null): string {
   if (!token) {
     throw new Error(
-      "No Telegram bot token. Set one in Settings → Telegram, or run: " +
-        "pnpm exec convex env set TELEGRAM_BOT_TOKEN <token>",
+      "No Telegram bot token. Set one in Settings → Telegram, or run perry setup.",
     );
   }
   return token;

@@ -44,6 +44,7 @@ import { YourAssistant } from "./memory";
 import { Usage, UsageMoved } from "./usage";
 import { SaveStatus, useAutosave } from "../autosave";
 import { EngineChoice, useEngineChoices } from "../default-engine";
+import { dashboardAnalyticsAllowed, setDashboardAnalyticsConsent } from "@/lib/analytics";
 import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, SecretInput, Section, StatusBadge, type Tone } from "../common";
 import { Internet } from "./internet";
 
@@ -53,7 +54,7 @@ import { Internet } from "./internet";
  * with the connectors, in Apps & skills.
  */
 const SECTIONS: Record<SettingsSection, () => ReactNode> = {
-  general: () => <><YourAssistant /><Appearance /><BrainArchive /><Updates /></>,
+  general: () => <><YourAssistant /><Appearance /><Privacy /><BrainArchive /><Updates /></>,
   engines: () => <><UsageMoved /><DefaultEngine /><Engines /></>,
   usage: () => <Usage />,
   computers: () => <Computers />,
@@ -554,6 +555,29 @@ function DesktopPet() {
   );
 }
 
+function Privacy() {
+  const [enabled, setEnabled] = useState(false);
+  const [reload, setReload] = useState(false);
+  const [error, setError] = useState("");
+  const locked = process.env.NEXT_PUBLIC_POSTHOG_ENABLED === "false";
+  useEffect(() => { setEnabled(dashboardAnalyticsAllowed()); }, []);
+  return <Section title="Privacy">
+    <Field>
+      <div className="flex min-h-11 items-center justify-between gap-4">
+        <FieldLabel htmlFor="usage-diagnostics">Share usage diagnostics</FieldLabel>
+        <Switch id="usage-diagnostics" aria-describedby="usage-diagnostics-help" checked={enabled} disabled={locked} onCheckedChange={next => {
+          try { setDashboardAnalyticsConsent(next); setEnabled(next); setReload(next); setError(""); }
+          catch { setError("Your browser could not save this preference. Diagnostics remain unchanged."); }
+        }} />
+      </div>
+      <p id="usage-diagnostics-help" className="text-sm text-muted-foreground">Optional, off by default and saved for this browser. Shares structural page routes, feature usage, performance and error categories with PostHog. Messages, files, credentials and session recordings are excluded. Turning this off stops new captures immediately.</p>
+      {locked && <p className="text-sm text-muted-foreground">Diagnostics are disabled by this installation.</p>}
+      {reload && <div className="flex flex-wrap items-center gap-3"><p className="text-sm text-muted-foreground">Saved. Reload to start sharing diagnostics.</p><Button variant="outline" size="sm" onClick={() => window.location.reload()}>Reload</Button></div>}
+      {error && <FieldError>{error}</FieldError>}
+    </Field>
+  </Section>;
+}
+
 function Appearance() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -744,19 +768,19 @@ function Logins() {
         <h3 className="mb-3 text-sm font-medium">Add a login</h3>
         <Field data-invalid={Boolean(error) || undefined}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <FieldLabel htmlFor="login-label">Name</FieldLabel>
               <Input id="login-label" value={draft.label} placeholder="Netflix" autoComplete="off" onChange={(event) => edit("label", event.target.value)} />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <FieldLabel htmlFor="login-url">Site</FieldLabel>
               <Input id="login-url" value={draft.url} placeholder="https://www.netflix.com/login" autoComplete="off" spellCheck={false} onChange={(event) => edit("url", event.target.value)} />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <FieldLabel htmlFor="login-username">Username or email</FieldLabel>
               <Input id="login-username" value={draft.username} autoComplete="off" spellCheck={false} onChange={(event) => edit("username", event.target.value)} />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <FieldLabel htmlFor="login-value">Password or secret</FieldLabel>
               <SecretInput id="login-value" name="login-value" value={draft.value} placeholder="Never shown again" invalid={Boolean(error)} describedBy={error ? "login-error" : undefined}
                 onChange={(value) => edit("value", value)} />
@@ -786,7 +810,7 @@ function Remembered({ items }: { items?: Array<{ id: Id<"memories">; text: strin
             <span className="text-foreground">{item.text}</span>
             <span className="ml-1.5 text-xs text-muted-foreground">{item.from === "you" ? "from your chats" : "from their chat"}</span>
           </p>
-          <ActionButton variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          <ActionButton variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs text-muted-foreground opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
             action={() => forget({ key: dashboardKey, id: item.id })} success="Forgotten.">Forget</ActionButton>
         </li>
       ))}
@@ -843,7 +867,7 @@ function People() {
               </div>
               <Remembered items={remembered?.byContact[person.id]} />
               {editing === person.id && (
-                <Brief name={person.name} brief={person.brief ?? ""} onDone={() => setEditing(null)}
+                <Brief key={person.id} id={person.id} name={person.name} brief={person.brief ?? ""} onDone={() => setEditing(null)}
                   save={(brief) => set({ key: dashboardKey, id: person.id, brief })} />
               )}
             </li>
@@ -871,11 +895,11 @@ function People() {
 }
 
 /** What Perry may share with one person, saved as you type; Done or Esc puts it away once it is saved. */
-function Brief({ name, brief, save, onDone }: { name: string; brief: string; save: (brief: string) => Promise<unknown>; onDone: () => void }) {
-  const text = useAutosave({ saved: brief, save });
+function Brief({ id, name, brief, save, onDone }: { id: string; name: string; brief: string; save: (brief: string) => Promise<unknown>; onDone: () => void }) {
+  const text = useAutosave({ draftKey: `contact.${id}`, saved: brief, save });
   const done = () => void text.flush().then((ok) => { if (ok) onDone(); });
   return (
-    <div className="mt-2 grid gap-1.5">
+    <div className="mt-2 grid gap-2">
       <Textarea value={text.value} rows={3} autoFocus aria-label={`What Perry may share with ${name}`} placeholder={`What Perry may know and share with ${name}. "He can know my gym times."`} {...text.field}
         onChange={(event) => text.change(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); done(); } }} />

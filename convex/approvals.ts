@@ -722,6 +722,7 @@ export type PendingApproval = {
   title: string;
   detail?: string;
   cwd?: string;
+  paths?: string[];
   runner: string;
   chat?: { id: Id<"conversations">; title: string };
   review?: Review;
@@ -760,6 +761,7 @@ export const pending = query({
         title: row.title,
         detail: row.detail,
         cwd: row.cwd,
+        paths: row.paths,
         runner: runner ?? "a runner",
         chat: chat ? { id: chat._id, title: chat.title ?? "Untitled chat" } : undefined,
         review: row.review,
@@ -796,6 +798,7 @@ export type DecidedApproval = {
   kind: Doc<"approvals">["kind"];
   title: string;
   cwd?: string;
+  paths?: string[];
   runner: string;
   status: Doc<"approvals">["status"];
   decidedBy?: Doc<"approvals">["decidedBy"];
