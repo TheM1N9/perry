@@ -11,7 +11,7 @@ import { projectFrom } from "./projects";
 import { choose, routeOf, taskAsk } from "./routing";
 import { vPerryPick, vRoute } from "./schema";
 import { assertRunning, pausedAt } from "./pause";
-import { decisionReceipt, ownerChat } from "./taskDecisions";
+import { approvalQuestion, decisionReceipt, ownerChat } from "./taskDecisions";
 
 /**
  * Background tasks (issue #102): work Perry takes on and carries out by
@@ -333,7 +333,7 @@ export const afterTurn = internalMutation({
       const approval = await ctx.db.get(task.expiredApprovalId);
       if (approval?.status === "expired") {
         status = "blocked";
-        await ctx.db.patch(task._id, { status, question: `The approval expired without an answer: ${approval.title.slice(0, 500)}. Recheck this request, remind you later, or drop it?`, decision: decisionReceipt(), error: undefined, updatedAt: Date.now() });
+        await ctx.db.patch(task._id, { status, question: approvalQuestion(approval), decision: decisionReceipt(), error: undefined, updatedAt: Date.now() });
       }
     }
     // Stopped by a plan's limit: back in line for an engine with room, or the reset.

@@ -458,17 +458,22 @@ export const setMonitorActive = internalMutation({
 
 /** Everything the agent is allowed to know about its own workload. */
 export const snapshot = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const [recent, blocked, goals, monitors] = await Promise.all([
+  args: { decisionCursor: v.optional(v.string()), taskId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const [recent, page, goals, monitors] = await Promise.all([
       ctx.db.query("tasks").withIndex("by_updated").order("desc").take(10),
-      ctx.db.query("tasks").withIndex("by_status", q => q.eq("status", "blocked")).order("desc").take(20),
+      ctx.db.query("tasks").withIndex("by_status", q => q.eq("status", "blocked")).order("desc").paginate({ numItems: 20, cursor: args.decisionCursor ?? null }),
       ctx.db.query("goals").order("desc").take(10),
       ctx.db.query("monitors").order("desc").take(10),
     ]);
+    const tasks = [...page.page, ...recent.filter(task => !page.page.some(waiting => waiting._id === task._id))];
+    const id = args.taskId ? ctx.db.normalizeId("tasks", args.taskId) : null;
+    const requested = id ? await ctx.db.get(id) : null;
+    if (requested && !tasks.some(task => task._id === requested._id)) tasks.unshift(requested);
 
     return {
-      tasks: [...blocked, ...recent.filter(task => !blocked.some(waiting => waiting._id === task._id))].map((t) => ({
+      nextDecisionCursor: page.isDone ? undefined : page.continueCursor,
+      tasks: tasks.map((t) => ({
         id: t._id,
         title: t.title,
         status: t.status,

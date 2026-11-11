@@ -1413,6 +1413,8 @@ export default defineSchema({
     nextRunAt: v.number(),
     lastRunAt: v.optional(v.number()),
     lastResult: v.optional(v.string()),
+    /** Native query cursor rotates pending-decision context across Heartbeats. */
+    decisionCursor: v.optional(v.string()),
     lastError: v.optional(v.string()),
     /** When the owner dismissed its last error from Needs you. */
     seenAt: v.optional(v.number()),
@@ -1493,6 +1495,8 @@ export default defineSchema({
     reservedAt: v.optional(v.number()),
     deliveryText: v.optional(v.string()),
     deliveryState: v.optional(v.union(v.literal("held"), v.literal("sending"), v.literal("delivered"), v.literal("failed"), v.literal("uncertain"))),
+    cancelledAt: v.optional(v.number()),
+    externalStartedAt: v.optional(v.number()),
     deliveryError: v.optional(v.string()),
     seenAt: v.optional(v.number()),
     createdAt: v.number(),

@@ -159,12 +159,14 @@ async function send(ctx: ActionCtx, target: Target, text: string, buttons: Butto
         acknowledged = true;
         await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: target.externalId, messageId: String(id), text: body, isPerry: true });
       };
+      if (!(await ctx.runMutation(internal.notify.beginExternal, { ids }))) throw new Error("This follow-up was withdrawn before external delivery.");
       externalStarted = true;
       if (buttons) await onSent(await sendButtons(token, target.externalId, text, buttons), text);
       else await sendMessage(token, target.externalId, text, { markdown: true, onSent });
       acknowledged = true;
     }
-    await ctx.runMutation(internal.notify.completeDelivery, { ids, conversationId, text, ...(target.channel === "whatsapp" ? { whatsappTo: target.externalId } : {}) });
+    const completed: boolean = await ctx.runMutation(internal.notify.completeDelivery, { ids, conversationId, text, ...(target.channel === "whatsapp" ? { whatsappTo: target.externalId } : {}) });
+    if (!completed) return externalStarted ? "uncertain" : "failed";
     return "delivered";
   } catch (error) {
     const definiteRefusal = !acknowledged && error instanceof TelegramError && error.code >= 400 && error.code < 500;
@@ -281,9 +283,24 @@ export const attemptRows = internalQuery({
     const rows: Doc<"sent">[] = [];
     for (const id of args.ids) {
       const row = await ctx.db.get(id);
-      if (row && (!row.taskDecision || await decisionActive(ctx, row.taskDecision))) rows.push(row);
+      if (row && row.cancelledAt === undefined && (!row.taskDecision || await decisionActive(ctx, row.taskDecision))) rows.push(row);
     }
     return rows;
+  },
+});
+
+/** Persist the last local check before Telegram IO so a concurrent withdrawal stays uncertain. */
+export const beginExternal = internalMutation({
+  args: { ids: v.array(v.id("sent")) }, returns: v.boolean(),
+  handler: async (ctx, args) => {
+    if (!args.ids.length) return false;
+    const rows = await Promise.all(args.ids.map(id => ctx.db.get(id)));
+    const owner = await ctx.db.query("installation").first();
+    for (const row of rows) {
+      if (!row || row.channel !== "telegram" || row.deliveryState !== "sending" || row.cancelledAt !== undefined || row.batchId !== args.ids[0] || !owner?.claimedAt || owner.ownerChannel !== "telegram" || owner.ownerExternalId !== row.recipient || row.taskDecision && !await decisionActive(ctx, row.taskDecision)) return false;
+    }
+    for (const row of rows) await ctx.db.patch(row!._id, { externalStartedAt: Date.now() });
+    return true;
   },
 });
 
@@ -311,22 +328,38 @@ export const claimHeld = internalMutation({
 
 export const completeDelivery = internalMutation({
   args: { ids: v.array(v.id("sent")), conversationId: v.id("conversations"), text: v.string(), whatsappTo: v.optional(v.string()) },
+  returns: v.boolean(),
   handler: async (ctx, args) => {
     const first = args.ids[0] ? await ctx.db.get(args.ids[0]) : null;
-    if (!first || first.deliveryState === "delivered") return null;
-    if (first.batchId !== first._id || !["sending", "uncertain"].includes(first.deliveryState ?? "")) throw new Error("This delivery attempt is no longer active.");
+    if (!first) return false;
+    if (first.deliveryState === "delivered") return true;
+    if (first.batchId !== first._id) throw new Error("This delivery attempt is no longer active.");
+    const rows: Doc<"sent">[] = [];
+    let eligible = true;
+    for (const id of args.ids) {
+      const row = await ctx.db.get(id);
+      if (!row || row.batchId !== first._id) throw new Error("Delivery batch changed.");
+      if (row.cancelledAt !== undefined || row.taskDecision && !await decisionActive(ctx, row.taskDecision)) eligible = false;
+      rows.push(row);
+    }
+    if (!eligible) {
+      for (const row of rows) {
+        const external = row.externalStartedAt !== undefined || row.deliveryState === "uncertain";
+        await ctx.db.patch(row._id, { cancelledAt: row.cancelledAt ?? Date.now(), deliveryState: external ? "uncertain" : "failed", ...(external ? {} : { seenAt: Date.now() }), deliveryError: external ? "This follow-up was withdrawn after external delivery began. Check the destination before sending again." : "This follow-up was withdrawn before delivery." });
+      }
+      return false;
+    }
+    if (rows.some(row => !["sending", "uncertain"].includes(row.deliveryState ?? ""))) throw new Error("This delivery attempt is no longer active.");
     const chat = await ctx.db.get(args.conversationId);
     if (!chat || chat.contactId) throw new Error("The owner's destination chat is no longer available.");
     if (args.whatsappTo && !(await ctx.runMutation(internal.whatsapp.send, { to: args.whatsappTo, text: args.text }))) throw new Error("WhatsApp is no longer paired to this recipient.");
     await saveMessages(ctx, { threadId: chat.threadId, messages: [{ role: "assistant", content: args.text }] });
     await ctx.runMutation(internal.conversations.noteUnprompted, { id: chat._id, text: args.text });
     const now = Date.now();
-    for (const id of args.ids) {
-      const row = await ctx.db.get(id);
-      if (!row || row.batchId !== first._id) throw new Error("Delivery batch changed.");
-      await ctx.db.patch(id, { deliveryState: "delivered", sentAt: now, deliveryError: undefined });
+    for (const row of rows) {
+      await ctx.db.patch(row._id, { deliveryState: "delivered", sentAt: now, deliveryError: undefined });
     }
-    return null;
+    return true;
   },
 });
 
@@ -335,7 +368,10 @@ export const failDelivery = internalMutation({
   handler: async (ctx, args) => {
     for (const id of args.ids) {
       const row = await ctx.db.get(id);
-      if (row && row.deliveryState !== "delivered") await ctx.db.patch(id, { deliveryState: args.state, deliveryError: args.error, ...(args.state === "failed" ? { reservedAt: undefined } : {}) });
+      if (row && row.deliveryState !== "delivered") {
+        const state = row.externalStartedAt !== undefined && (row.cancelledAt !== undefined || row.deliveryState === "uncertain") ? "uncertain" : args.state;
+        await ctx.db.patch(id, { deliveryState: state, deliveryError: args.error, ...(state === "failed" ? { reservedAt: undefined } : {}) });
+      }
     }
     return null;
   },
