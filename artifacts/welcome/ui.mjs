@@ -17,6 +17,8 @@ import { openChat, sleep } from "../browser.ts";
 //   4. The step ignores the pet: no way to turn him on, the wrong keys, or it never notices he heard you.
 //   5. Coming back with a USER.md, saving replaces it unseen.
 //   6. A new chat suggests several things at once, or "Not now" does not stick.
+//   7. Starting a text chat requires personalization, voice or a desktop pet.
+//   8. Optional setup interrupts a new chat, or hides a dismissed suggestion only until reopened.
 
 const output = resolve(process.argv[2]);
 mkdirSync(output, { recursive: true });
@@ -82,6 +84,16 @@ try {
   };
 
   await browser.send("Page.navigate", { url: `${base}/welcome` });
+  await until(has("Start with something useful"));
+  report.checks.personalizationIsOptional = await browser.evaluate(`Boolean(${button("Start chatting")}) && Boolean(${button("Personalize first (optional)")}) && !document.querySelector('input[autocomplete=given-name]')`);
+  await screenshot("text-first.png");
+  await click("Start chatting");
+  await until("/^\\/chat(?:\\/.*)?$/.test(location.pathname)");
+  report.checks.textChatNeedsNoPet = true;
+  await call("dashboard:redoOnboarding");
+  await browser.send("Page.navigate", { url: `${base}/welcome` });
+  await until(has("Start with something useful"));
+  await click("Personalize first (optional)");
   await until(has("Meet your assistant"));
   report.checks.skipIsInTheCorner = await browser.evaluate("Boolean(document.querySelector('.welcome-escapes'))");
   await screenshot("meet.png");
@@ -126,6 +138,9 @@ try {
 
   // 6. A new chat suggests one thing; Not now moves on.
   await browser.send("Page.navigate", { url: `${base}/chat` });
+  await until(has("Optional setup: desktop, voice and calendar"));
+  report.checks.optionalSetupStartsCollapsed = await browser.evaluate("!Array.from(document.querySelectorAll('details')).find((item) => item.querySelector('summary')?.textContent.includes('Optional setup:'))?.open");
+  await browser.evaluate("Array.from(document.querySelectorAll('summary')).find((item) => item.textContent.includes('Optional setup:')).click()");
   await until(has("Connect your calendar"));
   report.checks.suggestsOneThing = await browser.evaluate(`!${has("Put Perry on your desktop")}`);
   await screenshot("next-step.png");
@@ -133,6 +148,8 @@ try {
   await until(`!${has("Connect your calendar")}`);
   await browser.send("Page.reload");
   await until("document.querySelector('#composer')");
+  await until(has("Optional setup: desktop, voice and calendar"));
+  await browser.evaluate("Array.from(document.querySelectorAll('summary')).find((item) => item.textContent.includes('Optional setup:')).click()");
   await sleep(1_000);
   report.checks.notNowSticks = !await browser.evaluate(has("Connect your calendar"));
 
