@@ -4,7 +4,7 @@ Perry's local backend receives the exact file paths and signed PUT reservation r
 
 ## Contract
 
-`upload_files({manifestPath})` reads a local JSON manifest containing a stable request ID, the take and upload IDs, and the local paths, sizes, types, keys, signed URLs and required headers. Keeping links in that local file avoids repeating signed credentials in tool arguments. Only the owner's active, writable turns receive it. It is an outward action, never a preparation or guest tool. Reading outside content retains the existing outward-action restriction.
+`upload_files({manifestPath})` reads a local JSON manifest containing a stable request ID, the take and upload IDs, the signed reservationProof, and the local paths, sizes, types, keys, signed URLs and required headers. Keeping links in that local file avoids repeating signed credentials in tool arguments. Only the owner's active, writable turns receive it. It is an outward action, never a preparation or guest tool. Existing owner approval can continue after outside reads under #358; outside content cannot authorize a transfer.
 
 All files are checked before any network transfer. Only HTTPS AWS-signed Cloudflare R2 PUT URLs for the same account, bucket and take reservation are accepted. No cookies, saved credentials, redirects, arbitrary HTTP methods or caller-selected state directories. The tool checks local regular files, hashes their contents and binds its receipt to that exact manifest. It never logs or returns the URL query.
 

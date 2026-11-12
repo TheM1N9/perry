@@ -121,7 +121,7 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   library_find: (input) => ({ label: typeof input.query === "string" ? `Looking for “${short(input.query, 30)}” in your Library` : "Looking in your Library", pose: "reading" }),
   library_add: () => ({ label: "Putting a file in your Library", pose: "typing" }),
   share_file: (input) => ({ label: typeof input.path === "string" ? `Sending you ${short(baseName(input.path), 32)}` : "Sending you a file", pose: "running" }),
-  upload_files: () => ({ label: "Uploading your review files", pose: "running" }),
+  upload_files: () => ({ label: "Checking your file transfer", pose: "running" }),
 };
 
 /** Each label's first word, said of a step that is over: "Running git status" is "Ran git status". */

@@ -8,6 +8,7 @@ export const uploadFilesSchema = z.object({
   requestId: z.string().min(1).max(100).describe("Stable retry key for this batch; reuse it after interruption or URL refresh."),
   takeId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
   uploadId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
+  reservationProof: z.string().min(1).max(16 * 1024 ** 2).describe("Signed reservationProof returned by Channel Desk; verified against the installed public key before opening local files."),
   files: z.array(z.object({
     path: z.string().min(3).max(4096).describe("Absolute path to the approved local file."),
     key: z.string().min(1).max(2048).describe("Exact storage key from create_upload."),

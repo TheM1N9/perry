@@ -52,3 +52,13 @@ Published Perry issue #359 and PR #360, plus ProStackLabs/channel-desk PR #114. 
 Channel Desk main advanced to 2cbfc30. Its local merge is clean; the 16 upload/storage/review integration tests and application/Convex typechecks passed again. The published PR's Vercel preview was blocked because GitHub could not verify the commit email pranav@prostacklabs.com. This is a deployment access failure, not a passing preview build. No account settings were changed.
 
 The existing Pepsi package was rechecked locally: all 12 expected file sizes match, totalling 76,568,117 bytes, and SHA-256 hashes were saved to PEPSI-PREFLIGHT.json in the release checkpoint folder. No file bytes have been transferred, no version finalized, and no publication or QC started. The local merge updates have not been pushed or activated.
+
+## Signed reservation verification, 12 November 2026
+
+Channel Desk can return an Ed25519 reservationProof covering the request, take and upload IDs, expiration, file keys, sizes, types, PUT/HEAD URLs and headers. Perry verifies that proof against CHANNEL_DESK_UPLOAD_PUBLIC_KEY before opening any file. A foreign signer or altered destination fails closed. Expired proofs require refreshing the same reservation. Paths stay local and are not part of the signed response.
+
+Generate an Ed25519 key pair once during the approved deployment. Store the base64 PKCS8 DER private key as UPLOAD_RESERVATION_PRIVATE_KEY on the Channel Desk backend and its base64 SPKI DER public key as CHANNEL_DESK_UPLOAD_PUBLIC_KEY in Perry's .env.local. Never accept a public key from an upload manifest. Channel Desk clients can ignore the additive proof field; Perry requires it. Missing signing configuration preserves existing Channel Desk clients but leaves Perry transfers disabled. Rotate both deployment settings together and refresh the same reservation afterward.
+
+The repair also closes preflight handles, reopens and rehashes one file at a time before transfer or receipt reuse, bounds resumed HEAD requests with both the caller signal and a timeout, removes failed temporary receipts and uses a neutral activity label. The tool retains owner-only writable-turn checks and follows #358's scoped continuation after outside reads.
+
+Verified: all three application/Convex typechecks, nine smoke checks, 19 repair E2E cases and 16 Channel Desk integration tests. The E2E uses the real Channel Desk signer, native uploader and a local HTTP storage fixture. It covers foreign signers, changed reservation fields, exact bytes, lost committed PUT responses, resumed HEAD timeout and changed local content. URL-free evidence is REPAIR-E2E-RESULT.json in the release checkpoint folder. No live storage write or review submission established by those tests.

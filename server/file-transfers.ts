@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, writeFile, type FileHandle } from "node:fs/promises";
+import { createHash, randomUUID, createPublicKey, verify as verifySignature } from "node:crypto";
+import { mkdir, open, readFile, rename, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -12,7 +12,8 @@ type TransferRequest = { method: "PUT" | "HEAD"; headers?: Headers; body?: Reada
 type TransferResponse = { status: number; headers: Headers };
 export type TransferTransport = (url: string, options: TransferRequest) => Promise<TransferResponse>;
 type Dependencies = { stateDir: string; scope: string; signal?: AbortSignal; request?: TransferTransport; retryDelayMs?: number };
-type CheckedFile = UploadFilesInput["files"][number] & { handle: FileHandle; sha256: string; md5: string; mtime: number; destination: string };
+type CheckedFile = UploadFilesInput["files"][number] & { sha256: string; md5: string; mtime: number; destination: string };
+type OpenFile = CheckedFile & { handle: FileHandle };
 type SavedReceipt = { fingerprint: string; files: TransferReceipt[] };
 const active = new Set<string>();
 const RETRIES = 3;
@@ -55,6 +56,35 @@ export async function uploadManifest(manifestPath: string, deps: Dependencies): 
   } catch { throw new Error("The local upload manifest could not be read as bounded JSON."); }
   finally { await handle.close(); }
   return await uploadFiles(input, deps);
+}
+
+function verifyReservation(input: UploadFilesInput) {
+  const configured = process.env.CHANNEL_DESK_UPLOAD_PUBLIC_KEY;
+  if (!configured) throw new TransferError("failed", "Configure Channel Desk's trusted upload public key before transferring files.");
+  const parts = input.reservationProof.split(".");
+  if (parts.length !== 2 || parts.some(part => !/^[A-Za-z0-9_-]+$/.test(part)))
+    throw new TransferError("failed", "Invalid Channel Desk reservation proof.");
+  let payload: { expiresAt: number };
+  try {
+    const key = createPublicKey({ key: Buffer.from(configured, "base64"), type: "spki", format: "der" });
+    if (key.asymmetricKeyType !== "ed25519" || !verifySignature(null, Buffer.from(parts[0], "base64url"), key, Buffer.from(parts[1], "base64url")))
+      throw new Error("Invalid signature");
+    payload = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+  } catch { throw new TransferError("failed", "The reservation was not signed by the trusted Channel Desk deployment."); }
+  const expected = JSON.stringify({
+    requestId: input.requestId, takeId: input.takeId, uploadId: input.uploadId, expiresAt: payload?.expiresAt,
+    files: input.files.map(f => [f.key, f.size, f.type, f.url, f.verificationUrl ?? null,
+      Object.entries(f.headers).map(([name, value]) => [name.toLowerCase(), value]).sort(([a], [b]) => a.localeCompare(b))]),
+  });
+  if (Buffer.from(parts[0], "base64url").toString("utf8") !== expected)
+    throw new TransferError("failed", "The file manifest does not match Channel Desk's signed reservation.");
+  if (!Number.isSafeInteger(payload.expiresAt) || payload.expiresAt <= Date.now())
+    throw new TransferError("needs_fresh_urls", "Refresh the same Channel Desk reservation to obtain a fresh proof.");
+}
+
+function fileSignal(signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(FILE_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function destination(raw: string, key: string, takeId: string, verify = false): { identity: string; expires: number } {
@@ -134,15 +164,15 @@ async function verify(file: CheckedFile, request: TransferTransport, signal: Abo
   return true;
 }
 
-async function unchanged(file: CheckedFile) {
+async function unchanged(file: OpenFile) {
   const now = await file.handle.stat();
   if (now.size !== file.size || now.mtimeMs !== file.mtime)
     throw new TransferError("failed", "A local file changed during its upload. Keep the existing take and inspect the reservation before finalizing.");
 }
 
-async function transfer(file: CheckedFile, deps: Dependencies): Promise<void> {
+async function transfer(file: OpenFile, deps: Dependencies): Promise<void> {
   const request = deps.request ?? sendTransfer;
-  const signal = deps.signal ? AbortSignal.any([deps.signal, AbortSignal.timeout(FILE_TIMEOUT_MS)]) : AbortSignal.timeout(FILE_TIMEOUT_MS);
+  const signal = fileSignal(deps.signal);
   for (let attempt = 0; attempt < RETRIES; attempt++) {
     signal.throwIfAborted();
     if (destination(file.url, file.key, file.key.split("/")[2]).expires <= Date.now() + 1000)
@@ -193,6 +223,7 @@ export async function uploadFiles(raw: unknown, deps: Dependencies): Promise<Tra
   const checked: CheckedFile[] = [];
   try {
     deps.signal?.throwIfAborted();
+    verifyReservation(input);
     const keys = new Set<string>();
     let target: string | undefined;
     // Validate the entire manifest before opening anything, then preflight every file before PUT.
@@ -210,13 +241,15 @@ export async function uploadFiles(raw: unknown, deps: Dependencies): Promise<Tra
     }
     for (const file of input.files) {
       const handle = await open(file.path, "r");
-      const item: CheckedFile = { ...file, handle, sha256: "", md5: "", mtime: 0, destination: target! };
-      checked.push(item);
-      const info = await handle.stat();
-      if (!info.isFile() || info.size !== file.size) throw new TransferError("failed", "A local file is missing, is not a regular file, or has a different size.");
-      item.mtime = info.mtimeMs;
-      Object.assign(item, await digest(handle, deps.signal));
-      await unchanged(item);
+      try {
+        const info = await handle.stat();
+        if (!info.isFile() || info.size !== file.size) throw new TransferError("failed", "A local file is missing, is not a regular file, or has a different size.");
+        const item: OpenFile = { ...file, handle, sha256: "", md5: "", mtime: info.mtimeMs, destination: target! };
+        Object.assign(item, await digest(handle, deps.signal));
+        await unchanged(item);
+        const { handle: _handle, ...closed } = item;
+        checked.push(closed);
+      } finally { await handle.close(); }
     }
     const fingerprint = createHash("sha256").update(JSON.stringify({ takeId: input.takeId, uploadId: input.uploadId, files: checked.map(f => ({ path: resolve(f.path), destination: f.destination, key: f.key, type: f.type, size: f.size, sha256: f.sha256 })) })).digest("hex");
     let saved: SavedReceipt = { fingerprint, files: [] };
@@ -226,21 +259,33 @@ export async function uploadFiles(raw: unknown, deps: Dependencies): Promise<Tra
     await mkdir(deps.stateDir, { recursive: true, mode: 0o700 });
     const persist = async () => {
       const temporary = `${statePath}.${randomUUID()}.tmp`;
-      await writeFile(temporary, JSON.stringify({ fingerprint, files: completed }, null, 2), { mode: 0o600 });
-      await rename(temporary, statePath);
+      try {
+        await writeFile(temporary, JSON.stringify({ fingerprint, files: completed }, null, 2), { mode: 0o600 });
+        await rename(temporary, statePath);
+      } finally { await rm(temporary, { force: true }).catch(() => {}); }
     };
     // Persist batch identity before the first PUT, even if the connection then fails.
     await writeFile(statePath, JSON.stringify(saved), { flag: "wx", mode: 0o600 }).catch(error => { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; });
     for (const file of checked) {
       deps.signal?.throwIfAborted();
-      const prior = saved.files.find(f => f.key === file.key && f.sha256 === file.sha256 && f.size === file.size && f.etag === file.md5);
-      if (prior && (!file.verificationUrl || await verify(file, deps.request ?? sendTransfer, deps.signal ?? AbortSignal.timeout(FILE_TIMEOUT_MS)))) {
-        completed.push(receipt(file, true));
-      } else {
-        await transfer(file, deps);
-        completed.push(receipt(file, false));
-      }
-      await persist();
+      const handle = await open(file.path, "r");
+      try {
+        const reopened: OpenFile = { ...file, handle };
+        await unchanged(reopened);
+        const current = await digest(handle, deps.signal);
+        if (current.sha256 !== file.sha256 || current.md5 !== file.md5)
+          throw new TransferError("failed", "A local file changed after preflight. Preserve the batch and inspect it before retrying.");
+        await unchanged(reopened);
+        const prior = saved.files.find(f => f.key === file.key && f.sha256 === file.sha256 && f.size === file.size && f.etag === file.md5);
+        if (prior && (!file.verificationUrl || await verify(file, deps.request ?? sendTransfer, fileSignal(deps.signal)))) {
+          completed.push(receipt(file, true));
+        } else {
+          await transfer(reopened, deps);
+          completed.push(receipt(file, false));
+        }
+        await unchanged(reopened);
+        await persist();
+      } finally { await handle.close(); }
     }
     return result("uploaded");
   } catch (error) {
@@ -250,7 +295,6 @@ export async function uploadFiles(raw: unknown, deps: Dependencies): Promise<Tra
     const code = (error as NodeJS.ErrnoException)?.code;
     return result("failed", ["ENOENT", "EACCES", "ENOSPC", "EPERM"].includes(code ?? "") ? `Local file transfer failed (${code}).` : "The file transfer failed. Preserve the batch and retry the same request.");
   } finally {
-    await Promise.allSettled(checked.map(f => f.handle.close()));
     active.delete(statePath);
   }
 }
