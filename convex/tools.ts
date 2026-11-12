@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createTool, type ToolCtx } from "./lib/agent";
 import type { PerryPick } from "./lib/routing";
@@ -21,6 +22,10 @@ import { fetchPage, fetchPublic } from "./web";
 import { internetRead, recheckInternetConnections } from "./composio";
 import { diagnostics, executeInternet, requestSchema, type InternetRequest } from "./lib/internet";
 import type { DecisionReviewResult } from "./taskDecisions";
+import { HOME } from "../runner/home";
+import { uploadManifestSchema, type TransferResult } from "../lib/file-transfers";
+import { uploadManifest } from "../server/file-transfers";
+import { HELD_FOR_OWNER } from "./lib/provenance";
 
 /**
  * The full tool catalogue. Which of these a given turn can reach is decided in
@@ -1834,6 +1839,17 @@ const interactive_update = createTool({
 });
 
 export const ALL_TOOLS = {
+  upload_files: createTool({
+    description: "Transfer explicitly approved local files to a Channel Desk create_upload reservation without a browser or shell HTTP request. Write a local JSON manifest containing requestId, takeId, uploadId and files, each with path, key, size, type, url and headers from create_upload, plus its reservationProof; pass only manifestPath here so signed URLs stay out of tool arguments. Streamed transfers keep URL-free, conversation-scoped receipts and retry transient failures. Reuse the same manifest/requestId to resume. If needs_fresh_urls, call create_upload with its SAME requestId to refresh links and update this manifest, then retry; never make a duplicate take. Optional signed HEAD verificationUrl verifies uncertain committed PUTs. needs_verification is not success. Only status uploaded means all files transferred; then call finalize_version with script, transcript, packaging and credits, and read back review status. Never finalizes, publishes, starts QC, uses saved credentials or follows redirects. Use only for the owner's approved files and destination.",
+    inputSchema: uploadManifestSchema,
+    execute: async (ctx, input): Promise<TransferResult> => {
+      if (ctx.readOnly) throw new Error(HELD_FOR_OWNER("upload those local files"));
+      if (!ctx.conversationId || !ctx.turnId) throw new Error("File transfers need an active owner conversation turn.");
+      const chat = await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId });
+      if (!chat || chat.contactId) throw new Error("Only the owner's own chat can upload local files.");
+      return await uploadManifest(input.manifestPath, { stateDir: join(HOME, "file-transfers"), scope: ctx.conversationId, signal: ctx.signal });
+    },
+  }),
   interactive_create,
   interactive_read,
   interactive_update,
