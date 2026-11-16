@@ -1,195 +1,154 @@
 <p align="center">
-  <img src="site/public/film/poster.jpg" alt="Perry, your personal AI assistant" width="640">
+  <img src="site/public/film/poster.jpg" alt="Perry, a personal AI assistant that runs on your computer" width="640">
 </p>
 
-<p align="center">
-  <b>A personal AI assistant that runs on your own computer.</b><br>
-  Talk to it on Telegram, WhatsApp or the web. It remembers you, works on your
-  machine, and reaches your accounts, with your ChatGPT subscription as its brain.
-</p>
+# Perry
 
-<p align="center">
-  <a href="https://perry-gamma.vercel.app">Website</a> ·
-  <a href="INSTALL.md">Install guide</a> ·
-  <a href="https://github.com/TheM1N9/perry/issues">Issues</a> ·
-  <a href="LICENSE">MIT License</a>
-</p>
+A personal AI assistant that runs on your computer. Chat on the web, WhatsApp or Telegram. Perry remembers your preferences, works with your files and connected accounts, and keeps track of work between conversations.
 
----
+Use your own coding-agent account: Codex with ChatGPT, Claude Code with Claude, Grok Build, or Antigravity (experimental). Usage counts against the engine's plan. Optional integrations and cloud services can have their own costs.
 
-## What it is
-
-Perry is an assistant you install once and then just message. It thinks with
-a coding agent on your own subscription, the one you choose:
-[Codex](https://github.com/openai/codex) on ChatGPT,
-[Claude Code](https://code.claude.com) on Claude, Grok Build on Grok, or
-Antigravity (experimental) on Google. There is no API bill and no extra
-account to make.
-
-Perry runs on your computer and stores its data in a local SQLite database.
-The engine and connected services you choose receive the content needed for
-your requests. Optional dashboard diagnostics and installer analytics are off
-by default. Anyone can run their own separate copy.
-
-Dashboard diagnostics can be enabled in Settings > General > Privacy for that
-browser. They send structural routes, feature usage, performance and error
-categories to PostHog, excluding message/file contents, credentials and session
-recordings. Installer milestones are separate: set `PERRY_TELEMETRY_ENABLED=1`
-to opt in; `PERRY_TELEMETRY_DISABLED=1` always disables them. A custom dashboard
-build may explicitly enable diagnostics with `NEXT_PUBLIC_POSTHOG_ENABLED=true`,
-or force them off with `false`; public build variables take effect at build time.
-
-## What you can do with it
-
-- **"Remind me to call Sam at 2."** Keeps a to-do list and nudges you until
-  things are done, on your phone or on your screen.
-- **"Every weekday at 8, brief me on my calendar."** Runs scheduled jobs and
-  one-off reminders in your timezone, and stays quiet when there is nothing new.
-- **"Tell me when this page changes."** Watches web pages and lets you know.
-- **"Clean up my Downloads folder."** Works on your computer, with a shell and
-  your files, asking before anything outside its sandbox.
-- **"What's on my calendar? Draft a reply to that email."** Connects to Gmail,
-  Google Calendar, Notion and more through [Composio](https://composio.dev).
-- **Notices things without a prompt.** Every half hour from 8am to 10:30pm,
-  Perry checks recent activity in connected email and calendars against your
-  plans and active goals. He can start research, compare options, or prepare
-  a correction himself, then bring back the result or a concrete decision.
-  Work → Tasks shows what he started and why. Each issue or goal keeps one
-  task, with later checks continuing it rather than starting over.
-  Automatic preparation reads accounts and records its work and verified goal
-  milestones; your answer continues the same task
-  under Ask access before sending, booking or changing accounts. Later automatic
-  checks return to read-only preparation. This currently uses Codex or Claude
-  Code, whose native tools can be disabled for preparation. Perry starts at most
-  one task per check, two at once, and four work sessions in 24 hours. Due
-  follow-through checks wait at least a day. Pause or reschedule Heartbeat under
-  Work → Schedules; Pause Perry, quiet hours and notification limits still apply.
-- **Follows up on unanswered decisions.** A blocked task waits for your answer,
-  while Perry weighs whether another message would help, using the context,
-  urgency, deadlines and earlier follow-ups. He chooses what to say and when
-  to reconsider; elapsed time alone never sends a reminder. Answer
-  from the web, WhatsApp or Telegram; it continues the same task. Snooze in Work
-  or ask Perry to remind you later. Cancel or say to drop it to stop asking.
-  Expired execution approvals become recheck requests and require fresh approval.
-- **"From now on, keep replies short."** Remembers who you are, what you like
-  and what you told it last week.
-- **"Send this to me on WhatsApp. I'll continue there."** Sends to your own
-  paired WhatsApp or Telegram, with a short recap. Your reply there continues
-  in that app's existing Perry chat, with its earlier messages and the recap.
-- **Reactions can be replies.** In web chat, WhatsApp and Telegram, Perry can acknowledge
-  a message, express a feeling, or change a reaction as work progresses. The
-  emoji choices are open to what each app supports. He can also understand
-  your reaction changes and removals against the original message. Telegram
-  only delivers reaction updates where the bot has the required administrator
-  permissions; private-chat reaction feedback is not guaranteed.
-- **"Note this: passport renewal by May."** Keeps notes you both edit: packing
-  lists, trip plans, meeting notes, a weekly review a schedule adds to. A
-  project's notes are shared with its chats. `/note` from your phone adds a line.
-- **Think out loud in Riff.** Open it from the sidebar, create a document,
-  and start listening. Dictate a draft and ask for edits, images or links while
-  Perry updates it. Voice uses your browser's speech service, which may process
-  audio online; typed instructions work too. Listening stops when you leave the
-  page or switch tabs. Each document keeps its own editing chat and approvals.
-- **Hold a hotkey and talk.** An optional desktop companion sits in a corner
-  of your screen with your chats, to-dos and approvals, and takes voice input
-  transcribed on your machine.
-- **Take notes on calls.** Open Meetings or press Ctrl/Cmd+Shift+L with the desktop
-  pet running. On Windows and macOS, microphone activity can bring up a
-  Start Notetaker prompt. Connect Google Calendar or Outlook under Apps & skills,
-  then use Refresh calendars in Meetings to see the next 24 hours. Perry checks
-  calendars every five minutes and suggests taking notes two minutes before a
-  meeting. You choose when recording starts; change the prompts in Settings →
-  Desktop pet. Calendar reads use Composio's selected account for each service.
-  Transcription stays local by default. In Settings → Desktop pet, choose
-  Whisper Small for balanced speed or Whisper Large v3 Turbo for higher accuracy,
-  and select your spoken language. Models download once. Groq cloud transcription
-  is an optional mode with its own key; selecting it sends audio to Groq.
-- **"What's this error?"** Another hotkey shows the companion the window
-  you're in, so you can ask about it. You see the picture before it's sent.
-  Perry can also look for himself when a question is about your screen, and
-  the chat shows what he saw. You can turn that off in Settings → Desktop pet.
+[Install](#install) · [What's new](#whats-new) · [Setup guide](INSTALL.md) · [Download source ZIP](https://github.com/TheM1N9/perry/archive/refs/heads/main.zip) · [Report an issue](https://github.com/TheM1N9/perry/issues)
 
 ## Install
 
-You need a Mac, Linux or Windows computer, and an account with one of the
-engines above (ChatGPT for Codex, Claude for Claude Code, and so on).
+**Works on Windows, macOS and Linux.** Have an account for the engine you want Perry to use. The installer checks for the required tools, adds missing dependencies, and guides you through engine sign-in and setup.
 
-macOS or Linux:
+### Windows
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh
-```
-
-Windows (Command Prompt or PowerShell):
+Paste this into **PowerShell or Command Prompt**:
 
 ```bat
 powershell -c "irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
 ```
 
-The installer adds anything missing (Node.js, pnpm, Bun), puts Perry in
-`~/perry`, and walks you through setup: optionally connect a Telegram bot,
-choose the engine Perry thinks with (it shows which ones are installed and
-signed in, and never picks one for you), install and sign in to it, and open
-the dashboard. Perry then runs in the background and starts with your
-computer. Change the engine any time in Settings → Engines.
+Open a new terminal after installation to use the `perry` command.
 
-Installing where nobody can answer questions, such as a server or CI? Name
-the engine: `sh -s -- --engine claude` after the `curl ... |`, or
-`Set-Item Env:PERRY_ENGINE claude;` before the `irm` in the Windows line. Without it, setup
-stops rather than guess.
+### macOS or Linux
 
-Already cloned the repo? Run `pnpm install` and then `pnpm perry setup`.
-[INSTALL.md](INSTALL.md) has the details for each OS.
+Paste this into **Terminal**:
 
-## Using it
-
-```bash
-perry open      # open the dashboard
-perry status    # is it running, and where
-perry logs -f   # follow what it is doing
-perry update    # get the latest version
-perry pet       # put Perry on your desktop (perry pet off to remove)
-perry doctor    # check that everything is set up right
-perry stop | start | uninstall
+```sh
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh
 ```
 
-Perry keeps himself up to date: when there is a new version, the dashboard and
-the pet say so, one click from updating, and at night (around 4:00 your time)
-he updates himself if he isn't busy. Settings → General turns that off.
+The installer sets up a Git checkout in `~/perry`, installs dependencies, and opens your dashboard. Perry runs in the background and starts when you log in. Setup asks which engine to use and offers to install and sign in to it. You can skip Telegram and start with web chat alone.
 
-Chat from the dashboard, Telegram or WhatsApp. WhatsApp is linked from the
-dashboard's settings; it uses an unofficial connection, so a separate number
-is recommended.
+Want to inspect the installer first? Read [install.ps1](install.ps1) or [install.sh](install.sh). For requirements, server setup and troubleshooting, see [INSTALL.md](INSTALL.md).
 
-Perry answers while your computer is on. On Windows it wakes a sleeping
-computer for scheduled jobs and reminders (Work → Schedules). macOS and Linux
-only let an administrator set wake times, so there they wait for the computer
-to wake. For an assistant that is always there, run it on a machine that
-stays on, like a Mac mini or a home server.
+### Your first conversation
 
-## You stay in control
+1. Open the dashboard with `perry open`.
+2. Check your engine in **Settings → Engines** and choose a model for your chat.
+3. Try: **“Remember that I prefer short replies”** or **“Remind me to call Sam tomorrow at 2 PM.”**
+4. Connect email, calendars or other services under **Apps & skills** when you need them. Link WhatsApp or Telegram from Settings if you want to chat on your phone.
 
-- **Approvals.** Anything beyond its sandbox is asked first, in the dashboard
-  and on Telegram. "Always allow" saves a rule you can review and delete.
-- **Supervised or full access**, chosen per chat.
-- **Everything is logged.** Every reply has a trace of the commands, file
-  changes and tool calls behind it.
-- **Your data is local.** Chats, memory, notes and files live in `~/.perry`.
-  Connected-account tokens are held by Composio, never by Perry.
+Your computer needs to stay on and connected for Perry to answer or run scheduled work.
 
-## Contributing
+<details>
+<summary>Install from source or on a server</summary>
 
-Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
-for how to run Perry from source.
+For source setup, install Git, Node.js 22.13 or newer, pnpm and Bun, then run:
 
-## Acknowledgements
+```sh
+git clone https://github.com/TheM1N9/perry.git
+cd perry
+pnpm install
+pnpm perry setup
+```
 
-Inspired by [OpenClaw](https://github.com/openclaw/openclaw). Parts of Perry
-are adapted from Vercel's [eve](https://github.com/vercel/eve) (Apache 2.0; see
-[NOTICE](NOTICE)). Voice input follows
-[OpenWhispr](https://github.com/OpenWhispr/openwhispr), and the desktop
-companion [Petodo](https://www.petodoapp.com/petodo/).
+For an unattended macOS or Linux install, choose the engine explicitly:
 
-## License
+```sh
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh -s -- --engine claude
+```
 
-[MIT](LICENSE)
+On Windows:
+
+```bat
+powershell -c "Set-Item Env:PERRY_ENGINE claude; irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
+```
+
+Supported engine names are `codex`, `claude`, `grok` and `antigravity`. Setup stops if an unattended install has no engine selected. See [INSTALL.md](INSTALL.md) for remote computers, network access and the optional desktop pet.
+
+</details>
+
+## What Perry can do
+
+| You ask | Perry does |
+| --- | --- |
+| “What's on my calendar? Draft a reply to this email.” | Reads connected accounts and prepares the reply. Gmail, Google Calendar, GitHub and other integrations use [Composio](https://composio.dev). |
+| “Clean up my Downloads folder.” | Works with local files and commands under the chat's access settings. |
+| “Every weekday at 8, brief me on my calendar.” | Runs a scheduled job in your timezone. Reminders stay on your to-do list until completed. |
+| “Tell me when this page changes.” | Watches the page and reports matching changes. |
+| “Research these options and come back with a recommendation.” | Runs a background task and returns its result or a specific question to the originating chat. |
+| “Note this down.” | Saves an editable Brain page. Projects keep related chats and notes together. |
+| “Send this to me on WhatsApp. I'll continue there.” | Sends the conversation to your paired app with a recap. |
+
+**Perry can also start useful work.** Periodic checks of connected email and calendars can uncover something relevant to your plans or active goals. Perry can research it and prepare a concrete next step. Work shows the task, its reason and its progress. Automatic preparation stays read-only for accounts; consequential actions still need your approval.
+
+**Decisions keep their context.** Answer a task's question in chat to continue that same task. Perry considers urgency and earlier follow-ups before asking again. You can snooze, cancel or pause work from the dashboard.
+
+## Voice and the desktop pet
+
+- **Talk instead of typing.** Use voice input in the dashboard or hold the desktop pet's hotkey. The pet's voice input is transcribed on your machine.
+- **Write with Riff.** Open Riff from the sidebar, create a document, then dictate and ask for edits, images or links. It uses your browser's speech service, which may process audio online. Typed instructions work too.
+- **Take meeting notes.** The optional pet can detect microphone activity and suggest recording. You choose when recording starts. Calendar connections help it suggest upcoming meetings. Transcription is local by default; optional Groq transcription sends audio to Groq.
+- **Ask about your screen.** Show the pet your current window or let Perry look when your question needs it. The chat shows the captured picture. Screen access can be turned off in Settings.
+
+Run `perry pet` to enable the desktop companion. Meetings and voice settings live under **Settings → Desktop pet**. See the [setup guide](INSTALL.md) for supported platforms and remote pet pairing.
+
+## What's new
+
+Recent changes on `main` include:
+
+- **Approved work continues after outside reads.** Reading a webpage or account result no longer forces another approval for an already authorized account workflow. Outside content remains untrusted, and consequential-action confirmations remain.
+- **Autonomous work and decision follow-through.** Perry can start bounded preparation, keep one task for an issue and resume it when you answer. Work shows waiting decisions and follow-ups.
+- **Riff voice document editing.** Dictate a document and revise it through its own editing conversation.
+- **GitHub token connections.** Connect GitHub with a personal access token as an alternative to OAuth, using the permissions granted to that token.
+- **Voice, meetings and recovery improvements.** Recent updates improve voice input, meeting prompts and local transcription, message delivery, interrupted work and HTTP image attachments.
+- **Privacy controls.** Optional dashboard diagnostics and installer analytics are off by default.
+
+See [merged pull requests](https://github.com/TheM1N9/perry/pulls?q=is%3Apr+is%3Amerged) for the full history.
+
+## Everyday commands
+
+| Command | Purpose |
+| --- | --- |
+| `perry open` | Open the dashboard. |
+| `perry status` | Check whether Perry is running. |
+| `perry logs -f` | Follow service logs. |
+| `perry doctor` | Check setup and find problems. |
+| `perry update` | Update and restart Perry through the supported updater. |
+| `perry pet` | Start the desktop pet. |
+| `perry pet off` | Turn the pet off. |
+| `perry stop` / `perry start` | Stop or start Perry. |
+
+The dashboard and pet show available updates. Perry can also update around 4 AM in your timezone when idle; control automatic updates in **Settings → General**.
+
+## Access and privacy
+
+**Choose access per chat:** Ask requests approval for computer actions that need it; Auto reviews requests and handles routine ones; Full access permits computer work without those approval prompts. The engine's own capabilities and settings still matter. See the [setup guide](INSTALL.md) for engine-specific behaviour.
+
+Sending, publishing, deleting or spending still requires the appropriate owner approval. Reading outside content does not authorize new actions or let a source rewrite your preferences. Each reply has an activity trace of its tool calls and computer work.
+
+**Your data lives on your computer.** Chats, memory, notes and attachments are kept under `~/.perry`, with SQLite as the local database. Back up that folder while Perry is stopped. Each installation has its own data; a dashboard is intended for one owner. Keep its dashboard key private.
+
+The selected engine and connected services receive the content needed for your request. Composio manages connected-account credentials. WhatsApp uses an unofficial connection; a separate number is recommended.
+
+Optional dashboard diagnostics are controlled in **Settings → General → Privacy** for each browser. They exclude message and file contents, credentials and session recordings. Installer analytics have a separate opt-in through `PERRY_TELEMETRY_ENABLED=1`; `PERRY_TELEMETRY_DISABLED=1` disables them.
+
+## Need help?
+
+Start with `perry doctor`, then check `perry logs -f`.
+
+- **Perry won't answer:** check **Settings → Engines**, sign in to the selected engine and make sure the computer is online.
+- **No default engine:** choose one in **Settings → Engines** or choose a model for the chat.
+- **An integration fails:** reconnect the intended account under **Apps & skills**.
+- **Installation or network trouble:** follow [INSTALL.md](INSTALL.md), or [open an issue](https://github.com/TheM1N9/perry/issues) with your OS and the error. Leave out keys and private content.
+
+## Contributing and license
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers development and checks. Perry is [MIT licensed](LICENSE).
+
+Inspired by [OpenClaw](https://github.com/openclaw/openclaw). Parts are adapted from Vercel's [eve](https://github.com/vercel/eve) under Apache 2.0; see [NOTICE](NOTICE). Voice input follows [OpenWhispr](https://github.com/OpenWhispr/openwhispr), and the desktop companion draws on [Petodo](https://www.petodoapp.com/petodo/).
