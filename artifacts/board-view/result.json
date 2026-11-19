@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "checkedAt": "2026-11-19T19:12:58.002Z",
+  "checkedAt": "2026-11-19T19:33:47.665Z",
   "platform": "win32",
   "checks": {
     "waiting on you lists the pending approval, linked to its chat": true,
@@ -11,6 +11,7 @@
     "a queued background task appears on the open board within seconds": true,
     "the thread shows who holds it: engine, model and computer": true,
     "a step the turn is on shows in the open thread as it runs": true,
+    "a task waiting on an approval shows as that approval, not as a question to answer": true,
     "an update and its link reach the open thread without a reload": true,
     "the file the turn changed is in the thread": true,
     "a finished task ends in its result and no longer says it is working": true,
@@ -28,7 +29,7 @@
     "no errors in the browser": true
   },
   "notes": {
-    "appearedAfterMs": 169,
+    "appearedAfterMs": 170,
     "browserErrors": []
   }
 }

@@ -98,19 +98,25 @@ function useSeen(threads: BoardThread[] | undefined) {
   useEffect(() => {
     let stored: Seen | null = null;
     try { stored = JSON.parse(window.localStorage.getItem(SEEN) ?? "null") as Seen | null; } catch {}
-    const fresh = stored && typeof stored.since === "number" && stored.at && typeof stored.at === "object" ? stored : { since: Date.now(), at: {} };
-    if (!stored) window.localStorage.setItem(SEEN, JSON.stringify(fresh));
-    setSeen(fresh);
+    setSeen(stored && typeof stored.since === "number" && stored.at && typeof stored.at === "object" ? stored : { since: Date.now(), at: {} });
   }, []);
+  // Storage can be full or blocked; the marks then last for this visit.
+  useEffect(() => {
+    if (!seen) return;
+    try { window.localStorage.setItem(SEEN, JSON.stringify(seen)); } catch {}
+  }, [seen]);
+  const ready = seen !== null;
   const ids = useMemo(() => new Set(threads?.map((thread) => thread.id)), [threads]);
-  const mark = useCallback((thread: BoardThread) => setSeen((current) => {
-    if (!current || (current.at[thread.id] ?? current.since) >= thread.updatedAt) return current;
-    const at = Object.fromEntries(Object.entries(current.at).filter(([id]) => ids.has(id)));
-    at[thread.id] = thread.updatedAt;
-    const next = { since: current.since, at };
-    window.localStorage.setItem(SEEN, JSON.stringify(next));
-    return next;
-  }), [ids]);
+  // A new function once the record has loaded, so a thread opened before then is marked when it has.
+  const mark = useCallback((thread: BoardThread) => {
+    if (!ready) return;
+    setSeen((current) => {
+      if (!current || (current.at[thread.id] ?? current.since) >= thread.updatedAt) return current;
+      const at = Object.fromEntries(Object.entries(current.at).filter(([id]) => ids.has(id)));
+      at[thread.id] = thread.updatedAt;
+      return { since: current.since, at };
+    });
+  }, [ids, ready]);
   const unseen = useCallback((thread: BoardThread) => Boolean(seen && thread.updatedAt > (seen.at[thread.id] ?? seen.since)), [seen]);
   return { unseen, mark };
 }
@@ -166,16 +172,16 @@ export function Board() {
         </Tabs>
 
         <section aria-label={channel.label} className="min-w-0">
-          <div className={cn(address.view === "activity" && "max-xl:hidden")}>
+          <div className={cn(address.view === "activity" && !address.thread && "max-xl:hidden")}>
             {address.thread
               ? <Thread key={address.thread} id={address.thread} back={address.href({ thread: null })} backLabel={channel.label} onSeen={mark} />
               : <Threads board={board} channel={channel} href={(id) => address.href({ thread: id })} unseen={unseen} />}
           </div>
-          {address.view === "activity" && <div className="xl:hidden"><Activity board={board} channel={channel} href={(id) => address.href({ thread: id, view: null })} /></div>}
+          {address.view === "activity" && !address.thread && <div className="xl:hidden"><Activity board={board} channel={channel} href={(id) => address.href({ thread: id, view: null })} /></div>}
         </section>
 
         <aside aria-label="Activity" className="max-xl:hidden xl:sticky xl:top-16 xl:max-h-[calc(100dvh-5rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
-          <Activity board={board} channel={channel} href={(id) => address.href({ thread: id })} />
+          <Activity board={board} channel={channel} href={(id) => address.href({ thread: id, view: null })} />
         </aside>
       </div>
     </Page>
@@ -201,10 +207,10 @@ function WaitingOnYou({ threads, className }: { threads?: BoardThread[]; classNa
       id: approval.id, icon: ShieldAlertIcon, kind: "Approval", title: approval.title, mono: approval.kind === "command",
       where: approval.chat?.title, href: approval.chat ? `/chat/${approval.chat.id}` : "/inbox", action: "Review", at: approval.createdAt,
     })),
-    ...(threads ?? []).filter((thread) => thread.status === "waiting" && thread.kind === "task").map((thread) => ({
-      id: thread.id, icon: CircleHelpIcon, kind: "Question", title: thread.now ?? thread.title, mono: false,
+    ...(threads ?? []).flatMap((thread) => thread.question ? [{
+      id: thread.id, icon: CircleHelpIcon, kind: "Question", title: thread.question, mono: false,
       where: thread.title, href: thread.href, action: "Answer", at: thread.updatedAt,
-    })),
+    }] : []),
   ].sort((a, b) => b.at - a.at);
   if (!items.length) return null;
   return (
@@ -302,6 +308,7 @@ function Thread({ id, back, backLabel, onSeen }: { id: string; back: string; bac
   if (view === undefined) return <div role="status" aria-label="Loading">{backLink}<Skeleton className="h-6 w-2/3" /><Skeleton className="mt-3 h-4 w-1/2" /><ListSkeleton rows={3} /></div>;
   if (view === null || !thread) return <div>{backLink}<EmptyState title="This thread is gone" /></div>;
   const going = thread.status === "working" || thread.status === "waiting" || thread.status === "blocked";
+  const several = view.feed.filter((entry) => entry.kind === "run").length > 1;
   return (
     <article aria-labelledby="thread-title" className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150" data-thread-view={thread.id}>
       {backLink}
@@ -324,7 +331,7 @@ function Thread({ id, back, backLabel, onSeen }: { id: string; back: string; bac
       {view.plan && <PlanChecklist steps={view.plan} active={going} className="mt-4" />}
 
       <ol className="mt-6 space-y-4" aria-label="Feed" data-feed>
-        {view.feed.map((item) => <FeedEntry key={item.id} item={item} holder={thread.holder} several={view.feed.filter((entry) => entry.kind === "run").length > 1} />)}
+        {view.feed.map((item) => <FeedEntry key={item.id} item={item} holder={thread.holder} several={several} />)}
       </ol>
       {view.feed.length === 0 && <p className="mt-6 text-sm text-muted-foreground">{thread.status === "queued" ? "Not started yet." : "Nothing recorded yet."}</p>}
     </article>
@@ -388,7 +395,7 @@ function FeedEntry({ item, holder, several }: { item: FeedItem; holder?: BoardHo
     case "result":
       return (
         <li className="border-t pt-4" data-feed-result>
-          <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-success"><CheckCircle2Icon className="size-3.5" aria-hidden />Result</p>
+          <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-success"><CheckCircle2Icon className="size-3.5" aria-hidden />{item.reply ? "Reply" : "Result"}</p>
           <div className="text-sm"><Markdown text={item.text} /></div>
         </li>
       );
@@ -419,14 +426,15 @@ function Activity({ board, channel, href }: { board?: BoardView; channel: Channe
 
   const machines = board?.machines ?? [];
   const machineItems = [{ value: "all", label: "Every computer" }, ...machines.map((item) => ({ value: item.name, label: item.name }))];
+  const computer = machines.length > 1 && machines.some((item) => item.name === machine) ? machine : "all";
   const events = (board?.events ?? []).filter((event) => {
     const thread = event.thread ? threads.get(event.thread) : undefined;
     if (channel.id !== "all" && !(thread && channel.has(thread))) return false;
-    if (status !== "all" && (thread?.status ?? (event.verb === "approval" ? "waiting" : undefined)) !== status) return false;
-    if (machine !== "all" && (event.machine ?? thread?.holder?.machine) !== machine) return false;
+    if (status !== "all" && (event.status ?? thread?.status) !== status) return false;
+    if (computer !== "all" && (event.machine ?? thread?.holder?.machine) !== computer) return false;
     return true;
   });
-  const filtered = status !== "all" || machine !== "all";
+  const filtered = status !== "all" || computer !== "all";
 
   return (
     <div data-activity>
@@ -439,7 +447,7 @@ function Activity({ board, channel, href }: { board?: BoardView; channel: Channe
           </SelectContent>
         </Select>
         {machines.length > 1 && (
-          <Select items={machineItems} value={machine} onValueChange={(value) => setMachine(value ?? "all")}>
+          <Select items={machineItems} value={computer} onValueChange={(value) => setMachine(value ?? "all")}>
             <SelectTrigger size="sm" aria-label="Computer"><SelectValue /></SelectTrigger>
             <SelectContent alignItemWithTrigger={false} align="end">
               {machineItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}

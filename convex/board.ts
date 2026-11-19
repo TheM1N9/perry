@@ -40,6 +40,8 @@ export type BoardThread = {
   finishedAt?: number;
   /** The step it is on, or how it ended, in a line. */
   now?: string;
+  /** What a task stopped to ask the owner, answered on its own page. */
+  question?: string;
   projectId?: Id<"projects">;
   chatId?: Id<"conversations">;
   /** Its own page, where it can be changed or answered. */
@@ -47,7 +49,8 @@ export type BoardThread = {
 };
 
 export type BoardVerb = "queued" | "started" | "posted" | "asked" | "approval" | "finished" | "failed" | "stopped" | "fired";
-export type BoardEvent = { id: string; thread?: string; at: number; verb: BoardVerb; text?: string; machine?: string; href?: string };
+/** `status`: how its thread stood with this event, where the event says so (a failure is failed for good). */
+export type BoardEvent = { id: string; thread?: string; at: number; verb: BoardVerb; status?: BoardStatus; text?: string; machine?: string; href?: string };
 
 export type BoardView = {
   threads: BoardThread[];
@@ -70,7 +73,8 @@ export type FeedItem =
   | { kind: "said"; id: string; at: number; text: string }
   | { kind: "approval"; id: string; at: number; text: string; href: string }
   | { kind: "question"; id: string; at: number; text: string; href: string }
-  | { kind: "result"; id: string; at: number; text: string }
+  /** `reply`: a chat turn's answer, rather than a task's or a schedule's result. */
+  | { kind: "result"; id: string; at: number; text: string; reply?: true }
   /** `step`: the last thing it did before it failed, so a failure says where without opening its steps. */
   | { kind: "error"; id: string; at: number; text: string; step?: string };
 
@@ -95,6 +99,8 @@ const firstLine = (text: string | undefined, max = 160) => {
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\*\*|__|`/g, "").replace(/^\s*(?:#+|[-*>]|\d+\.)\s+/, "").trim();
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line || undefined;
 };
+/** Whether a watch's last observation is the one that fired it: each check keeps only its own, and a firing stays. */
+const firedOn = (monitor: Doc<"monitors">) => monitor.firedAt !== undefined && Math.abs((monitor.lastCheckedAt ?? 0) - monitor.firedAt) < 1_000;
 const PLACE: Record<FeedItem["kind"], number> = { run: 0, update: 1, said: 1, approval: 1, question: 2, result: 2, error: 2 };
 const CONDITION: Record<Doc<"monitors">["condition"], string> = { change: "when anything changes", contains: "when it contains", price_below: "when the price drops below" };
 
@@ -145,12 +151,14 @@ function loader(ctx: QueryCtx, now: number) {
     return { status: "working", label: "Working" };
   }
 
-  /** The step a running run is on, in the pet's words. */
-  async function stepOf(run: Doc<"runs">): Promise<string | undefined> {
-    if ((await pending()).some((row) => row.conversationId === run.conversationId)) return "Waiting for you to approve";
-    const spans = await ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc").take(6);
-    const span = spans.find((item) => item.kind !== "reasoning" && item.kind !== "plan");
-    return span ? describeStep(span, { done: span.status !== "running" }).label : "Thinking";
+  /** The step a running run is on, in the pet's words, and when its latest step began. */
+  async function stepOf(run: Doc<"runs">): Promise<{ label: string; at: number }> {
+    const latest = await ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc").take(6);
+    const at = Math.max(run.startedAt, latest[0]?.startedAt ?? 0);
+    const asking = (await pending()).find((row) => row.conversationId === run.conversationId);
+    if (asking) return { label: "Waiting for you to approve", at: Math.max(at, asking.createdAt) };
+    const span = latest.find((item) => item.kind !== "reasoning" && item.kind !== "plan");
+    return { label: span ? describeStep(span, { done: span.status !== "running" }).label : "Thinking", at };
   }
 
   /** What a finished turn answered, in a line; what it did, when its reply is gone. */
@@ -168,6 +176,7 @@ function loader(ctx: QueryCtx, now: number) {
     const conversation = await chat(run.conversationId);
     const state = await runState(run);
     const live = state.status === "working" || state.status === "waiting";
+    const step = live ? await stepOf(run) : undefined;
     return {
       id: `run:${run._id}`,
       kind: "chat",
@@ -176,9 +185,10 @@ function loader(ctx: QueryCtx, now: number) {
       ...state,
       holder: await holderOf(run),
       startedAt: run.startedAt,
-      updatedAt: run.finishedAt ?? run.startedAt,
+      // A running turn changes as it takes each step, so the row's unread mark follows its steps.
+      updatedAt: run.finishedAt ?? step?.at ?? run.startedAt,
       ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}),
-      now: live ? await stepOf(run) : state.status === "failed" ? firstLine(run.error) : await replyOf(run),
+      now: step ? step.label : state.status === "failed" ? firstLine(run.error) : await replyOf(run),
       ...await projectOf(run.conversationId),
       ...(conversation ? { chatId: conversation._id } : {}),
       href: `/chat/${run.conversationId}`,
@@ -197,7 +207,7 @@ function loader(ctx: QueryCtx, now: number) {
     } else if (task.status === "running") {
       state = run?.status === "running" ? await runState(run) : { status: "working", label: "Working" };
       if (state.status === "done" || state.status === "failed") state = { status: "working", label: "Working" };
-      line = run?.status === "running" ? await stepOf(run) : active;
+      line = run?.status === "running" ? (await stepOf(run)).label : active;
     } else if (task.status === "blocked") {
       state = task.question ? { status: "waiting", label: "Needs you" } : { status: "blocked", label: "Blocked" };
       line = task.question;
@@ -221,6 +231,7 @@ function loader(ctx: QueryCtx, now: number) {
       updatedAt: task.updatedAt,
       ...(over ? { finishedAt: task.updatedAt } : {}),
       now: firstLine(line),
+      ...(task.status === "blocked" && task.question ? { question: task.question } : {}),
       ...await projectOf(task.conversationId, task.origin),
       ...(task.conversationId ? { chatId: task.conversationId } : {}),
       href: `/work?tab=plans#task-${task._id}`,
@@ -233,7 +244,7 @@ function loader(ctx: QueryCtx, now: number) {
     let line: string | undefined;
     if (run?.status === "running") {
       state = await runState(run);
-      line = state.status === "working" || state.status === "waiting" ? await stepOf(run) : undefined;
+      line = state.status === "working" || state.status === "waiting" ? (await stepOf(run)).label : undefined;
     } else if (job.waiting) {
       state = { status: "blocked", label: "Waiting for reset" };
       line = job.waiting.why;
@@ -323,22 +334,33 @@ export const get = query({
     for (const task of [...active, ...ended]) {
       const thread = await load.taskThread(task);
       threads.push(thread);
-      events.push({ id: `${thread.id}:queued`, thread: thread.id, at: task.createdAt, verb: "queued", text: task.title });
-      if (task.status === "blocked" && task.question) events.push({ id: `${thread.id}:asked:${task.updatedAt}`, thread: thread.id, at: task.updatedAt, verb: "asked", text: task.question });
-      if (task.status === "done") events.push({ id: `${thread.id}:done`, thread: thread.id, at: task.updatedAt, verb: "finished", text: firstLine(task.result) ?? task.title });
-      if (task.status === "failed") events.push({ id: `${thread.id}:failed`, thread: thread.id, at: task.updatedAt, verb: "failed", text: firstLine(task.error) ?? task.title });
-      if (task.status === "cancelled") events.push({ id: `${thread.id}:stopped`, thread: thread.id, at: task.updatedAt, verb: "stopped", text: task.title });
+      events.push({ id: `${thread.id}:queued`, thread: thread.id, at: task.createdAt, verb: "queued", status: "queued", text: task.title });
+      if (task.status === "blocked" && task.question) events.push({ id: `${thread.id}:asked:${task.updatedAt}`, thread: thread.id, at: task.updatedAt, verb: "asked", status: "waiting", text: task.question });
+      if (task.status === "done") events.push({ id: `${thread.id}:done`, thread: thread.id, at: task.updatedAt, verb: "finished", status: "done", text: firstLine(task.result) ?? task.title });
+      if (task.status === "failed") events.push({ id: `${thread.id}:failed`, thread: thread.id, at: task.updatedAt, verb: "failed", status: "failed", text: firstLine(task.error) ?? task.title });
+      if (task.status === "cancelled") events.push({ id: `${thread.id}:stopped`, thread: thread.id, at: task.updatedAt, verb: "stopped", status: "done", text: task.title });
     }
 
     for (const job of await ctx.db.query("jobs").collect()) threads.push(await load.jobThread(job));
     for (const monitor of await ctx.db.query("monitors").collect()) {
       const thread = load.watchThread(monitor);
       threads.push(thread);
-      if (monitor.firedAt) events.push({ id: `${thread.id}:fired:${monitor.firedAt}`, thread: thread.id, at: monitor.firedAt, verb: "fired", text: firstLine(monitor.lastObservation) ?? monitor.title });
+      if (monitor.firedAt) events.push({ id: `${thread.id}:fired:${monitor.firedAt}`, thread: thread.id, at: monitor.firedAt, verb: "fired", text: firedOn(monitor) ? firstLine(monitor.lastObservation) : undefined });
     }
 
-    // Turns: a chat's own are threads of their own; a task's or a schedule's go on its thread.
-    for (const run of await ctx.db.query("runs").withIndex("by_started").order("desc").take(RUNS)) {
+    // Turns: a chat's own are threads of their own; a task's or a schedule's go on its thread. The latest, and
+    // whatever is still going however long ago it began: each computer's queued and running turns, and the turn of
+    // a chat waiting on an approval.
+    const runs = await ctx.db.query("runs").withIndex("by_started").order("desc").take(RUNS);
+    const have = new Set(runs.map((run) => run._id));
+    const keep = (run: Doc<"runs"> | null) => { if (run && !have.has(run._id)) { have.add(run._id); runs.push(run); } };
+    for (const runnerId of runners.keys()) {
+      for (const status of ["running", "queued"] as const) {
+        for (const turn of await ctx.db.query("codexTurns").withIndex("by_runner_status", (q) => q.eq("runnerId", runnerId).eq("status", status)).take(50)) keep(await ctx.db.get(turn.runId));
+      }
+    }
+    for (const approval of await load.pending()) keep(await load.latestRun(approval.conversationId));
+    for (const run of runs) {
       const conversation = await load.chat(run.conversationId);
       const own = !conversation?.taskId && !conversation?.jobId;
       const thread = own ? await load.runThread(run) : null;
@@ -350,18 +372,18 @@ export const get = query({
         const said = await ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc")
           .filter((q) => q.eq(q.field("kind"), "commentary")).first();
         const text = firstLine(said?.output ? citedMemories(said.output).text : undefined);
-        if (said && text) events.push({ id: `span:${said._id}`, thread: id, at: said.startedAt, verb: "posted", text, ...(machine ? { machine } : {}) });
+        if (said && text) events.push({ id: `span:${said._id}`, thread: id, at: said.startedAt, verb: "posted", status: "working", text, ...(machine ? { machine } : {}) });
       } else if (run.finishedAt !== undefined && !conversation?.taskId) {
         // A task says how it ended once, from the task; each turn of a chat or run of a schedule says it here.
         const state = await load.runState(run);
         const verb: BoardVerb = state.label === "Stopped" ? "stopped" : state.status === "failed" ? "failed" : "finished";
-        events.push({ id: `run:${run._id}:${verb}`, thread: id, at: run.finishedAt, verb, text: verb === "failed" ? firstLine(run.error) : verb === "finished" && own ? await load.replyOf(run) : undefined, ...(machine ? { machine } : {}) });
+        events.push({ id: `run:${run._id}:${verb}`, thread: id, at: run.finishedAt, verb, status: verb === "failed" ? "failed" : "done", text: verb === "failed" ? firstLine(run.error) : verb === "finished" && own ? await load.replyOf(run) : undefined, ...(machine ? { machine } : {}) });
       }
     }
 
     for (const approval of await load.pending()) {
       const thread = await load.threadIdOf(approval.conversationId);
-      events.push({ id: `approval:${approval._id}`, ...(thread ? { thread } : {}), at: approval.createdAt, verb: "approval", text: approval.title, href: approval.conversationId ? `/chat/${approval.conversationId}` : "/inbox" });
+      events.push({ id: `approval:${approval._id}`, ...(thread ? { thread } : {}), at: approval.createdAt, verb: "approval", status: "waiting", text: approval.title, href: approval.conversationId ? `/chat/${approval.conversationId}` : "/inbox" });
     }
 
     const rank: Record<BoardStatus, number> = { waiting: 0, working: 1, blocked: 2, queued: 3, failed: 4, done: 4 };
@@ -392,9 +414,10 @@ export const thread = query({
     /** The last step a run took, in its words ("Ran bank-cli export"), for a failure to say where it stopped. */
     const lastStep = async (run: Doc<"runs"> | null | undefined) => {
       if (!run) return {};
-      const spans = await ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc").take(20);
-      const span = spans.find((item) => item.kind !== "reasoning" && item.kind !== "plan" && item.kind !== "commentary");
-      return span ? { step: describeStep(span, { done: true }).label } : {};
+      for await (const span of ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc")) {
+        if (span.kind !== "reasoning" && span.kind !== "plan" && span.kind !== "commentary") return { step: describeStep(span, { done: true }).label };
+      }
+      return {};
     };
     const runFeed = async (run: Doc<"runs">, withEnd: boolean) => {
       const state = await load.runState(run);
@@ -458,14 +481,21 @@ export const thread = query({
       if (!run) return null;
       await runFeed(run, true);
       if (run.status === "running") await approvalsIn(run.conversationId);
+      // A chat turn ends in its reply, which the turn keeps whether or not one of its steps carried it.
+      const reply = run.status === "ok" ? (await load.turnOf(run._id))?.response?.trim() : undefined;
+      if (reply && run.finishedAt !== undefined) {
+        feed.push({ kind: "result", id: `run:${run._id}:reply`, at: run.finishedAt, text: reply, reply: true });
+        const item = feed.find((entry) => entry.kind === "run");
+        if (item?.kind === "run") item.omit = reply;
+      }
       return sorted(await load.runThread(run));
     }
     if (kind === "watch") {
       const id = ctx.db.normalizeId("monitors", raw);
       const monitor = id ? await ctx.db.get(id) : null;
       if (!monitor) return null;
-      if (monitor.firedAt) feed.push({ kind: "result", id: `${args.id}:fired`, at: monitor.firedAt, text: monitor.lastObservation ?? "Its condition was met." });
-      else if (monitor.lastCheckedAt && monitor.lastObservation) feed.push({ kind: "update", id: `${args.id}:checked`, at: monitor.lastCheckedAt, text: monitor.lastObservation });
+      if (monitor.firedAt) feed.push({ kind: "result", id: `${args.id}:fired`, at: monitor.firedAt, text: firedOn(monitor) && monitor.lastObservation ? monitor.lastObservation : "Its condition was met." });
+      if (monitor.lastCheckedAt && monitor.lastObservation && !firedOn(monitor)) feed.push({ kind: "update", id: `${args.id}:checked`, at: monitor.lastCheckedAt, text: monitor.lastObservation });
       if (monitor.failures > 0 && monitor.lastCheckedAt) feed.push({ kind: "error", id: `${args.id}:failing`, at: monitor.lastCheckedAt, text: monitor.failures === 1 ? "The last check failed." : `The last ${monitor.failures} checks failed.` });
       return sorted(load.watchThread(monitor));
     }

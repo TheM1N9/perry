@@ -234,13 +234,19 @@ try {
   await claim(liveTurn);
   await waitFor(`document.querySelector('[data-thread-view] [data-holder]')?.innerText.includes('PC') && ${has("Working")}`, "the holder and Working to show", 10);
   const holder = await b.evaluate(`document.querySelector('[data-thread-view] [data-holder]').innerText`) as string;
-  check("the thread shows who holds it: engine, model and computer", holder.includes("Codex") && holder.includes("PC"), holder);
+  check("the thread shows who holds it: engine, model and computer", holder.includes("Codex") && holder.includes("gpt-5.5") && holder.includes("PC"), holder);
   const l0 = Date.now();
   await call("work:setPlan", { taskId: liveTask, plan: [{ title: "Shortlist desks under €600", status: "active" }, { title: "Read the long-term reviews", status: "pending" }, { title: "Write up the trade-offs", status: "pending" }] });
   await trace(liveTurn, step("d1", "webSearch", "standing desk under 600 euro long-term review", "running", l0));
   await waitFor(has("Searching the web"), "the running step to show live", 10);
   check("a step the turn is on shows in the open thread as it runs", true);
   await shot("thread-live-desktop.png");
+  const taskApproval = await runner<{ id: string }>("approvals:request", { token: PC, kind: "command", title: "curl -s https://example.com/desks.json", cwd: "C:/Users/sam", conversationId: liveChat });
+  await waitFor(`document.querySelector('[data-waiting-on-you]')?.innerText.includes('curl -s https://example.com/desks.json')`, "the task's approval in the strip", 10);
+  const cards = await b.evaluate(`[...document.querySelectorAll('[data-waiting-on-you] a')].map((a) => a.innerText)`) as string[];
+  check("a task waiting on an approval shows as that approval, not as a question to answer", cards.filter((card) => card.includes("Compare three standing desks") || card.includes("desks.json")).every((card) => card.includes("Review") && !card.includes("Answer")), cards);
+  await pub("approvals:decide", { id: taskApproval.id, approved: true });
+  await waitFor(`!document.querySelector('[data-waiting-on-you]')?.innerText.includes('desks.json')`, "the task's approval to leave the strip", 10);
   await trace(liveTurn,
     step("d1", "webSearch", "standing desk under 600 euro long-term review", "ok", l0, { durationMs: 2_100 }),
     step("d2", "commentary", "commentary", "ok", l0 + 2_500, { output: "Shortlisted the Flexispot E7, the Fezibo Dual and the IKEA Trotten. Notes so far: https://example.com/desk-notes" }),
@@ -277,7 +283,7 @@ try {
   await b.evaluate(`document.querySelector('aside [aria-label=Status]').click()`);
   await waitFor(`[...document.querySelectorAll('[role=option]')].some((el) => el.innerText.trim() === 'Failed')`, "the status options");
   await b.evaluate(`[...document.querySelectorAll('[role=option]')].find((el) => el.innerText.trim() === 'Failed').click()`);
-  await waitFor(`[...document.querySelectorAll('aside [data-event]')].every((li) => li.innerText.includes('Weekly invoices'))`, "the rail to narrow to failed work");
+  await waitFor(`(() => { const rows = [...document.querySelectorAll('aside [data-event]')]; return rows.length > 0 && rows.every((li) => li.innerText.includes('Weekly invoices')) && rows.some((li) => li.dataset.event === 'failed'); })()`, "the rail to narrow to failed work");
   check("the rail's status filter narrows it", true);
   const machines = await b.evaluate(`Boolean(document.querySelector('aside [aria-label=Computer]'))`) as boolean;
   check("the rail can be narrowed by computer when there are several", machines);
@@ -310,10 +316,11 @@ try {
   check("nothing overflows sideways at 390 px (activity)", (await overflow()) <= 0, await overflow());
   await shot("activity-phone.png");
 
-  // The approval answered elsewhere leaves the strip by itself.
-  await pub("approvals:decide", { id: approval.id, approved: true });
+  // The approval answered elsewhere leaves the open page's strip by itself.
   await go("/board");
-  await waitFor(`!document.querySelector('[data-waiting-on-you]')?.innerText.includes('pnpm motionclip render')`, "the answered approval to leave the strip");
+  await waitFor(`document.querySelector('[data-waiting-on-you]')?.innerText.includes('pnpm motionclip render')`, "the approval in the strip");
+  await pub("approvals:decide", { id: approval.id, approved: true });
+  await waitFor(`!document.querySelector('[data-waiting-on-you]')?.innerText.includes('pnpm motionclip render')`, "the answered approval to leave the strip", 10);
   check("an approval answered elsewhere leaves Waiting on you", true);
 
   notes.browserErrors = browser.errors;
