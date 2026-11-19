@@ -270,9 +270,22 @@ export class CodexEngine implements Engine {
           }, 160);
           agent.flush.unref();
         });
+        // A spawned agent's own steps (its commands, searches, file changes) go on the turn that spawned it, tagged with
+        // the agent, while that turn is going (its trace closes with it); the agent's messages are its text, above.
+        const childStep = (phase: "started" | "completed") => (event: ItemEvent) => {
+          const agent = event.threadId ? this.agents.get(event.threadId) : undefined;
+          if (!agent || agent.app !== app) return;
+          const normalized = toItem(event.item, phase);
+          if (!normalized || normalized.agents?.length) return;
+          const atMs = (phase === "started" ? event.startedAtMs : event.completedAtMs) ?? Date.now();
+          agent.sink.onEvent?.({ type: "item", phase, item: { ...normalized, id: `${event.threadId}:${normalized.id}`, agent: event.threadId! }, atMs });
+        };
+        const childDone = childStep("completed");
+        app.on("item/started", childStep("started"));
         app.on("item/completed", (event: ItemEvent) => {
           const agent = event.threadId ? this.agents.get(event.threadId) : undefined;
           if (agent?.app === app && event.item.type === "agentMessage" && typeof event.item.text === "string") agent.text = event.item.text;
+          childDone(event);
         });
         app.on("turn/completed", (event: { threadId?: string; turn?: { status?: string; items?: TurnItem[] } }) => {
           const agent = event.threadId ? this.agents.get(event.threadId) : undefined;

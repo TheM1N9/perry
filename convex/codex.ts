@@ -745,6 +745,8 @@ const vTrace = v.object({
     durationMs: v.optional(v.number()),
     input: v.optional(v.string()),
     output: v.optional(v.string()),
+    /** The sub-agent that took the step (runSpans.agent); unset for the turn's own. */
+    agent: v.optional(v.string()),
   })),
   usage: v.optional(vUsage),
   steps: v.optional(v.number()),

@@ -751,11 +751,21 @@ export class ClaudeEngine implements Engine {
           }
         } else if (event.type === "assistant") {
           if (event.parent_tool_use_id) {
+            const agent = `claude:${event.parent_tool_use_id}`;
             const text = event.message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n\n");
             if (text) turn.sink.onEvent?.({ type: "item", phase: "updated", atMs: Date.now(), item: {
               id: event.uuid, type: "unknown", title: "Agent", status: "running", raw: null,
-              agents: [{ id: `claude:${event.parent_tool_use_id}`, status: "running", text }],
+              agents: [{ id: agent, status: "running", text }],
             } });
+            // The sub-agent's own steps (its commands, searches, file changes): steps of this turn, tagged with it, which
+            // its tool results (below) finish as they do the turn's own.
+            for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {
+              if (block.type !== "tool_use" || !block.id || !block.name) continue;
+              const item = { id: block.id, ...describe(block.name, block.input ?? {}, perry), status: "running" as ItemStatus, raw: block, at: Date.now(), agent };
+              turn.open.set(block.id, item);
+              const { at, ...shown } = item;
+              turn.sink.onEvent?.({ type: "item", phase: "started", item: shown, atMs: at });
+            }
             continue;
           }
           for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {

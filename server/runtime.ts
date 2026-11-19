@@ -47,7 +47,7 @@ type Schema = { tables: Record<string, { export(): {
 type Crons = { crons: Record<string, { name: string; args: unknown[]; schedule: { type: string; seconds?: number; minutes?: number; hours?: number } }> };
 type Router = { lookup(path: string, method: string): [FunctionDef, string, string] | null };
 
-export class NotFound extends Error {}
+export class NotFound extends Error { override name = "NotFound"; }
 
 const isDef = (value: unknown): value is FunctionDef => typeof value === "object" && value !== null && (value as FunctionDef).perryFunction === true;
 const nameOf = (ref: unknown): string => typeof ref === "string" ? ref : getFunctionName(ref as never);

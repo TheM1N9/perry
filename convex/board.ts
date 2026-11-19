@@ -107,6 +107,8 @@ export type ThreadView = {
   /** A sub-agent's: the thread it belongs to, and what it has written so far (its output, once it is over). */
   parent?: { id: string; title: string; holder?: BoardHolder };
   output?: string;
+  /** A sub-agent's own steps: those of its parent's run tagged with it (dashboard.getRunSteps with `agent`). */
+  steps?: { runId: Id<"runs">; agent: string };
 };
 
 /** Chat turns read for the board: enough for a few days of an active owner. */
@@ -195,7 +197,8 @@ function loader(ctx: QueryCtx, now: number) {
 
   /** The step a running run is on, in the pet's words, and when its latest step began. */
   async function stepOf(run: Doc<"runs">): Promise<{ label: string; at: number }> {
-    const latest = await ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc").take(6);
+    // The turn's own steps: a sub-agent's are told on its own row.
+    const latest = (await ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc").take(40)).filter((span) => !span.agent).slice(0, 6);
     const at = Math.max(run.startedAt, latest[0]?.startedAt ?? 0);
     const asking = (await pending()).find((row) => row.conversationId === run.conversationId);
     if (asking) return { label: "Waiting for you to approve", at: Math.max(at, asking.createdAt) };
@@ -374,12 +377,26 @@ function loader(ctx: QueryCtx, now: number) {
    * A sub-agent a turn started (Claude's Agent or Task tool, Codex's spawned agents): the runner reports each in the
    * turn's trace, and codex.recordAgents keeps it as a chat of its own under the turn's chat, with `providerAgent`.
    */
+  /** A sub-agent's latest step, from its parent run's steps tagged with it (runSpans.agent); none from an older engine. */
+  async function agentStep(runId: Id<"runs">, agent: string): Promise<{ label: string; at: number } | undefined> {
+    let seen = 0;
+    for await (const span of ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", runId)).order("desc")) {
+      if (++seen > 200) break;
+      if (span.agent === agent && span.kind !== "reasoning" && span.kind !== "plan" && span.kind !== "commentary") {
+        return { label: describeStep(span, { done: span.status !== "running" }).label, at: span.startedAt };
+      }
+    }
+    return undefined;
+  }
+
   async function agentThread(conversation: Doc<"conversations">, parent: string): Promise<BoardThread> {
     const agent = conversation.providerAgent!;
     const state: { status: BoardStatus; label: string } = agent.status === "running" ? { status: "working", label: "Running" }
       : agent.status === "failed" ? { status: "failed", label: "Failed" } : agent.status === "cancelled" ? { status: "done", label: "Stopped" } : { status: "done", label: "Done" };
     const machine = conversation.codexRunnerId ? (await allRunners()).get(conversation.codexRunnerId)?.name : undefined;
     const lines = (agent.text ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+    // At work, the step it is on (its own, on its parent's run), when the engine reports its steps.
+    const step = agent.status === "running" ? await agentStep(agent.runId, agent.id) : undefined;
     return {
       id: `agent:${conversation._id}`,
       kind: "agent",
@@ -390,8 +407,9 @@ function loader(ctx: QueryCtx, now: number) {
       startedAt: agent.startedAt,
       updatedAt: agent.updatedAt ?? agent.startedAt,
       ...(agent.finishedAt !== undefined ? { finishedAt: agent.finishedAt } : {}),
-      // While it works, the last thing it wrote; failed, its last word (why); done, how its answer starts.
-      now: firstLine(agent.status === "done" || agent.status === "cancelled" ? lines[0] : lines.at(-1)),
+      // While it works, the step it is on, else the last thing it wrote; failed, its last word (why); done, how its answer starts.
+      now: step?.label ?? firstLine(agent.status === "done" || agent.status === "cancelled" ? lines[0] : lines.at(-1)),
+      ...(step && step.at > (agent.updatedAt ?? 0) ? { updatedAt: step.at } : {}),
       parent,
       ...(conversation.projectId ? { projectId: conversation.projectId } : {}),
       href: boardLink({ thread: `agent:${conversation._id}` }),
@@ -548,7 +566,7 @@ export const thread = query({
     const lastStep = async (run: Doc<"runs"> | null | undefined) => {
       if (!run) return {};
       for await (const span of ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc")) {
-        if (span.kind !== "reasoning" && span.kind !== "plan" && span.kind !== "commentary") return { step: describeStep(span, { done: true }).label };
+        if (!span.agent && span.kind !== "reasoning" && span.kind !== "plan" && span.kind !== "commentary") return { step: describeStep(span, { done: true }).label };
       }
       return {};
     };
@@ -658,6 +676,7 @@ export const thread = query({
         ...sorted(agent),
         parent: { id: parentId, title: parentThread?.title ?? "its turn", ...(parentThread?.holder ? { holder: parentThread.holder } : {}) },
         ...(text ? { output: text } : {}),
+        steps: { runId: conversation.providerAgent.runId, agent: conversation.providerAgent.id },
       };
     }
     if (kind === "goal") {

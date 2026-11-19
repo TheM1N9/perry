@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChat, sleep } from "../browser";
 
-// pnpm build, then: bun artifacts/board-view/run.ts [outDir]   (outDir defaults to artifacts/board-view-v4)
+// pnpm build, then: bun artifacts/board-view/run.ts [outDir]   (outDir defaults to artifacts/board-view-v5)
 // Issue #363, the Board: a production build on a free port with a fresh PERRY_HOME in a temp folder, two stand-in
 // computers ("PC" with Codex, "Mac" with Claude Code) that answer through the runner's own endpoints (claim, trace,
 // finish), and headless Chrome at desktop and phone widths. Nothing touches an installed Perry. Deleted at the end,
@@ -42,7 +42,7 @@ import { openChat, sleep } from "../browser";
 //      done, failed), with no pane, no way back to the parent, or no activity on the parent's entry.
 
 const REPO = resolve(import.meta.dirname, "../..");
-const OUT = resolve(process.argv[2] ?? join(REPO, "artifacts", "board-view-v4"));
+const OUT = resolve(process.argv[2] ?? join(REPO, "artifacts", "board-view-v5"));
 mkdirSync(OUT, { recursive: true });
 const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
 const PORT = await freePort();
@@ -88,7 +88,7 @@ async function until<T>(test: () => Promise<T | undefined | null | false> | T | 
 
 // --- The stand-in computers --------------------------------------------------------------------
 type Turn = { _id: string; conversationId: string; prompt: string };
-type Span = { callId: string; kind: string; name: string; status: "running" | "ok" | "error" | "declined"; startedAt: number; durationMs?: number; endedAt?: number; input?: string; output?: string };
+type Span = { callId: string; kind: string; name: string; status: "running" | "ok" | "error" | "declined"; startedAt: number; durationMs?: number; endedAt?: number; input?: string; output?: string; agent?: string };
 const running = new Set<string>();
 const checkIn = async () => {
   await runner("runner:checkIn", { token: PC, platform: "win32", hostname: "PC", activeTurnIds: [...running] });
@@ -135,6 +135,13 @@ const step = (callId: string, kind: string, name: string, status: Span["status"]
 let browser: Awaited<ReturnType<typeof openChat>> | null = null;
 try {
   await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 90);
+  // A wrong dashboard key is refused as one (401, which the gate words as a key that does not match), and an unknown
+  // function is not found (404): neither is a server failure, in the production build too.
+  const refused = await fetch(`${BASE}/api/backend/call`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "dashboard:getStatus", args: { key: "not-the-key" } }) });
+  const refusedBody = await refused.json() as { error?: string };
+  check("a wrong dashboard key is refused as a wrong key, not a server failure", refused.status === 401 && /dashboard key/i.test(refusedBody.error ?? ""), { status: refused.status, body: refusedBody });
+  const unknown = await fetch(`${BASE}/api/backend/call`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "nothing:here", args: { key: KEY } }) });
+  check("an unknown function is not found, not a server failure", unknown.status === 404, unknown.status);
   await call("installation:setOnboarding", { state: "done" });
   await call("installation:setDefaultEngine", { engine: "codex" });
   await call("runner:createToken", { name: "PC", token: PC });
@@ -405,6 +412,12 @@ try {
   await waitFor(`document.querySelector('[data-pane="job:${job.id}"] [data-last-step]')`, "the failed schedule's pane");
   const failed = await pane();
   check("a failed schedule shows failed, its last step and its error", failed.includes("failed") && failed.includes("bank-cli export") && failed.includes(jobError), failed.slice(0, 600));
+  // Its row leads with the failure: when it failed, not when it runs next; the next run is in its pane.
+  const failedRow = await b.evaluate(`(() => { const row = document.querySelector('[data-row="job:${job.id}"]'); return { next: Boolean(row.querySelector('[data-next-run]')), age: row.querySelector('[data-age]').innerText, line: row.querySelector('[data-line]')?.innerText ?? '' }; })()`) as { next: boolean; age: string; line: string };
+  check("a failed schedule's row shows the failure and when, not its next run", !failedRow.next && /^\d+[smhd]$/.test(failedRow.age.trim()) && failedRow.line.includes("one-time code"), failedRow);
+  check("a failed schedule's next run is in its pane", /next in|next /.test(failed), failed.slice(0, 400));
+  check("a failed schedule's pane says its error once", failed.split(jobError).length === 2, failed.slice(0, 600));
+  await shot("failed-schedule-desktop.png");
 
   // --- 17. #goals: Work's goals, changed from their pane --------------------------------------------------------
   await go("/board?channel=goals");
@@ -436,7 +449,13 @@ try {
     { id: "codex:agent-travel", title: "Compare travel options", prompt: "Compare flights and trains to Lisbon for a team of 12 from London and Berlin." },
     { id: "codex:agent-agenda", title: "Draft a two-day agenda", prompt: "Draft a two-day agenda: planning in the mornings, one team activity each afternoon." },
   ];
-  const agentSpans = AGENTS.map((agent, index) => step(`ag${index}`, "dynamicToolCall", `Agent: ${agent.title}`, "running", a0 + index * 300));
+  // The venues agent's own steps, tagged with it as the runner tags a sub-agent's (runSpans.agent).
+  const venueSteps = (done: boolean) => [
+    step("v1", "webSearch", "venues near Lisbon for 12 people in March", "ok", a0 + 1_000, { agent: AGENTS[0].id }),
+    step("v2", "command", "curl -s https://quinta.example/prices", done ? "ok" : "running", a0 + 4_000, { agent: AGENTS[0].id, ...(done ? { output: "March: €4,800 for two days" } : {}) }),
+    ...(done ? [step("v3", "fileChange", "C:/Users/sam/offsite/venues.md", "ok", a0 + 9_000, { agent: AGENTS[0].id, input: "+ | Venue | Price | Distance |" })] : []),
+  ];
+  const agentSpans = [...AGENTS.map((agent, index) => step(`ag${index}`, "dynamicToolCall", `Agent: ${agent.title}`, "running", a0 + index * 300)), ...venueSteps(false)];
   let agentClock = Date.now();
   const report = (agents: Array<{ id: string; title: string; prompt: string; status: "running" | "done" | "failed"; text?: string }>, spans = agentSpans) =>
     runner("codex:traceTurn", { token: PC, id: offsiteTurn._id, spans, steps: spans.length, agents: agents.map((agent) => ({ ...agent, model: "gpt-5.5-mini", updatedAt: ++agentClock })) });
@@ -452,7 +471,8 @@ try {
   const kids = await b.evaluate(`[...document.querySelectorAll('[data-agent-rows] [data-agent]')].map((li) => ({ id: li.dataset.row, status: li.dataset.status, text: li.innerText }))`) as Array<{ id: string; status: string; text: string }>;
   check("a turn's three sub-agents are three rows under it, all running", kids.length === 3 && kids.every((kid) => kid.status === "working" && kid.id.startsWith("agent:")), kids);
   check("the parent says how many agents run, at a glance", (await b.evaluate(`document.querySelector('[data-agents-toggle]').innerText`) as string).includes("3 agents · 3 running"));
-  check("a running sub-agent shows its model, computer and what it is doing", kids.every((kid) => kid.text.includes("gpt-5.5-mini via PC")) && kids.some((kid) => kid.text.includes("Quinta da Arrábida")), kids);
+  check("a running sub-agent shows its model, computer and what it is doing", kids.every((kid) => kid.text.includes("gpt-5.5-mini via PC")) && kids.some((kid) => kid.text.includes("TAP and easyJet")), kids);
+  check("a sub-agent that reports its steps shows the one it is on", kids.some((kid) => kid.text.includes("Find venues") && kid.text.includes("Running curl")), kids);
   check("sub-agents are not rows of their own at the top level", !(await b.evaluate(`[...document.querySelectorAll('[data-rows] > li')].some((li) => li.dataset.row?.startsWith('agent:'))`)));
   await shot("board-subagents-desktop.png");
   const venue = kids.find((kid) => kid.text.includes("Find venues"))!.id;
@@ -461,21 +481,38 @@ try {
   check("a sub-agent opens to its own pane: its ask, live output and a link back to its parent",
     (await pane()).includes("Find three venues within an hour") && (await pane()).includes("Quinta da Arrábida")
       && await b.evaluate(`document.querySelector('[data-pane] [data-parent-link]').innerText === 'Plan the team offsite'`) as boolean, (await pane()).slice(0, 500));
+  await waitFor(`document.querySelector('[data-pane] [data-agent-steps]')?.innerText.includes('Running curl')`, "the sub-agent's own steps, live", 10);
+  // Grouped as a turn's are, the group's line is the step it is on; opened, every step it took.
+  await click(`[data-pane] [data-agent-steps] [data-tool-group] button`);
+  await waitFor(`document.querySelector('[data-pane] [data-agent-steps]').innerText.includes('Searched the web')`, "the sub-agent's earlier step", 10);
+  check("a sub-agent's pane shows its own steps, live", true);
   await shot("subagent-thread-desktop.png");
+  await click(`[data-pane] [data-agent-steps] [data-tool-group] button`);
   // Two finish and one fails: the rows follow, without a reload.
   await report([
     { ...AGENTS[0], status: "done", text: "Quinta da Arrábida: €4,800 for two days, 40 min from Lisbon, rooms for 12.\n\nPalácio de Seteais: €6,200, in Sintra." },
     { ...AGENTS[1], status: "done", text: "Fly: London on TAP (2h 40m), Berlin via Frankfurt (5h). About €3,100 return for 12." },
     { ...AGENTS[2], status: "failed", text: "Day one drafted.\nThe calendar connection timed out before day two could be checked." },
-  ], AGENTS.map((agent, index) => step(`ag${index}`, "dynamicToolCall", `Agent: ${agent.title}`, index === 2 ? "error" : "ok", a0 + index * 300, { durationMs: 15_000 })));
+  ], [...AGENTS.map((agent, index) => step(`ag${index}`, "dynamicToolCall", `Agent: ${agent.title}`, index === 2 ? "error" : "ok", a0 + index * 300, { durationMs: 15_000 })), ...venueSteps(true)]);
   await waitFor(`(() => { const s = [...document.querySelectorAll('[data-agent-rows] [data-agent]')].map((li) => li.dataset.status).sort().join(','); return s === 'done,done,failed'; })()`, "two agents done and one failed", 15);
   check("sub-agents go from running to done, and one that fails shows failed", true);
   check("the parent's count says one failed", (await b.evaluate(`document.querySelector('[data-agents-toggle]').innerText`) as string).includes("1 failed"));
   check("the open sub-agent's pane shows it done with its answer", await b.evaluate(`document.querySelector('[data-pane] [data-state]')?.dataset.state === 'done' && document.querySelector('[data-pane]').innerText.includes('€4,800')`) as boolean);
+  // Its steps, finished, include the file it changed, which opens from its step.
+  await waitFor(`/changed 1 file/i.test(document.querySelector('[data-pane] [data-agent-steps]')?.innerText ?? '')`, "the sub-agent's file change", 10);
+  await click(`[data-pane] [data-agent-steps] [data-tool-group] button`);
+  await waitFor(`document.querySelector('[data-pane] [data-agent-steps]').innerText.includes('venues.md')`, "the changed file under the sub-agent", 10);
+  check("a sub-agent's changed file is under that sub-agent", true);
+  await shot("subagent-thread-done-desktop.png");
   const offsiteRun = await b.evaluate(`document.querySelector('[data-agents="3"]').closest('[data-row]').dataset.row`) as string;
   await go(`/board?thread=${encodeURIComponent(offsiteRun)}`);
   await waitFor(`document.querySelectorAll('[data-pane] [data-pane-agents] li').length === 3`, "the parent's pane listing its agents");
   check("the parent's pane lists its sub-agents with how each stands", true);
+  await waitFor(`document.querySelector('[data-pane] [data-feed] [data-work-timeline]')`, "the parent's own timeline");
+  await b.evaluate(`document.querySelectorAll('[data-pane] [data-feed] [data-tool-group] button').forEach((button) => button.click())`);
+  await sleep(600);
+  const parentFeed = await b.evaluate(`document.querySelector('[data-pane] [data-feed]').innerText`) as string;
+  check("a sub-agent's steps and file are not in its parent's timeline", !/curl -s|venues\.md|for 12 people/.test(parentFeed) && /Agent/.test(parentFeed), parentFeed.slice(0, 600));
   await go("/board?view=activity");
   await waitFor(`document.querySelector('[data-activity] [data-entry="${offsiteRun}"]')`, "the parent's activity entry");
   const told = await b.evaluate(`document.querySelector('[data-activity] [data-entry="${offsiteRun}"]').innerText`) as string;
@@ -532,6 +569,10 @@ try {
   const states = await b.evaluate(`(() => { const row = document.querySelector('[data-rows] [data-row] a'); const state = row.querySelector('[data-state]').getBoundingClientRect(); const title = row.children[1].getBoundingClientRect(); return { state: Math.round(state.width), title: Math.round(title.width), row: Math.round(row.getBoundingClientRect().width), word: row.querySelector('[data-state] span').innerText }; })()`) as { state: number; title: number; row: number; word: string };
   check("on a phone a row's state is its glyph (its word kept for screen readers) and the title has the width", states.state <= 20 && states.title / states.row > 0.6 && states.word.length > 0, states);
   await shot("board-phone.png");
+  await go(`/board?channel=jobs&tab=all&thread=job:${job.id}`);
+  await waitFor(`document.querySelector('[role=dialog] [data-pane] [data-last-step]')`, "the failed schedule on a phone");
+  check("nothing overflows sideways at 390 px (failed schedule)", (await overflow()) <= 0, await overflow());
+  await shot("failed-schedule-phone.png");
   await go(`/board?tab=all&thread=task:${liveTask}`);
   await waitFor(`document.querySelector('[role=dialog] [data-pane]')`, "the phone thread");
   check("nothing overflows sideways at 390 px (thread)", (await overflow()) <= 0, await overflow());

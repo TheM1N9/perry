@@ -131,12 +131,13 @@ function ToolGroup({ steps, live, held, unresponsive }: { steps: WorkStep[]; liv
 }
 
 /** A run's timeline as the chat shows it: steps grouped, updates as text, the step going on live. Also a Board thread's turns (screens/board.tsx). */
-export function RunSteps({ runIds, live = false, held = false, unresponsive = false, omitText }: { runIds: Id<"runs">[]; live?: boolean; held?: boolean; unresponsive?: boolean; omitText?: string }) {
+/** `agent`: one sub-agent's steps of these runs (a Board sub-agent's pane); without it, the turn's own. */
+export function RunSteps({ runIds, live = false, held = false, unresponsive = false, omitText, agent }: { runIds: Id<"runs">[]; live?: boolean; held?: boolean; unresponsive?: boolean; omitText?: string; agent?: string }) {
   const { dashboardKey } = useSession();
   const container = useRef<HTMLDivElement>(null);
   const visible = useInView(container, { margin: "600px 0px" });
-  const fetched = useQuery(api.dashboard.getRunSteps, visible || live ? { key: dashboardKey, runIds } : "skip");
-  const identity = runIds.join(":");
+  const fetched = useQuery(api.dashboard.getRunSteps, visible || live ? { key: dashboardKey, runIds, ...(agent ? { agent } : {}) } : "skip");
+  const identity = `${runIds.join(":")}${agent ? `@${agent}` : ""}`;
   const cached = useRef<{ identity: string; steps: WorkStep[] } | undefined>(undefined);
   if (fetched !== undefined) cached.current = { identity, steps: fetched };
   const steps = fetched ?? (cached.current?.identity === identity ? cached.current.steps : undefined);

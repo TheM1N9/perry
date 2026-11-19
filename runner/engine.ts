@@ -211,6 +211,8 @@ export type EngineItem = {
   /** The engine's own item, for traces. */
   raw: unknown;
   agents?: ProviderAgentUpdate[];
+  /** A step one of the turn's sub-agents took, by that agent's id (ProviderAgentUpdate.id); unset for the turn's own. */
+  agent?: string;
 };
 
 export type ProviderAgentUpdate = {

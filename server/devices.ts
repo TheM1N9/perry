@@ -42,7 +42,7 @@ const PET_CALLS: Record<string, "which pet" | true> = {
 };
 
 /** Refused: the server answers 403 with this as the reason. */
-export class Refused extends Error {}
+export class Refused extends Error { override name = "Refused"; }
 
 function isDashboardKey(key: string): boolean {
   const expected = process.env.DASHBOARD_KEY;

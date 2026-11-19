@@ -487,7 +487,8 @@ function ThreadRow({ thread, href, selected, waiting, notice, channel, fresh, ch
         <span className="justify-self-end font-mono text-[12px] text-muted-foreground" data-age>
           {waiting ? <Age at={thread.updatedAt} />
             : thread.inLine ? <span data-in-line>{thread.inLine === 1 ? "next" : `${thread.inLine} in line`}</span>
-              : thread.nextAt ? <span data-next-run title={new Date(thread.nextAt).toLocaleString()}>next {ahead(thread.nextAt - Date.now())}</span>
+              // A schedule that failed says so first, and when: its next run is in its pane, not competing with the failure.
+              : thread.nextAt && thread.status !== "failed" ? <span data-next-run title={new Date(thread.nextAt).toLocaleString()}>next {ahead(thread.nextAt - Date.now())}</span>
                 : thread.status === "working" && !ongoing(thread) ? <Ticking since={thread.startedAt} format={short} /> : <Age at={thread.updatedAt} />}
         </span>
         {line && <span className="col-start-2 col-end-[-1] min-w-0 text-[12px] text-muted-foreground" data-line>{line}</span>}
@@ -736,7 +737,7 @@ function Pane({ id, close, projects, notice, onSeen, overlay, place }: {
           {thread.holder && status === "working" && !ongoing(thread) && <span className="text-muted-foreground" data-holder>· by <span className="font-mono">{holderWords(thread.holder)}</span> · <Ticking since={thread.startedAt} className="font-mono" /></span>}
           {thread.holder && !going(thread.status) && thread.finishedAt !== undefined && <span className="text-muted-foreground" data-holder>· <span className="font-mono">{holderWords(thread.holder)}</span> · took <span className="font-mono">{span(thread.finishedAt - thread.startedAt)}</span></span>}
         </p>
-        <ThreadActions thread={thread} question={asking?.kind === "question" ? asking.text : undefined} approval={asking?.kind === "approval" ? asking.id : undefined} notice={notice}
+        <ThreadActions thread={thread} question={asking?.kind === "question" ? asking.text : undefined} approval={asking?.kind === "approval" ? asking.id : undefined} notice={notice} shown={[error?.text, result?.text]}
           fields={<>
             {error && <Field label="reason"><span className="whitespace-pre-wrap">{error.text}</span></Field>}
             {error?.step && <Field label="last step"><span data-last-step>{error.step}</span></Field>}
@@ -764,8 +765,10 @@ function Pane({ id, close, projects, notice, onSeen, overlay, place }: {
         </Message>
         {(runs.length > 0 || said.length > 0) && <Divider>{runs.length === 1 ? "1 turn" : `${runs.length} turns`}</Divider>}
         {/* A sub-agent's own: what it has written so far, live, and once over, its answer. */}
-        {thread.kind === "agent" && (view.output || going(thread.status)) && (
+        {thread.kind === "agent" && (view.output || going(thread.status) || view.steps) && (
           <Message who={`sub-agent${thread.holder?.machine ? ` via ${thread.holder.machine}` : ""}`} at={thread.startedAt} engine={thread.holder?.engine}>
+            {/* Its own steps (commands, searches, file changes), live, as a turn's; then what it wrote. */}
+            {view.steps && <div className="text-[13px] [&_.prose-chat]:text-[13px] [&_[data-work-timeline]]:pt-0.5" data-agent-steps><RunSteps runIds={[view.steps.runId]} agent={view.steps.agent} live={going(thread.status)} /></div>}
             {view.output
               ? <div className="text-[13px] [&_.prose-chat]:text-[13px]" data-agent-output><Markdown text={view.output} streaming={thread.status === "working"} /></div>
               : <p className="text-muted-foreground">Working…</p>}

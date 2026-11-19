@@ -133,8 +133,10 @@ type Action = { label: string; href?: string; run?: () => Promise<unknown>; succ
  * A thread's actions, under its state: one primary, the rest in a menu, as the viewer has them; and above them,
  * what a kind adds (a schedule's timing and model, a watch's page). An approval waiting on it is answered here.
  */
-export function ThreadActions({ thread, question, approval, notice, fields }: {
+export function ThreadActions({ thread, question, approval, notice, shown = [], fields }: {
   thread: BoardThread; question?: string; approval?: string; notice?: Notice;
+  /** What the pane already says (its reason or result): an update that says the same is not said twice. */
+  shown?: Array<string | undefined>;
   /** The pane's own key/value rows, which a kind's go after. */
   fields: ReactNode;
 }) {
@@ -215,7 +217,8 @@ export function ThreadActions({ thread, question, approval, notice, fields }: {
   if (job) kindFields.push(...jobFields(job, jobs!.timezone, now, { models: models ?? [], preferred, dashboardKey, setModel, keepOn }));
   if (monitor) kindFields.push(<Row key="page" label="page"><a href={monitor.url} target="_blank" rel="noopener noreferrer" className="font-mono text-[12px] underline-offset-2 hover:underline">{monitor.url}</a></Row>);
   if (monitor?.lastCheckedAt) kindFields.push(<Row key="checked" label="checked"><span>{ago(monitor.lastCheckedAt, now)}, then every {every(monitor.intervalMinutes)}</span></Row>);
-  if (notice) kindFields.push(<Row key="notice" label="for you"><span className="whitespace-pre-wrap">{notice.text}</span></Row>);
+  const same = (text: string) => text.trim().replace(/\s+/g, " ");
+  if (notice && !shown.some((text) => text && same(text) === same(notice.text))) kindFields.push(<Row key="notice" label="for you"><span className="whitespace-pre-wrap">{notice.text}</span></Row>);
 
   return (
     <>
