@@ -9,6 +9,7 @@ import { citedMemories } from "../lib/reply-text";
 import { APPROVAL_TTL_MS, BRAIN_TTL_MS } from "./approvals";
 import { STOPPED } from "./codex";
 import { QUIET } from "./jobs";
+import { boardLink } from "../lib/board-links";
 
 /**
  * The Board (issue #363): what Perry is doing, read from what it already
@@ -20,7 +21,7 @@ import { QUIET } from "./jobs";
  */
 
 export type BoardStatus = "queued" | "working" | "waiting" | "blocked" | "done" | "failed";
-export type BoardKind = "chat" | "task" | "job" | "heartbeat" | "watch";
+export type BoardKind = "chat" | "task" | "job" | "heartbeat" | "watch" | "goal";
 export type BoardHolder = { engine?: EngineKind; model?: string; machine?: string };
 
 export type BoardThread = {
@@ -44,7 +45,7 @@ export type BoardThread = {
   question?: string;
   projectId?: Id<"projects">;
   chatId?: Id<"conversations">;
-  /** Its own page, where it can be changed or answered. */
+  /** Its address on the Board: its channel, with it open. */
   href: string;
 };
 
@@ -229,7 +230,8 @@ function loader(ctx: QueryCtx, now: number) {
     } else if (task.status === "running") {
       state = run?.status === "running" ? await runState(run) : { status: "working", label: "Working" };
       if (state.status === "done" || state.status === "failed") state = { status: "working", label: "Working" };
-      line = run?.status === "running" ? (await stepOf(run)).label : active;
+      // In line or held up, it says nothing of a step; at work, the step it is on.
+      line = state.status === "working" || state.status === "waiting" ? (run?.status === "running" ? (await stepOf(run)).label : active) : undefined;
     } else if (task.status === "blocked") {
       state = task.question ? { status: "waiting", label: "Needs you" } : { status: "blocked", label: "Blocked" };
       line = task.question;
@@ -256,7 +258,7 @@ function loader(ctx: QueryCtx, now: number) {
       ...(task.status === "blocked" && task.question ? { question: task.question } : {}),
       ...await projectOf(task.conversationId, task.origin),
       ...(task.conversationId ? { chatId: task.conversationId } : {}),
-      href: `/work?tab=plans#task-${task._id}`,
+      href: boardLink({ channel: "tasks", thread: `task:${task._id}` }),
     };
   }
 
@@ -299,7 +301,7 @@ function loader(ctx: QueryCtx, now: number) {
       now: firstLine(line),
       ...await projectOf(job.conversationId, job.origin),
       ...(job.conversationId ? { chatId: job.conversationId } : {}),
-      href: `/work?tab=schedules#job-${job._id}`,
+      href: boardLink({ channel: job.builtin === "heartbeat" ? "heartbeat" : "jobs", thread: `job:${job._id}` }),
     };
   }
 
@@ -316,7 +318,25 @@ function loader(ctx: QueryCtx, now: number) {
       startedAt: monitor.createdAt,
       updatedAt: Math.max(monitor.lastCheckedAt ?? 0, monitor.firedAt ?? 0, monitor.createdAt),
       now: firstLine(monitor.lastObservation),
-      href: `/work?tab=watches#watch-${monitor._id}`,
+      href: boardLink({ channel: "watches", thread: `watch:${monitor._id}` }),
+    };
+  }
+
+  /** A goal: what the owner is after, with its milestones; always there, like a watch, until done or paused. */
+  function goalThread(goal: Doc<"goals">): BoardThread {
+    const reached = goal.milestones.filter((milestone) => milestone.done).length;
+    const state: { status: BoardStatus; label: string } = goal.status === "active" ? { status: "working", label: "Active" }
+      : { status: "done", label: goal.status === "paused" ? "Paused" : "Done" };
+    return {
+      id: `goal:${goal._id}`,
+      kind: "goal",
+      title: goal.title,
+      ask: goal.description ?? goal.title,
+      ...state,
+      startedAt: goal.createdAt,
+      updatedAt: goal.updatedAt,
+      now: goal.milestones.length ? `${reached} of ${goal.milestones.length} milestones` : firstLine(goal.description),
+      href: boardLink({ channel: "goals", thread: `goal:${goal._id}` }),
     };
   }
 
@@ -330,7 +350,7 @@ function loader(ctx: QueryCtx, now: number) {
     return run ? `run:${run._id}` : undefined;
   }
 
-  return { chat, turnOf, allRunners, pending, latestRun, holderOf, runState, replyOf, runThread, taskThread, jobThread, watchThread, threadIdOf };
+  return { chat, turnOf, allRunners, pending, latestRun, holderOf, runState, replyOf, runThread, taskThread, jobThread, watchThread, goalThread, threadIdOf };
 }
 
 export const get = query({
@@ -364,6 +384,7 @@ export const get = query({
     }
 
     for (const job of await ctx.db.query("jobs").collect()) threads.push(await load.jobThread(job));
+    for (const goal of await ctx.db.query("goals").collect()) threads.push(load.goalThread(goal));
     for (const monitor of await ctx.db.query("monitors").collect()) {
       const thread = load.watchThread(monitor);
       threads.push(thread);
@@ -405,16 +426,16 @@ export const get = query({
 
     const waiting: BoardWaiting[] = [];
     for (const task of active) {
-      if (task.status === "blocked" && task.question) waiting.push({ id: `question:${task._id}`, kind: "question", text: task.question, where: task.title, thread: `task:${task._id}`, href: `/work?tab=plans#task-${task._id}`, at: task.updatedAt });
+      if (task.status === "blocked" && task.question) waiting.push({ id: `question:${task._id}`, kind: "question", text: task.question, where: task.title, thread: `task:${task._id}`, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }), at: task.updatedAt });
     }
     for (const approval of await load.pending()) {
       const thread = await load.threadIdOf(approval.conversationId);
       const chat = await load.chat(approval.conversationId);
       waiting.push({
         id: `approval:${approval._id}`, kind: "approval", text: approval.title, ...(chat?.title ? { where: chat.title } : {}), ...(thread ? { thread } : {}),
-        href: approval.conversationId ? `/chat/${approval.conversationId}` : "/inbox", at: approval.createdAt, ...(approval.kind === "command" ? { command: true } : {}),
+        href: boardLink({ thread: thread ?? `approval:${approval._id}` }), at: approval.createdAt, ...(approval.kind === "command" ? { command: true } : {}),
       });
-      events.push({ id: `approval:${approval._id}`, ...(thread ? { thread } : {}), at: approval.createdAt, verb: "approval", status: "waiting", text: approval.title, href: approval.conversationId ? `/chat/${approval.conversationId}` : "/inbox" });
+      events.push({ id: `approval:${approval._id}`, ...(thread ? { thread } : {}), at: approval.createdAt, verb: "approval", status: "waiting", text: approval.title, href: boardLink({ thread: thread ?? `approval:${approval._id}` }) });
     }
 
     const rank: Record<BoardStatus, number> = { waiting: 0, working: 1, blocked: 2, queued: 3, failed: 4, done: 4 };
@@ -484,7 +505,7 @@ export const thread = query({
       for (const run of runs) await runFeed(run, false);
       for (const said of task.steering ?? []) feed.push({ kind: "said", id: `said:${said.requestId}`, at: said.createdAt, text: said.text });
       await approvalsIn(task.conversationId);
-      if (task.status === "blocked" && task.question) feed.push({ kind: "question", id: `${args.id}:question`, at: task.updatedAt, text: task.question, href: `/work?tab=plans#task-${task._id}` });
+      if (task.status === "blocked" && task.question) feed.push({ kind: "question", id: `${args.id}:question`, at: task.updatedAt, text: task.question, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }) });
       if (task.status === "done" && task.result) feed.push({ kind: "result", id: `${args.id}:result`, at: task.updatedAt, text: task.result });
       if (task.status === "failed") feed.push({ kind: "error", id: `${args.id}:error`, at: task.updatedAt, text: task.error ?? "It stopped without saying why.", ...await lastStep(runs.at(-1)) });
       return sorted(await load.taskThread(task), task.plan);
@@ -531,6 +552,12 @@ export const thread = query({
       if (monitor.lastCheckedAt && monitor.lastObservation && !firedOn(monitor)) feed.push({ kind: "update", id: `${args.id}:checked`, at: monitor.lastCheckedAt, text: monitor.lastObservation });
       if (monitor.failures > 0 && monitor.lastCheckedAt) feed.push({ kind: "error", id: `${args.id}:failing`, at: monitor.lastCheckedAt, text: monitor.failures === 1 ? "The last check failed." : `The last ${monitor.failures} checks failed.` });
       return sorted(load.watchThread(monitor));
+    }
+    if (kind === "goal") {
+      const id = ctx.db.normalizeId("goals", raw);
+      const goal = id ? await ctx.db.get(id) : null;
+      if (!goal) return null;
+      return sorted(load.goalThread(goal), goal.milestones.map((milestone) => ({ title: milestone.title, status: milestone.done ? "done" as const : "pending" as const })));
     }
     return null;
   },

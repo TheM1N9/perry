@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CircleCheckIcon, CircleDashedIcon, CircleDotIcon, CircleIcon, CirclePauseIcon, CircleXIcon, ChevronDownIcon, ListFilterIcon,
-  MoreHorizontalIcon, XIcon, type LucideIcon,
+  XIcon, type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useConnection, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { BoardEvent, BoardHolder, BoardStatus, BoardThread, BoardView, BoardWaiting, FeedItem, ThreadView } from "@/convex/board";
+import type { InboxItem } from "@/convex/dashboard";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { tickText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -24,11 +25,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ProviderIcon } from "../provider-icon";
 import { Markdown } from "../chat/markdown";
 import { RunSteps } from "../chat/work";
+import { ApprovalCard } from "../approval-card";
+import { TaskSteering } from "../task-steering";
+import { BoardPause } from "../pause";
+import { ChannelActions, noticeThread, ThreadActions, type Notice } from "./board-actions";
 
 /*
- * The Board (issue #363, v2), laid out as Vercel Board's own viewer is: a nav of views and channels, the list, and the
- * open thread in a pane beside it (over it on a narrow screen). Monospace, flat, one state glyph per item, each item
- * once. Why each part is as it is: .claude-task/DESIGN-v2.md in the PR that made it.
+ * The Board (issue #363), laid out as Vercel Board's own viewer is: a nav of views and channels, the list, and the
+ * open thread in a pane beside it (over it on a narrow screen). Flat, one state glyph per item, each item once. It
+ * holds what Work and Needs you were: their channels, editing (board-actions.tsx) and what waits on the owner. Text is
+ * Perry's own type; ids, channels, times, computers and commands are monospace, as the viewer sets them.
  */
 
 /** Rows drawn at a time; the rest are a click away. */
@@ -48,12 +54,14 @@ const TONE: Partial<Record<BoardStatus, string>> = { waiting: "text-warning", fa
 /** A label short enough for the state column says more than the bare state ("paused", "stopped"); a longer one goes on line 2. */
 const wordOf = (status: BoardStatus, label?: string) => label && label.length <= 10 ? label.toLowerCase() : WORD[status];
 
-function State({ status, label, live = true, className }: { status: BoardStatus; label?: string; live?: boolean; className?: string }) {
+/** `compact`: in a narrow list the glyph stands alone, its word still there for a screen reader and on hover. */
+function State({ status, label, live = true, compact = false, className }: { status: BoardStatus; label?: string; live?: boolean; compact?: boolean; className?: string }) {
   const Glyph = GLYPH[status];
+  const word = wordOf(status, label);
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-1.5", TONE[status], className)} data-state={status}>
+    <span className={cn("inline-flex min-w-0 items-center gap-1.5", TONE[status], className)} data-state={status} title={compact ? word : undefined}>
       <Glyph aria-hidden className={cn("size-3.5 shrink-0", status === "working" && live && "motion-safe:[&>circle:last-child]:animate-pulse")} />
-      <span className="truncate">{wordOf(status, label)}</span>
+      <span className={cn("truncate", compact && "@max-[36rem]:sr-only")}>{word}</span>
     </span>
   );
 }
@@ -91,6 +99,7 @@ const KIND_CHANNELS: Channel[] = [
   { id: "jobs", name: "jobs", group: "work", has: (thread) => thread.kind === "job" },
   { id: "heartbeat", name: "heartbeat", group: "work", has: (thread) => thread.kind === "heartbeat" },
   { id: "watches", name: "watches", group: "work", has: (thread) => thread.kind === "watch" },
+  { id: "goals", name: "goals", group: "work", has: (thread) => thread.kind === "goal" },
 ];
 const slug = (name: string) => name.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "project";
 /** The channel a thread is shown in: its project's, else its kind's. */
@@ -106,9 +115,12 @@ type Tab = (typeof TABS)[number];
 const TAB_STATUS: Partial<Record<Tab, BoardStatus>> = { "needs you": "waiting", working: "working", queued: "queued", waiting: "blocked", done: "done", failed: "failed" };
 /** How a thread stands on the board: one with something waiting on the owner needs them, whatever its last turn did. */
 const standing = (thread: BoardThread, waiting?: BoardWaiting): BoardStatus => waiting ? "waiting" : thread.status;
-/** Open: not over. A watch is always on, so it counts as open only in its own channel. */
-const isOpen = (status: BoardStatus, thread: BoardThread, channel?: string) => status !== "done" && status !== "failed" && (thread.kind !== "watch" || channel === "watches");
-const inTab = (status: BoardStatus, thread: BoardThread, tab: Tab, channel?: string) => tab === "all" || (tab === "open" ? isOpen(status, thread, channel) : status === TAB_STATUS[tab]);
+/** Ongoing rather than at work: a watch or a goal is always on, so it counts as open only in its own channel. */
+const ongoing = (thread: BoardThread) => thread.kind === "watch" || thread.kind === "goal";
+/** Open: not over. */
+const isOpen = (status: BoardStatus, thread: BoardThread, channel?: string) => status !== "done" && status !== "failed" && (!ongoing(thread) || channel === (thread.kind === "watch" ? "watches" : "goals"));
+const inTab = (status: BoardStatus, thread: BoardThread, tab: Tab, channel?: string, notice?: Notice) =>
+  tab === "all" || (tab === "open" ? isOpen(status, thread, channel) : tab === "needs you" ? status === "waiting" || Boolean(notice) : status === TAB_STATUS[tab]);
 
 // --- The address: view, channel, tab, open thread, computer ------------------------------------------------------
 
@@ -194,6 +206,7 @@ function useArrivals(ids: string[] | undefined) {
 export function Board() {
   const { dashboardKey } = useSession();
   const board = useQuery(api.board.get, { key: dashboardKey });
+  const inbox = useQuery(api.dashboard.getInbox, { key: dashboardKey });
   const place = useAddress();
   const wide = useWide();
   const { unseen, mark } = useSeen(board?.threads);
@@ -207,6 +220,11 @@ export function Board() {
   /** Waiting items by the thread each holds up; one with no thread on the board is a row of its own. */
   const waitingFor = useMemo(() => new Map((board?.waiting ?? []).flatMap((item) => item.thread ? [[item.thread, item] as const] : [])), [board]);
   const loose = useMemo(() => (board?.waiting ?? []).filter((item) => !item.thread), [board]);
+  /** What Needs you listed besides questions: a failure, a schedule's news, a watch that fired; each on its thread. */
+  const notices = useMemo(() => (inbox ?? []).filter((item): item is Notice => item.kind !== "question"), [inbox]);
+  const noticeFor = useMemo(() => new Map(notices.flatMap((item) => { const thread = noticeThread(item); return thread ? [[thread, item] as const] : []; })), [notices]);
+  const strays = useMemo(() => notices.filter((item) => !noticeThread(item) || !board?.threads.some((thread) => thread.id === noticeThread(item))), [notices, board]);
+  const needsYou = board ? new Set([...board.threads.filter((thread) => waitingFor.get(thread.id) || noticeFor.get(thread.id)).map((thread) => thread.id)]).size + loose.length + strays.length : undefined;
   const open = board ? board.threads.filter((thread) => isOpen(standing(thread, waitingFor.get(thread.id)), thread)).length + loose.length : undefined;
 
   const dialog = useRef<HTMLDivElement>(null);
@@ -214,22 +232,28 @@ export function Board() {
   useEffect(() => { if (place.thread && !wide) dialog.current?.focus(); }, [place.thread, wide]);
   const nav = <Nav board={board} channels={channels} place={place} open={open} unseen={unseen} />;
   const menu = <NavMenu channels={channels} place={place} open={open} />;
-  const pane = place.thread
-    ? <Pane key={place.thread} id={place.thread} close={place.href({ thread: null })} projects={board?.projects ?? []} waiting={waitingFor.get(place.thread)} onSeen={mark} overlay={!wide} />
-    : null;
+  const pane = !place.thread ? null : place.thread.startsWith("approval:")
+    ? <ApprovalPane key={place.thread} id={place.thread} close={place.href({ thread: null })} />
+    : <Pane key={place.thread} id={place.thread} close={place.href({ thread: null })} projects={board?.projects ?? []} notice={noticeFor.get(place.thread)} onSeen={mark} overlay={!wide} />;
+  // Work running anywhere: what "pause all" stops.
+  const busy = Boolean(board?.threads.some((thread) => !ongoing(thread) && (thread.status === "working" || thread.status === "queued" || thread.status === "waiting")));
 
   return (
-    <div className="flex h-svh min-h-0 font-mono text-[13px] leading-5" data-board>
+    <div className="flex h-svh min-h-0 text-[13px] leading-5" data-board>
       {wide && <aside aria-label="Board" className="flex w-46 shrink-0 flex-col border-r">{nav}</aside>}
       {/* On a narrow screen the open thread covers the board, which is inert behind it until it closes. */}
       <main id="content" tabIndex={-1} inert={Boolean(pane && !wide) || undefined} className="@container flex min-w-0 flex-1 flex-col outline-none">
-        <Header place={place} channel={channel} board={board} wide={wide} nav={menu} />
+        <Header place={place} channel={channel} board={board} wide={wide} nav={menu}
+          actions={<>
+            <ChannelActions channel={channel?.id} needsYou={place.view === "tasks" && place.tab === "needs you"} notices={notices} compact={!wide} />
+            <BoardPause active={busy} compact={!wide} />
+          </>} />
         {place.view === "tasks"
-          ? <Tasks board={board} place={place} channel={channel} waitingFor={waitingFor} loose={loose} unseen={unseen} />
+          ? <Tasks board={board} place={place} channel={channel} waitingFor={waitingFor} loose={loose} noticeFor={noticeFor} strays={strays} needsYou={needsYou} unseen={unseen} />
           : <Activity board={board} place={place} channel={channel} />}
       </main>
       {pane && wide && <aside aria-label="Thread" className="flex w-[min(440px,36vw)] shrink-0 flex-col border-l">{pane}</aside>}
-      {pane && !wide && <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Thread" className="fixed outline-none inset-0 z-40 flex flex-col bg-background font-mono text-[13px] leading-5">{pane}</div>}
+      {pane && !wide && <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Thread" className="fixed outline-none inset-0 z-40 flex flex-col bg-background text-[13px] leading-5">{pane}</div>}
     </div>
   );
 }
@@ -249,7 +273,7 @@ function Nav({ board, channels, place, open, unseen }: {
         <SidebarTrigger className="text-muted-foreground" />
         <div className="min-w-0 leading-4">
           <p className="truncate font-medium">board</p>
-          <p className="truncate text-[11px] text-muted-foreground">{online === undefined ? " " : online === 1 ? "1 computer" : `${online} computers`}</p>
+          <p className="truncate font-mono text-[11px] text-muted-foreground">{online === undefined ? " " : online === 1 ? "1 computer" : `${online} computers`}</p>
         </div>
       </div>
       <nav aria-label="Views and channels" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
@@ -257,7 +281,7 @@ function Nav({ board, channels, place, open, unseen }: {
           aria-current={place.view === "activity" && !place.channel ? "page" : undefined}>activity</Link>
         <Link href={place.href({ view: "tasks", channel: null })} scroll={false} className={item(place.view === "tasks" && !place.channel)}
           aria-current={place.view === "tasks" && !place.channel ? "page" : undefined}>
-          <span className="flex-1">tasks</span>{open ? <span className="nums text-[11px] text-muted-foreground" data-open-count>{open}</span> : null}
+          <span className="flex-1">tasks</span>{open ? <span className="nums font-mono text-[11px] text-muted-foreground" data-open-count>{open}</span> : null}
         </Link>
         <p className="mt-4 px-2 pb-1 text-[11px] text-muted-foreground">channels</p>
         {groups.map((group) => (
@@ -268,7 +292,7 @@ function Nav({ board, channels, place, open, unseen }: {
               return (
                 <Link key={channel.id} href={place.href({ channel: channel.id })} scroll={false} className={item(place.channel === channel.id)} data-channel={channel.name}
                   aria-current={place.channel === channel.id ? "page" : undefined}>
-                  <span className={cn("flex-1 truncate", changed && "font-semibold text-foreground")}>#{channel.name}</span>
+                  <span className={cn("flex-1 truncate font-mono text-[12px]", changed && "font-semibold text-foreground")}>#{channel.name}</span>
                   {changed && <span className="size-1.5 rounded-full bg-foreground" role="img" aria-label="Changed since you looked" />}
                 </Link>
               );
@@ -294,7 +318,7 @@ function NavMenu({ channels, place, open }: { channels: Channel[]; place: Return
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="text-[11px]">{group || "channels"}</DropdownMenuLabel>
           {channels.filter((channel) => (channel.group ?? "") === group).map((channel) => (
-            <DropdownMenuItem key={channel.id} render={<Link href={place.href({ channel: channel.id })} scroll={false} />}>#{channel.name}</DropdownMenuItem>
+            <DropdownMenuItem key={channel.id} render={<Link href={place.href({ channel: channel.id })} scroll={false} />}><span className="font-mono text-[12px]">#{channel.name}</span></DropdownMenuItem>
           ))}
         </DropdownMenuGroup>
       ))}
@@ -303,30 +327,32 @@ function NavMenu({ channels, place, open }: { channels: Channel[]; place: Return
 }
 
 /** The list's header: what it is, a word on its order, and on the right the filter and whether it is live. */
-function Header({ place, channel, board, wide, nav }: { place: ReturnType<typeof useAddress>; channel?: Channel; board?: BoardView; wide: boolean; nav: ReactNode }) {
+function Header({ place, channel, board, wide, nav, actions }: { place: ReturnType<typeof useAddress>; channel?: Channel; board?: BoardView; wide: boolean; nav: ReactNode; actions: ReactNode }) {
   const connection = useConnection();
   const title = channel ? `#${channel.name}` : place.view;
-  const gloss = place.view === "activity" ? "the latest across every channel" : "needs you first";
+  // A word on the order, where the view has one: the channel lists keep the board's own.
+  const gloss = place.view === "activity" ? "the latest across every channel" : channel ? undefined : "needs you first";
   const machines = board?.machines ?? [];
   return (
     <header className={HEADER}>
       {!wide && <SidebarTrigger className="-ml-1.5 text-muted-foreground" />}
-      {wide ? <h1 className="shrink-0 font-semibold">{title}</h1> : (
+      {wide ? <h1 className={cn("shrink-0 font-semibold", channel && "font-mono")}>{title}</h1> : (
         <DropdownMenu>
           <DropdownMenuTrigger className="flex min-w-0 shrink-0 items-center gap-1 rounded-md font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring/50" aria-label={`${title}: choose a view or channel`}>
-            <h1>{title}</h1><ChevronDownIcon className="size-3.5 text-muted-foreground" aria-hidden />
+            <h1 className={cn(channel && "font-mono")}>{title}</h1><ChevronDownIcon className="size-3.5 text-muted-foreground" aria-hidden />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56 font-mono text-[13px]">{nav}</DropdownMenuContent>
+          <DropdownMenuContent align="start" className="w-56 text-[13px]">{nav}</DropdownMenuContent>
         </DropdownMenu>
       )}
-      <span className="min-w-0 truncate text-[12px] text-muted-foreground @max-[36rem]:hidden">{gloss}</span>
+      {gloss && <span className="min-w-0 truncate text-[12px] text-muted-foreground @max-[36rem]:hidden">{gloss}</span>}
       <span className="flex-1" />
+      {actions}
       {machines.length > 1 && (
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={place.computer ? `Computer: ${place.computer}` : "Filter by computer"} className={cn("text-muted-foreground", place.computer && "text-foreground")} />}>
             <ListFilterIcon />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 font-mono text-[13px]">
+          <DropdownMenuContent align="end" className="w-48 text-[13px]">
             <DropdownMenuGroup>
               <DropdownMenuLabel>computer</DropdownMenuLabel>
               <DropdownMenuRadioGroup value={place.computer ?? ""} onValueChange={(value) => place.go({ computer: (value as string) || null })}>
@@ -337,7 +363,7 @@ function Header({ place, channel, board, wide, nav }: { place: ReturnType<typeof
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground" data-live={connection}>
+      <span className="flex shrink-0 items-center gap-1.5 font-mono text-[12px] text-muted-foreground" data-live={connection}>
         <span aria-hidden className={cn("size-1.5 rounded-full", connection === "connected" ? "bg-foreground" : "border border-muted-foreground")} />
         {connection === "connected" ? "live" : "reconnecting"}
       </span>
@@ -348,35 +374,49 @@ function Header({ place, channel, board, wide, nav }: { place: ReturnType<typeof
 /** Whether a thread passes the computer filter: what holds it now, or held it last. */
 const onComputer = (thread: BoardThread, computer: string | null) => !computer || thread.holder?.machine === computer;
 
-function Tasks({ board, place, channel, waitingFor, loose, unseen }: {
+function Tasks({ board, place, channel, waitingFor, loose, noticeFor, strays, needsYou, unseen }: {
   board?: BoardView; place: ReturnType<typeof useAddress>; channel?: Channel; waitingFor: Map<string, BoardWaiting>; loose: BoardWaiting[];
-  unseen: (thread: BoardThread) => boolean;
+  noticeFor: Map<string, Notice>; strays: Notice[]; needsYou?: number; unseen: (thread: BoardThread) => boolean;
 }) {
   const [shown, setShown] = useState(PAGE);
   useEffect(() => setShown(PAGE), [place.channel, place.tab, place.computer]);
-  const threads = (board?.threads ?? []).filter((thread) => (!channel || channel.has(thread)) && inTab(standing(thread, waitingFor.get(thread.id)), thread, place.tab, channel?.id) && onComputer(thread, place.computer))
+  const threads = (board?.threads ?? []).filter((thread) => (!channel || channel.has(thread)) && inTab(standing(thread, waitingFor.get(thread.id)), thread, place.tab, channel?.id, noticeFor.get(thread.id)) && onComputer(thread, place.computer))
     // What needs the owner leads, whatever the order its threads came in.
     .sort((a, b) => Number(Boolean(waitingFor.get(b.id))) - Number(Boolean(waitingFor.get(a.id))));
   const looseShown = !channel && !place.computer && (place.tab === "open" || place.tab === "needs you" || place.tab === "all") ? loose : [];
-  const fresh = useArrivals(board ? [...looseShown.map((item) => item.id), ...threads.map((thread) => thread.id)] : undefined);
+  const straysShown = !channel && !place.computer && (place.tab === "needs you" || place.tab === "all") ? strays : [];
+  // On a phone the tabs scroll sideways: the one chosen is kept in view, not left past the edge.
+  const tabs = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const nav = tabs.current;
+    const active = nav?.querySelector<HTMLElement>("[aria-current=page]");
+    if (nav && active && (active.offsetLeft < nav.scrollLeft || active.offsetLeft + active.offsetWidth > nav.scrollLeft + nav.clientWidth)) nav.scrollLeft = active.offsetLeft - 16;
+  }, [place.tab]);
+  const fresh = useArrivals(board ? [...looseShown.map((item) => item.id), ...straysShown.map((item) => `${item.kind}:${item.id}`), ...threads.map((thread) => thread.id)] : undefined);
   return (
     <>
-      <nav aria-label="States" className="flex shrink-0 flex-wrap gap-x-4 gap-y-1 px-4 pt-2.5" data-tabs>
+      {/* One line that scrolls sideways on a phone, inset like the rows under it. */}
+      <nav ref={tabs} aria-label="States" className="relative flex shrink-0 scroll-px-4 gap-x-4 overflow-x-auto px-4 pt-2.5 [scrollbar-width:none]" data-tabs>
         {TABS.map((tab) => (
           <Link key={tab} href={place.href({ tab })} scroll={false} aria-current={place.tab === tab ? "page" : undefined}
-            className={cn("border-b border-transparent pb-1.5 whitespace-nowrap outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
-              place.tab === tab ? "border-foreground text-foreground" : "text-muted-foreground")}>{tab}</Link>
+            className={cn("flex shrink-0 items-baseline gap-1 border-b border-transparent pb-1.5 whitespace-nowrap outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+              place.tab === tab ? "border-foreground text-foreground" : "text-muted-foreground")}>
+            {tab}{tab === "needs you" && needsYou ? <span className="nums font-mono text-[11px] text-warning" data-needs-you-tab>{needsYou}</span> : null}
+          </Link>
         ))}
+        {/* A scrolled row drops its end padding; this keeps the last tab inset from the edge as the first is. */}
+        <span aria-hidden className="w-0 shrink-0" />
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5">
         {!board && <div className="space-y-3 px-4 py-2" role="status" aria-label="Loading">{[0, 1, 2, 3].map((index) => <Skeleton key={index} className="h-9" />)}</div>}
         {board && threads.length + looseShown.length === 0 && <p className="px-4 py-3 text-muted-foreground" data-empty>nothing here</p>}
         <ul aria-label="Threads" data-rows>
-          {looseShown.map((item) => <WaitingRow key={item.id} item={item} fresh={fresh(item.id)} />)}
+          {looseShown.map((item) => <WaitingRow key={item.id} item={item} href={place.href({ thread: item.id })} selected={place.thread === item.id} fresh={fresh(item.id)} />)}
           {threads.slice(0, shown).map((thread) => (
             <ThreadRow key={thread.id} thread={thread} href={place.href({ thread: thread.id })} selected={place.thread === thread.id} waiting={waitingFor.get(thread.id)}
-              channel={channelName(thread, board!.projects)} fresh={fresh(thread.id)} changed={unseen(thread)} />
+              notice={place.tab === "needs you" ? noticeFor.get(thread.id) : undefined} channel={channelName(thread, board!.projects)} fresh={fresh(thread.id)} changed={unseen(thread)} />
           ))}
+          {straysShown.map((item) => <StrayRow key={`${item.kind}:${item.id}`} item={item} fresh={fresh(`${item.kind}:${item.id}`)} />)}
         </ul>
         {threads.length > shown && <button type="button" className="mx-4 my-2 text-muted-foreground hover:text-foreground" onClick={() => setShown(shown + PAGE)}>show {Math.min(PAGE, threads.length - shown)} more</button>}
       </div>
@@ -385,7 +425,7 @@ function Tasks({ board, place, channel, waitingFor, loose, unseen }: {
 }
 
 /** A row's columns: state, title, channel and age; the channel only where the list is wide enough for it. */
-const ROW = "grid grid-cols-[6.75rem_minmax(0,1fr)_auto] items-baseline gap-x-3 px-4 py-1.5 outline-none hover:bg-muted/60 focus-visible:bg-muted @min-[36rem]:grid-cols-[7.5rem_minmax(0,1fr)_auto_auto]";
+const ROW = "grid grid-cols-[0.875rem_minmax(0,1fr)_auto] items-baseline gap-x-2.5 px-4 py-1.5 outline-none hover:bg-muted/60 focus-visible:bg-muted @min-[36rem]:grid-cols-[7.5rem_minmax(0,1fr)_auto_auto] @min-[36rem]:gap-x-3";
 
 /** A command or a question waiting on the owner, as line 2 says it: a command on one line, as code. */
 function Wants({ item }: { item: BoardWaiting }) {
@@ -394,21 +434,22 @@ function Wants({ item }: { item: BoardWaiting }) {
     : <span className="block truncate" title={item.text}>{item.text}</span>;
 }
 
-function ThreadRow({ thread, href, selected, waiting, channel, fresh, changed }: {
-  thread: BoardThread; href: string; selected: boolean; waiting?: BoardWaiting; channel: string; fresh: boolean; changed: boolean;
+function ThreadRow({ thread, href, selected, waiting, notice, channel, fresh, changed }: {
+  thread: BoardThread; href: string; selected: boolean; waiting?: BoardWaiting; notice?: Notice; channel: string; fresh: boolean; changed: boolean;
 }) {
   const status = standing(thread, waiting);
   const line: ReactNode = waiting ? <Wants item={waiting} />
-    : thread.status === "working" && thread.kind !== "watch" ? <span className="block truncate">{actor(thread.holder)}{thread.now ? ` · ${thread.now}` : ""}</span>
+    : notice ? <span className="block truncate">{firstLine(notice.text)}</span>
+    : thread.status === "working" && !ongoing(thread) ? <span className="block truncate"><span className="font-mono">{actor(thread.holder)}</span>{thread.now ? ` · ${thread.now}` : ""}</span>
       : thread.now ? <span className="block truncate">{thread.status === "blocked" && thread.label.length > 10 ? `${thread.label.toLowerCase()} · ${thread.now}` : thread.now}</span> : null;
   return (
     <li data-row={thread.id} data-status={status} className={cn(fresh && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 motion-safe:ease-out")}>
       <Link href={href} scroll={false} aria-current={selected ? "true" : undefined} className={cn(ROW, selected && "bg-muted")}>
-        <State status={status} label={waiting ? undefined : thread.label} live={thread.kind !== "watch"} />
+        <State status={status} label={waiting ? undefined : thread.label} live={!ongoing(thread)} compact />
         <span className={cn("truncate", changed ? "font-semibold" : "font-medium")}>{thread.title}</span>
-        <span className="truncate text-[12px] text-muted-foreground @max-[36rem]:hidden">#{channel}</span>
-        <span className="justify-self-end text-[12px] text-muted-foreground" data-age>
-          {thread.status === "working" && thread.kind !== "watch" ? <Ticking since={thread.startedAt} format={short} /> : <Age at={thread.updatedAt} />}
+        <span className="truncate font-mono text-[12px] text-muted-foreground @max-[36rem]:hidden">#{channel}</span>
+        <span className="justify-self-end font-mono text-[12px] text-muted-foreground" data-age>
+          {thread.status === "working" && !ongoing(thread) ? <Ticking since={thread.startedAt} format={short} /> : <Age at={thread.updatedAt} />}
         </span>
         {line && <span className="col-start-2 col-end-[-1] min-w-0 text-[12px] text-muted-foreground" data-line>{line}</span>}
       </Link>
@@ -416,20 +457,40 @@ function ThreadRow({ thread, href, selected, waiting, channel, fresh, changed }:
   );
 }
 
-/** An approval whose chat has no thread on the board: a row of its own, opening where it is answered. */
-function WaitingRow({ item, fresh }: { item: BoardWaiting; fresh: boolean }) {
+/** An approval whose chat has no thread on the board: a row of its own, opening to a pane where it is answered. */
+function WaitingRow({ item, href, selected, fresh }: { item: BoardWaiting; href: string; selected: boolean; fresh: boolean }) {
   return (
     <li data-row={item.id} data-status="waiting" className={cn(fresh && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 motion-safe:ease-out")}>
-      <Link href={item.href} className={ROW}>
-        <State status="waiting" />
+      <Link href={href} scroll={false} aria-current={selected ? "true" : undefined} className={cn(ROW, selected && "bg-muted")}>
+        <State status="waiting" compact />
         <span className="truncate font-medium">{item.where ?? "approval"}</span>
-        <span className="text-[12px] text-muted-foreground @max-[36rem]:hidden">approval</span>
-        <span className="justify-self-end text-[12px] text-muted-foreground"><Age at={item.at} /></span>
+        <span className="font-mono text-[12px] text-muted-foreground @max-[36rem]:hidden">approval</span>
+        <span className="justify-self-end font-mono text-[12px] text-muted-foreground"><Age at={item.at} /></span>
         <span className="col-start-2 col-end-[-1] min-w-0 text-[12px] text-muted-foreground" data-line><Wants item={item} /></span>
       </Link>
     </li>
   );
 }
+
+const STRAY: Partial<Record<InboxItem["kind"], string>> = { delivery: "delivery" };
+
+/** Something Needs you listed with no thread on the board (a notification that did not arrive): a row that opens it. */
+function StrayRow({ item, fresh }: { item: Notice; fresh: boolean }) {
+  const href = item.kind === "delivery" ? (item.chatId ? `/chat/${item.chatId}` : "/settings/notifications") : item.kind === "watch" ? item.url : "chatId" in item && item.chatId ? `/chat/${item.chatId}` : "/board";
+  return (
+    <li data-row={`${item.kind}:${item.id}`} data-status="waiting" data-stray className={cn(fresh && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 motion-safe:ease-out")}>
+      <Link href={href} className={ROW}>
+        <State status="waiting" compact />
+        <span className="truncate font-medium">{item.title}</span>
+        <span className="font-mono text-[12px] text-muted-foreground @max-[36rem]:hidden">{STRAY[item.kind] ?? "update"}</span>
+        <span className="justify-self-end font-mono text-[12px] text-muted-foreground"><Age at={item.at} /></span>
+        <span className="col-start-2 col-end-[-1] min-w-0 truncate text-[12px] text-muted-foreground" data-line>{firstLine(item.text)}</span>
+      </Link>
+    </li>
+  );
+}
+
+const firstLine = (text: string) => text.split("\n").find((line) => line.trim())?.trim() ?? "";
 
 function Age({ at }: { at: number }) {
   const now = useNow(15_000);
@@ -483,7 +544,7 @@ function Activity({ board, place, channel }: { board?: BoardView; place: ReturnT
               <Message who={by} at={event.at} where={thread ? channelName(thread, board!.projects) : undefined} href={target} engine={by === "perry" ? undefined : thread?.holder?.engine}>
                 <p className="truncate">{thread?.title ?? event.text}</p>
                 <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground" data-line>
-                  <State status={status} label={thread?.label} live={thread?.kind !== "watch"} className="shrink-0 text-foreground/80" />
+                  <State status={status} label={thread?.label} live={!thread || !ongoing(thread)} className="shrink-0 text-foreground/80" />
                   {detail && <span className="min-w-0 truncate">· {event.verb === "approval" ? <code className="rounded bg-muted px-1">{detail}</code> : detail}</span>}
                 </p>
               </Message>
@@ -504,9 +565,9 @@ function Divider({ children }: { children: ReactNode }) {
 function Message({ who, at, where, href, engine, children }: { who: string; at: number; where?: string; href?: string; engine?: BoardHolder["engine"]; children: ReactNode }) {
   const head = (
     <p className="flex min-w-0 items-baseline gap-1.5">
-      <span className="truncate font-semibold">{who}</span>
-      {where && <span className="shrink-0 text-[12px] text-muted-foreground">in #{where}</span>}
-      <span className="shrink-0 text-[12px] text-muted-foreground"><Age at={at} /></span>
+      <span className="truncate font-mono text-[12px] font-semibold">{who}</span>
+      {where && <span className="shrink-0 text-[12px] text-muted-foreground">in <span className="font-mono">#{where}</span></span>}
+      <span className="shrink-0 font-mono text-[12px] text-muted-foreground"><Age at={at} /></span>
     </p>
   );
   const body = (
@@ -523,15 +584,17 @@ function Message({ who, at, where, href, engine, children }: { who: string; at: 
 
 // --- The thread pane ----------------------------------------------------------------------------------------------
 
-const NOUN: Record<BoardThread["kind"], string> = { chat: "chat", task: "task", job: "job", heartbeat: "heartbeat", watch: "watch" };
+const NOUN: Record<BoardThread["kind"], string> = { chat: "chat", task: "task", job: "job", heartbeat: "heartbeat", watch: "watch", goal: "goal" };
 
 /** One thread, as the viewer's pane has it: its state and outcome on top with what you can do, then the conversation. */
-function Pane({ id, close, projects, waiting, onSeen, overlay }: {
-  id: string; close: string; projects: BoardView["projects"]; waiting?: BoardWaiting; onSeen: (thread: BoardThread) => void; overlay: boolean;
+function Pane({ id, close, projects, notice, onSeen, overlay }: {
+  id: string; close: string; projects: BoardView["projects"]; notice?: Notice; onSeen: (thread: BoardThread) => void; overlay: boolean;
 }) {
   const { dashboardKey } = useSession();
   const view = useQuery(api.board.thread, { key: dashboardKey, id });
   const thread = view?.thread;
+  const work = useQuery(api.dashboard.getWork, id.startsWith("task:") ? { key: dashboardKey } : "skip");
+  const task = work?.tasks.find((item) => `task:${item._id}` === id);
   useEffect(() => { if (thread) onSeen(thread); }, [thread, onSeen]);
   const closer = (
     <Button variant="ghost" size="icon-sm" className="-mr-1.5 text-muted-foreground" aria-label="Close" render={<Link href={close} scroll={false} />}><XIcon /></Button>
@@ -546,15 +609,12 @@ function Pane({ id, close, projects, waiting, onSeen, overlay }: {
   const result = outcome?.kind === "result" ? outcome : undefined;
   const error = outcome?.kind === "error" ? outcome : undefined;
   const status = asking ? "waiting" : thread.status;
-  const action = asking
-    ? { label: asking.kind === "approval" ? "review" : "answer", href: asking.href }
-    : thread.chatId ? { label: "open chat", href: `/chat/${thread.chatId}` } : { label: "open in work", href: thread.href };
-  const more = [
-    ...(thread.chatId && action.label !== "open chat" ? [{ label: "open chat", href: `/chat/${thread.chatId}` }] : []),
-    ...(thread.kind !== "chat" && action.label !== "open in work" ? [{ label: "open in work", href: thread.href }] : []),
-  ];
   const rootBy = thread.kind === "chat" || thread.kind === "task" ? "you" : "perry";
   const said = view.feed.filter((item) => item.kind === "said" || item.kind === "update");
+  // A finished task's plan is as it was left: a step still marked under way was not finished, not in progress.
+  const ended = thread.status === "done" || thread.status === "failed";
+  const conversation = thread.kind !== "goal";
+  const steerable = task?.status === "running" && task.conversationId && task.turns ? task : undefined;
 
   return (
     <article aria-labelledby="pane-title" className="flex min-h-0 flex-1 flex-col" data-pane={thread.id}>
@@ -566,39 +626,25 @@ function Pane({ id, close, projects, waiting, onSeen, overlay }: {
         {closer}
       </div>
 
-      <section aria-label="State" className="max-h-[55%] shrink-0 space-y-2.5 overflow-y-auto overscroll-contain border-b px-4 py-3" data-task-block>
+      {/* One scroll: the state block, then the conversation right under it, newest at the bottom. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+      <section aria-label="State" className="space-y-2.5 border-b px-4 py-3" data-task-block>
         <p className="font-semibold [overflow-wrap:anywhere]" data-title>{thread.title}</p>
         <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12px]">
-          <State status={status} label={asking ? undefined : thread.label} live={thread.kind !== "watch"} className="font-semibold" />
-          {thread.holder && status === "working" && thread.kind !== "watch" && <span className="text-muted-foreground" data-holder>· by {holderWords(thread.holder)} · <Ticking since={thread.startedAt} /></span>}
-          {thread.holder && !going(thread.status) && thread.finishedAt !== undefined && <span className="text-muted-foreground" data-holder>· {holderWords(thread.holder)} · took {span(thread.finishedAt - thread.startedAt)}</span>}
+          <State status={status} label={asking ? undefined : thread.label} live={!ongoing(thread)} className="font-semibold" />
+          {thread.holder && status === "working" && !ongoing(thread) && <span className="text-muted-foreground" data-holder>· by <span className="font-mono">{holderWords(thread.holder)}</span> · <Ticking since={thread.startedAt} className="font-mono" /></span>}
+          {thread.holder && !going(thread.status) && thread.finishedAt !== undefined && <span className="text-muted-foreground" data-holder>· <span className="font-mono">{holderWords(thread.holder)}</span> · took <span className="font-mono">{span(thread.finishedAt - thread.startedAt)}</span></span>}
         </p>
-        <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12px]">
-          {asking && <Field label={asking.kind === "approval" ? "approval" : "question"}>
-            {asking.kind === "approval" || waiting?.command
-              ? <code className="block rounded bg-muted px-1.5 py-0.5 break-words whitespace-pre-wrap" data-command>{asking.text}</code>
-              : <span className="whitespace-pre-wrap">{asking.text}</span>}
-          </Field>}
-          {error && <Field label="reason"><span className="whitespace-pre-wrap">{error.text}</span></Field>}
-          {error?.step && <Field label="last step"><span data-last-step>{error.step}</span></Field>}
-          {result && !error && <Field label={result.reply ? "reply" : "result"}><Clamp><div className="text-[13px] [&_*]:font-mono [&_.prose-chat]:text-[13px]"><Markdown text={result.text} /></div></Clamp></Field>}
-          {view.plan && <Field label={`plan ${view.plan.filter((step) => step.status === "done").length}/${view.plan.length}`}><Plan steps={view.plan} /></Field>}
-        </dl>
-        <div className="flex items-center gap-1.5">
-          <Button size="sm" render={<Link href={action.href} />} data-action>{action.label}</Button>
-          {more.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="secondary" size="icon-sm" aria-label="More" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-40 font-mono text-[13px]">
-                {more.map((item) => <DropdownMenuItem key={item.label} render={<Link href={item.href} />}>{item.label}</DropdownMenuItem>)}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+        <ThreadActions thread={thread} question={asking?.kind === "question" ? asking.text : undefined} approval={asking?.kind === "approval" ? asking.id : undefined} notice={notice}
+          fields={<>
+            {error && <Field label="reason"><span className="whitespace-pre-wrap">{error.text}</span></Field>}
+            {error?.step && <Field label="last step"><span data-last-step>{error.step}</span></Field>}
+            {result && !error && <Field label={result.reply ? "reply" : "result"}><Clamp><div className="text-[13px] [&_.prose-chat]:text-[13px]"><Markdown text={result.text} /></div></Clamp></Field>}
+            {view.plan && <Field label={thread.kind === "goal" ? `milestones ${view.plan.filter((step) => step.status === "done").length}/${view.plan.length}` : `plan ${view.plan.filter((step) => step.status === "done").length}/${view.plan.length}`}><Plan steps={view.plan} ended={ended} /></Field>}
+          </>} />
       </section>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-conversation>
-        <div className="flex-1" />
+      {conversation && <div className="flex flex-1 flex-col" data-conversation>
         <Divider>{dayOf(thread.startedAt)}</Divider>
         <Message who={rootBy} at={thread.startedAt}>
           <Clamp lines><p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{thread.ask}</p></Clamp>
@@ -611,7 +657,7 @@ function Pane({ id, close, projects, waiting, onSeen, overlay }: {
                 <li key={item.id} data-feed-run={item.status}>
                   <Message who={actor(item.holder)} at={item.at} engine={item.holder?.engine}>
                     {runs.length > 1 && item.status !== "done" && <State status={item.status} label={item.label} className="text-[12px]" />}
-                    <div className="text-[13px] [&_.prose-chat]:text-[13px] [&_[data-work-timeline]]:pt-0.5 [&_*]:font-mono"><RunSteps runIds={[item.runId]} live={going(item.status)} held={item.status === "waiting"} unresponsive={item.status === "blocked"} omitText={item.omit} /></div>
+                    <div className="text-[13px] [&_.prose-chat]:text-[13px] [&_[data-work-timeline]]:pt-0.5"><RunSteps runIds={[item.runId]} live={going(item.status)} held={item.status === "waiting"} unresponsive={item.status === "blocked"} omitText={item.omit} /></div>
                   </Message>
                 </li>
               );
@@ -621,6 +667,30 @@ function Pane({ id, close, projects, waiting, onSeen, overlay }: {
             return null;
           })}
         </ol>
+        {/* A running task's composer, as a thread's: what to change while it works (Work's update box). */}
+        {steerable && <div className="sticky bottom-0 mt-auto border-t bg-background px-4 py-2.5" data-composer><TaskSteering task={steerable} compact /></div>}
+      </div>}
+      </div>
+    </article>
+  );
+}
+
+/** An approval whose chat has no thread on the board, answered in a pane of its own. */
+function ApprovalPane({ id, close }: { id: string; close: string }) {
+  const { dashboardKey } = useSession();
+  const approvals = useQuery(api.approvals.pending, { key: dashboardKey });
+  const now = useNow(1_000);
+  const approval = approvals?.find((item) => `approval:${item.id}` === id && item.expiresAt > now);
+  return (
+    <article aria-label="Approval" className="flex min-h-0 flex-1 flex-col" data-pane={id}>
+      <div className={HEADER}>
+        <h2 className="min-w-0 flex-1 truncate font-semibold">approval</h2>
+        <Button variant="ghost" size="icon-sm" className="-mr-1.5 text-muted-foreground" aria-label="Close" render={<Link href={close} scroll={false} />}><XIcon /></Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {approvals === undefined ? <Skeleton className="h-24" />
+          : approval ? <div className="text-[13px] [&_pre]:px-2.5 [&_pre]:py-2 [&_pre]:text-[13px] [&_pre]:[overflow-wrap:normal]"><ApprovalCard approval={approval} now={now} bare /></div>
+            : <p className="px-1 text-muted-foreground">That approval was answered or has expired.</p>}
       </div>
     </article>
   );
@@ -637,14 +707,15 @@ const STEP: Record<NonNullable<BoardViewPlan>[number]["status"], { glyph: Lucide
   pending: { glyph: CircleIcon, word: "pending" }, active: { glyph: CircleDotIcon, word: "in progress" }, done: { glyph: CircleCheckIcon, word: "done" }, skipped: { glyph: CircleDashedIcon, word: "skipped" },
 };
 
-/** A task's plan, a line a step, with the glyphs the states use. */
-function Plan({ steps }: { steps: NonNullable<BoardViewPlan> }) {
+/** A task's plan, a line a step, with the glyphs the states use. `ended`: no step of a finished task is under way. */
+function Plan({ steps, ended = false }: { steps: NonNullable<BoardViewPlan>; ended?: boolean }) {
   return (
     <ol className="space-y-0.5" data-plan>
       {steps.map((step, index) => {
-        const { glyph: Glyph, word } = STEP[step.status];
+        const shown = ended && step.status === "active" ? "unfinished" : step.status;
+        const { glyph: Glyph, word } = shown === "unfinished" ? { glyph: CircleDashedIcon, word: "not finished" } : STEP[step.status];
         return (
-          <li key={index} className={cn("flex items-start gap-1.5", step.status === "active" ? "text-foreground" : "text-muted-foreground", step.status === "skipped" && "line-through")}>
+          <li key={index} data-step={shown} className={cn("flex items-start gap-1.5", shown === "active" ? "text-foreground" : "text-muted-foreground", step.status === "skipped" && "line-through")}>
             <Glyph aria-hidden className="mt-[3px] size-3.5 shrink-0" /><span className="sr-only">{word}: </span><span className="min-w-0">{step.title}</span>
           </li>
         );

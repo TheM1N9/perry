@@ -1,9 +1,9 @@
 import { Suspense } from "react";
-import { Work } from "@/components/dashboard/screens/work";
+import { MovedToBoard } from "@/components/dashboard/moved-to-board";
 
-export const metadata = { title: "Work" };
+export const metadata = { title: "Board" };
 
+/** Work moved to the Board: each tab is a channel there, and an anchor (#task-…, #job-…) its thread. */
 export default function WorkPage() {
-  // The screen reads its tab and filters from the address, which only the browser has.
-  return <Suspense><Work /></Suspense>;
+  return <Suspense><MovedToBoard from="work" /></Suspense>;
 }

@@ -125,7 +125,8 @@ function Unlocked({ children }: { children: ReactNode }) {
 
   return (
     <PaletteContext.Provider value={palette}>
-      <SidebarProvider>
+      {/* Opened on the Board, the sidebar starts as its rail, rather than folding as the page appears (app-sidebar.tsx). */}
+      <SidebarProvider defaultOpen={!pathname.startsWith("/board")}>
         <a href="#content" className="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:ring-2 focus:ring-ring">
           Skip to content
         </a>

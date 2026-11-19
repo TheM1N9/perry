@@ -9,6 +9,7 @@ import type { Doc } from "@/convex/_generated/dataModel";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 
 const LABELS: Record<string, string> = {
   pending: "Accepted · waiting for engine acknowledgement",
@@ -22,7 +23,8 @@ const LABELS: Record<string, string> = {
 };
 
 /** Lives beside the plan so an agent's later set_plan cannot erase the owner's updates. */
-export function TaskSteering({ task }: { task: Doc<"tasks"> }) {
+/** `compact`: the input alone, as a thread's composer (the Board), where the updates already show in its conversation. */
+export function TaskSteering({ task, compact = false }: { task: Doc<"tasks">; compact?: boolean }) {
   const { dashboardKey } = useSession();
   const inputId = useId();
   const send = useMutation(api.tasks.steerFromDashboard);
@@ -35,8 +37,8 @@ export function TaskSteering({ task }: { task: Doc<"tasks"> }) {
   const canSteer = task.status === "running" && Boolean(task.conversationId && task.turns);
 
   return (
-    <div className="mt-3 max-w-md space-y-2" data-task-steering>
-      {updates && updates.length > 0 && <ol className="space-y-2 text-sm" aria-label="Owner updates">
+    <div className={compact ? "space-y-1.5" : "mt-3 max-w-md space-y-2"} data-task-steering>
+      {!compact && updates && updates.length > 0 && <ol className="space-y-2 text-sm" aria-label="Owner updates">
         {updates.map((update) => <li key={update.requestId}>
           <p className="whitespace-pre-wrap">{update.text}</p>
           <p className="text-muted-foreground" role="status">{LABELS[update.state] ?? "Delivery status unavailable"}</p>
@@ -62,12 +64,25 @@ export function TaskSteering({ task }: { task: Doc<"tasks"> }) {
           setSending(false);
         }
       }}>
-        <label htmlFor={inputId} className="block text-sm font-medium">Update instructions</label>
-        <Input id={inputId} value={text} maxLength={4000} disabled={sending}
-          aria-describedby={error ? `${inputId}-error` : undefined} aria-invalid={Boolean(error)}
-          onChange={(event) => setText(event.target.value)} placeholder="What should Perry change as it works?" />
-        {error && <p id={`${inputId}-error`} className="text-sm text-destructive" role="alert">{error}</p>}
-        <Button size="sm" type="submit" disabled={sending || !text.trim()}>{sending ? "Sending…" : "Send update"}</Button>
+        <label htmlFor={inputId} className={compact ? "sr-only" : "block text-sm font-medium"}>Update instructions</label>
+        {compact ? (
+          <InputGroup className="h-9">
+            <InputGroupInput id={inputId} value={text} maxLength={4000} disabled={sending} className="text-[13px]"
+              aria-describedby={error ? `${inputId}-error` : undefined} aria-invalid={Boolean(error)}
+              onChange={(event) => setText(event.target.value)} placeholder="Tell Perry something as it works…" />
+            {text.trim() && (
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton type="submit" size="xs" className="text-primary hover:text-primary" disabled={sending} aria-busy={sending || undefined}>{sending ? "sending…" : "send"}</InputGroupButton>
+              </InputGroupAddon>
+            )}
+          </InputGroup>
+        ) : (
+          <Input id={inputId} value={text} maxLength={4000} disabled={sending}
+            aria-describedby={error ? `${inputId}-error` : undefined} aria-invalid={Boolean(error)}
+            onChange={(event) => setText(event.target.value)} placeholder="What should Perry change as it works?" />
+        )}
+        {error && <p id={`${inputId}-error`} className={compact ? "text-[12px] text-destructive" : "text-sm text-destructive"} role="alert">{error}</p>}
+        {!compact && <Button size="sm" type="submit" disabled={sending || !text.trim()}>{sending ? "Sending…" : "Send update"}</Button>}
       </form>}
     </div>
   );

@@ -24,6 +24,7 @@ import { BrainMap } from "../brain-map/brain-map";
 import { EmptyState, List, ListSkeleton, Page } from "../common";
 import { MemoryPages, OlderMemories } from "./memory";
 import { NoteRows } from "./notes";
+import { boardLink, NEEDS_YOU } from "@/lib/board-links";
 
 /**
  * Brain (issue #210): everything Perry knows and everything you write, as
@@ -163,7 +164,7 @@ function BrainChanges() {
   return (
     <section aria-label="Recent changes" className="space-y-1">
       <h2 className="text-sm font-medium text-muted-foreground">Recent changes</h2>
-      {waiting > 0 && <p className="text-sm text-muted-foreground"><Link href="/inbox" className="underline-offset-2 hover:underline">{waiting} waiting in Needs you</Link></p>}
+      {waiting > 0 && <p className="text-sm text-muted-foreground"><Link href={boardLink({ tab: NEEDS_YOU })} className="underline-offset-2 hover:underline">{waiting} waiting on you</Link></p>}
       {applied.length > 0 && (
         <List label="Recent changes">
           {applied.map((change) => (

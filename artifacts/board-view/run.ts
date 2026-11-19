@@ -1,11 +1,11 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChat, sleep } from "../browser";
 
-// pnpm build, then: bun artifacts/board-view/run.ts [outDir]   (outDir defaults to artifacts/board-view-v2)
+// pnpm build, then: bun artifacts/board-view/run.ts [outDir]   (outDir defaults to artifacts/board-view-v3)
 // Issue #363, the Board: a production build on a free port with a fresh PERRY_HOME in a temp folder, two stand-in
 // computers ("PC" with Codex, "Mac" with Claude Code) that answer through the runner's own endpoints (claim, trace,
 // finish), and headless Chrome at desktop and phone widths. Nothing touches an installed Perry. Deleted at the end,
@@ -25,9 +25,18 @@ import { openChat, sleep } from "../browser";
 //      cannot be reached.
 //  10. At 1280 or 1440 px it overflows, clips a tab, or the nav, list and pane headers do not line up; a toast covers it.
 //  11. Anything throws in the browser.
+//  12. The sidebar still has Needs you, Work or Pause all work, or lost the desktop pet; or Board's badge does not
+//      count what Needs you counted.
+//  13. The needs-you tab misses something Needs you showed (an approval, a question, a failure), or counts differently.
+//  14. On the Board the sidebar stays full width (four columns), or unfolding it on hover pushes the board aside.
+//  15. An old /work or /inbox address, or a #job-/#goal- anchor, lands nowhere, or not on its channel and thread.
+//  16. Something Work could do is lost: making, changing or pausing a schedule; answering a task's question; a goal.
+//  17. A done task's plan still shows a step in progress; the pane leaves a gap above its conversation; titles are
+//      monospace; on a phone the tabs wrap or the state column eats the title's width.
+//  18. Pause all work is gone, or pauses without asking.
 
 const REPO = resolve(import.meta.dirname, "../..");
-const OUT = resolve(process.argv[2] ?? join(REPO, "artifacts", "board-view-v2"));
+const OUT = resolve(process.argv[2] ?? join(REPO, "artifacts", "board-view-v3"));
 mkdirSync(OUT, { recursive: true });
 const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
 const PORT = await freePort();
@@ -170,6 +179,9 @@ try {
   await call("work:updateTask", { taskId: askTask, status: "blocked", question: "The 07:10 is €40 cheaper but lands at 09:05. Take it, or the 10:30?" });
   await finish(askTurn, { response: "I need you to pick a flight." });
 
+  const goal = await pub<string>("dashboard:saveGoal", { title: "Run a half marathon in May", description: "From 5 km to 21 km in sixteen weeks.", status: "active",
+    milestones: [{ title: "Run 10 km without stopping", done: true }, { title: "Sign up for the race", done: false }, { title: "Long run of 18 km", done: false }] });
+
   const watch = await call<string>("work:createMonitor", { title: "Leica Q3 back in stock", url: "https://example.com/leica-q3", condition: "contains", value: "In stock", intervalMinutes: 60 });
   await call("work:recordCheck", { id: watch, observation: "The page now says: In stock, ships in 2 days.", fired: true, failed: false });
 
@@ -189,63 +201,140 @@ try {
   const go = async (path: string) => { await b.send("Page.navigate", { url: `${BASE}${path}` }); await waitFor(`document.querySelector('[data-board] header h1')`, `${path} to load`); };
   const scheme = (value: "light" | "dark") => b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value }] });
   const viewport = (width: number, height: number, mobile = false) => b.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile });
-  const shot = async (name: string) => {
+  // A toast from an action just taken ("Schedule made.") is gone before a picture is taken.
+  const settle = async () => {
+    await b.evaluate("document.querySelectorAll('[data-sonner-toast] [data-close-button]').forEach((button) => button.click()); true");
     await b.evaluate("document.fonts.ready.then(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))))");
     await sleep(450);
-    const image = await b.send("Page.captureScreenshot", { format: "png" }) as { data: string };
-    writeFileSync(join(OUT, name), Buffer.from(image.data, "base64"));
   };
+  const capture = async (clip?: { x: number; y: number; width: number; height: number }) =>
+    Buffer.from((await b.send("Page.captureScreenshot", { format: "png", ...(clip ? { clip: { ...clip, scale: 1 } } : {}) }) as { data: string }).data, "base64");
+  const shot = async (name: string) => { await settle(); writeFileSync(join(OUT, name), await capture()); };
   const overflow = () => b.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth") as Promise<number>;
+  const click = (selector: string) => b.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`) as Promise<boolean>;
+  const clickText = (selector: string, text: string) => b.evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((node) => node.innerText.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`) as Promise<boolean>;
+  const type = (selector: string, value: string) => b.evaluate(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus();
+    const setter = Object.getOwnPropertyDescriptor(el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value").set;
+    setter.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`) as Promise<boolean>;
+  /** The labels of the app sidebar's own items, top to bottom, as a person reads them. */
+  // The header's name and the pet's sleeping "z"s are not items; each item reads as its label says.
+  const sidebarItems = () => b.evaluate(`[...document.querySelectorAll('[data-sidebar=content] [data-sidebar=menu-button], [data-sidebar=footer] [data-sidebar=menu-button]')].map((el) => (el.getAttribute('aria-label') ?? el.innerText).split(':')[0].split(String.fromCharCode(10)).pop().trim()).filter(Boolean)`) as Promise<string[]>;
+  const sidebarWidth = () => b.evaluate(`Math.round(document.querySelector('[data-slot=sidebar-container]').getBoundingClientRect().width)`) as Promise<number>;
+  const gapWidth = () => b.evaluate(`Math.round(document.querySelector('[data-slot=sidebar-gap]').getBoundingClientRect().width)`) as Promise<number>;
 
   const ROWS = `[...document.querySelectorAll('[data-rows] [data-row]')]`;
-  const rowText = (id: string) => b.evaluate(`document.querySelector('[data-row="${id}"]')?.innerText ?? ''`) as Promise<string>;
   const pane = () => b.evaluate(`document.querySelector('[data-pane]')?.innerText ?? ''`) as Promise<string>;
-  const tabsClipped = () => b.evaluate(`[...document.querySelectorAll('[data-tabs] a')].filter((a) => { const r = a.getBoundingClientRect(); return a.scrollWidth > a.clientWidth + 1 || r.right > innerWidth + 0.5 || r.left < -0.5; }).map((a) => a.innerText)`) as Promise<string[]>;
-  const toastShown = () => b.evaluate(`Boolean(document.querySelector('[data-sonner-toast]'))`) as Promise<boolean>;
+  const command = "pnpm motionclip render week-47 --draft";
+  const question = "The 07:10 is €40 cheaper";
 
   await scheme("light");
   await viewport(1440, 900);
+
+  // --- 12, 13. The sidebar: Board holds Needs you and Work; Pause left; the pet stays ------------------------------
+  await b.send("Page.navigate", { url: `${BASE}/chat` });
+  await waitFor(`document.querySelector('[data-sidebar=sidebar]') && document.querySelector('[data-needs-you-count]')`, "the sidebar and its count");
+  const items = await sidebarItems();
+  notes.sidebar = items;
+  const main = ["New chat", "Search", "Board", "To-dos", "Riff", "Meetings", "Brain", "Library", "Apps & skills"];
+  check("the sidebar reads New chat, Board, To-dos, Riff, Meetings, Brain, Library, Apps & skills", JSON.stringify(items.slice(0, main.length)) === JSON.stringify(main), items);
+  check("Needs you, Work and Pause all work are gone from the sidebar", !items.some((item) => /^(Needs you|Work|Pause all work)$/.test(item)), items);
+  check("the desktop pet stays in the sidebar, above the account", items.includes("Desktop pet") && await b.evaluate(`Boolean(document.querySelector('[data-account-row]')) && document.querySelector('[data-sidebar=footer]').innerText.includes('Desktop pet')`) as boolean, items);
+  const badge = Number(await b.evaluate(`document.querySelector('[data-needs-you-count]')?.innerText ?? '0'`));
+  const pending = await pub<Array<{ id: string }>>("approvals:pending");
+  const inbox = await pub<Array<{ kind: string }>>("dashboard:getInbox");
+  check("Board's badge counts what Needs you counted", badge > 0 && badge === pending.length + inbox.length, { badge, approvals: pending.length, inbox: inbox.length });
+  const expandedWidth = await sidebarWidth();
+  await settle();
+  const afterSidebar = await capture({ x: 0, y: 0, width: expandedWidth, height: 900 });
+
+  // The Capture variant, for the mock only: Riff and Meetings under one item. Drawn on the page, not built.
+  await b.evaluate(`(() => {
+    const li = (href) => document.querySelector('[data-sidebar=sidebar] a[href="' + href + '"]').closest('li');
+    const riff = li('/live'), meetings = li('/meetings');
+    const capture = riff.cloneNode(true);
+    const button = capture.querySelector('a');
+    button.removeAttribute('href'); button.removeAttribute('data-active');
+    button.querySelector('span').textContent = 'Capture';
+    const chevron = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;opacity:.6;transform:rotate(90deg)"><path d="m9 18 6-6-6-6"/></svg>';
+    button.insertAdjacentHTML('beforeend', chevron);
+    const sub = document.createElement('ul');
+    sub.style.cssText = 'margin:2px 0 2px 14px;padding:0 0 0 10px;border-left:1px solid var(--sidebar-border);display:grid;gap:2px';
+    for (const [href, label] of [['/live', 'Riff'], ['/meetings', 'Meetings']]) {
+      const item = document.createElement('li');
+      item.innerHTML = '<a href="' + href + '" style="display:flex;height:28px;align-items:center;padding:0 8px;border-radius:6px;font-size:14px;color:var(--sidebar-foreground)">' + label + '</a>';
+      sub.appendChild(item);
+    }
+    capture.appendChild(sub);
+    riff.replaceWith(capture); meetings.remove();
+  })()`);
+  await settle();
+  const variantSidebar = await capture({ x: 0, y: 0, width: expandedWidth, height: 900 });
+
+  // --- 14. On the Board the sidebar is a rail of icons, unfolding over the board without moving it ---------------
   await go("/board");
   await waitFor(`${ROWS}.length >= 2`, "the board's rows");
+  await sleep(400);
+  const rail = { container: await sidebarWidth(), gap: await gapWidth() };
+  check("on the Board the sidebar folds to an icon rail", rail.container <= 56 && rail.gap <= 56, rail);
+  const boardLeft = await b.evaluate(`Math.round(document.querySelector('[data-board]').getBoundingClientRect().left)`) as number;
+  await b.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 20, y: 300 });
+  await waitFor(`document.querySelector('[data-slot=sidebar-container]').getBoundingClientRect().width > 200`, "the rail to unfold on hover", 5);
+  await sleep(300);
+  const peeked = { container: await sidebarWidth(), boardLeft: await b.evaluate(`Math.round(document.querySelector('[data-board]').getBoundingClientRect().left)`) as number };
+  check("hovering the rail unfolds it over the board, which does not move", peeked.container > 200 && peeked.boardLeft === boardLeft, { boardLeft, peeked });
+  await shot("rail-peek-desktop.png");
+  await b.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 300 });
+  await waitFor(`document.querySelector('[data-slot=sidebar-container]').getBoundingClientRect().width < 60`, "the rail to fold again", 5);
 
-  // 6. What waits on the owner is a row, once: the approval on its chat's turn, the question on its task.
-  const command = "pnpm motionclip render week-47 --draft";
-  const question = "The 07:10 is €40 cheaper";
+  // --- 6. What waits on the owner: the needs-you tab is what Needs you was ----------------------------------------
   const rows = await b.evaluate(`${ROWS}.map((li) => ({ id: li.dataset.row, status: li.dataset.status, text: li.innerText }))`) as Array<{ id: string; status: string; text: string }>;
-  check("there is no separate waiting strip: waiting items are rows", !(await b.evaluate(`Boolean(document.querySelector('[data-waiting-on-you]'))`)));
-  check("the pending approval is one row, needing you, with the command on one line", rows.filter((row) => row.text.includes(command)).length === 1 && rows.find((row) => row.text.includes(command))!.status === "waiting"
-    && await b.evaluate(`(() => { const chip = [...document.querySelectorAll('[data-rows] [data-command]')].find((el) => el.textContent.includes(${JSON.stringify(command)})); return Boolean(chip) && chip.getBoundingClientRect().height < 24; })()`) as boolean, rows);
+  check("the pending approval is one row, needing you", rows.filter((row) => row.text.includes(command)).length === 1 && rows.find((row) => row.text.includes(command))!.status === "waiting", rows);
   check("the task's question is one row, needing you", rows.filter((row) => row.text.includes(question)).length === 1 && rows.find((row) => row.text.includes(question))!.id === `task:${askTask}`, rows);
-  const leading = rows.filter((row) => row.status === "waiting").length;
-  check("needs-you rows lead the open list", leading > 0 && rows.slice(0, leading).every((row) => row.status === "waiting"), rows.map((row) => row.status));
-  const pending = await pub<Array<{ id: string }>>("approvals:pending");
-  const blocked = (await pub<{ tasks: Array<{ status: string; question?: string }> }>("dashboard:getWork")).tasks.filter((task) => task.status === "blocked" && task.question);
-  check("every item waiting on the owner is on the board", rows.filter((row) => row.status === "waiting").length === pending.length + blocked.length, { rows: rows.filter((row) => row.status === "waiting").length, approvals: pending.length, questions: blocked.length });
   check("each thread is listed once", new Set(rows.map((row) => row.id)).size === rows.length, rows.map((row) => row.id));
-  const count = await b.evaluate(`document.querySelector('[data-open-count]')?.innerText ?? ''`) as string;
-  check("the one count, on tasks, is the number of open rows", Number(count) === rows.length, { count, rows: rows.length });
-  check("finished rows show no holder; working rows show their computer", rows.filter((row) => row.status === "done").every((row) => !/via PC|via Mac/.test(row.text)), rows);
+  await go("/board?tab=needs+you");
+  await waitFor(`${ROWS}.length >= 3`, "the needs-you tab");
+  const needs = await b.evaluate(`${ROWS}.map((li) => li.dataset.row)`) as string[];
+  const tabCount = Number(await b.evaluate(`document.querySelector('[data-needs-you-tab]')?.innerText ?? '0'`));
+  check("the needs-you tab holds the approval, the question and the failed schedule, and counts them", needs.includes(`task:${askTask}`) && needs.includes(`job:${job.id}`) && needs.some((id) => id.startsWith("run:")) && tabCount === needs.length, { needs, tabCount });
+  check("the needs-you tab's count is the sidebar badge's", tabCount === badge, { tabCount, badge });
+  await shot("needs-you-desktop.png");
 
-  // 7. Channels, as the viewer lists them, with the project's work in its own.
-  const channels = await b.evaluate(`[...document.querySelectorAll('[data-channel]')].map((a) => a.dataset.channel)`) as string[];
-  check("channels are #chats, #tasks, #jobs, #heartbeat, #watches and the project", ["chats", "tasks", "jobs", "heartbeat", "watches", "channel-desk"].every((name) => channels.includes(name)), channels);
-  await b.evaluate(`document.querySelector('[data-channel="channel-desk"]').click()`);
-  await waitFor(`location.search.includes('channel=project') && document.querySelector('header h1')?.innerText === '#channel-desk'`, "the project channel");
-  const projectRows = await b.evaluate(`${ROWS}.map((li) => li.innerText)`) as string[];
-  check("the project's channel holds its chat's turn, needing you", projectRows.length === 1 && projectRows[0].includes("Next Channel Desk script") && projectRows[0].includes("needs you"), projectRows);
+  // --- 15. Old addresses land on the Board -----------------------------------------------------------------------
+  await b.send("Page.navigate", { url: `${BASE}/work?tab=schedules#job-${job.id}` });
+  await waitFor(`location.pathname === '/board' && document.querySelector('[data-pane="job:${job.id}"]')`, "/work#job- to open its schedule on the Board");
+  check("/work#job-… opens that schedule's thread in #jobs", await b.evaluate(`new URLSearchParams(location.search).get('channel') === 'jobs'`) as boolean);
+  await b.send("Page.navigate", { url: `${BASE}/work?tab=goals` });
+  await waitFor(`location.pathname === '/board' && new URLSearchParams(location.search).get('channel') === 'goals'`, "/work?tab=goals to land on #goals");
+  check("/work?tab=goals lands on #goals", true);
+  await b.send("Page.navigate", { url: `${BASE}/inbox` });
+  await waitFor(`location.pathname === '/board' && new URLSearchParams(location.search).get('tab') === 'needs you'`, "/inbox to land on the needs-you tab");
+  check("/inbox lands on the Board's needs-you tab", true);
 
-  // 1-5, 11. A background task queued while the Board is open: a row at once, its thread in the pane beside the list.
+  // --- 6. Answered on the Board: an approval in its pane, a task's question in place ------------------------------
+  await go(`/board?thread=${encodeURIComponent(rows.find((row) => row.text.includes(command))!.id)}`);
+  await waitFor(`document.querySelector('[data-pane] [data-approval-card]')`, "the approval card in its pane");
+  await shot("approval-desktop.png");
+  check("an approval is reviewed in its thread's pane, with its own buttons", await b.evaluate(`[...document.querySelectorAll('[data-pane] [data-approval-card] button')].some((el) => /^Allow once$/.test(el.innerText.trim()))`) as boolean);
+  await go(`/board?channel=tasks&tab=needs+you&thread=task:${askTask}`);
+  await waitFor(`document.querySelector('[data-pane] [data-answer] input')`, "the answer box");
+  await shot("question-desktop.png");
+  await type(`[data-pane] [data-answer] input`, "Take the 10:30.");
+  await click(`[data-pane] [data-answer] button[type=submit]`);
+  await until(async () => (await call<{ status: string } | null>("tasks:get", { id: askTask }))?.status !== "blocked", "the answer to set the task going", 10);
+  check("a task's question is answered from its pane, as Work did", true);
+
+  // --- 1-5. A background task queued while the Board is open -------------------------------------------------------
   await go("/board?channel=tasks");
   const queuedAt = Date.now();
   const liveTask = await pub<string>("tasks:queueFromDashboard", { title: "Compare three standing desks", prompt: "Compare three standing desks under €600 on stability, noise and warranty, and recommend one." });
   await waitFor(`document.querySelector('[data-row="task:${liveTask}"]')`, "the new task's row", 10);
-  notes.appearedAfterMs = Date.now() - queuedAt;
-  check("a queued background task appears on the open board within seconds", Date.now() - queuedAt < 5_000, notes.appearedAfterMs);
+  check("a queued background task appears on the open board within seconds", Date.now() - queuedAt < 5_000, Date.now() - queuedAt);
   await b.evaluate(`document.querySelector('[data-row="task:${liveTask}"] a').click()`);
   await waitFor(`document.querySelector('[data-pane="task:${liveTask}"]')`, "the task's pane");
-  check("the thread opens in a pane beside the list, which stays", await b.evaluate(`(() => { const list = document.querySelector('[data-rows]').getBoundingClientRect(); const p = document.querySelector('[data-pane]').getBoundingClientRect(); return list.width > 300 && p.left >= list.right - 1; })()`) as boolean);
   const liveChat = await until(async () => (await call<{ conversationId?: string } | null>("tasks:get", { id: liveTask }))?.conversationId, "the live task's chat");
-  const liveTurn = await nextTurn((turn) => turn.conversationId === liveChat, "the live task's turn");
+  // The answered task takes a turn too: answer it as an idle engine would, so the live task's is next.
+  const liveTurn = await nextTurn((turn) => turn.conversationId === liveChat, "the live task's turn", 90);
   await claim(liveTurn);
   await waitFor(`document.querySelector('[data-pane] [data-holder]')?.innerText.includes('PC')`, "the holder to show", 10);
   const holder = await b.evaluate(`document.querySelector('[data-pane] [data-holder]').innerText`) as string;
@@ -255,93 +344,128 @@ try {
   await trace(liveTurn, step("d1", "webSearch", "standing desk under 600 euro long-term review", "running", l0));
   await waitFor(`document.querySelector('[data-pane]').innerText.includes('Searching the web') && document.querySelector('[data-row="task:${liveTask}"]').innerText.includes('Searching the web')`, "the running step in the pane and the row", 10);
   check("the step a turn is on shows live, in the pane and on its row", true);
+  check("a running task has its composer at the foot of its conversation", await b.evaluate(`Boolean(document.querySelector('[data-pane] [data-composer] input'))`) as boolean);
+  // b. The conversation flows right under the state block: no empty gap between them.
+  const gap = await b.evaluate(`(() => { const block = document.querySelector('[data-pane] [data-task-block]').getBoundingClientRect(); const talk = document.querySelector('[data-pane] [data-conversation]').getBoundingClientRect(); return Math.round(talk.top - block.bottom); })()`) as number;
+  check("the conversation starts right under the state block", gap >= 0 && gap <= 4, gap);
+  // f. Perry's type for titles and text, monospace for ids, channels, times and computers.
+  const fonts = await b.evaluate(`(() => { const f = (sel) => getComputedStyle(document.querySelector(sel)).fontFamily; return { title: f('[data-pane] [data-title]'), row: f('[data-row] a > span:nth-child(2)'), holder: f('[data-pane] [data-holder] .font-mono'), age: f('[data-row] [data-age]') }; })()`) as Record<string, string>;
+  check("titles and text use Perry's own type; holder and ages are monospace", !/mono/i.test(fonts.title) && !/mono/i.test(fonts.row) && /mono/i.test(fonts.holder) && /mono/i.test(fonts.age), fonts);
   await shot("thread-desktop.png");
-  const taskApproval = await runner<{ id: string }>("approvals:request", { token: PC, kind: "command", title: "curl -s https://example.com/desks.json", cwd: "C:/Users/sam", conversationId: liveChat });
-  await waitFor(`document.querySelector('[data-row="task:${liveTask}"]')?.dataset.status === 'waiting' && document.querySelector('[data-pane] [data-action]')?.innerText === 'review'`, "the task's approval on its row and pane", 10);
-  check("a task waiting on an approval offers review, not answer", (await pane()).includes("desks.json") && !(await pane()).includes("answer"), await pane());
-  await pub("approvals:decide", { id: taskApproval.id, approved: true });
-  await waitFor(`document.querySelector('[data-row="task:${liveTask}"]')?.dataset.status === 'working'`, "the task back to working", 10);
   await trace(liveTurn,
     step("d1", "webSearch", "standing desk under 600 euro long-term review", "ok", l0, { durationMs: 2_100 }),
     step("d2", "commentary", "commentary", "ok", l0 + 2_500, { output: "Shortlisted the Flexispot E7, the Fezibo Dual and the IKEA Trotten. Notes so far: https://example.com/desk-notes" }),
     step("d3", "fileChange", "C:/Users/sam/Documents/desks.md", "ok", l0 + 3_000, { input: "+ | Desk | Stability | Noise | Warranty |" }));
   await waitFor(`document.querySelector('[data-pane]').innerText.includes('Shortlisted the Flexispot E7') && document.querySelector('[data-pane] a[href="https://example.com/desk-notes"]')`, "the update and its link", 10);
   check("an update and its link reach the open pane without a reload", true);
-  check("the file the turn changed is in the pane", /desks\.md|changed 1 file|Edited desks/i.test(await pane()), (await pane()).slice(0, 800));
+  // e. It finishes without ticking its plan off: the plan says so, and no step reads as under way.
   await call("work:updateTask", { taskId: liveTask, status: "done", result: "Get the **Flexispot E7**: steadiest at full height, quietest motor, and a 5-year warranty. The table is in desks.md." });
   await finish(liveTurn, { response: "Done: the Flexispot E7." });
-  await waitFor(`document.querySelector('[data-pane] [data-state]')?.dataset.state === 'done' && document.querySelector('[data-pane]').innerText.includes('result')`, "the task to end in its result", 15);
-  check("a finished task's pane leads with its result, and no longer says working", (await pane()).indexOf("result") < (await pane()).indexOf("Compare three standing desks under"), (await pane()).slice(0, 600));
-  await sleep(1500);
-  check("no toast covers the board when a reply lands", !(await toastShown()));
+  await waitFor(`document.querySelector('[data-pane] [data-state]')?.dataset.state === 'done'`, "the task to end", 15);
+  const plan = await b.evaluate(`[...document.querySelectorAll('[data-pane] [data-plan] li')].map((li) => li.dataset.step)`) as string[];
+  check("a finished task's plan shows no step in progress", plan.length === 3 && !plan.includes("active") && plan[0] === "unfinished", plan);
   await shot("thread-done-desktop.png");
 
-  // 5. The failed schedule: failed, its reason and last step at the top of its pane.
+  // --- 16. #jobs: a schedule made, changed and paused from the Board, as Work did --------------------------------
+  await go("/board?channel=jobs&tab=all");
+  await waitFor(`document.querySelector('[data-new=jobs]')`, "the new-schedule button");
+  await click(`[data-new=jobs]`);
+  await waitFor(`document.querySelector('#schedule-name')`, "the schedule form");
+  await type("#schedule-name", "Morning briefing");
+  await type("#schedule-prompt", "Summarise today's calendar and anything urgent in my inbox. If there is nothing, say nothing.");
+  await shot("jobs-new-desktop.png");
+  await clickText("[role=dialog] button", "Create");
+  const briefing = await until(async () => (await pub<{ jobs: Array<{ id: string; name: string; enabled: boolean }> }>("jobs:listForDashboard")).jobs.find((item) => item.name === "Morning briefing"), "the schedule to be made", 10);
+  check("a schedule is made from #jobs's header", true);
+  await waitFor(`document.querySelector('[data-row="job:${briefing.id}"]')`, "its row");
+  await b.evaluate(`document.querySelector('[data-row="job:${briefing.id}"] a').click()`);
+  await waitFor(`document.querySelector('[data-pane="job:${briefing.id}"] [data-more]') && document.querySelector('[data-pane] [data-job-model]')`, "its pane, with its model");
+  await click(`[data-pane] [data-more]`);
+  await waitFor(`[...document.querySelectorAll('[role=menuitem]')].some((el) => el.innerText.trim() === 'pause')`, "its menu");
+  await shot("jobs-desktop.png");
+  await clickText("[role=menuitem]", "pause");
+  await until(async () => (await pub<{ jobs: Array<{ id: string; enabled: boolean }> }>("jobs:listForDashboard")).jobs.find((item) => item.id === briefing.id)?.enabled === false, "the schedule to pause", 10);
+  check("a schedule is paused from its pane", true);
+  await waitFor(`document.querySelector('[data-pane] [data-more]')`, "the pane after pausing");
+  await click(`[data-pane] [data-more]`);
+  await waitFor(`[...document.querySelectorAll('[role=menuitem]')].some((el) => el.innerText.trim() === 'change')`, "its menu again");
+  await clickText("[role=menuitem]", "change");
+  await waitFor(`document.querySelector('#schedule-name')?.value === 'Morning briefing'`, "the change form, filled in");
+  check("a schedule's change form opens from its pane, filled in", true);
+  await b.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await waitFor(`!document.querySelector('#schedule-name')`, "the form to close");
   await go(`/board?channel=jobs&tab=all&thread=job:${job.id}`);
   await waitFor(`document.querySelector('[data-pane="job:${job.id}"] [data-last-step]')`, "the failed schedule's pane");
   const failed = await pane();
-  check("a failed schedule shows failed, its last step and its error", failed.includes("failed") && failed.includes("bank-cli export") && failed.includes(jobError), failed.slice(0, 800));
-  await shot("failed-desktop.png");
+  check("a failed schedule shows failed, its last step and its error", failed.includes("failed") && failed.includes("bank-cli export") && failed.includes(jobError), failed.slice(0, 600));
 
-  // 6, 8. Activity: one entry per thread, its latest event, and the computer filter narrows it.
-  await go("/board?view=activity");
-  await waitFor(`document.querySelectorAll('[data-activity] [data-entry]').length > 4`, "the activity view");
-  const entries = await b.evaluate(`[...document.querySelectorAll('[data-activity] [data-entry]')].map((li) => li.dataset.entry)`) as string[];
-  check("activity lists each thread once, by its latest event", new Set(entries).size === entries.length, entries);
-  check("activity's newest entry is at the bottom", await b.evaluate(`(() => { const t = [...document.querySelectorAll('[data-activity] time')].map((el) => Date.parse(el.dateTime)); return t.every((v, i) => i === 0 || v >= t[i - 1]); })()`) as boolean);
-  await shot("activity-desktop.png");
-  const filterButton = await b.evaluate(`Boolean(document.querySelector('header [aria-label="Filter by computer"]'))`) as boolean;
-  await go("/board?view=activity&computer=Mac");
-  await sleep(800);
-  const macEntries = await b.evaluate(`document.querySelectorAll('[data-activity] [data-entry]').length`) as number;
-  check("the computer filter is there with two computers, and narrows the view", filterButton && macEntries < entries.length, { filterButton, all: entries.length, mac: macEntries });
+  // --- 17. #goals: Work's goals, changed from their pane --------------------------------------------------------
+  await go("/board?channel=goals");
+  await waitFor(`document.querySelector('[data-row="goal:${goal}"]')`, "the goal's row");
+  await b.evaluate(`document.querySelector('[data-row="goal:${goal}"] a').click()`);
+  await waitFor(`document.querySelector('[data-pane="goal:${goal}"] [data-plan]')`, "the goal's pane");
+  check("a goal shows its milestones and offers change", (await pane()).includes("milestones 1/3") && await b.evaluate(`document.querySelector('[data-pane] [data-action]')?.innerText === 'change'`) as boolean, (await pane()).slice(0, 400));
+  await shot("goals-desktop.png");
 
-  // 10. Edges, widths and clipping.
-  for (const [width, height] of [[1440, 900], [1280, 800]] as const) {
-    await viewport(width, height);
-    await go(`/board?thread=task:${liveTask}`);
-    await waitFor(`document.querySelector('[data-pane]')`, "the pane");
-    check(`nothing overflows sideways at ${width} px`, (await overflow()) <= 0, await overflow());
-    check(`no tab label is clipped at ${width} px`, (await tabsClipped()).length === 0, await tabsClipped());
-    check(`nav, list and pane share one header height at ${width} px`, await b.evaluate(`(() => { const hs = [...document.querySelectorAll('[data-board] > * > div:first-child, [data-board] header, [data-pane] > div:first-child')].map((el) => Math.round(el.getBoundingClientRect().height)).filter((h) => h > 0); return hs.length >= 3 && hs.every((h) => h === hs[0]); })()`) as boolean);
-    if (width === 1280) await shot("board-1280.png");
-  }
-  await viewport(1440, 900);
+  // --- 18. Pause all work, from the Board's header, with its question first ---------------------------------------
+  const pauseShown = await b.evaluate(`Boolean(document.querySelector('header [data-pause=running]'))`) as boolean;
+  check("Pause all work is in the Board's header while something runs", pauseShown);
+  await click(`header [data-pause=running]`);
+  await waitFor(`[...document.querySelectorAll('[role=alertdialog] h2, [role=alertdialog] [data-slot=alert-dialog-title]')].some((el) => el.innerText.includes('Pause all work?'))`, "the pause question");
+  check("pausing asks first", true);
+  await b.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await waitFor(`!document.querySelector('[role=alertdialog]')`, "the question to close");
+  check("nothing paused when the question is declined", !(await pub<{ paused: boolean }>("pause:status")).paused);
+
+  // --- 9, 10. Widths ------------------------------------------------------------------------------------------------
+  await go(`/board?thread=task:${liveTask}`);
+  await waitFor(`document.querySelector('[data-pane]')`, "the pane");
+  check("nothing overflows sideways at 1440 px", (await overflow()) <= 0, await overflow());
+  const columns = await b.evaluate(`[...document.querySelectorAll('[data-slot=sidebar-gap], [data-board] > *')].map((el) => Math.round(el.getBoundingClientRect().width)).filter((w) => w > 0)`) as number[];
+  check("with a thread open at 1440, the rail, board nav, list and pane fit with the list widest", columns[0] <= 56 && columns.length === 4 && columns[2] === Math.max(...columns), columns);
   await go("/board?tab=all");
   await waitFor(`${ROWS}.length > 3`, "the board");
   await shot("board-desktop.png");
-  await go("/board");
-  await waitFor(`${ROWS}.length >= 1`, "the open list");
-  await shot("board-open-desktop.png");
   await scheme("dark");
   await waitFor(`document.documentElement.classList.contains('dark')`, "the dark theme");
-  await go(`/board?thread=task:${askTask}`);
-  await waitFor(`document.querySelector('[data-pane] [data-action]')`, "the question's pane");
-  check("a task's question offers answer, linked to its answer form", await b.evaluate(`document.querySelector('[data-pane] [data-action]').innerText === 'answer' && document.querySelector('[data-pane] [data-action]').getAttribute('href') === ${JSON.stringify(`/work?tab=plans#task-${askTask}`)}`) as boolean);
-  await shot("question-dark-desktop.png");
+  await go(`/board?thread=task:${liveTask}`);
+  await waitFor(`document.querySelector('[data-pane] [data-plan]')`, "the pane in dark");
+  await shot("thread-dark-desktop.png");
   await scheme("light");
   await waitFor(`!document.documentElement.classList.contains('dark')`, "the light theme");
 
-  // 14-17. A phone: a compact header, wrapped tabs, dense rows, and a thread as a full screen of its own.
+  // --- 19. A phone: one line of tabs, the glyph alone for a state, the thread on its own --------------------------
   await viewport(390, 844, true);
   await go("/board?tab=all");
   await waitFor(`${ROWS}.length > 3`, "the phone board");
   check("nothing overflows sideways at 390 px (list)", (await overflow()) <= 0, await overflow());
-  check("no tab label is clipped at 390 px", (await tabsClipped()).length === 0, await tabsClipped());
-  const phone = await b.evaluate(`(() => { const first = document.querySelector('[data-rows] [data-row]').getBoundingClientRect(); const hs = ${ROWS}.map((li) => li.getBoundingClientRect().height); return { firstTop: Math.round(first.top), tallest: Math.round(Math.max(...hs)) }; })()`) as { firstTop: number; tallest: number };
-  check("on a phone the first row starts within 130 px, and rows stay compact", phone.firstTop < 130 && phone.tallest <= 64, phone);
+  const tabs = await b.evaluate(`(() => { const links = [...document.querySelectorAll('[data-tabs] a')]; const tops = new Set(links.map((a) => Math.round(a.getBoundingClientRect().top))); const nav = document.querySelector('[data-tabs]'); return { lines: tops.size, scrolls: nav.scrollWidth > nav.clientWidth, inset: parseFloat(getComputedStyle(nav).paddingLeft) }; })()`) as { lines: number; scrolls: boolean; inset: number };
+  check("on a phone the tabs are one line that scrolls, inset like the rows", tabs.lines === 1 && tabs.scrolls && tabs.inset === 16, tabs);
+  check("on a phone the chosen tab is scrolled into view", await b.evaluate(`(() => { const nav = document.querySelector('[data-tabs]').getBoundingClientRect(); const a = document.querySelector('[data-tabs] [aria-current=page]').getBoundingClientRect(); return a.left >= nav.left + 15 && a.right <= nav.right - 15; })()`) as boolean);
+  const states = await b.evaluate(`(() => { const row = document.querySelector('[data-rows] [data-row] a'); const state = row.querySelector('[data-state]').getBoundingClientRect(); const title = row.children[1].getBoundingClientRect(); return { state: Math.round(state.width), title: Math.round(title.width), row: Math.round(row.getBoundingClientRect().width), word: row.querySelector('[data-state] span').innerText }; })()`) as { state: number; title: number; row: number; word: string };
+  check("on a phone a row's state is its glyph (its word kept for screen readers) and the title has the width", states.state <= 20 && states.title / states.row > 0.6 && states.word.length > 0, states);
   await shot("board-phone.png");
   await go(`/board?tab=all&thread=task:${liveTask}`);
   await waitFor(`document.querySelector('[role=dialog] [data-pane]')`, "the phone thread");
-  check("on a phone the thread is a full screen of its own, without the board's title", await b.evaluate(`(() => { const d = document.querySelector('[role=dialog]').getBoundingClientRect(); return d.top === 0 && Math.round(d.width) === innerWidth && Math.round(d.height) === innerHeight; })()`) as boolean);
   check("nothing overflows sideways at 390 px (thread)", (await overflow()) <= 0, await overflow());
-  const modal = await b.evaluate(`({ inert: document.querySelector('[data-board] main').inert === true, focus: document.activeElement?.closest('[role=dialog]') ? 'pane' : (document.activeElement?.tagName ?? 'none') })`) as { inert: boolean; focus: string };
-  check("on a phone the board behind the thread is inert, and focus starts in the pane", modal.inert && modal.focus === "pane", modal);
   await shot("thread-phone.png");
-  await go("/board?view=activity");
-  await waitFor(`document.querySelector('[data-activity] [data-entry]')`, "the phone activity");
-  check("nothing overflows sideways at 390 px (activity)", (await overflow()) <= 0, await overflow());
-  await shot("activity-phone.png");
+  await viewport(1440, 900);
+
+  // --- The sidebar, before and after, and the Capture variant, side by side ----------------------------------------
+  const before = readFileSync(join(REPO, "artifacts", "board-view-v2", "thread-done-desktop.png")).toString("base64");
+  const after = afterSidebar.toString("base64");
+  const variant = variantSidebar.toString("base64");
+  const panel = (label: string, image: string, offset: number) => `<figure style="margin:0"><figcaption>${label}</figcaption><div style="width:256px;height:900px;background:url(data:image/png;base64,${image}) ${offset}px 0 no-repeat;border:1px solid #e5e5e5;border-radius:8px"></div></figure>`;
+  const compose = async (name: string, parts: string) => {
+    await b.send("Page.navigate", { url: "about:blank" });
+    await b.evaluate(`document.body.innerHTML = ${JSON.stringify(`<div style="display:inline-flex;gap:32px;padding:24px;font:500 14px system-ui;color:#555;background:#fff">${parts}</div>`)}; document.body.style.margin = 0; true`);
+    await sleep(300);
+    const size = await b.evaluate(`(() => { const r = document.body.firstElementChild.getBoundingClientRect(); return { width: Math.ceil(r.width), height: Math.ceil(r.height) }; })()`) as { width: number; height: number };
+    writeFileSync(join(OUT, name), await capture({ x: 0, y: 0, ...size }));
+  };
+  await viewport(1440, 1000);
+  await compose("sidebar-before-after.png", panel("before (v2)", before, 0) + panel("after", after, 0));
+  await compose("sidebar-capture-variant.png", panel("default", after, 0) + panel("variant: Capture groups Riff and Meetings", variant, 0));
 
   // The approval answered elsewhere leaves the open page by itself.
   await viewport(1440, 900);

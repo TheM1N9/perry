@@ -661,7 +661,7 @@ export const answerFromDashboard = mutation({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    if (!(await ctx.runMutation(internal.tasks.resume, { id: args.id, answer: args.answer, decisionVersion: args.decisionVersion }))) throw new Error("That question changed, its goal is paused, or its previous turn is still settling. Refresh Work and try again.");
+    if (!(await ctx.runMutation(internal.tasks.resume, { id: args.id, answer: args.answer, decisionVersion: args.decisionVersion }))) throw new Error("That question changed, its goal is paused, or its previous turn is still settling. Refresh the Board and try again.");
     return null;
   },
 });

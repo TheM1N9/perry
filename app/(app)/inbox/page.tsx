@@ -1,9 +1,9 @@
 import { Suspense } from "react";
-import { Inbox } from "@/components/dashboard/screens/inbox";
+import { MovedToBoard } from "@/components/dashboard/moved-to-board";
 
-export const metadata = { title: "Needs you" };
+export const metadata = { title: "Board" };
 
+/** Needs you moved to the Board, where it is a tab: what waits on you, with the Board's badge counting it. */
 export default function InboxPage() {
-  // The screen reads its tab and filters from the address, which only the browser has.
-  return <Suspense><Inbox /></Suspense>;
+  return <Suspense><MovedToBoard from="inbox" /></Suspense>;
 }
