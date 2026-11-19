@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  BellIcon, BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, LibraryIcon, ListChecksIcon, LockIcon, HeadphonesIcon, FilePenLineIcon,
+  BellIcon, BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, LayoutDashboardIcon, LibraryIcon, ListChecksIcon, LockIcon, HeadphonesIcon, FilePenLineIcon,
   LifeBuoyIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -142,6 +142,12 @@ export function AppSidebar() {
                   <span>Work</span>
                 </SidebarMenuButton>
                 {active > 0 && <SidebarMenuBadge aria-hidden>{active}</SidebarMenuBadge>}
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/board" />} isActive={pathname.startsWith("/board")} tooltip="Board · What Perry is doing" aria-label="Board: what Perry is doing">
+                  <LayoutDashboardIcon />
+                  <span>Board</span>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/apps/connectors" />} isActive={pathname.startsWith("/apps")} tooltip="Apps & skills">
