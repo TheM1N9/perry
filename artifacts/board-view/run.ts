@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChat, sleep } from "../browser";
 
-// pnpm build, then: bun artifacts/board-view/run.ts [outDir]   (outDir defaults to artifacts/board-view)
+// pnpm build, then: bun artifacts/board-view/run.ts [outDir]   (outDir defaults to artifacts/board-view-v2)
 // Issue #363, the Board: a production build on a free port with a fresh PERRY_HOME in a temp folder, two stand-in
 // computers ("PC" with Codex, "Mac" with Claude Code) that answer through the runner's own endpoints (claim, trace,
 // finish), and headless Chrome at desktop and phone widths. Nothing touches an installed Perry. Deleted at the end,
@@ -17,15 +17,17 @@ import { openChat, sleep } from "../browser";
 //   3. Steps, updates, files and links the turn reports do not reach the open thread while it runs.
 //   4. A finished task does not end in its result, or keeps saying it is working.
 //   5. A failed schedule reads as fine, or hides the step it failed on and its error.
-//   6. Something waiting on the owner (an approval, a task's question) is missing from "Waiting on you", or links
-//      nowhere useful.
+//   6. Something waiting on the owner (an approval, a task's question) is missing, shown twice, not first, or its
+//      action leads nowhere useful.
 //   7. Channels mislabel work: a task under Chats, a project's work missing from its project.
-//   8. The activity rail misses events, or its filters do not narrow it.
-//   9. On a 390 px phone it overflows sideways, or the thread and activity cannot be reached.
-//  10. Anything throws in the browser.
+//   8. Activity repeats a thread, or its computer filter does not narrow it.
+//   9. On a 390 px phone it overflows sideways, clips a tab, wastes the top of the screen, or the thread and activity
+//      cannot be reached.
+//  10. At 1280 or 1440 px it overflows, clips a tab, or the nav, list and pane headers do not line up; a toast covers it.
+//  11. Anything throws in the browser.
 
 const REPO = resolve(import.meta.dirname, "../..");
-const OUT = resolve(process.argv[2] ?? join(REPO, "artifacts", "board-view"));
+const OUT = resolve(process.argv[2] ?? join(REPO, "artifacts", "board-view-v2"));
 mkdirSync(OUT, { recursive: true });
 const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
 const PORT = await freePort();
@@ -183,10 +185,8 @@ try {
   process.env.PERRY_E2E_BROWSER ??= process.platform === "linux" ? "/usr/bin/google-chrome" : process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "C:/Program Files/Google/Chrome/Application/chrome.exe";
   browser = await openChat(BASE, KEY);
   const b = browser;
-  const text = () => b.evaluate("document.body.innerText") as Promise<string>;
-  const has = (needle: string) => `document.body.innerText.includes(${JSON.stringify(needle)})`;
   const waitFor = (expression: string, what: string, seconds = 20) => until(() => b.evaluate(`Boolean(${expression})`), what, seconds);
-  const go = async (path: string) => { await b.send("Page.navigate", { url: `${BASE}${path}` }); await waitFor(`document.querySelector('h1')?.innerText === 'Board'`, `${path} to load`); };
+  const go = async (path: string) => { await b.send("Page.navigate", { url: `${BASE}${path}` }); await waitFor(`document.querySelector('[data-board] header h1')`, `${path} to load`); };
   const scheme = (value: "light" | "dark") => b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value }] });
   const viewport = (width: number, height: number, mobile = false) => b.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile });
   const shot = async (name: string) => {
@@ -195,133 +195,159 @@ try {
     const image = await b.send("Page.captureScreenshot", { format: "png" }) as { data: string };
     writeFileSync(join(OUT, name), Buffer.from(image.data, "base64"));
   };
-  const clickLink = (selector: string, needle: string) => b.evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((node) => node.innerText.includes(${JSON.stringify(needle)})); if (!el) return false; el.click(); return true; })()`);
   const overflow = () => b.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth") as Promise<number>;
+
+  const ROWS = `[...document.querySelectorAll('[data-rows] [data-row]')]`;
+  const rowText = (id: string) => b.evaluate(`document.querySelector('[data-row="${id}"]')?.innerText ?? ''`) as Promise<string>;
+  const pane = () => b.evaluate(`document.querySelector('[data-pane]')?.innerText ?? ''`) as Promise<string>;
+  const tabsClipped = () => b.evaluate(`[...document.querySelectorAll('[data-tabs] a')].filter((a) => { const r = a.getBoundingClientRect(); return a.scrollWidth > a.clientWidth + 1 || r.right > innerWidth + 0.5 || r.left < -0.5; }).map((a) => a.innerText)`) as Promise<string[]>;
+  const toastShown = () => b.evaluate(`Boolean(document.querySelector('[data-sonner-toast]'))`) as Promise<boolean>;
 
   await scheme("light");
   await viewport(1440, 900);
   await go("/board");
-  await waitFor(has("Weekly invoices"), "the board's threads");
+  await waitFor(`${ROWS}.length >= 2`, "the board's rows");
 
-  // 6. Waiting on you: the approval and the question, each linked to where it is answered.
-  const waiting = await b.evaluate(`[...document.querySelectorAll('[data-waiting-on-you] a')].map((a) => ({ text: a.innerText, href: a.getAttribute('href') }))`) as Array<{ text: string; href: string }>;
-  check("waiting on you lists the pending approval, linked to its chat", waiting.some((item) => item.text.includes("pnpm motionclip render week-47 --draft") && item.href === `/chat/${projectChat}`), waiting);
-  check("waiting on you lists the task's question, linked to its answer form", waiting.some((item) => item.text.includes("The 07:10 is €40 cheaper") && item.href === `/work?tab=plans#task-${askTask}`), waiting);
+  // 6. What waits on the owner is a row, once: the approval on its chat's turn, the question on its task.
+  const command = "pnpm motionclip render week-47 --draft";
+  const question = "The 07:10 is €40 cheaper";
+  const rows = await b.evaluate(`${ROWS}.map((li) => ({ id: li.dataset.row, status: li.dataset.status, text: li.innerText }))`) as Array<{ id: string; status: string; text: string }>;
+  check("there is no separate waiting strip: waiting items are rows", !(await b.evaluate(`Boolean(document.querySelector('[data-waiting-on-you]'))`)));
+  check("the pending approval is one row, needing you, with the command on one line", rows.filter((row) => row.text.includes(command)).length === 1 && rows.find((row) => row.text.includes(command))!.status === "waiting"
+    && await b.evaluate(`(() => { const chip = [...document.querySelectorAll('[data-rows] [data-command]')].find((el) => el.textContent.includes(${JSON.stringify(command)})); return Boolean(chip) && chip.getBoundingClientRect().height < 24; })()`) as boolean, rows);
+  check("the task's question is one row, needing you", rows.filter((row) => row.text.includes(question)).length === 1 && rows.find((row) => row.text.includes(question))!.id === `task:${askTask}`, rows);
+  const leading = rows.filter((row) => row.status === "waiting").length;
+  check("needs-you rows lead the open list", leading > 0 && rows.slice(0, leading).every((row) => row.status === "waiting"), rows.map((row) => row.status));
   const pending = await pub<Array<{ id: string }>>("approvals:pending");
   const blocked = (await pub<{ tasks: Array<{ status: string; question?: string }> }>("dashboard:getWork")).tasks.filter((task) => task.status === "blocked" && task.question);
-  check("every item waiting on the owner is in the strip", waiting.length === pending.length + blocked.length, { strip: waiting.length, approvals: pending.length, questions: blocked.length });
+  check("every item waiting on the owner is on the board", rows.filter((row) => row.status === "waiting").length === pending.length + blocked.length, { rows: rows.filter((row) => row.status === "waiting").length, approvals: pending.length, questions: blocked.length });
+  check("each thread is listed once", new Set(rows.map((row) => row.id)).size === rows.length, rows.map((row) => row.id));
+  const count = await b.evaluate(`document.querySelector('[data-open-count]')?.innerText ?? ''`) as string;
+  check("the one count, on tasks, is the number of open rows", Number(count) === rows.length, { count, rows: rows.length });
+  check("finished rows show no holder; working rows show their computer", rows.filter((row) => row.status === "done").every((row) => !/via PC|via Mac/.test(row.text)), rows);
 
-  // 7. Channels: the project's channel holds its chat; Tasks holds tasks only.
-  const channels = await b.evaluate(`[...document.querySelectorAll('nav[aria-label=Channels] a')].map((a) => a.innerText.replace(/\\s+/g, ' ').trim())`) as string[];
-  check("channels are All, Chats, Tasks, Jobs, Heartbeat, Watches and the project", ["All", "Chats", "Tasks", "Jobs", "Heartbeat", "Watches", "Channel Desk"].every((name) => channels.some((label) => label.startsWith(name))), channels);
-  await clickLink("nav[aria-label=Channels] a", "Channel Desk");
-  await waitFor(`location.search.includes('channel=project')`, "the project channel");
-  const projectThreads = await b.evaluate(`[...document.querySelectorAll('[data-threads] [data-thread]')].map((li) => li.innerText)`) as string[];
-  check("the project's channel holds its chat's turn, waiting on the owner", projectThreads.length === 1 && projectThreads[0].includes("Next Channel Desk script") && projectThreads[0].includes("Needs you") && projectThreads[0].includes("PC"), projectThreads);
-  await shot("board-project-desktop.png");
+  // 7. Channels, as the viewer lists them, with the project's work in its own.
+  const channels = await b.evaluate(`[...document.querySelectorAll('[data-channel]')].map((a) => a.dataset.channel)`) as string[];
+  check("channels are #chats, #tasks, #jobs, #heartbeat, #watches and the project", ["chats", "tasks", "jobs", "heartbeat", "watches", "channel-desk"].every((name) => channels.includes(name)), channels);
+  await b.evaluate(`document.querySelector('[data-channel="channel-desk"]').click()`);
+  await waitFor(`location.search.includes('channel=project') && document.querySelector('header h1')?.innerText === '#channel-desk'`, "the project channel");
+  const projectRows = await b.evaluate(`${ROWS}.map((li) => li.innerText)`) as string[];
+  check("the project's channel holds its chat's turn, needing you", projectRows.length === 1 && projectRows[0].includes("Next Channel Desk script") && projectRows[0].includes("needs you"), projectRows);
 
-  // 1-4. A background task queued while the Board is open: it appears, is claimed, works live and finishes.
+  // 1-5, 11. A background task queued while the Board is open: a row at once, its thread in the pane beside the list.
   await go("/board?channel=tasks");
   const queuedAt = Date.now();
   const liveTask = await pub<string>("tasks:queueFromDashboard", { title: "Compare three standing desks", prompt: "Compare three standing desks under €600 on stability, noise and warranty, and recommend one." });
-  await waitFor(`document.querySelector('[data-thread="task:${liveTask}"]')`, "the new task's thread", 10);
+  await waitFor(`document.querySelector('[data-row="task:${liveTask}"]')`, "the new task's row", 10);
   notes.appearedAfterMs = Date.now() - queuedAt;
   check("a queued background task appears on the open board within seconds", Date.now() - queuedAt < 5_000, notes.appearedAfterMs);
-  await b.evaluate(`document.querySelector('[data-thread="task:${liveTask}"] a').click()`);
-  await waitFor(`document.querySelector('[data-thread-view="task:${liveTask}"]')`, "the task's thread to open");
+  await b.evaluate(`document.querySelector('[data-row="task:${liveTask}"] a').click()`);
+  await waitFor(`document.querySelector('[data-pane="task:${liveTask}"]')`, "the task's pane");
+  check("the thread opens in a pane beside the list, which stays", await b.evaluate(`(() => { const list = document.querySelector('[data-rows]').getBoundingClientRect(); const p = document.querySelector('[data-pane]').getBoundingClientRect(); return list.width > 300 && p.left >= list.right - 1; })()`) as boolean);
   const liveChat = await until(async () => (await call<{ conversationId?: string } | null>("tasks:get", { id: liveTask }))?.conversationId, "the live task's chat");
   const liveTurn = await nextTurn((turn) => turn.conversationId === liveChat, "the live task's turn");
   await claim(liveTurn);
-  await waitFor(`document.querySelector('[data-thread-view] [data-holder]')?.innerText.includes('PC') && ${has("Working")}`, "the holder and Working to show", 10);
-  const holder = await b.evaluate(`document.querySelector('[data-thread-view] [data-holder]').innerText`) as string;
-  check("the thread shows who holds it: engine, model and computer", holder.includes("Codex") && holder.includes("gpt-5.5") && holder.includes("PC"), holder);
+  await waitFor(`document.querySelector('[data-pane] [data-holder]')?.innerText.includes('PC')`, "the holder to show", 10);
+  const holder = await b.evaluate(`document.querySelector('[data-pane] [data-holder]').innerText`) as string;
+  check("the pane shows who holds it: engine, model and computer", holder.includes("codex") && holder.includes("gpt-5.5") && holder.includes("PC"), holder);
   const l0 = Date.now();
   await call("work:setPlan", { taskId: liveTask, plan: [{ title: "Shortlist desks under €600", status: "active" }, { title: "Read the long-term reviews", status: "pending" }, { title: "Write up the trade-offs", status: "pending" }] });
   await trace(liveTurn, step("d1", "webSearch", "standing desk under 600 euro long-term review", "running", l0));
-  await waitFor(has("Searching the web"), "the running step to show live", 10);
-  check("a step the turn is on shows in the open thread as it runs", true);
-  await shot("thread-live-desktop.png");
+  await waitFor(`document.querySelector('[data-pane]').innerText.includes('Searching the web') && document.querySelector('[data-row="task:${liveTask}"]').innerText.includes('Searching the web')`, "the running step in the pane and the row", 10);
+  check("the step a turn is on shows live, in the pane and on its row", true);
+  await shot("thread-desktop.png");
   const taskApproval = await runner<{ id: string }>("approvals:request", { token: PC, kind: "command", title: "curl -s https://example.com/desks.json", cwd: "C:/Users/sam", conversationId: liveChat });
-  await waitFor(`document.querySelector('[data-waiting-on-you]')?.innerText.includes('curl -s https://example.com/desks.json')`, "the task's approval in the strip", 10);
-  const cards = await b.evaluate(`[...document.querySelectorAll('[data-waiting-on-you] a')].map((a) => a.innerText)`) as string[];
-  check("a task waiting on an approval shows as that approval, not as a question to answer", cards.filter((card) => card.includes("Compare three standing desks") || card.includes("desks.json")).every((card) => card.includes("Review") && !card.includes("Answer")), cards);
+  await waitFor(`document.querySelector('[data-row="task:${liveTask}"]')?.dataset.status === 'waiting' && document.querySelector('[data-pane] [data-action]')?.innerText === 'review'`, "the task's approval on its row and pane", 10);
+  check("a task waiting on an approval offers review, not answer", (await pane()).includes("desks.json") && !(await pane()).includes("answer"), await pane());
   await pub("approvals:decide", { id: taskApproval.id, approved: true });
-  await waitFor(`!document.querySelector('[data-waiting-on-you]')?.innerText.includes('desks.json')`, "the task's approval to leave the strip", 10);
+  await waitFor(`document.querySelector('[data-row="task:${liveTask}"]')?.dataset.status === 'working'`, "the task back to working", 10);
   await trace(liveTurn,
     step("d1", "webSearch", "standing desk under 600 euro long-term review", "ok", l0, { durationMs: 2_100 }),
     step("d2", "commentary", "commentary", "ok", l0 + 2_500, { output: "Shortlisted the Flexispot E7, the Fezibo Dual and the IKEA Trotten. Notes so far: https://example.com/desk-notes" }),
     step("d3", "fileChange", "C:/Users/sam/Documents/desks.md", "ok", l0 + 3_000, { input: "+ | Desk | Stability | Noise | Warranty |" }));
-  await call("work:setPlan", { taskId: liveTask, plan: [{ title: "Shortlist desks under €600", status: "done" }, { title: "Read the long-term reviews", status: "done" }, { title: "Write up the trade-offs", status: "active" }] });
-  await waitFor(`${has("Shortlisted the Flexispot E7")} && document.querySelector('[data-thread-view] a[href="https://example.com/desk-notes"]')`, "the update and its link to show live", 10);
-  check("an update and its link reach the open thread without a reload", true);
-  const files = await b.evaluate(`document.querySelector('[data-thread-view]').innerText`) as string;
-  check("the file the turn changed is in the thread", /desks\.md|changed 1 file|Edited desks/i.test(files), files.slice(0, 800));
+  await waitFor(`document.querySelector('[data-pane]').innerText.includes('Shortlisted the Flexispot E7') && document.querySelector('[data-pane] a[href="https://example.com/desk-notes"]')`, "the update and its link", 10);
+  check("an update and its link reach the open pane without a reload", true);
+  check("the file the turn changed is in the pane", /desks\.md|changed 1 file|Edited desks/i.test(await pane()), (await pane()).slice(0, 800));
   await call("work:updateTask", { taskId: liveTask, status: "done", result: "Get the **Flexispot E7**: steadiest at full height, quietest motor, and a 5-year warranty. The table is in desks.md." });
   await finish(liveTurn, { response: "Done: the Flexispot E7." });
-  await waitFor(`document.querySelector('[data-thread-view] [data-feed-result]') && ${has("Flexispot E7")} && !document.querySelector('[data-thread-view] [data-pill]')`, "the task to end in its result", 15);
-  check("a finished task ends in its result and no longer says it is working", true);
+  await waitFor(`document.querySelector('[data-pane] [data-state]')?.dataset.state === 'done' && document.querySelector('[data-pane]').innerText.includes('result')`, "the task to end in its result", 15);
+  check("a finished task's pane leads with its result, and no longer says working", (await pane()).indexOf("result") < (await pane()).indexOf("Compare three standing desks under"), (await pane()).slice(0, 600));
+  await sleep(1500);
+  check("no toast covers the board when a reply lands", !(await toastShown()));
   await shot("thread-done-desktop.png");
 
-  // 5. The failed schedule: Failed, the step it failed on, and its error.
-  await go(`/board?channel=jobs&thread=job:${job.id}`);
-  await waitFor(`document.querySelector('[data-thread-view="job:${job.id}"] [data-feed-error]')`, "the failed schedule's thread");
-  const failed = await b.evaluate(`document.querySelector('[data-thread-view]').innerText`) as string;
-  const lastStep = await b.evaluate(`document.querySelector('[data-thread-view] [data-feed-error] [data-last-step]')?.innerText ?? ''`) as string;
-  check("a failed schedule shows Failed, its last step and its error, without opening anything", failed.includes("Failed") && lastStep.includes("bank-cli export") && failed.includes(jobError), { lastStep, text: failed.slice(0, 1200) });
-  // Its steps open to the step that failed, as in the chat.
-  await waitFor(`document.querySelector('[data-thread-view] [data-tool-group] button')`, "the schedule's steps");
-  await b.evaluate(`document.querySelector('[data-thread-view] [data-tool-group] button').click()`);
-  await waitFor(`document.querySelector('[data-thread-view] [data-tool-group] [data-status=error]')`, "the failed step in its steps", 10);
-  check("the schedule's steps open to the failed step", true);
-  await shot("job-failed-desktop.png");
+  // 5. The failed schedule: failed, its reason and last step at the top of its pane.
+  await go(`/board?channel=jobs&tab=all&thread=job:${job.id}`);
+  await waitFor(`document.querySelector('[data-pane="job:${job.id}"] [data-last-step]')`, "the failed schedule's pane");
+  const failed = await pane();
+  check("a failed schedule shows failed, its last step and its error", failed.includes("failed") && failed.includes("bank-cli export") && failed.includes(jobError), failed.slice(0, 800));
+  await shot("failed-desktop.png");
 
-  // 8. The rail: every kind of event, and its filters narrow it.
-  await go("/board");
-  await waitFor(`document.querySelectorAll('aside [data-event]').length > 5`, "the activity rail");
-  const verbs = await b.evaluate(`[...new Set([...document.querySelectorAll('aside [data-event]')].map((li) => li.dataset.event))]`) as string[];
-  check("the rail shows claims, updates, questions, approvals, results and failures", ["started", "asked", "approval", "finished", "failed", "fired", "queued"].every((verb) => verbs.includes(verb)), verbs);
-  await b.evaluate(`document.querySelector('aside [aria-label=Status]').click()`);
-  await waitFor(`[...document.querySelectorAll('[role=option]')].some((el) => el.innerText.trim() === 'Failed')`, "the status options");
-  await b.evaluate(`[...document.querySelectorAll('[role=option]')].find((el) => el.innerText.trim() === 'Failed').click()`);
-  await waitFor(`(() => { const rows = [...document.querySelectorAll('aside [data-event]')]; return rows.length > 0 && rows.every((li) => li.innerText.includes('Weekly invoices')) && rows.some((li) => li.dataset.event === 'failed'); })()`, "the rail to narrow to failed work");
-  check("the rail's status filter narrows it", true);
-  const machines = await b.evaluate(`Boolean(document.querySelector('aside [aria-label=Computer]'))`) as boolean;
-  check("the rail can be narrowed by computer when there are several", machines);
-  await b.evaluate(`document.querySelector('aside [aria-label=Status]').click()`);
-  await waitFor(`[...document.querySelectorAll('[role=option]')].some((el) => el.innerText.trim() === 'Every status')`, "the status options");
-  await b.evaluate(`[...document.querySelectorAll('[role=option]')].find((el) => el.innerText.trim() === 'Every status').click()`);
-  await sleep(300);
-  await b.evaluate(`window.scrollTo(0, 0)`);
-  check("nothing overflows sideways at 1440 px", (await overflow()) <= 0, await overflow());
+  // 6, 8. Activity: one entry per thread, its latest event, and the computer filter narrows it.
+  await go("/board?view=activity");
+  await waitFor(`document.querySelectorAll('[data-activity] [data-entry]').length > 4`, "the activity view");
+  const entries = await b.evaluate(`[...document.querySelectorAll('[data-activity] [data-entry]')].map((li) => li.dataset.entry)`) as string[];
+  check("activity lists each thread once, by its latest event", new Set(entries).size === entries.length, entries);
+  check("activity's newest entry is at the bottom", await b.evaluate(`(() => { const t = [...document.querySelectorAll('[data-activity] time')].map((el) => Date.parse(el.dateTime)); return t.every((v, i) => i === 0 || v >= t[i - 1]); })()`) as boolean);
+  await shot("activity-desktop.png");
+  const filterButton = await b.evaluate(`Boolean(document.querySelector('header [aria-label="Filter by computer"]'))`) as boolean;
+  await go("/board?view=activity&computer=Mac");
+  await sleep(800);
+  const macEntries = await b.evaluate(`document.querySelectorAll('[data-activity] [data-entry]').length`) as number;
+  check("the computer filter is there with two computers, and narrows the view", filterButton && macEntries < entries.length, { filterButton, all: entries.length, mac: macEntries });
+
+  // 10. Edges, widths and clipping.
+  for (const [width, height] of [[1440, 900], [1280, 800]] as const) {
+    await viewport(width, height);
+    await go(`/board?thread=task:${liveTask}`);
+    await waitFor(`document.querySelector('[data-pane]')`, "the pane");
+    check(`nothing overflows sideways at ${width} px`, (await overflow()) <= 0, await overflow());
+    check(`no tab label is clipped at ${width} px`, (await tabsClipped()).length === 0, await tabsClipped());
+    check(`nav, list and pane share one header height at ${width} px`, await b.evaluate(`(() => { const hs = [...document.querySelectorAll('[data-board] > * > div:first-child, [data-board] header, [data-pane] > div:first-child')].map((el) => Math.round(el.getBoundingClientRect().height)).filter((h) => h > 0); return hs.length >= 3 && hs.every((h) => h === hs[0]); })()`) as boolean);
+    if (width === 1280) await shot("board-1280.png");
+  }
+  await viewport(1440, 900);
+  await go("/board?tab=all");
+  await waitFor(`${ROWS}.length > 3`, "the board");
   await shot("board-desktop.png");
+  await go("/board");
+  await waitFor(`${ROWS}.length >= 1`, "the open list");
+  await shot("board-open-desktop.png");
   await scheme("dark");
   await waitFor(`document.documentElement.classList.contains('dark')`, "the dark theme");
-  await shot("board-dark-desktop.png");
+  await go(`/board?thread=task:${askTask}`);
+  await waitFor(`document.querySelector('[data-pane] [data-action]')`, "the question's pane");
+  check("a task's question offers answer, linked to its answer form", await b.evaluate(`document.querySelector('[data-pane] [data-action]').innerText === 'answer' && document.querySelector('[data-pane] [data-action]').getAttribute('href') === ${JSON.stringify(`/work?tab=plans#task-${askTask}`)}`) as boolean);
+  await shot("question-dark-desktop.png");
   await scheme("light");
   await waitFor(`!document.documentElement.classList.contains('dark')`, "the light theme");
 
-  // 9. A phone: the board, a thread and the activity, nothing sideways.
+  // 14-17. A phone: a compact header, wrapped tabs, dense rows, and a thread as a full screen of its own.
   await viewport(390, 844, true);
-  await go("/board");
-  await waitFor(has("Waiting on you"), "the phone board");
-  check("nothing overflows sideways at 390 px (board)", (await overflow()) <= 0, await overflow());
+  await go("/board?tab=all");
+  await waitFor(`${ROWS}.length > 3`, "the phone board");
+  check("nothing overflows sideways at 390 px (list)", (await overflow()) <= 0, await overflow());
+  check("no tab label is clipped at 390 px", (await tabsClipped()).length === 0, await tabsClipped());
+  const phone = await b.evaluate(`(() => { const first = document.querySelector('[data-rows] [data-row]').getBoundingClientRect(); const hs = ${ROWS}.map((li) => li.getBoundingClientRect().height); return { firstTop: Math.round(first.top), tallest: Math.round(Math.max(...hs)) }; })()`) as { firstTop: number; tallest: number };
+  check("on a phone the first row starts within 130 px, and rows stay compact", phone.firstTop < 130 && phone.tallest <= 64, phone);
   await shot("board-phone.png");
-  await go(`/board?thread=task:${liveTask}`);
-  await waitFor(`document.querySelector('[data-thread-view] [data-feed-result]')`, "the thread on a phone");
+  await go(`/board?tab=all&thread=task:${liveTask}`);
+  await waitFor(`document.querySelector('[role=dialog] [data-pane]')`, "the phone thread");
+  check("on a phone the thread is a full screen of its own, without the board's title", await b.evaluate(`(() => { const d = document.querySelector('[role=dialog]').getBoundingClientRect(); return d.top === 0 && Math.round(d.width) === innerWidth && Math.round(d.height) === innerHeight; })()`) as boolean);
   check("nothing overflows sideways at 390 px (thread)", (await overflow()) <= 0, await overflow());
-  check("on a phone an open thread has the screen to itself", await b.evaluate(`!document.querySelector('[data-waiting-on-you]')?.offsetParent && document.querySelector('[data-thread-view]').getBoundingClientRect().top < 200`) as boolean);
   await shot("thread-phone.png");
   await go("/board?view=activity");
-  await waitFor(`[...document.querySelectorAll('[data-activity]')].some((el) => el.offsetParent && el.querySelector('[data-event]'))`, "the activity on a phone");
+  await waitFor(`document.querySelector('[data-activity] [data-entry]')`, "the phone activity");
   check("nothing overflows sideways at 390 px (activity)", (await overflow()) <= 0, await overflow());
   await shot("activity-phone.png");
 
-  // The approval answered elsewhere leaves the open page's strip by itself.
+  // The approval answered elsewhere leaves the open page by itself.
+  await viewport(1440, 900);
   await go("/board");
-  await waitFor(`document.querySelector('[data-waiting-on-you]')?.innerText.includes('pnpm motionclip render')`, "the approval in the strip");
+  await waitFor(`${ROWS}.some((li) => li.innerText.includes(${JSON.stringify(command)}))`, "the approval's row");
   await pub("approvals:decide", { id: approval.id, approved: true });
-  await waitFor(`!document.querySelector('[data-waiting-on-you]')?.innerText.includes('pnpm motionclip render')`, "the answered approval to leave the strip", 10);
-  check("an approval answered elsewhere leaves Waiting on you", true);
+  await waitFor(`!${ROWS}.some((li) => li.dataset.status === 'waiting' && li.innerText.includes(${JSON.stringify(command)}))`, "the answered approval to leave", 10);
+  check("an approval answered elsewhere stops needing you on the open page", true);
 
   notes.browserErrors = browser.errors;
   check("no errors in the browser", browser.errors.length === 0, browser.errors);

@@ -52,8 +52,19 @@ export type BoardVerb = "queued" | "started" | "posted" | "asked" | "approval" |
 /** `status`: how its thread stood with this event, where the event says so (a failure is failed for good). */
 export type BoardEvent = { id: string; thread?: string; at: number; verb: BoardVerb; status?: BoardStatus; text?: string; machine?: string; href?: string };
 
+/**
+ * Something waiting on the owner: an approval a computer asked for, or a task's question. Each names the thread it
+ * holds up, which the board then leaves out of its list, so the item is shown once.
+ */
+export type BoardWaiting = {
+  id: string; kind: "approval" | "question"; text: string; where?: string; thread?: string; href: string; at: number;
+  /** The text is a command, shown as code. */
+  command?: boolean;
+};
+
 export type BoardView = {
   threads: BoardThread[];
+  waiting: BoardWaiting[];
   events: BoardEvent[];
   projects: Array<{ id: Id<"projects">; name: string }>;
   machines: Array<{ name: string; online: boolean }>;
@@ -381,8 +392,17 @@ export const get = query({
       }
     }
 
+    const waiting: BoardWaiting[] = [];
+    for (const task of active) {
+      if (task.status === "blocked" && task.question) waiting.push({ id: `question:${task._id}`, kind: "question", text: task.question, where: task.title, thread: `task:${task._id}`, href: `/work?tab=plans#task-${task._id}`, at: task.updatedAt });
+    }
     for (const approval of await load.pending()) {
       const thread = await load.threadIdOf(approval.conversationId);
+      const chat = await load.chat(approval.conversationId);
+      waiting.push({
+        id: `approval:${approval._id}`, kind: "approval", text: approval.title, ...(chat?.title ? { where: chat.title } : {}), ...(thread ? { thread } : {}),
+        href: approval.conversationId ? `/chat/${approval.conversationId}` : "/inbox", at: approval.createdAt, ...(approval.kind === "command" ? { command: true } : {}),
+      });
       events.push({ id: `approval:${approval._id}`, ...(thread ? { thread } : {}), at: approval.createdAt, verb: "approval", status: "waiting", text: approval.title, href: approval.conversationId ? `/chat/${approval.conversationId}` : "/inbox" });
     }
 
@@ -395,6 +415,7 @@ export const get = query({
     return {
       threads: threads.sort((a, b) => rank[a.status] - rank[b.status] || b.updatedAt - a.updatedAt),
       events: placed.sort((a, b) => b.at - a.at).slice(0, EVENTS),
+      waiting: waiting.map((item) => item.thread && !listed.has(item.thread) ? (({ thread: _thread, ...rest }) => rest)(item) : item).sort((a, b) => b.at - a.at),
       projects: (await ctx.db.query("projects").collect()).map((project) => ({ id: project._id, name: project.name })).sort((a, b) => a.name.localeCompare(b.name)),
       machines: [...runners.values()].filter((runner) => !runner.revoked).map((runner) => ({ name: runner.name, online: now - (runner.lastSeenAt ?? 0) < ONLINE_MS })),
     };

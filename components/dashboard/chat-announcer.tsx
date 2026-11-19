@@ -59,7 +59,8 @@ export function ChatAnnouncer({ chatId, status }: { chatId: string | null; statu
 }
 
 /** Other chats finishing, failing or needing you, said wherever you are, sidebar open or not. */
-export function ChatsAnnouncer({ chats, openId }: { chats: ChatSummary[] | undefined; openId: string | null }) {
+/** `quiet`: a page that already shows chats finishing (the Board) gets no toast over it; the spoken line stays. */
+export function ChatsAnnouncer({ chats, openId, quiet = false }: { chats: ChatSummary[] | undefined; openId: string | null; quiet?: boolean }) {
   const { region, announce } = useLiveRegion();
   const router = useRouter();
   // Replaced whole each time, so a deleted chat leaves nothing behind.
@@ -72,7 +73,7 @@ export function ChatsAnnouncer({ chats, openId }: { chats: ChatSummary[] | undef
     const lines = chats.flatMap((chat) => {
       const from = before.get(chat.id);
       if (from === undefined || from === chat.status) return [];
-      if (chat.status === "idle" && chat.replyCompleted && (from === "running" || from === "needs-approval")) {
+      if (!quiet && chat.status === "idle" && chat.replyCompleted && (from === "running" || from === "needs-approval")) {
         toast.success("Reply ready", {
           id: `chat-done:${chat.id}`,
           description: chat.title || "Your chat",
@@ -86,6 +87,6 @@ export function ChatsAnnouncer({ chats, openId }: { chats: ChatSummary[] | undef
       return what ? [`${chat.title || "A chat"} ${what}`] : [];
     });
     if (lines.length) announce(lines.join(". "));
-  }, [chats, openId, announce, router]);
+  }, [chats, openId, quiet, announce, router]);
   return <div ref={region} aria-live="polite" className="sr-only" />;
 }

@@ -134,7 +134,7 @@ function Unlocked({ children }: { children: ReactNode }) {
           <PageErrorBoundary onLock={lock}>{children}</PageErrorBoundary>
         </SidebarInset>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-        <ChatsAnnouncer chats={chats} openId={pathname.match(/^\/chat\/([^/]+)/)?.[1] ?? null} />
+        <ChatsAnnouncer chats={chats} openId={pathname.match(/^\/chat\/([^/]+)/)?.[1] ?? null} quiet={pathname.startsWith("/board")} />
       </SidebarProvider>
     </PaletteContext.Provider>
   );
