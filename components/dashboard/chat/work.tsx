@@ -130,7 +130,8 @@ function ToolGroup({ steps, live, held, unresponsive }: { steps: WorkStep[]; liv
   </div>;
 }
 
-function RunSteps({ runIds, live = false, held = false, unresponsive = false, omitText }: { runIds: Id<"runs">[]; live?: boolean; held?: boolean; unresponsive?: boolean; omitText?: string }) {
+/** A run's timeline as the chat shows it: steps grouped, updates as text, the step going on live. Also a Board thread's turns (screens/board.tsx). */
+export function RunSteps({ runIds, live = false, held = false, unresponsive = false, omitText }: { runIds: Id<"runs">[]; live?: boolean; held?: boolean; unresponsive?: boolean; omitText?: string }) {
   const { dashboardKey } = useSession();
   const container = useRef<HTMLDivElement>(null);
   const visible = useInView(container, { margin: "600px 0px" });

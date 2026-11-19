@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, BrainIcon, LibraryIcon, CableIcon, CheckCircle2Icon, CpuIcon, FilePlusIcon, FileTextIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, HeadphonesIcon,
+  ActivityIcon, BookUserIcon, BrainIcon, LibraryIcon, CableIcon, CheckCircle2Icon, CpuIcon, FilePlusIcon, FileTextIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, LayoutDashboardIcon, ListChecksIcon, LockIcon, HeadphonesIcon,
   MessageSquareIcon, MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, ShieldCheckIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -30,6 +30,7 @@ const PAGES = [
   { href: "/brain", label: "Brain", icon: BrainIcon },
   { href: "/library", label: "Library", icon: LibraryIcon },
   { href: "/work", label: "Work", icon: ListChecksIcon },
+  { href: "/board", label: "Board", icon: LayoutDashboardIcon },
   { href: "/apps/connectors", label: "Connectors", icon: CableIcon },
   { href: "/apps/skills", label: "Skills", icon: PuzzleIcon },
   { href: "/settings/general", label: "Settings", icon: SettingsIcon },

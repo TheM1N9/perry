@@ -7,6 +7,7 @@ import type * as agentStore from "../agentStore.js";
 import type * as approvals from "../approvals.js";
 import type * as archive from "../archive.js";
 import type * as assistant from "../assistant.js";
+import type * as board from "../board.js";
 import type * as brain from "../brain.js";
 import type * as brainMap from "../brainMap.js";
 import type * as channels from "../channels.js";
@@ -114,6 +115,7 @@ declare const fullApi: ApiFromModules<{
   approvals: typeof approvals;
   archive: typeof archive;
   assistant: typeof assistant;
+  board: typeof board;
   brain: typeof brain;
   brainMap: typeof brainMap;
   channels: typeof channels;

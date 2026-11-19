@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "checkedAt": "2026-11-19T19:33:47.665Z",
+  "platform": "win32",
+  "checks": {
+    "waiting on you lists the pending approval, linked to its chat": true,
+    "waiting on you lists the task's question, linked to its answer form": true,
+    "every item waiting on the owner is in the strip": true,
+    "channels are All, Chats, Tasks, Jobs, Heartbeat, Watches and the project": true,
+    "the project's channel holds its chat's turn, waiting on the owner": true,
+    "a queued background task appears on the open board within seconds": true,
+    "the thread shows who holds it: engine, model and computer": true,
+    "a step the turn is on shows in the open thread as it runs": true,
+    "a task waiting on an approval shows as that approval, not as a question to answer": true,
+    "an update and its link reach the open thread without a reload": true,
+    "the file the turn changed is in the thread": true,
+    "a finished task ends in its result and no longer says it is working": true,
+    "a failed schedule shows Failed, its last step and its error, without opening anything": true,
+    "the schedule's steps open to the failed step": true,
+    "the rail shows claims, updates, questions, approvals, results and failures": true,
+    "the rail's status filter narrows it": true,
+    "the rail can be narrowed by computer when there are several": true,
+    "nothing overflows sideways at 1440 px": true,
+    "nothing overflows sideways at 390 px (board)": true,
+    "nothing overflows sideways at 390 px (thread)": true,
+    "on a phone an open thread has the screen to itself": true,
+    "nothing overflows sideways at 390 px (activity)": true,
+    "an approval answered elsewhere leaves Waiting on you": true,
+    "no errors in the browser": true
+  },
+  "notes": {
+    "appearedAfterMs": 170,
+    "browserErrors": []
+  }
+}
