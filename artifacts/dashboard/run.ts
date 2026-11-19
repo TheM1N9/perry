@@ -19,20 +19,20 @@ import { caller, seed } from "./seed";
 //      unknown one the 404, and each old address must redirect to its new home.
 //   3. The sidebar lies: the pinned chat must be under Pinned, the chat waiting
 //      on an approval must say so, the schedule's unread chat must show as new,
-//      and Needs you must count everything waiting.
+//      and the Board's badge must count everything waiting (it took over Needs you).
 //   4. ⌘K doesn't find things: it must open from the keyboard, find a chat by
 //      its title, and open it.
 //   5. Replies don't render: a reply's headings, lists and table must be real
 //      elements, not Markdown text.
 //   6. Approvals can't be answered, or answer the wrong thing: the card in the
 //      chat must show the exact command and folder, Decline must decline it,
-//      and Approve in Needs you must approve another, as the backend records.
+//      and Allow on the Board must approve another, as the backend records.
 //   7. Pinning, reading and dismissing don't stick: a pin from the chat menu,
 //      opening an unread chat, and dismissing a watch must each change what the
 //      backend returns, not only the page.
 //   8. Answering a plan's question loses it: Answer must open a new chat with
 //      the question's subject already in the composer.
-//   9. Work's tabs don't hold: a tab must be in the address, and the plan that
+//   9. The Board's channels (Work's tabs) don't hold: a channel must be in the address, and the plan that
 //      needs you must lead its list.
 //  10. Memory can't be corrected: a memory added in the form must appear, and
 //      Forget must remove it after asking.
@@ -122,8 +122,8 @@ const OVERFLOW = `document.documentElement.scrollWidth - document.documentElemen
 
 const ROUTES: Array<{ path: string; heading: string; name: string }> = [
   { path: "/chat", heading: "New chat", name: "chat-new" },
-  { path: "/inbox", heading: "Needs you", name: "inbox" },
-  { path: "/work", heading: "Work", name: "work" },
+  { path: "/board", heading: "all work", name: "board" },
+  { path: "/board?channel=tasks", heading: "#tasks", name: "board-tasks" },
   { path: "/memory", heading: "Memory", name: "memory" },
   { path: "/apps/connectors", heading: "Apps & skills", name: "connectors" },
   { path: "/settings/computers", heading: "Settings", name: "computer" },
@@ -162,8 +162,8 @@ try {
   await p.waitFor(byRole("button", "Search"), "the dashboard to open");
   check("gate lets the owner in", true);
   await p.evaluate(`localStorage.removeItem("perry.dashboard.key")`);
-  await p.go(`${BASE}/inbox#key=${KEY}`);
-  await heading("Needs you");
+  await p.go(`${BASE}/board#key=${KEY}`);
+  await heading("all work");
   check("#key= link unlocks and leaves the address", await p.evaluate(`!location.hash && localStorage.getItem("perry.dashboard.key") === ${JSON.stringify(KEY)}`));
 
   // 2. Every page, the 404, and the old addresses.
@@ -175,7 +175,7 @@ try {
   await p.go(`${BASE}/nowhere`);
   try { await heading("Nothing here"); } catch { missing.push("/nowhere (404)"); }
   check("every route renders its heading", missing.length === 0, missing);
-  const redirects: Record<string, string> = { "/tasks": "/work", "/about": "/memory?tab=about", "/profile": "/settings/general", "/keys": "/settings/access", "/setup": "/settings/telegram", "/connectors": "/apps/connectors", "/skills": "/apps/skills", "/computer": "/settings/computers", "/activity": "/settings/activity" };
+  const redirects: Record<string, string> = { "/tasks": "/board?channel=tasks", "/about": "/memory?tab=about", "/profile": "/settings/general", "/keys": "/settings/access", "/setup": "/settings/telegram", "/connectors": "/apps/connectors", "/skills": "/apps/skills", "/computer": "/settings/computers", "/activity": "/settings/activity" };
   const wrong: Record<string, string | null> = {};
   for (const [from, to] of Object.entries(redirects)) {
     const response = await fetch(`${BASE}${from}`, { redirect: "manual" });
@@ -193,14 +193,14 @@ try {
       pinned: document.querySelector('[aria-label="Pinned"]')?.innerText ?? "",
       waiting: Boolean(row("Clean up my downloads")?.querySelector('[aria-label="Waiting for your approval"]')),
       unread: Boolean(row("⏰ Morning briefing")?.querySelector('[aria-label="Reply ready"]')),
-      count: [...document.querySelectorAll("[data-sidebar=menu-item]")].find((li) => li.innerText.includes("Needs you"))?.querySelector("[data-sidebar=menu-badge]")?.innerText ?? "",
+      count: document.querySelector("[data-needs-you-count]")?.innerText ?? "",
     };
   })()`);
   check("the pinned chat is under Pinned", sidebar.pinned.includes("Plan the Lisbon trip"), sidebar);
   check("a chat waiting on an approval says so", sidebar.waiting, sidebar);
   check("a schedule's unread chat shows as new", sidebar.unread, sidebar);
   // Two approvals, a question, a failed plan, a schedule's news and a watch.
-  check("Needs you counts everything waiting", sidebar.count === "6", sidebar);
+  check("Board's badge counts everything waiting", sidebar.count === "6", sidebar);
   for (const scheme of ["light", "dark"] as const) {
     await p.scheme(scheme);
     await sleep(300);
@@ -261,45 +261,49 @@ try {
   const inboxAfterRead = await pub<Array<{ kind: string }>>("dashboard:getInbox");
   check("opening an unread chat marks it read", jobSummary?.unseen === false && !inboxAfterRead.some((item) => item.kind === "job-result"), { jobSummary, inboxAfterRead });
 
-  // 6b, 7c, 8. Needs you.
-  await p.go(`${BASE}/inbox`);
-  await heading("Needs you");
-  await p.waitFor(byRole("article", /wants to write a file/), "the second approval");
+  // 6b, 7c, 8. What waits on you, on the Board (Needs you moved there): its tab, an approval allowed in its pane.
+  await p.go(`${BASE}/board?tab=needs+you`);
+  await heading("all work");
+  await p.waitFor(`document.querySelectorAll("[data-rows] [data-row]").length >= 4`, "the needs-you rows");
   for (const scheme of ["light", "dark"] as const) {
     await p.scheme(scheme);
     await sleep(300);
-    await p.shot(join(OUT, "screens", `inbox-${scheme}-desktop.png`));
+    await p.shot(join(OUT, "screens", `needs-you-${scheme}-desktop.png`));
   }
   await p.scheme("light");
-  await p.click(`[...${byRole("article", /wants to write a file/)}.querySelectorAll("button")].find((b) => b.innerText.trim() === "Approve")`);
-  await p.waitFor(`!(${byRole("article", /wants to write a file/)})`, "the approved card to go");
+  await p.go(`${BASE}/board?thread=approval:${second.id}`);
+  await p.waitFor(byRole("article", /wants to write a file/), "the second approval, in its pane");
+  await p.click(`[...${byRole("article", /wants to write a file/)}.querySelectorAll("button")].find((b) => /^Allow this write once/.test(b.innerText.trim()))`);
+  await p.waitFor(`!(${byRole("article", /wants to write a file/)})`, "the allowed card to go");
   await sleep(300);
   const approved = (await pub<Array<{ id: string; status: string }>>("approvals:recent")).find((item) => item.id === second.id);
-  check("Approve in Needs you approves it", approved?.status === "approved", approved);
-  await p.click(`[...document.querySelectorAll("li")].find((li) => li.innerText.includes("Leica Q3"))?.querySelector("button:last-of-type")`);
-  await p.waitFor(`![...document.querySelectorAll("li")].some((li) => li.innerText.includes("Leica Q3"))`, "the watch to be dismissed");
-  await sleep(300);
+  check("Allow on the Board approves it", approved?.status === "approved", approved);
+  await p.go(`${BASE}/board?channel=watches&thread=watch:${seeded.watch}`);
+  await p.waitFor(`document.querySelector("[data-pane] [data-more]")`, "the watch's pane");
+  await p.click(`document.querySelector("[data-pane] [data-more]")`);
+  await p.waitFor(`[...document.querySelectorAll("[role=menuitem]")].some((el) => el.innerText.trim() === "dismiss update")`, "its menu");
+  await p.click(`[...document.querySelectorAll("[role=menuitem]")].find((el) => el.innerText.trim() === "dismiss update")`);
+  await sleep(800);
   check("dismissing a watch sticks", !(await pub<Array<{ kind: string }>>("dashboard:getInbox")).some((item) => item.kind === "watch"));
-  await p.click(byRole("link", "Answer"));
-  await p.waitFor(`document.querySelector("#composer")?.value.startsWith("About “Book the Lisbon flights”")`, "the composer to hold the answer's start");
-  check("Answer opens a chat with the question's subject", await p.evaluate(`location.pathname === "/chat" && !location.search`));
+  await p.go(`${BASE}/board?channel=tasks&thread=task:${seeded.blockedTask}`);
+  await p.waitFor(`document.querySelector("[data-pane] [data-answer] input")`, "the answer box");
+  check("a plan's question is answered in its pane", true);
 
-  // 9. Work.
-  await p.go(`${BASE}/work`);
-  await heading("Work");
-  await p.click(byRole("tab", /^Plans/));
-  await p.waitFor(`location.search === "?tab=plans"`, "the tab to be in the address");
-  const firstPlan = await p.evaluate<string>(`document.querySelector('[aria-label="Plans"] li h3')?.innerText ?? ""`);
-  check("Work's tab is in the address, and what needs you leads", firstPlan === "Book the Lisbon flights", firstPlan);
+  // 9. The Board's channels are Work's tabs: in the address, with what needs you leading.
+  await p.go(`${BASE}/board?channel=tasks`);
+  await heading("#tasks");
+  await p.waitFor(`document.querySelector("[data-rows] [data-row]")`, "the tasks channel");
+  const firstPlan = await p.evaluate<string>(`document.querySelector("[data-rows] [data-row] a > span:nth-child(2)")?.innerText ?? ""`);
+  check("a channel is in the address, and what needs you leads", firstPlan === "Book the Lisbon flights", firstPlan);
   for (const scheme of ["light", "dark"] as const) {
     await p.scheme(scheme);
     await sleep(300);
-    await p.shot(join(OUT, "screens", `work-plans-${scheme}-desktop.png`));
+    await p.shot(join(OUT, "screens", `board-tasks-${scheme}-desktop.png`));
   }
   await p.scheme("light");
-  await p.click(byRole("tab", /^Watches/));
-  await p.waitFor(`document.body.innerText.includes("Leica Q3 back in stock")`, "the watches tab");
-  check("each Work tab shows its own", true);
+  await p.go(`${BASE}/board?channel=watches`);
+  await p.waitFor(`document.body.innerText.includes("Leica Q3 back in stock")`, "the watches channel");
+  check("each channel shows its own", true);
 
   // 10. Memory is Brain (issue #210): a memory is told in a chat or written as a line of its page; there is no form to teach one.
   await p.go(`${BASE}/memory`);
@@ -377,6 +381,7 @@ try {
   await p.waitFor(`!document.documentElement.classList.contains("dark")`, "the system theme to return");
 
   // 13, 14. Every page at four widths, in both themes: overflow, contrast, screenshots.
+
   const overflow: Record<string, number> = {};
   const contrast: Record<string, unknown> = {};
   let texts = 0;
@@ -406,8 +411,8 @@ try {
 
   await p.viewport(375, 812, true);
   await p.scheme("light");
-  await p.go(`${BASE}/inbox`);
-  await heading("Needs you");
+  await p.go(`${BASE}/board`);
+  await heading("all work");
   await p.click(byRole("button", "Toggle Sidebar"));
   await p.waitFor(`[...document.querySelectorAll("[role=dialog]")].some((d) => d.innerText.includes("Plan the Lisbon trip"))`, "the sidebar sheet");
   await sleep(400);

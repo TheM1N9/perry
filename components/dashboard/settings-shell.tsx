@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
-import { ActivityIcon, BellIcon, ChartNoAxesCombinedIcon, CpuIcon, GlobeIcon, KeyRoundIcon, LockKeyholeIcon, MessageCircleIcon, MonitorIcon, PawPrintIcon, SendIcon, Settings2Icon, ShieldCheckIcon, UsersIcon } from "lucide-react";
+import { Fragment, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { ActivityIcon, BellIcon, BlocksIcon, BrainIcon, ChartNoAxesCombinedIcon, CpuIcon, GlobeIcon, KeyRoundIcon, LockKeyholeIcon, MessageCircleIcon, MonitorIcon, PawPrintIcon, SendIcon, Settings2Icon, ShieldCheckIcon, UsersIcon } from "lucide-react";
 import { SETTINGS_GROUPS, SETTINGS_SECTIONS, type SettingsSection } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,12 @@ const SECTION_ICONS = {
   "desktop-pet": PawPrintIcon, people: UsersIcon, logins: KeyRoundIcon, security: LockKeyholeIcon,
   internet: GlobeIcon, activity: ActivityIcon,
 } satisfies Record<SettingsSection, typeof Settings2Icon>;
+
+/** Pages of their own that Settings also lists, so Brain and Apps & skills are found here as well as in the You menu. */
+const ELSEWHERE = { label: "Memory and apps", pages: [
+  { href: "/brain", label: "Brain", icon: BrainIcon },
+  { href: "/apps/connectors", label: "Apps & skills", icon: BlocksIcon },
+] };
 
 /**
  * Settings, one page: its sections in groups down the left, and the one open
@@ -57,10 +63,11 @@ function SectionNav({ current }: { current?: string }) {
   return (
     <nav ref={nav} aria-label="Settings" className="max-lg:hidden" onKeyDown={move}>
       <div className="grid gap-4">
-        {SETTINGS_GROUPS.map((group) => {
+        {SETTINGS_GROUPS.map((group, index) => {
           const id = `settings-group-${group.label.toLowerCase().replace(/\W+/g, "-")}`;
           return (
-            <div key={group.label}>
+            <Fragment key={group.label}>
+            <div>
               <p id={id} className="mb-1 px-2 text-xs font-medium text-muted-foreground">{group.label}</p>
               <ul aria-labelledby={id} className="grid gap-0.5">
                 {group.sections.map((section) => {
@@ -78,6 +85,23 @@ function SectionNav({ current }: { current?: string }) {
                 })}
               </ul>
             </div>
+            {/* Right under Workspace, where it is seen without scrolling. */}
+            {index === 0 && (
+              <div>
+                <p id="settings-group-elsewhere" className="mb-1 px-2 text-xs font-medium text-muted-foreground">{ELSEWHERE.label}</p>
+                <ul aria-labelledby="settings-group-elsewhere" className="grid gap-0.5" data-settings-elsewhere>
+                  {ELSEWHERE.pages.map((page) => (
+                    <li key={page.href}>
+                      <Link href={page.href} className="flex min-h-10 items-center gap-2.5 rounded-md px-2 text-sm font-medium text-muted-foreground outline-none transition-colors duration-150 hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 motion-reduce:transition-none [@media(pointer:coarse)]:min-h-11">
+                        <page.icon aria-hidden className="size-4 shrink-0 stroke-[1.75]" />
+                        {page.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            </Fragment>
           );
         })}
       </div>
@@ -90,8 +114,8 @@ function SectionSwitcher({ current }: { current?: string }) {
   const router = useRouter();
   return (
     <div className="mb-6 lg:hidden">
-      <Select modal={false} items={SETTINGS_SECTIONS.map((section) => ({ value: section.slug, label: section.label }))} value={current ?? null}
-        onValueChange={(value) => { if (value && value !== current) router.push(`/settings/${value}`); }}>
+      <Select modal={false} items={[...SETTINGS_SECTIONS.map((section) => ({ value: section.slug, label: section.label })), ...ELSEWHERE.pages.map((page) => ({ value: page.href, label: page.label }))]} value={current ?? null}
+        onValueChange={(value) => { if (value && value !== current) router.push(value.startsWith("/") ? value : `/settings/${value}`); }}>
         <SelectTrigger aria-label="Settings section" className="min-h-11 w-full"><SelectValue placeholder="Choose a section" /></SelectTrigger>
         <SelectContent>
           {SETTINGS_GROUPS.map((group) => (
@@ -103,6 +127,10 @@ function SectionSwitcher({ current }: { current?: string }) {
               })}
             </SelectGroup>
           ))}
+          <SelectGroup>
+            <SelectLabel>{ELSEWHERE.label}</SelectLabel>
+            {ELSEWHERE.pages.map((page) => <SelectItem key={page.href} value={page.href} className="min-h-11"><page.icon aria-hidden className="size-4" />{page.label}</SelectItem>)}
+          </SelectGroup>
         </SelectContent>
       </Select>
     </div>

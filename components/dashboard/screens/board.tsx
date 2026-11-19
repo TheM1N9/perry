@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  CircleCheckIcon, CircleDashedIcon, CircleDotIcon, CircleIcon, CirclePauseIcon, CircleXIcon, ChevronDownIcon, ListFilterIcon,
-  XIcon, type LucideIcon,
+  CircleCheckIcon, CircleDashedIcon, CircleDotIcon, CircleIcon, CircleMinusIcon, CirclePauseIcon, CircleSlashIcon, CircleXIcon, ChevronDownIcon, ListFilterIcon,
+  ChevronRightIcon, XIcon, type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useConnection, useQuery } from "@/client/react";
@@ -23,6 +23,7 @@ import {
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProviderIcon } from "../provider-icon";
+import { useNeedsYouCount } from "../needs-you-count";
 import { Markdown } from "../chat/markdown";
 import { RunSteps } from "../chat/work";
 import { ApprovalCard } from "../approval-card";
@@ -49,6 +50,8 @@ const WIDE = "(min-width: 1100px)";
 const GLYPH: Record<BoardStatus, LucideIcon> = {
   queued: CircleIcon, blocked: CircleDashedIcon, working: CircleDotIcon, waiting: CirclePauseIcon, done: CircleCheckIcon, failed: CircleXIcon,
 };
+/** Labels that share a status but not a meaning get a glyph of their own: paused is not done, stopped did not finish. */
+const LABEL_GLYPH: Record<string, LucideIcon> = { paused: CircleMinusIcon, stopped: CircleSlashIcon, cancelled: CircleSlashIcon };
 const WORD: Record<BoardStatus, string> = { queued: "queued", blocked: "waiting", working: "working", waiting: "needs you", done: "done", failed: "failed" };
 const TONE: Partial<Record<BoardStatus, string>> = { waiting: "text-warning", failed: "text-destructive" };
 /** A label short enough for the state column says more than the bare state ("paused", "stopped"); a longer one goes on line 2. */
@@ -56,7 +59,7 @@ const wordOf = (status: BoardStatus, label?: string) => label && label.length <=
 
 /** `compact`: in a narrow list the glyph stands alone, its word still there for a screen reader and on hover. */
 function State({ status, label, live = true, compact = false, className }: { status: BoardStatus; label?: string; live?: boolean; compact?: boolean; className?: string }) {
-  const Glyph = GLYPH[status];
+  const Glyph = (label && LABEL_GLYPH[label.toLowerCase()]) || GLYPH[status];
   const word = wordOf(status, label);
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-1.5", TONE[status], className)} data-state={status} title={compact ? word : undefined}>
@@ -74,6 +77,13 @@ function short(ms: number): string {
   if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`;
   return `${Math.floor(seconds / 86_400)}d`;
 }
+/** "in 4h" as the pane says it (rounded, as Intl's relative time is), without the "in": a schedule's next run. */
+function ahead(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  if (minutes < 60) return `${Math.max(1, minutes)}m`;
+  const hours = Math.round(ms / 3_600_000);
+  return hours < 24 ? `${hours}h` : `${Math.round(ms / 86_400_000)}d`;
+}
 /** "4m 12s": how long something has run, to the second. */
 function span(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000));
@@ -90,6 +100,9 @@ const going = (status: BoardStatus) => status === "working" || status === "waiti
 /** Who did it, as the viewer names an agent: "codex via PC". */
 const actor = (holder?: BoardHolder) => holder?.engine ? `${holder.engine}${holder.machine ? ` via ${holder.machine}` : ""}` : holder?.machine ?? "perry";
 
+/** The view of everything on the board, named apart from #tasks (the background tasks' channel). */
+const ALL_WORK = "all work";
+
 // --- Channels: as the viewer lists them, grouped -----------------------------------------------------------------
 
 type Channel = { id: string; name: string; group?: string; has: (thread: BoardThread) => boolean };
@@ -105,7 +118,10 @@ const slug = (name: string) => name.trim().toLowerCase().replace(/[^\p{L}\p{N}]+
 /** The channel a thread is shown in: its project's, else its kind's. */
 function channelName(thread: BoardThread, projects: BoardView["projects"]): string {
   const project = thread.projectId && projects.find((item) => item.id === thread.projectId);
-  return project ? slug(project.name) : KIND_CHANNELS.find((channel) => channel.has(thread))!.name;
+  if (project) return slug(project.name);
+  // A sub-agent is in its parent's: a chat turn's, a task's or a schedule's.
+  if (thread.parent) return thread.parent.startsWith("task:") ? "tasks" : thread.parent.startsWith("job:") ? "jobs" : "chats";
+  return KIND_CHANNELS.find((channel) => channel.has(thread))?.name ?? "chats";
 }
 
 // --- Tabs: the states the list can be narrowed to ----------------------------------------------------------------
@@ -224,17 +240,17 @@ export function Board() {
   const notices = useMemo(() => (inbox ?? []).filter((item): item is Notice => item.kind !== "question"), [inbox]);
   const noticeFor = useMemo(() => new Map(notices.flatMap((item) => { const thread = noticeThread(item); return thread ? [[thread, item] as const] : []; })), [notices]);
   const strays = useMemo(() => notices.filter((item) => !noticeThread(item) || !board?.threads.some((thread) => thread.id === noticeThread(item))), [notices, board]);
-  const needsYou = board ? new Set([...board.threads.filter((thread) => waitingFor.get(thread.id) || noticeFor.get(thread.id)).map((thread) => thread.id)]).size + loose.length + strays.length : undefined;
-  const open = board ? board.threads.filter((thread) => isOpen(standing(thread, waitingFor.get(thread.id)), thread)).length + loose.length : undefined;
+  // The one number the Board shows: what waits on you, counted as the sidebar's badge counts it (needs-you-count.tsx).
+  const needsYou = useNeedsYouCount();
 
   const dialog = useRef<HTMLDivElement>(null);
   // Over the board, focus moves into the open thread, so the keyboard starts where the eye is.
   useEffect(() => { if (place.thread && !wide) dialog.current?.focus(); }, [place.thread, wide]);
-  const nav = <Nav board={board} channels={channels} place={place} open={open} unseen={unseen} />;
-  const menu = <NavMenu channels={channels} place={place} open={open} />;
+  const nav = <Nav board={board} channels={channels} place={place} unseen={unseen} />;
+  const menu = <NavMenu channels={channels} place={place} />;
   const pane = !place.thread ? null : place.thread.startsWith("approval:")
     ? <ApprovalPane key={place.thread} id={place.thread} close={place.href({ thread: null })} />
-    : <Pane key={place.thread} id={place.thread} close={place.href({ thread: null })} projects={board?.projects ?? []} notice={noticeFor.get(place.thread)} onSeen={mark} overlay={!wide} />;
+    : <Pane key={place.thread} id={place.thread} close={place.href({ thread: null })} projects={board?.projects ?? []} notice={noticeFor.get(place.thread)} onSeen={mark} overlay={!wide} place={(thread) => place.href({ thread })} />;
   // Work running anywhere: what "pause all" stops.
   const busy = Boolean(board?.threads.some((thread) => !ongoing(thread) && (thread.status === "working" || thread.status === "queued" || thread.status === "waiting")));
 
@@ -261,8 +277,8 @@ export function Board() {
 const HEADER = "flex h-12 shrink-0 items-center gap-2 border-b px-4";
 
 /** The views and channels, as the viewer's left column has them. On a narrow screen it is the title's menu. */
-function Nav({ board, channels, place, open, unseen }: {
-  board?: BoardView; channels: Channel[]; place: ReturnType<typeof useAddress>; open?: number; unseen: (thread: BoardThread) => boolean;
+function Nav({ board, channels, place, unseen }: {
+  board?: BoardView; channels: Channel[]; place: ReturnType<typeof useAddress>; unseen: (thread: BoardThread) => boolean;
 }) {
   const online = board?.machines.filter((machine) => machine.online).length;
   const item = (active: boolean) => cn("flex h-7 items-center gap-2 rounded-md px-2 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50", active ? "bg-muted text-foreground" : "text-foreground/80");
@@ -281,7 +297,7 @@ function Nav({ board, channels, place, open, unseen }: {
           aria-current={place.view === "activity" && !place.channel ? "page" : undefined}>activity</Link>
         <Link href={place.href({ view: "tasks", channel: null })} scroll={false} className={item(place.view === "tasks" && !place.channel)}
           aria-current={place.view === "tasks" && !place.channel ? "page" : undefined}>
-          <span className="flex-1">tasks</span>{open ? <span className="nums font-mono text-[11px] text-muted-foreground" data-open-count>{open}</span> : null}
+          <span className="flex-1">{ALL_WORK}</span>
         </Link>
         <p className="mt-4 px-2 pb-1 text-[11px] text-muted-foreground">channels</p>
         {groups.map((group) => (
@@ -305,13 +321,13 @@ function Nav({ board, channels, place, open, unseen }: {
 }
 
 /** The same views and channels as menu items, for a narrow screen's title. */
-function NavMenu({ channels, place, open }: { channels: Channel[]; place: ReturnType<typeof useAddress>; open?: number }) {
+function NavMenu({ channels, place }: { channels: Channel[]; place: ReturnType<typeof useAddress> }) {
   const groups = [...new Set(channels.map((channel) => channel.group ?? ""))];
   return (
     <>
       <DropdownMenuItem render={<Link href={place.href({ view: "activity", channel: null, tab: null })} scroll={false} />}>activity</DropdownMenuItem>
       <DropdownMenuItem render={<Link href={place.href({ view: "tasks", channel: null })} scroll={false} />}>
-        <span className="flex-1">tasks</span>{open ? <span className="nums text-[11px] text-muted-foreground">{open}</span> : null}
+        <span className="flex-1">{ALL_WORK}</span>
       </DropdownMenuItem>
       {groups.map((group) => (
         <DropdownMenuGroup key={group || "top"}>
@@ -329,7 +345,7 @@ function NavMenu({ channels, place, open }: { channels: Channel[]; place: Return
 /** The list's header: what it is, a word on its order, and on the right the filter and whether it is live. */
 function Header({ place, channel, board, wide, nav, actions }: { place: ReturnType<typeof useAddress>; channel?: Channel; board?: BoardView; wide: boolean; nav: ReactNode; actions: ReactNode }) {
   const connection = useConnection();
-  const title = channel ? `#${channel.name}` : place.view;
+  const title = channel ? `#${channel.name}` : place.view === "tasks" ? ALL_WORK : place.view;
   // A word on the order, where the view has one: the channel lists keep the board's own.
   const gloss = place.view === "activity" ? "the latest across every channel" : channel ? undefined : "needs you first";
   const machines = board?.machines ?? [];
@@ -380,7 +396,23 @@ function Tasks({ board, place, channel, waitingFor, loose, noticeFor, strays, ne
 }) {
   const [shown, setShown] = useState(PAGE);
   useEffect(() => setShown(PAGE), [place.channel, place.tab, place.computer]);
-  const threads = (board?.threads ?? []).filter((thread) => (!channel || channel.has(thread)) && inTab(standing(thread, waitingFor.get(thread.id)), thread, place.tab, channel?.id, noticeFor.get(thread.id)) && onComputer(thread, place.computer))
+  // Sub-agents are listed under the thread that started them, never on their own.
+  const agentsOf = useMemo(() => {
+    const map = new Map<string, BoardThread[]>();
+    for (const thread of board?.threads ?? []) if (thread.parent) map.set(thread.parent, [...(map.get(thread.parent) ?? []), thread]);
+    for (const list of map.values()) list.sort((a, b) => a.startedAt - b.startedAt);
+    return map;
+  }, [board]);
+  const matches = (thread: BoardThread) => inTab(standing(thread, waitingFor.get(thread.id)), thread, place.tab, channel?.id, noticeFor.get(thread.id));
+  // Opened or closed by hand; otherwise a parent is open while one of its agents runs, or one is the thread open.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const expanded = (thread: BoardThread) => toggled[thread.id]
+    ?? Boolean(agentsOf.get(thread.id)?.some((agent) => agent.status === "working" || agent.id === place.thread));
+  const toggle = (thread: BoardThread) => setToggled((current) => ({
+    ...Object.fromEntries(Object.entries(current).filter(([id]) => agentsOf.has(id))), [thread.id]: !expanded(thread),
+  }));
+  const threads = (board?.threads ?? []).filter((thread) => !thread.parent && (!channel || channel.has(thread))
+    && (matches(thread) || Boolean(agentsOf.get(thread.id)?.some(matches))) && onComputer(thread, place.computer))
     // What needs the owner leads, whatever the order its threads came in.
     .sort((a, b) => Number(Boolean(waitingFor.get(b.id))) - Number(Boolean(waitingFor.get(a.id))));
   const looseShown = !channel && !place.computer && (place.tab === "open" || place.tab === "needs you" || place.tab === "all") ? loose : [];
@@ -410,11 +442,12 @@ function Tasks({ board, place, channel, waitingFor, loose, noticeFor, strays, ne
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5">
         {!board && <div className="space-y-3 px-4 py-2" role="status" aria-label="Loading">{[0, 1, 2, 3].map((index) => <Skeleton key={index} className="h-9" />)}</div>}
         {board && threads.length + looseShown.length === 0 && <p className="px-4 py-3 text-muted-foreground" data-empty>nothing here</p>}
-        <ul aria-label="Threads" data-rows>
+        <ul aria-label="Threads" className="max-w-[54rem]" data-rows>
           {looseShown.map((item) => <WaitingRow key={item.id} item={item} href={place.href({ thread: item.id })} selected={place.thread === item.id} fresh={fresh(item.id)} />)}
           {threads.slice(0, shown).map((thread) => (
             <ThreadRow key={thread.id} thread={thread} href={place.href({ thread: thread.id })} selected={place.thread === thread.id} waiting={waitingFor.get(thread.id)}
-              notice={place.tab === "needs you" ? noticeFor.get(thread.id) : undefined} channel={channelName(thread, board!.projects)} fresh={fresh(thread.id)} changed={unseen(thread)} />
+              notice={place.tab === "needs you" ? noticeFor.get(thread.id) : undefined} channel={channel ? "" : channelName(thread, board!.projects)} fresh={fresh(thread.id)} changed={unseen(thread)}
+              agents={agentsOf.get(thread.id)} expanded={expanded(thread)} onToggle={() => toggle(thread)} agentHref={(id) => place.href({ thread: id })} openThread={place.thread} />
           ))}
           {straysShown.map((item) => <StrayRow key={`${item.kind}:${item.id}`} item={item} fresh={fresh(`${item.kind}:${item.id}`)} />)}
         </ul>
@@ -434,8 +467,10 @@ function Wants({ item }: { item: BoardWaiting }) {
     : <span className="block truncate" title={item.text}>{item.text}</span>;
 }
 
-function ThreadRow({ thread, href, selected, waiting, notice, channel, fresh, changed }: {
+function ThreadRow({ thread, href, selected, waiting, notice, channel, fresh, changed, agents, expanded = false, onToggle, agentHref, openThread }: {
   thread: BoardThread; href: string; selected: boolean; waiting?: BoardWaiting; notice?: Notice; channel: string; fresh: boolean; changed: boolean;
+  /** The sub-agents its turns started, listed under it; open or closed by its toggle. */
+  agents?: BoardThread[]; expanded?: boolean; onToggle?: () => void; agentHref?: (id: string) => string; openThread?: string | null;
 }) {
   const status = standing(thread, waiting);
   const line: ReactNode = waiting ? <Wants item={waiting} />
@@ -447,15 +482,76 @@ function ThreadRow({ thread, href, selected, waiting, notice, channel, fresh, ch
       <Link href={href} scroll={false} aria-current={selected ? "true" : undefined} className={cn(ROW, selected && "bg-muted")}>
         <State status={status} label={waiting ? undefined : thread.label} live={!ongoing(thread)} compact />
         <span className={cn("truncate", changed ? "font-semibold" : "font-medium")}>{thread.title}</span>
-        <span className="truncate font-mono text-[12px] text-muted-foreground @max-[36rem]:hidden">#{channel}</span>
+        {/* Inside a channel every row is in it: the column stays, empty, so the rows still line up. */}
+        <span className="truncate font-mono text-[12px] text-muted-foreground @max-[36rem]:hidden">{channel && `#${channel}`}</span>
         <span className="justify-self-end font-mono text-[12px] text-muted-foreground" data-age>
-          {thread.status === "working" && !ongoing(thread) ? <Ticking since={thread.startedAt} format={short} /> : <Age at={thread.updatedAt} />}
+          {waiting ? <Age at={thread.updatedAt} />
+            : thread.inLine ? <span data-in-line>{thread.inLine === 1 ? "next" : `${thread.inLine} in line`}</span>
+              : thread.nextAt ? <span data-next-run title={new Date(thread.nextAt).toLocaleString()}>next {ahead(thread.nextAt - Date.now())}</span>
+                : thread.status === "working" && !ongoing(thread) ? <Ticking since={thread.startedAt} format={short} /> : <Age at={thread.updatedAt} />}
         </span>
         {line && <span className="col-start-2 col-end-[-1] min-w-0 text-[12px] text-muted-foreground" data-line>{line}</span>}
       </Link>
+      {agents && agents.length > 0 && <Agents agents={agents} expanded={expanded} onToggle={onToggle!} href={agentHref!} open={openThread ?? null} parent={thread.title} />}
     </li>
   );
 }
+
+/** "3 agents · 2 running": how a parent's sub-agents stand, in a few words. */
+function agentsWord(agents: BoardThread[]) {
+  const running = agents.filter((agent) => agent.status === "working").length;
+  const failed = agents.filter((agent) => agent.status === "failed").length;
+  return [agents.length === 1 ? "1 agent" : `${agents.length} agents`, running ? `${running} running` : "", failed ? `${failed} failed` : ""].filter(Boolean).join(" · ");
+}
+
+/**
+ * A parent's sub-agents: a toggle under its row saying how they stand, and when open, a row each, nested under it,
+ * with its own state, title, holder while it runs, and how long it has run or took.
+ */
+function Agents({ agents, expanded, onToggle, href, open, parent }: {
+  agents: BoardThread[]; expanded: boolean; onToggle: () => void; href: (id: string) => string; open: string | null; parent: string;
+}) {
+  const running = agents.some((agent) => agent.status === "working");
+  return (
+    <div data-agents={agents.length}>
+      <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] gap-x-2.5 px-4 @min-[36rem]:grid-cols-[7.5rem_minmax(0,1fr)] @min-[36rem]:gap-x-3">
+        <button type="button" onClick={onToggle} aria-expanded={expanded} aria-label={`${agentsWord(agents)}, under ${parent}`}
+          className="col-start-2 -mt-1 mb-1 inline-flex w-fit items-center gap-1 rounded-sm text-[12px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50" data-agents-toggle>
+          <ChevronRightIcon aria-hidden className={cn("size-3.5 transition-transform duration-150 ease-out motion-reduce:transition-none", expanded && "rotate-90")} />
+          <span className={cn(running && "text-foreground")}>{agentsWord(agents)}</span>
+        </button>
+      </div>
+      {expanded && (
+        <ul aria-label={`Agents of ${parent}`} className="pb-1" data-agent-rows>
+          {agents.map((agent) => (
+            <li key={agent.id} data-row={agent.id} data-status={agent.status} data-agent>
+              <Link href={href(agent.id)} scroll={false} aria-current={open === agent.id ? "true" : undefined} className={cn(ROW, "py-1", open === agent.id && "bg-muted")}>
+                <State status={agent.status} label={agent.label} compact />
+                <span className="flex min-w-0 items-baseline gap-1.5 pl-4">
+                  <span aria-hidden className="font-mono text-[12px] text-muted-foreground/70">└</span>
+                  <span className="truncate">{agent.title}</span>
+                </span>
+                <span className="@max-[36rem]:hidden" />
+                <span className="justify-self-end font-mono text-[12px] text-muted-foreground" data-age>
+                  {agent.status === "working" ? <Ticking since={agent.startedAt} format={short} /> : agent.finishedAt !== undefined ? short(agent.finishedAt - agent.startedAt) : <Age at={agent.updatedAt} />}
+                </span>
+                {(agent.status === "working" || agent.now) && (
+                  <span className="col-start-2 col-end-[-1] min-w-0 truncate pl-[2.125rem] text-[12px] text-muted-foreground" data-line>
+                    {agent.status === "working" && <span className="font-mono">{agentHolder(agent.holder)}</span>}
+                    {agent.status === "working" && agent.now ? " · " : ""}{agent.now}
+                  </span>
+                )}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** A sub-agent's holder as a row says it: its model, else its engine, and its computer. */
+const agentHolder = (holder?: BoardHolder) => [holder?.model ?? holder?.engine, holder?.machine].filter(Boolean).join(" via ");
 
 /** An approval whose chat has no thread on the board: a row of its own, opening to a pane where it is answered. */
 function WaitingRow({ item, href, selected, fresh }: { item: BoardWaiting; href: string; selected: boolean; fresh: boolean }) {
@@ -538,7 +634,9 @@ function Activity({ board, place, channel }: { board?: BoardView; place: ReturnT
           const target = thread ? place.href({ thread: thread.id }) : event.href;
           const status = thread?.status ?? (event.status ?? "waiting");
           // What it says now: the approval's command, else its thread's line, else what the event said.
-          const detail = event.verb === "approval" ? event.text : thread?.now ?? (event.text !== thread?.title ? event.text : undefined);
+          // A sub-agent's event says which agent and what it did; anything else, what its thread says now.
+          const detail = event.agent ? `agent ${event.agent.title} ${event.verb === "started" ? "started" : event.verb}`
+            : event.verb === "approval" ? event.text : thread?.now ?? (event.text !== thread?.title ? event.text : undefined);
           return (
             <li key={event.id} data-entry={event.thread ?? event.id} data-event={event.verb} className={cn(fresh(event.id) && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 motion-safe:ease-out")}>
               <Message who={by} at={event.at} where={thread ? channelName(thread, board!.projects) : undefined} href={target} engine={by === "perry" ? undefined : thread?.holder?.engine}>
@@ -584,11 +682,13 @@ function Message({ who, at, where, href, engine, children }: { who: string; at: 
 
 // --- The thread pane ----------------------------------------------------------------------------------------------
 
-const NOUN: Record<BoardThread["kind"], string> = { chat: "chat", task: "task", job: "job", heartbeat: "heartbeat", watch: "watch", goal: "goal" };
+const NOUN: Record<BoardThread["kind"], string> = { chat: "chat", task: "task", job: "job", heartbeat: "heartbeat", watch: "watch", goal: "goal", agent: "agent" };
 
 /** One thread, as the viewer's pane has it: its state and outcome on top with what you can do, then the conversation. */
-function Pane({ id, close, projects, notice, onSeen, overlay }: {
+function Pane({ id, close, projects, notice, onSeen, overlay, place }: {
   id: string; close: string; projects: BoardView["projects"]; notice?: Notice; onSeen: (thread: BoardThread) => void; overlay: boolean;
+  /** The address of another thread on the board, opened in this pane. */
+  place: (thread: string) => string;
 }) {
   const { dashboardKey } = useSession();
   const view = useQuery(api.board.thread, { key: dashboardKey, id });
@@ -609,7 +709,8 @@ function Pane({ id, close, projects, notice, onSeen, overlay }: {
   const result = outcome?.kind === "result" ? outcome : undefined;
   const error = outcome?.kind === "error" ? outcome : undefined;
   const status = asking ? "waiting" : thread.status;
-  const rootBy = thread.kind === "chat" || thread.kind === "task" ? "you" : "perry";
+  // A sub-agent was asked by the turn that started it; a chat or task by you; the rest by Perry.
+  const rootBy = thread.kind === "agent" ? actor(view.parent?.holder) : thread.kind === "chat" || thread.kind === "task" ? "you" : "perry";
   const said = view.feed.filter((item) => item.kind === "said" || item.kind === "update");
   // A finished task's plan is as it was left: a step still marked under way was not finished, not in progress.
   const ended = thread.status === "done" || thread.status === "failed";
@@ -640,16 +741,36 @@ function Pane({ id, close, projects, notice, onSeen, overlay }: {
             {error && <Field label="reason"><span className="whitespace-pre-wrap">{error.text}</span></Field>}
             {error?.step && <Field label="last step"><span data-last-step>{error.step}</span></Field>}
             {result && !error && <Field label={result.reply ? "reply" : "result"}><Clamp><div className="text-[13px] [&_.prose-chat]:text-[13px]"><Markdown text={result.text} /></div></Clamp></Field>}
-            {view.plan && <Field label={thread.kind === "goal" ? `milestones ${view.plan.filter((step) => step.status === "done").length}/${view.plan.length}` : `plan ${view.plan.filter((step) => step.status === "done").length}/${view.plan.length}`}><Plan steps={view.plan} ended={ended} /></Field>}
+            {view.parent && <Field label="part of"><Link href={place(view.parent.id)} scroll={false} className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground" data-parent-link>{view.parent.title}</Link></Field>}
+            {view.agents && <Field label={view.agents.length === 1 ? "agent" : "agents"}>
+              <ul className="space-y-0.5" data-pane-agents>
+                {view.agents.map((agent) => (
+                  <li key={agent.id} className="flex min-w-0 items-center gap-2">
+                    <State status={agent.status} label={agent.label} compact className="shrink-0 [&>span]:sr-only" />
+                    <Link href={place(agent.id)} scroll={false} className="min-w-0 truncate underline-offset-2 hover:underline">{agent.title}</Link>
+                    <span className="ml-auto shrink-0 font-mono text-muted-foreground">{agent.status === "working" ? <Ticking since={agent.startedAt} format={short} /> : agent.finishedAt !== undefined ? short(agent.finishedAt - agent.startedAt) : null}</span>
+                  </li>
+                ))}
+              </ul>
+            </Field>}
+            {view.plan && <Field label={thread.kind === "goal" ? `milestones ${view.plan.filter((step) => step.status === "done").length}/${view.plan.length}` : ended ? "plan" : `plan ${view.plan.filter((step) => step.status === "done").length}/${view.plan.length}`}><Plan steps={view.plan} ended={ended} /></Field>}
           </>} />
       </section>
 
       {conversation && <div className="flex flex-1 flex-col" data-conversation>
         <Divider>{dayOf(thread.startedAt)}</Divider>
-        <Message who={rootBy} at={thread.startedAt}>
+        <Message who={rootBy} at={thread.startedAt} engine={thread.kind === "agent" ? view.parent?.holder?.engine : undefined}>
           <Clamp lines><p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{thread.ask}</p></Clamp>
         </Message>
         {(runs.length > 0 || said.length > 0) && <Divider>{runs.length === 1 ? "1 turn" : `${runs.length} turns`}</Divider>}
+        {/* A sub-agent's own: what it has written so far, live, and once over, its answer. */}
+        {thread.kind === "agent" && (view.output || going(thread.status)) && (
+          <Message who={`sub-agent${thread.holder?.machine ? ` via ${thread.holder.machine}` : ""}`} at={thread.startedAt} engine={thread.holder?.engine}>
+            {view.output
+              ? <div className="text-[13px] [&_.prose-chat]:text-[13px]" data-agent-output><Markdown text={view.output} streaming={thread.status === "working"} /></div>
+              : <p className="text-muted-foreground">Working…</p>}
+          </Message>
+        )}
         <ol aria-label="Turns" className="pb-3" data-feed>
           {view.feed.map((item) => {
             if (item.kind === "run") {

@@ -126,21 +126,9 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/brain" />} isActive={pathname.startsWith("/brain")} tooltip="Brain · Memory and notes" aria-label="Brain: memory and notes">
-                  <BrainIcon />
-                  <span>Brain</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/library" />} isActive={pathname.startsWith("/library")} tooltip="Library · Files" aria-label="Library: files">
                   <LibraryIcon />
                   <span>Library</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/apps/connectors" />} isActive={pathname.startsWith("/apps")} tooltip="Apps & skills">
-                  <BlocksIcon />
-                  <span>Apps &amp; skills</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -501,6 +489,10 @@ function AccountMenu() {
                 <span className="truncate text-xs text-muted-foreground">{line}</span>
               </DropdownMenuLabel>
             </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            {/* Brain and Apps & skills live here and in Settings, out of the sidebar's way (their pages are as they were). */}
+            <DropdownMenuItem onClick={() => go("/brain")} data-you-brain><BrainIcon />Brain</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/apps/connectors")} data-you-apps><BlocksIcon />Apps &amp; skills</DropdownMenuItem>
             <DropdownMenuSeparator />
             <PauseMenuItem />
             <DropdownMenuItem onClick={() => go("/settings/usage")}><GaugeIcon />Usage</DropdownMenuItem>

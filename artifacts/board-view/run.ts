@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChat, sleep } from "../browser";
 
-// pnpm build, then: bun artifacts/board-view/run.ts [outDir]   (outDir defaults to artifacts/board-view-v3)
+// pnpm build, then: bun artifacts/board-view/run.ts [outDir]   (outDir defaults to artifacts/board-view-v4)
 // Issue #363, the Board: a production build on a free port with a fresh PERRY_HOME in a temp folder, two stand-in
 // computers ("PC" with Codex, "Mac" with Claude Code) that answer through the runner's own endpoints (claim, trace,
 // finish), and headless Chrome at desktop and phone widths. Nothing touches an installed Perry. Deleted at the end,
@@ -34,9 +34,15 @@ import { openChat, sleep } from "../browser";
 //  17. A done task's plan still shows a step in progress; the pane leaves a gap above its conversation; titles are
 //      monospace; on a phone the tabs wrap or the state column eats the title's width.
 //  18. Pause all work is gone, or pauses without asking.
+//  19. Brain or Apps & skills can no longer be reached (they left the sidebar for the You menu and Settings).
+//  20. The Board's numbers disagree (a tab, the nav, the badge); "all work" and "#tasks" read as the same thing.
+//  21. Rows lose what helps: a queued task's place in line, a schedule's next run; paused looks like done; a done
+//      task's plan shows a count that argues with it; on a wide screen a row's channel and age drift far from it.
+//  22. Sub-agents a turn starts are hidden in one step: not rows of their own under the parent, not live (running,
+//      done, failed), with no pane, no way back to the parent, or no activity on the parent's entry.
 
 const REPO = resolve(import.meta.dirname, "../..");
-const OUT = resolve(process.argv[2] ?? join(REPO, "artifacts", "board-view-v3"));
+const OUT = resolve(process.argv[2] ?? join(REPO, "artifacts", "board-view-v4"));
 mkdirSync(OUT, { recursive: true });
 const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
 const PORT = await freePort();
@@ -236,8 +242,9 @@ try {
   await waitFor(`document.querySelector('[data-sidebar=sidebar]') && document.querySelector('[data-needs-you-count]')`, "the sidebar and its count");
   const items = await sidebarItems();
   notes.sidebar = items;
-  const main = ["New chat", "Search", "Board", "To-dos", "Riff", "Meetings", "Brain", "Library", "Apps & skills"];
-  check("the sidebar reads New chat, Board, To-dos, Riff, Meetings, Brain, Library, Apps & skills", JSON.stringify(items.slice(0, main.length)) === JSON.stringify(main), items);
+  const main = ["New chat", "Search", "Board", "To-dos", "Riff", "Meetings", "Library"];
+  check("the sidebar reads New chat, Board, To-dos, Riff, Meetings, Library", JSON.stringify(items.slice(0, main.length)) === JSON.stringify(main), items);
+  check("Brain and Apps & skills have left the sidebar", !items.includes("Brain") && !items.includes("Apps & skills"), items);
   check("Needs you, Work and Pause all work are gone from the sidebar", !items.some((item) => /^(Needs you|Work|Pause all work)$/.test(item)), items);
   check("the desktop pet stays in the sidebar, above the account", items.includes("Desktop pet") && await b.evaluate(`Boolean(document.querySelector('[data-account-row]')) && document.querySelector('[data-sidebar=footer]').innerText.includes('Desktop pet')`) as boolean, items);
   const badge = Number(await b.evaluate(`document.querySelector('[data-needs-you-count]')?.innerText ?? '0'`));
@@ -248,28 +255,19 @@ try {
   await settle();
   const afterSidebar = await capture({ x: 0, y: 0, width: expandedWidth, height: 900 });
 
-  // The Capture variant, for the mock only: Riff and Meetings under one item. Drawn on the page, not built.
-  await b.evaluate(`(() => {
-    const li = (href) => document.querySelector('[data-sidebar=sidebar] a[href="' + href + '"]').closest('li');
-    const riff = li('/live'), meetings = li('/meetings');
-    const capture = riff.cloneNode(true);
-    const button = capture.querySelector('a');
-    button.removeAttribute('href'); button.removeAttribute('data-active');
-    button.querySelector('span').textContent = 'Capture';
-    const chevron = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;opacity:.6;transform:rotate(90deg)"><path d="m9 18 6-6-6-6"/></svg>';
-    button.insertAdjacentHTML('beforeend', chevron);
-    const sub = document.createElement('ul');
-    sub.style.cssText = 'margin:2px 0 2px 14px;padding:0 0 0 10px;border-left:1px solid var(--sidebar-border);display:grid;gap:2px';
-    for (const [href, label] of [['/live', 'Riff'], ['/meetings', 'Meetings']]) {
-      const item = document.createElement('li');
-      item.innerHTML = '<a href="' + href + '" style="display:flex;height:28px;align-items:center;padding:0 8px;border-radius:6px;font-size:14px;color:var(--sidebar-foreground)">' + label + '</a>';
-      sub.appendChild(item);
-    }
-    capture.appendChild(sub);
-    riff.replaceWith(capture); meetings.remove();
-  })()`);
-  await settle();
-  const variantSidebar = await capture({ x: 0, y: 0, width: expandedWidth, height: 900 });
+  // --- 19. Brain and Apps & skills: in the You menu, and in Settings --------------------------------------------
+  await click(`[aria-label="Account options"]`);
+  await waitFor(`document.querySelector('[data-you-brain]') && document.querySelector('[data-you-apps]')`, "the You menu");
+  await shot("you-menu-open.png");
+  check("the You menu has Brain and Apps & skills", true);
+  await click(`[data-you-brain]`);
+  await waitFor(`location.pathname === '/brain'`, "Brain from the You menu");
+  check("Brain opens from the You menu, on its own page", true);
+  await b.send("Page.navigate", { url: `${BASE}/settings/general` });
+  await waitFor(`document.querySelector('[data-settings-elsewhere]')`, "Settings' list");
+  const elsewhere = await b.evaluate(`[...document.querySelectorAll('[data-settings-elsewhere] a')].map((a) => a.getAttribute('href'))`) as string[];
+  check("Settings lists Brain and Apps & skills, linking to their pages", elsewhere.includes("/brain") && elsewhere.includes("/apps/connectors"), elsewhere);
+  await shot("settings-with-brain-apps.png");
 
   // --- 14. On the Board the sidebar is a rail of icons, unfolding over the board without moving it ---------------
   await go("/board");
@@ -298,6 +296,8 @@ try {
   const tabCount = Number(await b.evaluate(`document.querySelector('[data-needs-you-tab]')?.innerText ?? '0'`));
   check("the needs-you tab holds the approval, the question and the failed schedule, and counts them", needs.includes(`task:${askTask}`) && needs.includes(`job:${job.id}`) && needs.some((id) => id.startsWith("run:")) && tabCount === needs.length, { needs, tabCount });
   check("the needs-you tab's count is the sidebar badge's", tabCount === badge, { tabCount, badge });
+  check("the Board shows no other count beside it", !(await b.evaluate(`Boolean(document.querySelector('[data-open-count]'))`)) && await b.evaluate(`document.querySelector('nav[aria-label="Views and channels"]').innerText.split('\\n').every((line) => !/\\d/.test(line))`) as boolean);
+  check("the view of everything reads \"all work\", apart from #tasks", await b.evaluate(`document.querySelector('[data-board] header h1').innerText === 'all work' && [...document.querySelectorAll('nav[aria-label="Views and channels"] a')].some((a) => a.innerText.trim() === 'all work')`) as boolean);
   await shot("needs-you-desktop.png");
 
   // --- 15. Old addresses land on the Board -----------------------------------------------------------------------
@@ -364,6 +364,8 @@ try {
   await waitFor(`document.querySelector('[data-pane] [data-state]')?.dataset.state === 'done'`, "the task to end", 15);
   const plan = await b.evaluate(`[...document.querySelectorAll('[data-pane] [data-plan] li')].map((li) => li.dataset.step)`) as string[];
   check("a finished task's plan shows no step in progress", plan.length === 3 && !plan.includes("active") && plan[0] === "unfinished", plan);
+  const planLabel = await b.evaluate(`[...document.querySelectorAll('[data-pane] dt')].map((dt) => dt.innerText.trim()).find((text) => text.startsWith('plan'))`) as string;
+  check("a done task's plan carries no count to argue with it", planLabel === "plan", planLabel);
   await shot("thread-done-desktop.png");
 
   // --- 16. #jobs: a schedule made, changed and paused from the Board, as Work did --------------------------------
@@ -377,6 +379,9 @@ try {
   await clickText("[role=dialog] button", "Create");
   const briefing = await until(async () => (await pub<{ jobs: Array<{ id: string; name: string; enabled: boolean }> }>("jobs:listForDashboard")).jobs.find((item) => item.name === "Morning briefing"), "the schedule to be made", 10);
   check("a schedule is made from #jobs's header", true);
+  await waitFor(`document.querySelector('[data-row="job:${briefing.id}"] [data-next-run]')`, "its next run on its row");
+  check("a schedule's row says when it runs next", /^next \d+[smhd]$/.test(await b.evaluate(`document.querySelector('[data-row="job:${briefing.id}"] [data-next-run]').innerText`) as string));
+  check("inside a channel, rows do not repeat its name", !(await b.evaluate(`document.querySelector('[data-row="job:${briefing.id}"]').innerText`) as string).includes("#jobs"));
   await waitFor(`document.querySelector('[data-row="job:${briefing.id}"]')`, "its row");
   await b.evaluate(`document.querySelector('[data-row="job:${briefing.id}"] a').click()`);
   await waitFor(`document.querySelector('[data-pane="job:${briefing.id}"] [data-more]') && document.querySelector('[data-pane] [data-job-model]')`, "its pane, with its model");
@@ -386,6 +391,8 @@ try {
   await clickText("[role=menuitem]", "pause");
   await until(async () => (await pub<{ jobs: Array<{ id: string; enabled: boolean }> }>("jobs:listForDashboard")).jobs.find((item) => item.id === briefing.id)?.enabled === false, "the schedule to pause", 10);
   check("a schedule is paused from its pane", true);
+  await waitFor(`document.querySelector('[data-row="job:${briefing.id}"] [data-state] svg')?.getAttribute('class').includes('circle-minus')`, "the paused glyph");
+  check("paused has its own glyph, not done's", await b.evaluate(`!document.querySelector('[data-row="job:${briefing.id}"] [data-state] svg').getAttribute('class').includes('circle-check')`) as boolean);
   await waitFor(`document.querySelector('[data-pane] [data-more]')`, "the pane after pausing");
   await click(`[data-pane] [data-more]`);
   await waitFor(`[...document.querySelectorAll('[role=menuitem]')].some((el) => el.innerText.trim() === 'change')`, "its menu again");
@@ -417,6 +424,78 @@ try {
   await waitFor(`!document.querySelector('[role=alertdialog]')`, "the question to close");
   check("nothing paused when the question is declined", !(await pub<{ paused: boolean }>("pause:status")).paused);
 
+  // --- 22. Sub-agents: a turn that starts three at once, each a row under it, live, with a pane of its own ----------
+  const offsite = await pub<string>("dashboard:createChat");
+  await pub("dashboard:renameChat", { id: offsite, title: "Plan the team offsite" });
+  await pub("dashboard:sendChat", { id: offsite, text: "Plan a two-day team offsite near Lisbon in March: venue, travel and an agenda. Split the research." });
+  const offsiteTurn = await nextTurn((turn) => turn.conversationId === offsite, "the offsite chat's turn", 90);
+  await claim(offsiteTurn);
+  const a0 = Date.now() - 20_000;
+  const AGENTS = [
+    { id: "codex:agent-venues", title: "Find venues near Lisbon", prompt: "Find three venues within an hour of Lisbon for 12 people in March, with prices." },
+    { id: "codex:agent-travel", title: "Compare travel options", prompt: "Compare flights and trains to Lisbon for a team of 12 from London and Berlin." },
+    { id: "codex:agent-agenda", title: "Draft a two-day agenda", prompt: "Draft a two-day agenda: planning in the mornings, one team activity each afternoon." },
+  ];
+  const agentSpans = AGENTS.map((agent, index) => step(`ag${index}`, "dynamicToolCall", `Agent: ${agent.title}`, "running", a0 + index * 300));
+  let agentClock = Date.now();
+  const report = (agents: Array<{ id: string; title: string; prompt: string; status: "running" | "done" | "failed"; text?: string }>, spans = agentSpans) =>
+    runner("codex:traceTurn", { token: PC, id: offsiteTurn._id, spans, steps: spans.length, agents: agents.map((agent) => ({ ...agent, model: "gpt-5.5-mini", updatedAt: ++agentClock })) });
+  await report(AGENTS.map((agent) => ({ ...agent, status: "running" })));
+  await report([
+    { ...AGENTS[0], status: "running", text: "Shortlisted Quinta da Arrábida and Palácio de Seteais; checking March prices." },
+    { ...AGENTS[1], status: "running", text: "London: TAP and easyJet direct. Berlin: one stop via Frankfurt." },
+    { ...AGENTS[2], status: "running", text: "Day one: goals for the quarter, then a cooking class in Alfama." },
+  ]);
+  await go("/board?channel=chats");
+  const parentRow = `document.querySelector('[data-agents="3"]')?.closest('[data-row]')`;
+  await waitFor(`${parentRow} && document.querySelectorAll('[data-agent-rows] [data-agent]').length === 3`, "the parent row with its three agents, open while they run", 15);
+  const kids = await b.evaluate(`[...document.querySelectorAll('[data-agent-rows] [data-agent]')].map((li) => ({ id: li.dataset.row, status: li.dataset.status, text: li.innerText }))`) as Array<{ id: string; status: string; text: string }>;
+  check("a turn's three sub-agents are three rows under it, all running", kids.length === 3 && kids.every((kid) => kid.status === "working" && kid.id.startsWith("agent:")), kids);
+  check("the parent says how many agents run, at a glance", (await b.evaluate(`document.querySelector('[data-agents-toggle]').innerText`) as string).includes("3 agents · 3 running"));
+  check("a running sub-agent shows its model, computer and what it is doing", kids.every((kid) => kid.text.includes("gpt-5.5-mini via PC")) && kids.some((kid) => kid.text.includes("Quinta da Arrábida")), kids);
+  check("sub-agents are not rows of their own at the top level", !(await b.evaluate(`[...document.querySelectorAll('[data-rows] > li')].some((li) => li.dataset.row?.startsWith('agent:'))`)));
+  await shot("board-subagents-desktop.png");
+  const venue = kids.find((kid) => kid.text.includes("Find venues"))!.id;
+  await b.evaluate(`document.querySelector('[data-row="${venue}"] a').click()`);
+  await waitFor(`document.querySelector('[data-pane="${venue}"] [data-parent-link]')`, "the sub-agent's pane");
+  check("a sub-agent opens to its own pane: its ask, live output and a link back to its parent",
+    (await pane()).includes("Find three venues within an hour") && (await pane()).includes("Quinta da Arrábida")
+      && await b.evaluate(`document.querySelector('[data-pane] [data-parent-link]').innerText === 'Plan the team offsite'`) as boolean, (await pane()).slice(0, 500));
+  await shot("subagent-thread-desktop.png");
+  // Two finish and one fails: the rows follow, without a reload.
+  await report([
+    { ...AGENTS[0], status: "done", text: "Quinta da Arrábida: €4,800 for two days, 40 min from Lisbon, rooms for 12.\n\nPalácio de Seteais: €6,200, in Sintra." },
+    { ...AGENTS[1], status: "done", text: "Fly: London on TAP (2h 40m), Berlin via Frankfurt (5h). About €3,100 return for 12." },
+    { ...AGENTS[2], status: "failed", text: "Day one drafted.\nThe calendar connection timed out before day two could be checked." },
+  ], AGENTS.map((agent, index) => step(`ag${index}`, "dynamicToolCall", `Agent: ${agent.title}`, index === 2 ? "error" : "ok", a0 + index * 300, { durationMs: 15_000 })));
+  await waitFor(`(() => { const s = [...document.querySelectorAll('[data-agent-rows] [data-agent]')].map((li) => li.dataset.status).sort().join(','); return s === 'done,done,failed'; })()`, "two agents done and one failed", 15);
+  check("sub-agents go from running to done, and one that fails shows failed", true);
+  check("the parent's count says one failed", (await b.evaluate(`document.querySelector('[data-agents-toggle]').innerText`) as string).includes("1 failed"));
+  check("the open sub-agent's pane shows it done with its answer", await b.evaluate(`document.querySelector('[data-pane] [data-state]')?.dataset.state === 'done' && document.querySelector('[data-pane]').innerText.includes('€4,800')`) as boolean);
+  const offsiteRun = await b.evaluate(`document.querySelector('[data-agents="3"]').closest('[data-row]').dataset.row`) as string;
+  await go(`/board?thread=${encodeURIComponent(offsiteRun)}`);
+  await waitFor(`document.querySelectorAll('[data-pane] [data-pane-agents] li').length === 3`, "the parent's pane listing its agents");
+  check("the parent's pane lists its sub-agents with how each stands", true);
+  await go("/board?view=activity");
+  await waitFor(`document.querySelector('[data-activity] [data-entry="${offsiteRun}"]')`, "the parent's activity entry");
+  const told = await b.evaluate(`document.querySelector('[data-activity] [data-entry="${offsiteRun}"]').innerText`) as string;
+  check("activity tells a sub-agent's end on its parent's entry", /agent .+ (finished|failed)/.test(told) && told.includes("Plan the team offsite"), told);
+  const agentEvents = (await pub<{ events: Array<{ thread?: string; agent?: { id: string }; verb: string }> }>("board:get")).events.filter((event) => event.agent);
+  check("each sub-agent's start and end are events attributed to its parent", agentEvents.length > 0 && agentEvents.every((event) => event.thread === offsiteRun), agentEvents);
+  await viewport(390, 844, true);
+  await go("/board?channel=chats");
+  await waitFor(`document.querySelector('[data-agents-toggle]')`, "the parent on a phone");
+  // Over now, they are folded under the parent; opened by its toggle.
+  await click(`[data-agents-toggle]`);
+  await waitFor(`document.querySelectorAll('[data-agent-rows] [data-agent]').length === 3`, "the agents opened on a phone");
+  check("on a phone the sub-agents open under their parent, nothing sideways", (await overflow()) <= 0, await overflow());
+  await shot("board-subagents-phone.png");
+  await go(`/board?thread=${encodeURIComponent(venue)}`);
+  await waitFor(`document.querySelector('[role=dialog] [data-pane] [data-parent-link]')`, "the sub-agent on a phone");
+  await shot("subagent-thread-phone.png");
+  await viewport(1440, 900);
+  await finish(offsiteTurn, { response: "Here is the plan: Quinta da Arrábida, TAP from London, and a day-one agenda; day two needs your calendar." });
+
   // --- 9, 10. Widths ------------------------------------------------------------------------------------------------
   await go(`/board?thread=task:${liveTask}`);
   await waitFor(`document.querySelector('[data-pane]')`, "the pane");
@@ -425,7 +504,15 @@ try {
   check("with a thread open at 1440, the rail, board nav, list and pane fit with the list widest", columns[0] <= 56 && columns.length === 4 && columns[2] === Math.max(...columns), columns);
   await go("/board?tab=all");
   await waitFor(`${ROWS}.length > 3`, "the board");
+  const rowsWidth = await b.evaluate(`Math.round(document.querySelector('[data-rows]').getBoundingClientRect().width)`) as number;
+  check("at 1440 the rows keep to a readable width, not the whole screen", rowsWidth <= 864, rowsWidth);
   await shot("board-desktop.png");
+  await viewport(1280, 800);
+  await go("/board?tab=all");
+  await waitFor(`${ROWS}.length > 3`, "the board at 1280");
+  check("nothing overflows sideways at 1280 px", (await overflow()) <= 0, await overflow());
+  await shot("board-1280.png");
+  await viewport(1440, 900);
   await scheme("dark");
   await waitFor(`document.documentElement.classList.contains('dark')`, "the dark theme");
   await go(`/board?thread=task:${liveTask}`);
@@ -451,21 +538,16 @@ try {
   await shot("thread-phone.png");
   await viewport(1440, 900);
 
-  // --- The sidebar, before and after, and the Capture variant, side by side ----------------------------------------
+  // --- The sidebar, v2 and now, side by side ----------------------------------------------------------------------
   const before = readFileSync(join(REPO, "artifacts", "board-view-v2", "thread-done-desktop.png")).toString("base64");
   const after = afterSidebar.toString("base64");
-  const variant = variantSidebar.toString("base64");
-  const panel = (label: string, image: string, offset: number) => `<figure style="margin:0"><figcaption>${label}</figcaption><div style="width:256px;height:900px;background:url(data:image/png;base64,${image}) ${offset}px 0 no-repeat;border:1px solid #e5e5e5;border-radius:8px"></div></figure>`;
-  const compose = async (name: string, parts: string) => {
-    await b.send("Page.navigate", { url: "about:blank" });
-    await b.evaluate(`document.body.innerHTML = ${JSON.stringify(`<div style="display:inline-flex;gap:32px;padding:24px;font:500 14px system-ui;color:#555;background:#fff">${parts}</div>`)}; document.body.style.margin = 0; true`);
-    await sleep(300);
-    const size = await b.evaluate(`(() => { const r = document.body.firstElementChild.getBoundingClientRect(); return { width: Math.ceil(r.width), height: Math.ceil(r.height) }; })()`) as { width: number; height: number };
-    writeFileSync(join(OUT, name), await capture({ x: 0, y: 0, ...size }));
-  };
+  const panel = (label: string, image: string) => `<figure style="margin:0"><figcaption>${label}</figcaption><div style="width:256px;height:900px;background:url(data:image/png;base64,${image}) 0 0 no-repeat;border:1px solid #e5e5e5;border-radius:8px"></div></figure>`;
   await viewport(1440, 1000);
-  await compose("sidebar-before-after.png", panel("before (v2)", before, 0) + panel("after", after, 0));
-  await compose("sidebar-capture-variant.png", panel("default", after, 0) + panel("variant: Capture groups Riff and Meetings", variant, 0));
+  await b.send("Page.navigate", { url: "about:blank" });
+  await b.evaluate(`document.body.innerHTML = ${JSON.stringify(`<div style="display:inline-flex;gap:32px;padding:24px;font:500 14px system-ui;color:#555;background:#fff">${panel("before (v2)", before)}${panel("after (v4)", after)}</div>`)}; document.body.style.margin = 0; true`);
+  await sleep(300);
+  const size = await b.evaluate(`(() => { const r = document.body.firstElementChild.getBoundingClientRect(); return { width: Math.ceil(r.width), height: Math.ceil(r.height) }; })()`) as { width: number; height: number };
+  writeFileSync(join(OUT, "sidebar-before-after.png"), await capture({ x: 0, y: 0, ...size }));
 
   // The approval answered elsewhere leaves the open page by itself.
   await viewport(1440, 900);
@@ -474,6 +556,16 @@ try {
   await pub("approvals:decide", { id: approval.id, approved: true });
   await waitFor(`!${ROWS}.some((li) => li.dataset.status === 'waiting' && li.innerText.includes(${JSON.stringify(command)}))`, "the answered approval to leave", 10);
   check("an approval answered elsewhere stops needing you on the open page", true);
+
+  // --- 21. A queued task's place in line: with Perry paused nothing starts, so two queued tasks keep their places.
+  await pub("pause:set", { paused: true, from: "web" });
+  const first = await pub<string>("tasks:queueFromDashboard", { title: "Renew the passport photos", prompt: "Find a photo booth nearby and book a slot this week." });
+  const second = await pub<string>("tasks:queueFromDashboard", { title: "Export last year's receipts", prompt: "Download last year's statements and file the receipts." });
+  await go("/board?channel=tasks&tab=queued");
+  await waitFor(`document.querySelector('[data-row="task:${second}"] [data-in-line]')`, "the queued tasks' places");
+  const places = await b.evaluate(`[${JSON.stringify(first)}, ${JSON.stringify(second)}].map((id) => document.querySelector('[data-row="task:' + id + '"] [data-in-line]')?.innerText)`) as string[];
+  check("queued tasks say their place in line: next, then 2 in line", places[0] === "next" && places[1] === "2 in line", places);
+  await pub("pause:set", { paused: false, from: "web" });
 
   notes.browserErrors = browser.errors;
   check("no errors in the browser", browser.errors.length === 0, browser.errors);

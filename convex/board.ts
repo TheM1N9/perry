@@ -21,7 +21,7 @@ import { boardLink } from "../lib/board-links";
  */
 
 export type BoardStatus = "queued" | "working" | "waiting" | "blocked" | "done" | "failed";
-export type BoardKind = "chat" | "task" | "job" | "heartbeat" | "watch" | "goal";
+export type BoardKind = "chat" | "task" | "job" | "heartbeat" | "watch" | "goal" | "agent";
 export type BoardHolder = { engine?: EngineKind; model?: string; machine?: string };
 
 export type BoardThread = {
@@ -43,15 +43,25 @@ export type BoardThread = {
   now?: string;
   /** What a task stopped to ask the owner, answered on its own page. */
   question?: string;
+  /** A queued task's place in line: 1 is next. Tasks start oldest first. */
+  inLine?: number;
+  /** When a schedule runs next, while it is on and runs by the clock. */
+  nextAt?: number;
   projectId?: Id<"projects">;
   chatId?: Id<"conversations">;
+  /** A sub-agent's: the thread whose turn started it (a chat turn, a task or a schedule), which it is listed under. */
+  parent?: string;
   /** Its address on the Board: its channel, with it open. */
   href: string;
 };
 
 export type BoardVerb = "queued" | "started" | "posted" | "asked" | "approval" | "finished" | "failed" | "stopped" | "fired";
 /** `status`: how its thread stood with this event, where the event says so (a failure is failed for good). */
-export type BoardEvent = { id: string; thread?: string; at: number; verb: BoardVerb; status?: BoardStatus; text?: string; machine?: string; href?: string };
+export type BoardEvent = {
+  id: string; thread?: string; at: number; verb: BoardVerb; status?: BoardStatus; text?: string; machine?: string; href?: string;
+  /** A sub-agent's event, told on its parent's thread: the agent's own thread and title. */
+  agent?: { id: string; title: string };
+};
 
 /**
  * Something waiting on the owner: an approval a computer asked for, or a task's question. Each names the thread it
@@ -90,7 +100,14 @@ export type FeedItem =
   /** `step`: the last thing it did before it failed, so a failure says where without opening its steps. */
   | { kind: "error"; id: string; at: number; text: string; step?: string };
 
-export type ThreadView = { thread: BoardThread; plan?: Doc<"tasks">["plan"]; feed: FeedItem[] };
+export type ThreadView = {
+  thread: BoardThread; plan?: Doc<"tasks">["plan"]; feed: FeedItem[];
+  /** A parent's sub-agents, oldest first. */
+  agents?: BoardThread[];
+  /** A sub-agent's: the thread it belongs to, and what it has written so far (its output, once it is over). */
+  parent?: { id: string; title: string; holder?: BoardHolder };
+  output?: string;
+};
 
 /** Chat turns read for the board: enough for a few days of an active owner. */
 const RUNS = 120;
@@ -104,6 +121,8 @@ const JOB_RUNS = 3;
 /** A run with no turn behind it this long after it started was cut off (a restart mid-turn). */
 const ORPHAN_MS = 30 * 60_000;
 const ONLINE_MS = 90_000;
+/** Sub-agents read under one chat: a turn rarely starts more than a handful. */
+const AGENTS = 50;
 
 /** A text's first line as plain words, for a one-line summary: Markdown's marks and a link's address left out. */
 const firstLine = (text: string | undefined, max = 160) => {
@@ -299,6 +318,7 @@ function loader(ctx: QueryCtx, now: number) {
       updatedAt,
       ...(run?.finishedAt !== undefined && run.status !== "running" ? { finishedAt: run.finishedAt } : {}),
       now: firstLine(line),
+      ...(job.enabled && !job.trigger && run?.status !== "running" && job.nextRunAt > now ? { nextAt: job.nextRunAt } : {}),
       ...await projectOf(job.conversationId, job.origin),
       ...(job.conversationId ? { chatId: job.conversationId } : {}),
       href: boardLink({ channel: job.builtin === "heartbeat" ? "heartbeat" : "jobs", thread: `job:${job._id}` }),
@@ -350,7 +370,44 @@ function loader(ctx: QueryCtx, now: number) {
     return run ? `run:${run._id}` : undefined;
   }
 
-  return { chat, turnOf, allRunners, pending, latestRun, holderOf, runState, replyOf, runThread, taskThread, jobThread, watchThread, goalThread, threadIdOf };
+  /**
+   * A sub-agent a turn started (Claude's Agent or Task tool, Codex's spawned agents): the runner reports each in the
+   * turn's trace, and codex.recordAgents keeps it as a chat of its own under the turn's chat, with `providerAgent`.
+   */
+  async function agentThread(conversation: Doc<"conversations">, parent: string): Promise<BoardThread> {
+    const agent = conversation.providerAgent!;
+    const state: { status: BoardStatus; label: string } = agent.status === "running" ? { status: "working", label: "Running" }
+      : agent.status === "failed" ? { status: "failed", label: "Failed" } : agent.status === "cancelled" ? { status: "done", label: "Stopped" } : { status: "done", label: "Done" };
+    const machine = conversation.codexRunnerId ? (await allRunners()).get(conversation.codexRunnerId)?.name : undefined;
+    const lines = (agent.text ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+    return {
+      id: `agent:${conversation._id}`,
+      kind: "agent",
+      title: conversation.title ?? "Agent",
+      ask: agent.prompt ?? conversation.title ?? "",
+      ...state,
+      holder: { ...(conversation.engine ? { engine: conversation.engine } : {}), ...(conversation.model ? { model: conversation.model } : {}), ...(machine ? { machine } : {}) },
+      startedAt: agent.startedAt,
+      updatedAt: agent.updatedAt ?? agent.startedAt,
+      ...(agent.finishedAt !== undefined ? { finishedAt: agent.finishedAt } : {}),
+      // While it works, the last thing it wrote; failed, its last word (why); done, how its answer starts.
+      now: firstLine(agent.status === "done" || agent.status === "cancelled" ? lines[0] : lines.at(-1)),
+      parent,
+      ...(conversation.projectId ? { projectId: conversation.projectId } : {}),
+      href: boardLink({ thread: `agent:${conversation._id}` }),
+    };
+  }
+
+  /** The sub-agents started in a chat (each turn's, a task's or a schedule's), each with the thread it belongs to. */
+  async function agentsIn(conversationId: Id<"conversations"> | undefined): Promise<Array<{ conversation: Doc<"conversations">; parent?: string }>> {
+    if (!conversationId) return [];
+    const children = await ctx.db.query("conversations").withIndex("by_parent", (q) => q.eq("parentConversationId", conversationId)).order("desc").take(AGENTS);
+    return Promise.all(children.filter((child) => child.providerAgent).map(async (conversation) => ({
+      conversation, parent: await threadIdOf(conversationId, conversation.providerAgent!.runId),
+    })));
+  }
+
+  return { chat, turnOf, allRunners, pending, latestRun, holderOf, runState, replyOf, runThread, taskThread, jobThread, watchThread, goalThread, threadIdOf, agentThread, agentsIn };
 }
 
 export const get = query({
@@ -373,8 +430,12 @@ export const get = query({
     const seen = new Set(active.map((task) => task._id));
     const ended = (await ctx.db.query("tasks").withIndex("by_updated").order("desc").take(ENDED_TASKS + active.length))
       .filter((task) => !seen.has(task._id)).slice(0, ENDED_TASKS);
+    // The line queued tasks wait in, oldest first, as tasks.tick starts them; one waiting for a reset is out of it.
+    const line = active.filter((task) => task.status === "queued" && !(task.waiting && task.waiting.until > now))
+      .sort((a, b) => a.createdAt - b.createdAt).map((task) => task._id);
     for (const task of [...active, ...ended]) {
       const thread = await load.taskThread(task);
+      if (line.includes(task._id)) thread.inLine = line.indexOf(task._id) + 1;
       threads.push(thread);
       events.push({ id: `${thread.id}:queued`, thread: thread.id, at: task.createdAt, verb: "queued", status: "queued", text: task.title });
       if (task.status === "blocked" && task.question) events.push({ id: `${thread.id}:asked:${task.updatedAt}`, thread: thread.id, at: task.updatedAt, verb: "asked", status: "waiting", text: task.question });
@@ -438,6 +499,24 @@ export const get = query({
       events.push({ id: `approval:${approval._id}`, ...(thread ? { thread } : {}), at: approval.createdAt, verb: "approval", status: "waiting", text: approval.title, href: boardLink({ thread: thread ?? `approval:${approval._id}` }) });
     }
 
+    // Sub-agents, under the thread whose turn started them; their starts and ends are told on that thread.
+    const parents = new Set(threads.map((thread) => thread.id));
+    const chats = new Set(threads.flatMap((thread) => thread.chatId ? [thread.chatId] : []));
+    for (const chatId of chats) {
+      for (const { conversation, parent } of await load.agentsIn(chatId)) {
+        if (!parent || !parents.has(parent)) continue;
+        const agent = await load.agentThread(conversation, parent);
+        threads.push(agent);
+        const tag = { id: agent.id, title: agent.title };
+        const machine = agent.holder?.machine;
+        events.push({ id: `${agent.id}:started`, thread: parent, at: agent.startedAt, verb: "started", status: "working", agent: tag, ...(machine ? { machine } : {}) });
+        if (agent.finishedAt !== undefined) {
+          const verb: BoardVerb = agent.status === "failed" ? "failed" : agent.label === "Stopped" ? "stopped" : "finished";
+          events.push({ id: `${agent.id}:${verb}`, thread: parent, at: agent.finishedAt, verb, status: agent.status, agent: tag, ...(agent.now ? { text: agent.now } : {}), ...(machine ? { machine } : {}) });
+        }
+      }
+    }
+
     const rank: Record<BoardStatus, number> = { waiting: 0, working: 1, blocked: 2, queued: 3, failed: 4, done: 4 };
     // An event of a thread no longer on the board (an older task's turn) is left off the rail; an approval from a
     // chat whose turn is not on it stays, and opens where it is answered.
@@ -490,6 +569,15 @@ export const thread = query({
     const runsOf = async (conversationId: Id<"conversations"> | undefined, count: number) => conversationId
       ? (await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", conversationId)).order("desc").take(count)).reverse()
       : [];
+    /** The sub-agents a thread's turns started, for its pane to list. */
+    const agentsOf = async (thread: BoardThread) => thread.chatId
+      ? (await Promise.all((await load.agentsIn(thread.chatId)).filter((item) => item.parent === thread.id).map((item) => load.agentThread(item.conversation, thread.id))))
+        .sort((a, b) => a.startedAt - b.startedAt)
+      : [];
+    const withAgents = async (view: ThreadView): Promise<ThreadView> => {
+      const agents = await agentsOf(view.thread);
+      return agents.length ? { ...view, agents } : view;
+    };
     const sorted = (thread: BoardThread, plan?: Doc<"tasks">["plan"]): ThreadView => ({
       thread,
       ...(plan?.length ? { plan } : {}),
@@ -508,7 +596,7 @@ export const thread = query({
       if (task.status === "blocked" && task.question) feed.push({ kind: "question", id: `${args.id}:question`, at: task.updatedAt, text: task.question, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }) });
       if (task.status === "done" && task.result) feed.push({ kind: "result", id: `${args.id}:result`, at: task.updatedAt, text: task.result });
       if (task.status === "failed") feed.push({ kind: "error", id: `${args.id}:error`, at: task.updatedAt, text: task.error ?? "It stopped without saying why.", ...await lastStep(runs.at(-1)) });
-      return sorted(await load.taskThread(task), task.plan);
+      return withAgents(sorted(await load.taskThread(task), task.plan));
     }
     if (kind === "job") {
       const id = ctx.db.normalizeId("jobs", raw);
@@ -527,7 +615,7 @@ export const thread = query({
           if (item?.kind === "run") item.omit = job.lastResult;
         }
       }
-      return sorted(await load.jobThread(job));
+      return withAgents(sorted(await load.jobThread(job)));
     }
     if (kind === "run") {
       const id = ctx.db.normalizeId("runs", raw);
@@ -542,7 +630,7 @@ export const thread = query({
         const item = feed.find((entry) => entry.kind === "run");
         if (item?.kind === "run") item.omit = reply;
       }
-      return sorted(await load.runThread(run));
+      return withAgents(sorted(await load.runThread(run)));
     }
     if (kind === "watch") {
       const id = ctx.db.normalizeId("monitors", raw);
@@ -552,6 +640,25 @@ export const thread = query({
       if (monitor.lastCheckedAt && monitor.lastObservation && !firedOn(monitor)) feed.push({ kind: "update", id: `${args.id}:checked`, at: monitor.lastCheckedAt, text: monitor.lastObservation });
       if (monitor.failures > 0 && monitor.lastCheckedAt) feed.push({ kind: "error", id: `${args.id}:failing`, at: monitor.lastCheckedAt, text: monitor.failures === 1 ? "The last check failed." : `The last ${monitor.failures} checks failed.` });
       return sorted(load.watchThread(monitor));
+    }
+    if (kind === "agent") {
+      const id = ctx.db.normalizeId("conversations", raw);
+      const conversation = id ? await ctx.db.get(id) : null;
+      if (!conversation?.providerAgent || !conversation.parentConversationId) return null;
+      const parentId = await load.threadIdOf(conversation.parentConversationId, conversation.providerAgent.runId);
+      if (!parentId) return null;
+      const agent = await load.agentThread(conversation, parentId);
+      const [parentKind, parentRaw] = [parentId.slice(0, parentId.indexOf(":")), parentId.slice(parentId.indexOf(":") + 1)];
+      const parentDoc = parentKind === "task" ? await ctx.db.get(parentRaw as Id<"tasks">) : parentKind === "job" ? await ctx.db.get(parentRaw as Id<"jobs">) : await ctx.db.get(parentRaw as Id<"runs">);
+      const parentThread = !parentDoc ? undefined : parentKind === "task" ? await load.taskThread(parentDoc as Doc<"tasks">)
+        : parentKind === "job" ? await load.jobThread(parentDoc as Doc<"jobs">) : await load.runThread(parentDoc as Doc<"runs">);
+      const text = conversation.providerAgent.text?.trim();
+      if (agent.status === "failed") feed.push({ kind: "error", id: `${args.id}:error`, at: agent.finishedAt ?? agent.updatedAt, text: text ? firstLine(text.split("\n").filter(Boolean).at(-1)) ?? text : "It stopped without saying why." });
+      return {
+        ...sorted(agent),
+        parent: { id: parentId, title: parentThread?.title ?? "its turn", ...(parentThread?.holder ? { holder: parentThread.holder } : {}) },
+        ...(text ? { output: text } : {}),
+      };
     }
     if (kind === "goal") {
       const id = ctx.db.normalizeId("goals", raw);
