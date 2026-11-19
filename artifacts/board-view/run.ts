@@ -335,6 +335,8 @@ try {
   await waitFor(`document.querySelector('[role=dialog] [data-pane]')`, "the phone thread");
   check("on a phone the thread is a full screen of its own, without the board's title", await b.evaluate(`(() => { const d = document.querySelector('[role=dialog]').getBoundingClientRect(); return d.top === 0 && Math.round(d.width) === innerWidth && Math.round(d.height) === innerHeight; })()`) as boolean);
   check("nothing overflows sideways at 390 px (thread)", (await overflow()) <= 0, await overflow());
+  const modal = await b.evaluate(`({ inert: document.querySelector('[data-board] main').inert === true, focus: document.activeElement?.closest('[role=dialog]') ? 'pane' : (document.activeElement?.tagName ?? 'none') })`) as { inert: boolean; focus: string };
+  check("on a phone the board behind the thread is inert, and focus starts in the pane", modal.inert && modal.focus === "pane", modal);
   await shot("thread-phone.png");
   await go("/board?view=activity");
   await waitFor(`document.querySelector('[data-activity] [data-entry]')`, "the phone activity");

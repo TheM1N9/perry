@@ -104,9 +104,11 @@ function channelName(thread: BoardThread, projects: BoardView["projects"]): stri
 const TABS = ["open", "needs you", "working", "queued", "waiting", "done", "failed", "all"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_STATUS: Partial<Record<Tab, BoardStatus>> = { "needs you": "waiting", working: "working", queued: "queued", waiting: "blocked", done: "done", failed: "failed" };
+/** How a thread stands on the board: one with something waiting on the owner needs them, whatever its last turn did. */
+const standing = (thread: BoardThread, waiting?: BoardWaiting): BoardStatus => waiting ? "waiting" : thread.status;
 /** Open: not over. A watch is always on, so it counts as open only in its own channel. */
-const isOpen = (thread: BoardThread, channel?: string) => thread.status !== "done" && thread.status !== "failed" && (thread.kind !== "watch" || channel === "watches");
-const inTab = (thread: BoardThread, tab: Tab, channel?: string) => tab === "all" || (tab === "open" ? isOpen(thread, channel) : thread.status === TAB_STATUS[tab]);
+const isOpen = (status: BoardStatus, thread: BoardThread, channel?: string) => status !== "done" && status !== "failed" && (thread.kind !== "watch" || channel === "watches");
+const inTab = (status: BoardStatus, thread: BoardThread, tab: Tab, channel?: string) => tab === "all" || (tab === "open" ? isOpen(status, thread, channel) : status === TAB_STATUS[tab]);
 
 // --- The address: view, channel, tab, open thread, computer ------------------------------------------------------
 
@@ -205,8 +207,11 @@ export function Board() {
   /** Waiting items by the thread each holds up; one with no thread on the board is a row of its own. */
   const waitingFor = useMemo(() => new Map((board?.waiting ?? []).flatMap((item) => item.thread ? [[item.thread, item] as const] : [])), [board]);
   const loose = useMemo(() => (board?.waiting ?? []).filter((item) => !item.thread), [board]);
-  const open = board ? board.threads.filter((thread) => isOpen(thread)).length + loose.length : undefined;
+  const open = board ? board.threads.filter((thread) => isOpen(standing(thread, waitingFor.get(thread.id)), thread)).length + loose.length : undefined;
 
+  const dialog = useRef<HTMLDivElement>(null);
+  // Over the board, focus moves into the open thread, so the keyboard starts where the eye is.
+  useEffect(() => { if (place.thread && !wide) dialog.current?.focus(); }, [place.thread, wide]);
   const nav = <Nav board={board} channels={channels} place={place} open={open} unseen={unseen} />;
   const menu = <NavMenu channels={channels} place={place} open={open} />;
   const pane = place.thread
@@ -216,14 +221,15 @@ export function Board() {
   return (
     <div className="flex h-svh min-h-0 font-mono text-[13px] leading-5" data-board>
       {wide && <aside aria-label="Board" className="flex w-46 shrink-0 flex-col border-r">{nav}</aside>}
-      <main id="content" tabIndex={-1} className="@container flex min-w-0 flex-1 flex-col outline-none">
+      {/* On a narrow screen the open thread covers the board, which is inert behind it until it closes. */}
+      <main id="content" tabIndex={-1} inert={Boolean(pane && !wide) || undefined} className="@container flex min-w-0 flex-1 flex-col outline-none">
         <Header place={place} channel={channel} board={board} wide={wide} nav={menu} />
         {place.view === "tasks"
           ? <Tasks board={board} place={place} channel={channel} waitingFor={waitingFor} loose={loose} unseen={unseen} />
           : <Activity board={board} place={place} channel={channel} />}
       </main>
       {pane && wide && <aside aria-label="Thread" className="flex w-[min(440px,36vw)] shrink-0 flex-col border-l">{pane}</aside>}
-      {pane && !wide && <div role="dialog" aria-label="Thread" className="fixed inset-0 z-40 flex flex-col bg-background font-mono text-[13px] leading-5">{pane}</div>}
+      {pane && !wide && <div ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Thread" className="fixed outline-none inset-0 z-40 flex flex-col bg-background font-mono text-[13px] leading-5">{pane}</div>}
     </div>
   );
 }
@@ -348,7 +354,9 @@ function Tasks({ board, place, channel, waitingFor, loose, unseen }: {
 }) {
   const [shown, setShown] = useState(PAGE);
   useEffect(() => setShown(PAGE), [place.channel, place.tab, place.computer]);
-  const threads = (board?.threads ?? []).filter((thread) => (!channel || channel.has(thread)) && inTab(thread, place.tab, channel?.id) && onComputer(thread, place.computer));
+  const threads = (board?.threads ?? []).filter((thread) => (!channel || channel.has(thread)) && inTab(standing(thread, waitingFor.get(thread.id)), thread, place.tab, channel?.id) && onComputer(thread, place.computer))
+    // What needs the owner leads, whatever the order its threads came in.
+    .sort((a, b) => Number(Boolean(waitingFor.get(b.id))) - Number(Boolean(waitingFor.get(a.id))));
   const looseShown = !channel && !place.computer && (place.tab === "open" || place.tab === "needs you" || place.tab === "all") ? loose : [];
   const fresh = useArrivals(board ? [...looseShown.map((item) => item.id), ...threads.map((thread) => thread.id)] : undefined);
   return (
@@ -389,7 +397,7 @@ function Wants({ item }: { item: BoardWaiting }) {
 function ThreadRow({ thread, href, selected, waiting, channel, fresh, changed }: {
   thread: BoardThread; href: string; selected: boolean; waiting?: BoardWaiting; channel: string; fresh: boolean; changed: boolean;
 }) {
-  const status = waiting && thread.status !== "failed" ? "waiting" : thread.status;
+  const status = standing(thread, waiting);
   const line: ReactNode = waiting ? <Wants item={waiting} />
     : thread.status === "working" && thread.kind !== "watch" ? <span className="block truncate">{actor(thread.holder)}{thread.now ? ` · ${thread.now}` : ""}</span>
       : thread.now ? <span className="block truncate">{thread.status === "blocked" && thread.label.length > 10 ? `${thread.label.toLowerCase()} · ${thread.now}` : thread.now}</span> : null;
@@ -533,9 +541,11 @@ function Pane({ id, close, projects, waiting, onSeen, overlay }: {
 
   const runs = view.feed.filter((item) => item.kind === "run");
   const asking = view.feed.find((item) => item.kind === "approval" || item.kind === "question") as Extract<FeedItem, { kind: "approval" | "question" }> | undefined;
-  const result = [...view.feed].reverse().find((item) => item.kind === "result") as Extract<FeedItem, { kind: "result" }> | undefined;
-  const error = [...view.feed].reverse().find((item) => item.kind === "error") as Extract<FeedItem, { kind: "error" }> | undefined;
-  const status = asking && thread.status !== "failed" ? "waiting" : thread.status;
+  // How it ended last: a job that failed and then went through shows the result, not the old error.
+  const outcome = [...view.feed].reverse().find((item) => item.kind === "result" || item.kind === "error") as Extract<FeedItem, { kind: "result" | "error" }> | undefined;
+  const result = outcome?.kind === "result" ? outcome : undefined;
+  const error = outcome?.kind === "error" ? outcome : undefined;
+  const status = asking ? "waiting" : thread.status;
   const action = asking
     ? { label: asking.kind === "approval" ? "review" : "answer", href: asking.href }
     : thread.chatId ? { label: "open chat", href: `/chat/${thread.chatId}` } : { label: "open in work", href: thread.href };
@@ -556,7 +566,7 @@ function Pane({ id, close, projects, waiting, onSeen, overlay }: {
         {closer}
       </div>
 
-      <section aria-label="State" className="shrink-0 space-y-2.5 border-b px-4 py-3" data-task-block>
+      <section aria-label="State" className="max-h-[55%] shrink-0 space-y-2.5 overflow-y-auto overscroll-contain border-b px-4 py-3" data-task-block>
         <p className="font-semibold [overflow-wrap:anywhere]" data-title>{thread.title}</p>
         <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12px]">
           <State status={status} label={asking ? undefined : thread.label} live={thread.kind !== "watch"} className="font-semibold" />

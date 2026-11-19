@@ -110,6 +110,17 @@ const firstLine = (text: string | undefined, max = 160) => {
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\*\*|__|`/g, "").replace(/^\s*(?:#+|[-*>]|\d+\.)\s+/, "").trim();
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line || undefined;
 };
+/** The newest event of each thread (or of an approval with none), newest first. */
+function latestEach(events: BoardEvent[]): BoardEvent[] {
+  const seen = new Set<string>();
+  return [...events].sort((a, b) => b.at - a.at).filter((event) => {
+    const key = event.thread ?? event.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Whether a watch's last observation is the one that fired it: each check keeps only its own, and a firing stays. */
 const firedOn = (monitor: Doc<"monitors">) => monitor.firedAt !== undefined && Math.abs((monitor.lastCheckedAt ?? 0) - monitor.firedAt) < 1_000;
 const PLACE: Record<FeedItem["kind"], number> = { run: 0, update: 1, said: 1, approval: 1, question: 2, result: 2, error: 2 };
@@ -414,7 +425,8 @@ export const get = query({
       : event.verb === "approval" ? [(({ thread: _thread, ...rest }) => rest)(event)] : []);
     return {
       threads: threads.sort((a, b) => rank[a.status] - rank[b.status] || b.updatedAt - a.updatedAt),
-      events: placed.sort((a, b) => b.at - a.at).slice(0, EVENTS),
+      // Each thread's latest event, before the cut: a busy schedule's many runs never crowd the others out.
+      events: latestEach(placed).slice(0, EVENTS),
       waiting: waiting.map((item) => item.thread && !listed.has(item.thread) ? (({ thread: _thread, ...rest }) => rest)(item) : item).sort((a, b) => b.at - a.at),
       projects: (await ctx.db.query("projects").collect()).map((project) => ({ id: project._id, name: project.name })).sort((a, b) => a.name.localeCompare(b.name)),
       machines: [...runners.values()].filter((runner) => !runner.revoked).map((runner) => ({ name: runner.name, online: now - (runner.lastSeenAt ?? 0) < ONLINE_MS })),

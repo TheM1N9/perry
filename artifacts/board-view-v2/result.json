@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "checkedAt": "2026-11-19T20:48:55.219Z",
+  "checkedAt": "2026-11-19T21:14:16.628Z",
   "platform": "win32",
   "checks": {
     "there is no separate waiting strip: waiting items are rows": true,
@@ -38,12 +38,13 @@
     "on a phone the first row starts within 130 px, and rows stay compact": true,
     "on a phone the thread is a full screen of its own, without the board's title": true,
     "nothing overflows sideways at 390 px (thread)": true,
+    "on a phone the board behind the thread is inert, and focus starts in the pane": true,
     "nothing overflows sideways at 390 px (activity)": true,
     "an approval answered elsewhere stops needing you on the open page": true,
     "no errors in the browser": true
   },
   "notes": {
-    "appearedAfterMs": 186,
+    "appearedAfterMs": 172,
     "browserErrors": []
   }
 }
