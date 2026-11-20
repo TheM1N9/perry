@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runScroll, type ScrollInput } from "../../convex/lib/scroll/index";
-import type { Http, Key, KeyName, Services } from "../../convex/lib/scroll/types";
+import { SourceError, type Http, type Key, type KeyName, type Services } from "../../convex/lib/scroll/types";
 import type { InternetRequest, InternetResult } from "../../convex/lib/internet";
 
 // Each source against recorded answers (Hacker News is a real one, trimmed), no network:
@@ -91,6 +91,15 @@ test("Reddit: each subreddit's top and a search, threads not images, old ones dr
   assert.equal(new URL(week.calls[0].url).searchParams.get("t"), "week");
 });
 
+test("Reddit: a listing's posts, never a longer list inside one post (its awards)", async () => {
+  const awarded = structuredClone(reddit.top);
+  awarded.data.children[0].data.all_awardings = Array.from({ length: 8 }, (_, index) => ({ id: `award_${index}`, name: "Helpful", count: 1 }));
+  const { services } = world({ routes: [[/\/r\/cscareerquestions\/top\.json/, ok(awarded)], [/search\.json/, ok({ kind: "Listing", data: { children: [] } })]] });
+  const result = await run({ platforms: ["reddit"], subreddits: ["cscareerquestions"] }, services);
+  assert.equal(result.posts.length, 2);
+  assert.ok(result.posts.every((post) => post.url.startsWith("https://www.reddit.com/r/cscareerquestions/comments/")));
+});
+
 test("Reddit: turned away anonymously, it stops asking, says why and how to fix it", async () => {
   const { services, calls } = world({ routes: [[/reddit\.com/, status(403)]] });
   const result = await run({ platforms: ["reddit"], subreddits: ["cscareerquestions", "recruitinghell"], searches: ["AI hiring"] }, services);
@@ -146,6 +155,11 @@ test("YouTube: not set up without a connected account; with one, the discovered 
   assert.deepEqual(result.posts.map((post) => post.url).sort(), ["https://www.youtube.com/watch?v=Hx3kq9AiJob", "https://www.youtube.com/watch?v=Qp7AiHire01"]);
   assert.equal(result.posts.find((post) => post.url.endsWith("Hx3kq9AiJob"))?.author, "Career Lab");
 
+  const broken = world({ internet: () => ({ ...unavailable("available", { state: "degraded" }), error: { code: "unavailable", message: "Connected operation discovery failed.", repair: "Recheck later." } }) });
+  const degraded = await run({ platforms: ["youtube"] }, broken.services);
+  assert.equal(source(degraded, "youtube")?.status, "failed", "a failed discovery is not a missing setup");
+  assert.match(source(degraded, "youtube")?.note ?? "", /discovery failed/);
+
   const two = world({ internet: (request) => request.connector ? connectedData(keyed.youtubeSearch) : unavailable("available", { ...keyed.youtubeDiscovery, accounts: [{ id: "ca_1", status: "ACTIVE" }, { id: "ca_2", status: "ACTIVE" }] }) });
   const several = await run({ platforms: ["youtube"] }, two.services);
   assert.equal(source(several, "youtube")?.status, "failed");
@@ -177,7 +191,7 @@ test("X with an API bearer token: one recent search of every query, its metrics 
   const url = new URL(calls[0].url);
   assert.equal(url.hostname, "api.x.com");
   assert.equal(calls[0].headers.authorization, "Bearer x-bearer-secret");
-  assert.match(url.searchParams.get("query") ?? "", /^\(AI hiring\) OR \(AI recruiter\) -is:retweet/);
+  assert.equal(url.searchParams.get("query"), "((AI hiring) OR (AI recruiter)) -is:retweet", "reposts left out of every search");
   assert.equal(url.searchParams.get("start_time"), new Date((NOW - 86_400) * 1000).toISOString());
   const top = result.posts.find((post) => post.url === "https://x.com/hiringlead/status/1859100000000000001");
   assert.deepEqual([top?.likes, top?.comments, top?.shares, top?.views, top?.author], [1800, 96, 250, 240000, "hiringlead"]);
@@ -206,6 +220,16 @@ test("Product Hunt: the window's launches, only those about the topic", async ()
   assert.equal(JSON.parse(calls[0].body ?? "{}").variables.after, new Date((NOW - 86_400) * 1000).toISOString());
   assert.deepEqual(result.posts.map((post) => post.url), ["https://www.producthunt.com/posts/hireloop"]);
   assert.equal(result.posts[0].likes, 412);
+
+  const late = structuredClone(keyed.producthunt);
+  late.data.posts.edges[1].node.description = `${"Pick colors faster. ".repeat(30)}Now with AI hiring palettes.`;
+  const lateWorld = world({ keys: { producthunt: { value: "ph-token" } }, routes: [[/producthunt/, ok(late)]] });
+  assert.equal((await run({ platforms: ["producthunt"] }, lateWorld.services)).posts.length, 2, "matched on the whole launch, not the cut text");
+
+  const refused = world({ keys: { producthunt: { value: "ph-token" } }, routes: [[/producthunt/, ok({ data: null, errors: [{ message: "Field 'posts' is missing required arguments" }] })]] });
+  const failed = await run({ platforms: ["producthunt"] }, refused.services);
+  assert.equal(source(failed, "producthunt")?.status, "failed", "a GraphQL error is not an empty day");
+  assert.match(source(failed, "producthunt")?.note ?? "", /missing required arguments/);
 });
 
 test("treg: X through a treg token when there is no X key, with what it cost", async () => {
@@ -220,6 +244,13 @@ test("treg: X through a treg token when there is no X key, with what it cost", a
   assert.equal(source(result, "x")?.provider, "treg");
   assert.match(result.coverage, /x 1 via treg/);
   assert.match(result.coverage, /\$0\.00075 on treg/);
+  assert.match(calls[0].headers["idempotency-key"], /^[0-9a-f-]{36}$/);
+
+  let tries = 0;
+  const dropped = world({ keys: { treg: { value: "treg-token" } }, routes: [[/treg\.to/, () => ++tries === 1 ? new Error("ECONNRESET") : ok(keyed.tregX)]] });
+  await run({ platforms: ["x"] }, dropped.services);
+  assert.equal(dropped.calls.length, 2);
+  assert.equal(dropped.calls[0].headers["idempotency-key"], dropped.calls[1].headers["idempotency-key"], "a retry is a replay, not a second paid search");
 });
 
 test("a failing request is tried again once at most, and only for a server failure or no connection", async () => {
@@ -238,6 +269,9 @@ test("a failing request is tried again once at most, and only for a server failu
   const missing = world({ routes: [[/hn\.algolia/, status(404)]] });
   await run({ platforms: ["hackernews"] }, missing.services);
   assert.equal(missing.calls.length, 1);
+  const tooBig = world({ keys: { x: { value: "k" } }, routes: [[/api\.x\.com/, new SourceError("an answer over 5 MB")]] });
+  assert.match(source(await run({ platforms: ["x"] }, tooBig.services), "x")?.note ?? "", /over 5 MB/);
+  assert.equal(tooBig.calls.length, 1, "refused locally, not sent again");
   const limited = world({ keys: { x: { value: "k" } }, routes: [[/api\.x\.com/, status(429)]] });
   const rate = await run({ platforms: ["x"] }, limited.services);
   assert.equal(limited.calls.length, 1);
@@ -275,4 +309,17 @@ test("the coverage line, the dropped counts, and a repeat run returning only wha
   assert.equal(third.nothingNew, true);
   const again = await run({ platforms: ["hackernews", "reddit"], subreddits: ["cscareerquestions"], limit: 3, includeSeen: true }, services, seen);
   assert.equal(again.posts.length, 3, "asked to, it shows them again");
+  assert.equal(again.nothingNew, false, "showing them again is not 'nothing new'");
+});
+
+test("a run where no platform answered is not 'nothing new'", async () => {
+  const down = world({ keys: { x: { value: "k" } }, routes: [[/api\.x\.com/, status(401)], [/hn\.algolia/, status(503)]] });
+  const result = await run({ platforms: ["x", "hackernews", "tiktok"] }, down.services);
+  assert.equal(result.posts.length, 0);
+  assert.equal(result.nothingNew, false);
+  assert.equal(result.noSource, true);
+  const quiet = world({ routes: [[/hn\.algolia/, ok({ hits: [] })]] });
+  const empty = await run({ platforms: ["hackernews", "x"] }, quiet.services);
+  assert.equal(empty.nothingNew, true, "one platform answered with nothing: a quiet day");
+  assert.equal(empty.noSource, false);
 });

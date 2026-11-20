@@ -22,6 +22,13 @@ the tests and the code.
   copy is the one dropped.
 - A post shown in an earlier run of the same topic is shown again; a different topic shares
   its seen set; the counts of dropped old, duplicate and already seen posts are wrong.
+- Two topics that differ only in punctuation ("C++", "C#") or after 80 characters share one
+  seen set; a link longer than the stored key length is never recognised as seen.
+
+Added after review (CodeRabbit on #371):
+
+- A run where every source failed is reported as "nothing new", so a daily job stays quiet
+  about a broken source; a run asked to show seen posts again says "nothing new".
 
 ## Sources (adapters.test.ts, recorded fixtures, no network)
 
@@ -35,7 +42,14 @@ the tests and the code.
 - One slow source holds up the whole run past its deadline.
 - YouTube runs without a connected account, picks one of several accounts on its own, or
   sends arguments its discovered schema does not take.
-- Product Hunt's day of launches is returned whole instead of the ones about the topic.
+- Product Hunt's day of launches is returned whole instead of the ones about the topic; a
+  launch naming the topic late in its description is dropped; a GraphQL error is read as no
+  launches.
+- A Reddit post's own long list (its awards) is taken for the listing's posts.
+- X reposts are excluded from the last search only.
+- A YouTube discovery that failed is reported as "not set up".
+- A request refused locally (too big, wrong host) is sent again; a paid treg search retried
+  after a dropped connection is charged twice.
 
 ## End to end (run.mjs, isolated PERRY_HOME, real backend over SQLite)
 
@@ -48,6 +62,8 @@ the tests and the code.
 - A key saved in Logins & secrets is not picked up, or its value appears in the result.
 - The seen store grows without bound: topics never cleaned up, keys per topic never capped.
 - The scroll skill is not installed into the skills folder, overwrites a copy the owner
-  changed, or is not updated when Perry's own copy changes.
+  changed (even one that quotes the marker in its body), or is not updated when Perry's own
+  copy changes.
+- What a run showed is remembered although its result never reached the agent.
 - A daily job set up for a scroll cannot run it, or says something when nothing new
   cleared the bar.

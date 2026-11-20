@@ -27,7 +27,8 @@ export const remember = internalMutation({
   handler: async (ctx, args): Promise<void> => {
     const now = Date.now();
     const row = await ctx.db.query("scrollSeen").withIndex("by_topic", (q) => q.eq("topic", args.topic)).unique();
-    const fresh = args.keys.map((key) => key.slice(0, 500));
+    // seenKey bounds every key, so what is stored is what the next run compares.
+    const fresh = args.keys.filter((key) => key.length <= 300);
     const keep = new Set(fresh);
     const keys = [...(row?.keys ?? []).filter((key) => !keep.has(key)), ...fresh].slice(-KEEP);
     if (row) await ctx.db.patch(row._id, { keys, updatedAt: now });

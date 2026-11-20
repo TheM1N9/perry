@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { merge, seenKey, WINDOWS, type Post, type Window } from "./merge";
+import { hash, merge, seenKey, WINDOWS, type Post, type Window } from "./merge";
 import { NotSetUp, PLATFORMS, KEYS, reason, type Fetched, type Plan, type Platform, type Services, type Source } from "./types";
 import { hackernews } from "./sources/hackernews";
 import { reddit } from "./sources/reddit";
@@ -43,14 +43,23 @@ export type ScrollResult = {
   coverage: string;
   sources: SourceRow[];
   dropped: { old: number; duplicates: number; seen: number };
-  /** Nothing new in the window since this topic's last run. */
+  /** At least one platform answered, and nothing new was in the window since this topic's last run. */
   nothingNew: boolean;
+  /** Not one platform answered: every one asked failed or is not set up. */
+  noSource: boolean;
   /** What this run showed, for the next run of the topic to skip. Not shown to the agent. */
   shownKeys: string[];
 };
 
-/** The name a topic's shown posts are kept under. */
-export const topicKey = (topic: string) => topic.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "topic";
+/**
+ * The name a topic's shown posts are kept under: readable, and told apart by a hash of the whole
+ * topic ("C++" and "C#"), ignoring only case and spacing.
+ */
+export function topicKey(topic: string): string {
+  const exact = topic.toLowerCase().normalize("NFKC").replace(/\s+/g, " ").trim();
+  const slug = exact.normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return `${slug || "topic"}-${hash(exact)}`;
+}
 const DEADLINE_MS = 40_000;
 
 function setUpHint(platform: Platform): string {
@@ -121,6 +130,7 @@ export async function runScroll(input: ScrollInput, services: Services, options:
       row.note = [inWindow ? "nothing new since the last run" : "no posts in the window", row.note].filter(Boolean).join("; ");
     }
   }
+  const answered = rows.some(({ row }) => row.status === "ok" || row.status === "empty");
   const cost = rows.reduce((sum, { fetched }) => sum + (fetched?.costMicro ?? 0), 0);
   const describe = ({ row }: (typeof rows)[number]) => {
     const via = row.provider === "treg" ? " via treg" : "";
@@ -146,7 +156,9 @@ export async function runScroll(input: ScrollInput, services: Services, options:
       ...(post.views ? { views: post.views } : {}), ...(post.likes ? { likes: post.likes } : {}), ...(post.comments ? { comments: post.comments } : {}), ...(post.shares ? { shares: post.shares } : {}),
       ...(post.via ? { via: post.via } : {}),
     })),
-    coverage, sources: rows.map(({ row }) => row), dropped: counts.dropped, nothingNew: counts.feed.length === 0,
+    coverage, sources: rows.map(({ row }) => row), dropped: counts.dropped,
+    // A run where nothing answered is not news that nothing happened: a job must say a source is down.
+    nothingNew: answered && counts.feed.length === 0 && !merged.shown.length, noSource: !answered,
     shownKeys: merged.shown.map(seenKey),
   };
 }

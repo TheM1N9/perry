@@ -14,6 +14,8 @@ export const youtube: Source = {
     const found = await services.internet({ operation: "search", platform: "youtube", query: plan.searches[0] ?? plan.topic, limit: 20 }, signal);
     const discovery = found.discovery;
     if (!discovery || discovery.state === "setup_required") throw new NotSetUp("Connect YouTube in Apps & skills → Connectors");
+    // Discovery that failed says nothing about whether YouTube is set up: it is a failure.
+    if (discovery.state === "degraded") throw new SourceError((found.error ?? discovery.error)?.message.replace(/\.$/, "").toLowerCase() ?? "the connected YouTube account could not be checked");
     if (discovery.state === "expired_auth") throw new NotSetUp("the connected YouTube account needs reconnecting in Apps & skills → Connectors");
     const active = discovery.accounts.filter((account) => account.status === "ACTIVE");
     if (!active.length) throw new NotSetUp("Connect YouTube in Apps & skills → Connectors");

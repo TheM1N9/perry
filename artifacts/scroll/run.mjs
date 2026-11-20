@@ -150,7 +150,7 @@ try {
     assert.equal(third.result.nothingNew, true);
     assert.match(third.result.coverage, /hackernews 0 \(nothing new since the last run\)/);
     assert.match(third.result.note, /Nothing new/);
-    const seenRow = (await all("scrollSeen")).find(row => row.topic === "ai-hiring");
+    const seenRow = (await all("scrollSeen")).find(row => /^ai-hiring-[0-9a-f]{8}$/.test(row.topic));
     assert.equal(seenRow.keys.length, 6);
     const other = (await scroll({ ...free, topic: "AI jobs" })).value.result;
     assert.equal(other.posts.length, 6, "a different topic has its own memory");
@@ -205,7 +205,8 @@ try {
     writeFileSync(installed, shipped.replace("# Scroll", "# Scroll (an older Perry's copy)"));
     assert.deepEqual(installCoreSkills(undefined, skills), ["scroll"], "Perry's own copy is updated");
     assert.equal(readFileSync(installed, "utf8"), shipped);
-    const owners = shipped.replace(/^  perry: core\r?\n/m, "").replace("# Scroll", "# Scroll, my way");
+    // The owner's copy may quote the marker in its body (an example); only its frontmatter says whose it is.
+    const owners = shipped.replace(/^  perry: core\r?\n/m, "").replace("# Scroll", "# Scroll, my way\n\n```yaml\nmetadata:\n  perry: core\n```");
     writeFileSync(installed, owners);
     assert.deepEqual(installCoreSkills(undefined, skills), []);
     assert.equal(readFileSync(installed, "utf8"), owners, "the owner's version stays");

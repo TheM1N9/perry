@@ -105,7 +105,21 @@ test("merge: drops posts older than the window, duplicates and what this topic a
   assert.equal(third.dropped.seen, 3);
 });
 
-test("seen key: the link, or the start of the text for a post without one", () => {
+test("seen key: the link, or the start of the text for a post without one; a long link bounded but still its own", () => {
   assert.equal(seenKey(post({ url: "https://a.example/1", text: "x" })), "https://a.example/1");
   assert.equal(seenKey(post({ text: "y".repeat(200) })), "y".repeat(80));
+  const long = `https://news.example/rss/articles/${"a".repeat(600)}`;
+  const one = seenKey(post({ url: `${long}1` }));
+  const two = seenKey(post({ url: `${long}2` }));
+  assert.ok(one.length <= 300 && two.length <= 300);
+  assert.notEqual(one, two, "two long links that share their start stay apart");
+  assert.equal(one, seenKey(post({ url: `${long}1` })), "the same link, the same key");
+});
+
+test("topic key: case and spacing ignored, punctuation and length kept apart", async () => {
+  const { topicKey } = await import("../../convex/lib/scroll/index");
+  assert.equal(topicKey("AI  Hiring"), topicKey("ai hiring"));
+  assert.notEqual(topicKey("C++"), topicKey("C#"));
+  assert.notEqual(topicKey(`${"x".repeat(90)} one`), topicKey(`${"x".repeat(90)} two`));
+  assert.match(topicKey("AI hiring"), /^ai-hiring-[0-9a-f]{8}$/);
 });

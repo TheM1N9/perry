@@ -149,8 +149,17 @@ export function rank(items: Post[], span: number, now: number): Scored[] {
   return out;
 }
 
-/** What a later run of the same topic recognises a shown post by. */
-export const seenKey = (post: Pick<Post, "url" | "text">) => post.url || post.text.slice(0, 80);
+/** FNV-1a, 32 bits, as hex: enough to tell two long links apart in one topic's memory. */
+export function hash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+/** What a later run of the same topic recognises a shown post by: its link, or the start of its text; at most 300 characters. */
+export function seenKey(post: Pick<Post, "url" | "text">): string {
+  const key = post.url || post.text.slice(0, 80);
+  return key.length <= 300 ? key : `${key.slice(0, 280)}#${hash(key)}`;
+}
 
 export type Merged = {
   /** Every new post in the window, best first. */

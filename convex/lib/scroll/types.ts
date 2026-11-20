@@ -91,7 +91,8 @@ export async function attempt(request: () => Promise<Http>, signal: AbortSignal)
       if (reply.status >= 500 && tries === 0) { await pause(400, signal); continue; }
       return reply;
     } catch (error) {
-      if (signal.aborted || tries > 0) throw error;
+      // A request refused before or after it went (too big, not its provider's host) is not tried again.
+      if (signal.aborted || tries > 0 || error instanceof SourceError) throw error;
       await pause(400, signal);
     }
   }

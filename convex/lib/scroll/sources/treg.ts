@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { item, rowsOf } from "../merge";
 import { attempt, fresh, json, parts, type Platform, type Source } from "../types";
 
@@ -23,9 +24,11 @@ export const treg: Source = {
     const tool = TOOLS[platform]!;
     const searches = platform === "x" ? [plan.searches.map((search) => `(${search})`).join(" OR ")] : plan.searches.slice(0, tool.searches);
     return await parts(fetched, searches, (search) => `"${search}"`, async (search) => {
+      // One key per search, the same on its retry: treg answers a replay from what it stored, without charging again.
+      const idempotency = randomUUID();
       const reply = await attempt(() => services.send(`https://treg.to/call/${tool.id}`, {
         method: "POST", body: JSON.stringify(tool.body(search, plan.now - plan.span)),
-        headers: { "x-treg-token": services.keys.treg!.value, "content-type": "application/json", "x-treg-route-max-cost": "0.05" },
+        headers: { "x-treg-token": services.keys.treg!.value, "content-type": "application/json", "x-treg-route-max-cost": "0.05", "idempotency-key": idempotency },
       }, signal), signal);
       const body = json(reply) as { output?: Record<string, unknown>; _treg?: { charged_micro?: number } };
       const cost = Number(reply.headers["x-treg-cost-micro"] ?? body._treg?.charged_micro ?? 0);

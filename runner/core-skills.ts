@@ -13,7 +13,10 @@ import { HOME, PATHS } from "./home";
  * core-skills.json remembers which were installed once.
  */
 const SHIPPED = join(dirname(fileURLToPath(import.meta.url)), "..", "skills");
+const FRONTMATTER = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 const CORE = /^metadata:[ \t]*\r?\n(?:[ \t]+.*\r?\n)*?[ \t]+perry:[ \t]*core[ \t]*\r?$/m;
+/** Marked as Perry's own in its leading frontmatter, not merely quoting the marker somewhere in its body. */
+const isCore = (skill: string) => CORE.test(`${FRONTMATTER.exec(skill)?.[1] ?? ""}\n`);
 
 export function installCoreSkills(from = SHIPPED, to = PATHS.skills, record = join(HOME, "core-skills.json")): string[] {
   if (!existsSync(from)) return [];
@@ -28,7 +31,7 @@ export function installCoreSkills(from = SHIPPED, to = PATHS.skills, record = jo
     const target = join(to, entry.name, "SKILL.md");
     if (existsSync(target)) {
       const current = readFileSync(target, "utf8");
-      if (current === skill || !CORE.test(current)) { installed[entry.name] = true; continue; }
+      if (current === skill || !isCore(current)) { installed[entry.name] = true; continue; }
     } else if (installed[entry.name]) continue;
     mkdirSync(to, { recursive: true });
     cpSync(join(from, entry.name), join(to, entry.name), { recursive: true, force: true });

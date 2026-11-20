@@ -1144,12 +1144,15 @@ const internet_scroll = createTool({
       internet: (request, signal) => executeInternet(request, internet, signal),
       keys,
     }, { seen: new Set(seen), signal: ctx.signal ?? new AbortController().signal });
+    const note = result.noSource
+      ? "No platform answered: every one asked failed or is not set up. Tell the owner, with the coverage line; this is not a quiet day."
+      : result.nothingNew
+        ? "Nothing new cleared the window since this topic's last run. Say so in one line; a job that only reports news replies with its quiet word."
+        : "Ranked by score, which only sorts: read the posts, group them into stories and judge them as the scroll skill says. Quote the coverage line.";
+    const clean: unknown = JSON.parse(await ctx.runQuery(internal.internet.clean, { json: JSON.stringify({ ...result, note }) }));
+    // Remembered only once the result is ready to hand over.
     if (shownKeys.length) await ctx.runMutation(internal.scroll.remember, { topic, keys: shownKeys });
-    const note = result.nothingNew
-      ? "Nothing new cleared the window since this topic's last run. Say so in one line; a job that only reports news replies with its quiet word."
-      : "Ranked by score, which only sorts: read the posts, group them into stories and judge them as the scroll skill says. Quote the coverage line.";
-    const clean: string = await ctx.runQuery(internal.internet.clean, { json: JSON.stringify({ ...result, note }) });
-    return JSON.parse(clean);
+    return clean;
   },
 });
 

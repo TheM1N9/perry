@@ -17,7 +17,7 @@ export const xApi: Source = {
     // Recent search covers seven days; start a minute inside that for a week's window.
     const start = new Date(Math.max(plan.now - plan.span, plan.now - 604_740) * 1000).toISOString();
     const url = `https://api.x.com/2/tweets/search/recent?${query({
-      query: `${terms} -is:retweet`, start_time: start, max_results: 100, sort_order: "relevancy",
+      query: `(${terms}) -is:retweet`, start_time: start, max_results: 100, sort_order: "relevancy",
       "tweet.fields": "created_at,public_metrics,author_id", expansions: "author_id", "user.fields": "username",
     })}`;
     const body = json(await attempt(() => services.send(url, { method: "GET", headers: { authorization: `Bearer ${services.keys.x!.value}` } }, signal), signal)) as {

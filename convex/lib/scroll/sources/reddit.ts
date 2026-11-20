@@ -1,4 +1,4 @@
-import { item, rowsOf } from "../merge";
+import { item } from "../merge";
 import { attempt, fresh, json, parts, plain, query, SourceError, type Http, type Source } from "../types";
 
 const NAME = /^[A-Za-z0-9_]{2,21}$/;
@@ -35,9 +35,11 @@ export const reddit: Source = {
     ];
     try {
       // One host: asked one at a time, and not asked again once it refuses.
-      return await parts(fetched, asks, (ask) => ask.label, async (ask) => rowsOf(json(await attempt(() => read(ask.path, ask.params), signal))).map((row) => ({
-        ...item("reddit", row, plan.now), text: plain([row.title, row.selftext].filter(Boolean).join(". ")),
-      })), { sequential: true, signal });
+      return await parts(fetched, asks, (ask) => ask.label, async (ask) => {
+        // A listing's posts are its data.children, never another list inside a post (its awards).
+        const listing = json(await attempt(() => read(ask.path, ask.params), signal)) as { data?: { children?: Array<{ data?: Record<string, unknown> }> } };
+        return (listing.data?.children ?? []).flatMap((child) => child.data ? [{ ...item("reddit", child.data, plan.now), text: plain([child.data.title, child.data.selftext].filter(Boolean).join(". ")) }] : []);
+      }, { sequential: true, signal });
     } catch (error) {
       if (!app && error instanceof SourceError && /refused|rate limited/.test(error.message)) {
         throw new SourceError(`${error.message}; Reddit turns away anonymous reads from some networks. A free Reddit app saved as "Reddit app" in Settings → Logins & secrets reads through its API`);
