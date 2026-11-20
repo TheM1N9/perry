@@ -53,6 +53,7 @@ import * as lib_pages from "../convex/lib/pages";
 import * as lib_price from "../convex/lib/price";
 import * as lib_provenance from "../convex/lib/provenance";
 import * as lib_recall from "../convex/lib/recall";
+import * as lib_riffStyles from "../convex/lib/riffStyles";
 import * as lib_routing from "../convex/lib/routing";
 import * as lib_secrets from "../convex/lib/secrets";
 import * as lib_settle_traces from "../convex/lib/settle-traces";
@@ -85,6 +86,7 @@ import * as projects from "../convex/projects";
 import * as queue from "../convex/queue";
 import * as reactions from "../convex/reactions";
 import * as recovery from "../convex/recovery";
+import * as riff from "../convex/riff";
 import * as routing from "../convex/routing";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
@@ -159,6 +161,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/price": lib_price,
   "lib/provenance": lib_provenance,
   "lib/recall": lib_recall,
+  "lib/riffStyles": lib_riffStyles,
   "lib/routing": lib_routing,
   "lib/secrets": lib_secrets,
   "lib/settle-traces": lib_settle_traces,
@@ -191,6 +194,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "queue": queue,
   "reactions": reactions,
   "recovery": recovery,
+  "riff": riff,
   "routing": routing,
   "runner": runner,
   "runs": runs,

@@ -24,30 +24,38 @@ import { SlashCommands } from "./slash-commands";
  * remembered, so a newer note from the server replaces what is shown without
  * the editor echoing it back as an edit.
  */
-export function NoteEditor({ value, onChange, onBlur, label }: {
+export function NoteEditor({ value, onChange, onBlur, label, toolbar = true, placeholder = "Write, or type / for blocks…", onSelection, className }: {
   value: string;
   onChange: (value: string) => void;
   onBlur?: () => void;
   label: string;
+  /** The formatting bar above the words; Riff leaves it out (Markdown shortcuts, / and Ctrl+B still work). */
+  toolbar?: boolean;
+  placeholder?: string;
+  /** The words selected now, "" when none: what Riff's instructions are about. */
+  onSelection?: (text: string) => void;
+  className?: string;
 }) {
   const router = useRouter();
   const change = useRef(onChange);
   change.current = onChange;
   const blur = useRef(onBlur);
   blur.current = onBlur;
+  const selected = useRef(onSelection);
+  selected.current = onSelection;
   const emitted = useRef(value);
   const editor = useEditor({
     extensions: [
       ...documentExtensions(),
       Markdown,
-      Placeholder.configure({ placeholder: "Write, or type / for blocks…" }),
+      Placeholder.configure({ placeholder }),
       SlashCommands,
     ],
     content: value,
     contentType: "markdown",
     immediatelyRender: false,
     editorProps: {
-      attributes: { class: "prose-note min-h-[50vh] outline-none", "aria-label": label, role: "textbox", "aria-multiline": "true", "data-note-editor": "" },
+      attributes: { class: cn("prose-note min-h-[50vh] outline-none", className), "aria-label": label, role: "textbox", "aria-multiline": "true", "data-note-editor": "" },
       handleClick: (_view, _pos, event) => {
         const href = (event.target instanceof Element ? event.target.closest("a") : null)?.getAttribute("href");
         if (!href || !(event.metaKey || event.ctrlKey)) return false;
@@ -63,6 +71,10 @@ export function NoteEditor({ value, onChange, onBlur, label }: {
       change.current(markdown);
     },
     onBlur: () => blur.current?.(),
+    onSelectionUpdate: ({ editor: current }) => {
+      const { from, to } = current.state.selection;
+      selected.current?.(from === to ? "" : current.state.doc.textBetween(from, to, "\n").slice(0, 4_000));
+    },
   });
   const state = useEditorState({
     editor,
@@ -89,6 +101,7 @@ export function NoteEditor({ value, onChange, onBlur, label }: {
   }, [editor, value]);
 
   if (!editor) return <div className="min-h-[50vh]" aria-busy="true" />;
+  if (!toolbar) return <EditorContent editor={editor} />;
   const run = (action: (chain: ReturnType<Editor["chain"]>) => ReturnType<Editor["chain"]>) => () => void action(editor.chain().focus()).run();
   return (
     <div>
