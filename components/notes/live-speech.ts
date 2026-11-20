@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FinalPhrases, type SpeechResult } from "./speech-results";
 
-type Result = { isFinal: boolean; 0: { transcript: string; confidence: number } };
 type Recognition = {
   continuous: boolean;
   interimResults: boolean;
@@ -10,7 +10,7 @@ type Recognition = {
   onstart: (() => void) | null;
   onend: (() => void) | null;
   onerror: ((event: { error: string }) => void) | null;
-  onresult: ((event: { resultIndex: number; results: ArrayLike<Result> }) => void) | null;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<SpeechResult> }) => void) | null;
   start: () => void;
   stop: () => void;
   abort: () => void;
@@ -28,13 +28,10 @@ const constructor = () => {
 const TENTATIVE_MS = 1_500;
 
 /**
- * The browser owns the microphone; only final phrases become editing instructions.
- *
- * Android Chrome reports `isFinal` for growing partials too, each at a new index, with a confidence of 0; its
- * real final has a confidence above 0. So a final counts only with confidence. A browser that reports 0 even for
- * real finals still gets its words in: a zero-confidence final is held as tentative, replaced by any later
- * tentative, and counted when nothing confirms it within TENTATIVE_MS or the session ends. A confirmed final
- * after a tentative one was counted adds only what is new.
+ * The browser owns the microphone; only final phrases become editing instructions. Which results are finished
+ * phrases is FinalPhrases' (speech-results.ts): a final counts at once only with a confidence above 0 (Android
+ * Chrome reports growing partials as zero-confidence finals); zero-confidence finals wait, each kept in order, and
+ * count when nothing confirms them within TENTATIVE_MS or the session ends.
  */
 export function useLiveSpeech(onWords: (text: string) => void) {
   const [supported, setSupported] = useState(false);
@@ -98,58 +95,34 @@ export function useLiveSpeech(onWords: (text: string) => void) {
     current.continuous = true;
     current.interimResults = true;
     current.lang = navigator.language || "en-US";
-    let finalThrough = -1;
     let beganAt = Date.now();
     let shortSessions = 0;
-    let tentative = "";
-    let counted = "";
+    const phrases = new FinalPhrases();
     let tentativeTimer: ReturnType<typeof setTimeout> | undefined;
-    const say = (text: string) => {
-      const phrase = text.trim();
-      if (!phrase) return;
+    const say = (found: string[]) => {
+      const text = found.join(" ").trim();
+      if (!text) return;
       shortSessions = 0;
-      words.current(phrase);
+      words.current(text);
     };
     const countTentative = () => {
       clearTimeout(tentativeTimer);
       tentativeTimer = undefined;
-      if (!tentative) return;
-      say(tentative);
-      counted = tentative.trim();
-      tentative = "";
+      say(phrases.flush());
     };
-    stopTentative.current = () => { clearTimeout(tentativeTimer); tentativeTimer = undefined; };
+    stopTentative.current = () => { clearTimeout(tentativeTimer); tentativeTimer = undefined; phrases.clear(); };
     current.onstart = () => {
-      finalThrough = -1;
+      phrases.restart();
       beganAt = Date.now();
       setPhase(wanted.current ? "listening" : "stopping");
       if (!wanted.current) current.stop();
     };
     current.onresult = (event) => {
-      const final: string[] = [];
-      const partial: string[] = [];
-      for (let index = event.resultIndex; index < event.results.length; index++) {
-        const result = event.results[index];
-        if (result.isFinal && result[0].confidence > 0) {
-          if (index > finalThrough) final.push(result[0].transcript);
-          finalThrough = Math.max(finalThrough, index);
-        } else if (result.isFinal) {
-          if (index > finalThrough) tentative = result[0].transcript;
-        } else partial.push(result[0].transcript);
-      }
-      if (final.length) {
-        clearTimeout(tentativeTimer);
-        tentativeTimer = undefined;
-        tentative = "";
-        let text = final.join(" ").trim();
-        if (counted && text.startsWith(counted)) text = text.slice(counted.length);
-        counted = "";
-        say(text);
-      } else if (tentative) {
-        clearTimeout(tentativeTimer);
-        tentativeTimer = setTimeout(countTentative, TENTATIVE_MS);
-      }
-      setInterim([tentative, ...partial].filter(Boolean).join(" "));
+      const read = phrases.read(event.resultIndex, event.results);
+      clearTimeout(tentativeTimer);
+      tentativeTimer = read.waiting ? setTimeout(countTentative, TENTATIVE_MS) : undefined;
+      say(read.say);
+      setInterim(read.interim);
     };
     current.onerror = (event) => {
       if (event.error === "no-speech" || (event.error === "aborted" && !wanted.current)) return;

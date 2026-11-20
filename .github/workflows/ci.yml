@@ -67,6 +67,8 @@ jobs:
           name: jobs-inherit-access-${{ runner.os }}
           path: ${{ runner.temp }}/jobs-inherit-access/result.json
           if-no-files-found: error
+      # Logic checked on its own, without a browser (components/**/*.test.ts).
+      - run: pnpm test
       # On Windows the runner is disposable, so the smoke test also has Task Scheduler read the task it would install.
       - run: bun scripts/smoke.ts ${{ runner.os == 'Windows' && '--register' || '' }}
       - if: runner.os == 'Windows'
