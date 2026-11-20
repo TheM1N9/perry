@@ -768,6 +768,19 @@ export default defineSchema({
   }),
 
   /**
+   * What internet_scroll has shown for a topic, so a repeat or scheduled run
+   * returns only what is new (scroll.ts). One row per topic; its keys are capped
+   * and a topic nobody scrolled for months is let go.
+   */
+  scrollSeen: defineTable({
+    /** The topic as lib/scroll/index.ts topicKey names it. */
+    topic: v.string(),
+    /** Links (or the start of the text) of the posts shown, oldest first. */
+    keys: v.array(v.string()),
+    updatedAt: v.number(),
+  }).index("by_topic", ["topic"]).index("by_updated", ["updatedAt"]),
+
+  /**
    * One row per chat Assistant talks in. Holds the durable mode and the id of the
    * Agent component thread that carries the message history.
    */

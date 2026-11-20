@@ -81,6 +81,7 @@ Supported engine names are `codex`, `claude`, `grok` and `antigravity`. Setup st
 | “Clean up my Downloads folder.” | Works with local files and commands under the chat's access settings. |
 | “Every weekday at 8, brief me on my calendar.” | Runs a scheduled job in your timezone. Reminders stay on your to-do list until completed. |
 | “Tell me when this page changes.” | Watches the page and reports matching changes. |
+| “Catch me up on what people are saying about AI hiring today.” | Scrolls Hacker News, Reddit, YouTube and RSS for free (X, TikTok, Instagram and Product Hunt with a key you add), then groups the best posts into stories with links. A daily scroll says nothing when nothing new turned up. See [docs/scroll.md](docs/scroll.md). |
 | “Research these options and come back with a recommendation.” | Runs a background task and returns its result or a specific question to the originating chat. |
 | “Note this down.” | Saves an editable Brain page. Projects keep related chats and notes together. |
 | “Send this to me on WhatsApp. I'll continue there.” | Sends the conversation to your paired app with a recap. |
@@ -102,6 +103,7 @@ Run `perry pet` to enable the desktop companion. Meetings and voice settings liv
 
 Recent changes on `main` include:
 
+- **Scroll a topic.** Ask what people are posting about something in the last 6 hours to a week. Perry searches the platforms it can reach, remembers what it already showed you, and says which platforms are not set up.
 - **Approved work continues after outside reads.** Reading a webpage or account result no longer forces another approval for an already authorized account workflow. Outside content remains untrusted, and consequential-action confirmations remain.
 - **Autonomous work and decision follow-through.** Perry can start bounded preparation, keep one task for an issue and resume it when you answer. Work shows waiting decisions and follow-ups.
 - **Riff voice document editing.** Dictate a document and revise it through its own editing conversation.
