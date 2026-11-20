@@ -163,6 +163,14 @@ const SPEECH = `(() => {
     state.keyboard = (height) => { keyboard = height; fake.dispatchEvent(new Event("resize")); return true; };
   }
   // say(text, final, confidence, fresh): replace the last result while it is not final, else add one (fresh adds one anyway).
+  // sayAll([[text, confidence], ...]): several finals, each a new result, in one event.
+  state.sayAll = (phrases) => {
+    const r = state.current; if (!r) return false;
+    const first = state.results.length;
+    for (const [text, confidence] of phrases) state.results.push(Object.assign([{ transcript: text, confidence }], { isFinal: true }));
+    r.onresult && r.onresult({ resultIndex: first, results: state.results });
+    return true;
+  };
   state.say = (text, final, confidence = 0.9, fresh = false) => {
     const r = state.current; if (!r) return false;
     const last = state.results[state.results.length - 1];
@@ -358,6 +366,11 @@ try {
     const zero = await liveTurn(chat, "a browser with no confidence");
     check("a final reported with no confidence still arrives, once", (zero.prompt.match(/no confidence/g) ?? []).length === 1);
     await claim(zero); await finish(zero, "Nothing to add.");
+    await b.evaluate(`window.__speech.sayAll([["first we plan the week", 0], ["then we book the flights", 0], ["and last we pack", 0]])`);
+    const three = await liveTurn(chat, "and last we pack");
+    const spoken = three.prompt.split("New speech:")[1] ?? "";
+    check("three zero-confidence finals in one event all reach Perry, once each, in order", /first we plan the week\s+then we book the flights\s+and last we pack/.test(spoken) && (spoken.match(/first we plan the week/g) ?? []).length === 1, spoken);
+    await claim(three); await finish(three, "Nothing to add.");
     await click("[data-riff-mic]");
     await waitFor("document.querySelector('[data-riff-mic]').dataset.phase === 'off'", "stopped");
     await waitFor(`!document.querySelector('[data-riff-ghost]')`, "no ghost left");
