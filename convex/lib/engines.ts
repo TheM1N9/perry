@@ -31,7 +31,7 @@ export const isRunnable = (value: unknown): value is EngineKind => (RUNNABLE_ENG
 export const LOCKED_DOWN_BEFORE: EngineKind = "codex";
 
 /** Perry's tools a chat with someone else gets (convex/mcp.ts), and nothing else: by name, for the runner too. */
-export const GUEST_TOOLS = ["remember", "recall", "read_memory", "forget", "tell_owner"] as const;
+export const GUEST_TOOLS = ["remember", "recall", "read_memory", "forget", "tell_owner", "react_to_message"] as const;
 
 /** Preparation writes its own plan/result and verified milestones only; MCP checks the linked task and goal. */
 export const PREPARATION_TOOLS = [

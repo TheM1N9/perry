@@ -322,6 +322,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
       mentionsLinked: mentioned.some((jid) => mine.includes(jid)),
       repliesToLinked: Boolean(quoted) && mine.includes(quoted),
       text,
+      // The key as WhatsApp gave it: a reaction to a group's message names its sender too.
+      ...(typeof key.id === "string" ? { message: { id: key.id, fromMe: Boolean(key.fromMe), remoteJid: remote, ...(typeof key.participant === "string" ? { participant: key.participant } : {}) } } : {}),
     }, internal).catch((error) => console.error(`[perry] WhatsApp message failed: ${error instanceof Error ? error.message : String(error)}`));
   }
 

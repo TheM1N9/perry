@@ -109,6 +109,43 @@ export const target = internalQuery({
   },
 });
 
+export type GuestTarget = { channel: "telegram" | "whatsapp"; externalId: string; message: { id: string; fromMe?: boolean; remoteJid?: string; participant?: string } };
+
+/**
+ * In a chat with someone else, the one message a turn may react to: the one
+ * that started it, when contacts.inbound let it be reacted to (a person's own,
+ * or a group's that tagged Perry), in that chat and no other. Never while
+ * paused or stopped, for an event about a reaction, or once the chat is no
+ * longer allowed. Null: not a chat with someone else.
+ */
+export const guestTarget = internalQuery({
+  args: { turnId: v.id("codexTurns"), messageId: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<GuestTarget | { error: string } | null> => {
+    const turn = await ctx.db.get(args.turnId);
+    const chat = turn ? await ctx.db.get(turn.conversationId) : null;
+    if (!turn || !chat?.contactId) return null;
+    if (turn.status !== "running" || turn.stopRequested || turn.stopped || await pausedAt(ctx)) return { error: "This chat is not active." };
+    const contact = await ctx.db.get(chat.contactId);
+    if (!contact || contact.status !== "allowed" || contact.channel !== chat.channel || contact.externalId !== chat.externalId) return { error: "You do not talk in this chat now; do not react here." };
+    if (!turn.guestMessage || turn.reactionEvent || turn.hidden) {
+      return { error: contact.kind === "group" ? "Only a message that tagged you can be reacted to in a group." : "This message cannot be reacted to." };
+    }
+    if (args.messageId && args.messageId !== "current" && args.messageId !== turn.guestMessage.id) return { error: "Only the message that started this turn can be reacted to here." };
+    return { channel: contact.channel, externalId: contact.externalId, message: turn.guestMessage };
+  },
+});
+
+/** Reacted in a chat with someone else: a reaction can be the whole reply (codex.ts, reactionOnly). */
+export const guestReacted = internalMutation({
+  args: { turnId: v.id("codexTurns") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.turnId);
+    if (turn?.status === "running") await ctx.db.patch(turn._id, { reactionAt: Date.now() });
+    return null;
+  },
+});
+
 export const accepted = internalMutation({
   args: { turnId: v.id("codexTurns"), id: v.id("channelMessages"), emoji: v.string() },
   returns: v.null(),
@@ -125,6 +162,26 @@ export const react = internalAction({
   handler: async (ctx, args): Promise<{ status: "sent" | "queued" | "failed"; messageId?: string; error?: string }> => {
     const web: { status: "sent" | "failed"; messageId?: string; error?: string } | null = await ctx.runMutation(internal.reactions.reactWeb, args);
     if (web) return web;
+    const guest: GuestTarget | { error: string } | null = await ctx.runQuery(internal.reactions.guestTarget, { turnId: args.turnId, messageId: args.messageId });
+    if (guest && "error" in guest) return { status: "failed", error: guest.error };
+    if (guest) {
+      if (!validEmoji(args.emoji)) return { status: "failed", error: "Choose one emoji, or remove your reaction." };
+      try {
+        if (guest.channel === "telegram") {
+          const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+          await setReaction(token, guest.externalId, Number(guest.message.id), args.emoji);
+          await ctx.runMutation(internal.reactions.guestReacted, { turnId: args.turnId });
+          return { status: "sent", messageId: guest.message.id };
+        }
+        const queued: boolean = await ctx.runMutation(internal.whatsapp.react, {
+          turnId: args.turnId, to: guest.externalId,
+          reaction: { id: guest.message.id, fromMe: guest.message.fromMe ?? false, ...(guest.message.remoteJid ? { remoteJid: guest.message.remoteJid } : {}), ...(guest.message.participant ? { participant: guest.message.participant } : {}), emoji: args.emoji },
+        });
+        return queued ? { status: "queued", messageId: guest.message.id } : { status: "failed", error: "WhatsApp is not linked." };
+      } catch (error) {
+        return { status: "failed", error: String(error) };
+      }
+    }
     const message: Doc<"channelMessages"> | null = await ctx.runQuery(internal.reactions.target, { turnId: args.turnId, messageId: args.messageId });
     if (!message) return { status: "failed", error: "No matching message in this owner's active phone chat. Use a native message id from this chat, or omit it for the owner's latest message." };
     try {

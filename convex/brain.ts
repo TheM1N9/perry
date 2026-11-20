@@ -19,7 +19,7 @@ import { resumeOf } from "./engines";
 import { sha256 } from "./memories";
 import { LEFT_PROJECT } from "./projects";
 import { routeOf, type Route } from "./routing";
-import { vChannel, vEngine, vRoute, vTelegramMedia } from "./schema";
+import { vChannel, vEngine, vGuestMessage, vRoute, vTelegramMedia } from "./schema";
 
 /** Perry's own reminder, sent with each message from the owner, ahead of it. */
 const REMEMBER_NOTE = "# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made or how something went), save it with remember in this reply, even when they only ask a question about it, naming in about anyone else it is about. Then answer.";
@@ -277,11 +277,11 @@ async function guestRoute(ctx: ActionCtx, conversation: Doc<"conversations">): P
  * them; what it remembers from this chat, and a group's lead-up. Nothing of
  * the owner's memory, USER.md, goals or other chats.
  */
-async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, contactId: Id<"contacts">, engine: EngineKind | undefined, context?: string) {
-  const prompt: { instructions: string; brief: string; memory: string; now: string; reminder: string } = await ctx.runQuery(internal.contacts.guestPrompt, { contactId, conversationId: conversation._id });
+async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, contactId: Id<"contacts">, engine: EngineKind | undefined, context?: string, reactable?: boolean) {
+  const prompt: { instructions: string; brief: string; memory: string; now: string; reminder: string; reacting: string } = await ctx.runQuery(internal.contacts.guestPrompt, { contactId, conversationId: conversation._id, reactable: Boolean(reactable) });
   return {
     instructions: prompt.instructions,
-    recalled: [`# Right now\n\n${prompt.now}`, prompt.brief, prompt.memory, context, prompt.reminder].filter(Boolean).join("\n\n"),
+    recalled: [`# Right now\n\n${prompt.now}`, prompt.brief, prompt.memory, context, prompt.reacting, prompt.reminder].filter(Boolean).join("\n\n"),
     recallDigest: undefined,
     history: resumeOf(conversation, engine) ? undefined : await historyOf(ctx, conversation),
   };
@@ -538,6 +538,8 @@ export const handleTurn = internalAction({
     guest: v.optional(v.id("contacts")),
     /** What led up to it in a group, sent with the message. */
     guestContext: v.optional(v.string()),
+    /** The message it answers, when Perry may react to it: a person's own, or a group's that tagged Perry (contacts.inbound). */
+    guestMessage: v.optional(vGuestMessage),
     /** It carries something from outside (an event that started a job: an email, a file): the turn starts as having read it (issue #136). */
     outside: v.optional(v.boolean()),
   },
@@ -679,7 +681,7 @@ export const handleTurn = internalAction({
       if (telegramToken && !stuck) await sendTyping(telegramToken, args.externalId);
       if (channel === "whatsapp" && !stuck) await ctx.runMutation(internal.whatsapp.typing, { to: args.externalId });
 
-      const turn = guest ? await guestTurn(ctx, conversation, guest, settings.engine, args.guestContext) : await prepareTurn(ctx, conversation, args.hidden ? "" : args.text, settings.engine);
+      const turn = guest ? await guestTurn(ctx, conversation, guest, settings.engine, args.guestContext, Boolean(args.guestMessage)) : await prepareTurn(ctx, conversation, args.hidden ? "" : args.text, settings.engine);
       // What the assistant sent here on its own since the owner last wrote: their message may answer it.
       const sent = guest ? [] : conversation.unprompted ?? [];
       if (sent.length) {
@@ -703,6 +705,7 @@ export const handleTurn = internalAction({
           ...(args.hidden || args.reactionEvent ? { hidden: true } : {}),
           ...(args.reactionEvent ? { reactionEvent: true } : {}),
           ...(guest ? { guest: true } : {}),
+          ...(guest && args.guestMessage ? { guestMessage: args.guestMessage } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
           policy: conversation.jobId || conversation.taskId || args.outside ? "queue" : "steer",
           ...(args.outside ? { outside: true } : {}),

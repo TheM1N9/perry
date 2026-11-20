@@ -19,6 +19,11 @@ export const vLibraryHow = v.union(
 export const vLibraryFrom = v.union(
   v.literal("web"), v.literal("telegram"), v.literal("whatsapp"), v.literal("pet"), v.literal("job"), v.literal("task"), v.literal("folder"),
 );
+/**
+ * A message from someone else that started a turn in their chat, as its app names it (reactions.ts, guestTarget).
+ * WhatsApp needs the whole key to react to it, a group's sender (participant) included; Telegram only the id.
+ */
+export const vGuestMessage = v.object({ id: v.string(), fromMe: v.optional(v.boolean()), remoteJid: v.optional(v.string()), participant: v.optional(v.string()) });
 /** A file sent on Telegram, before it is downloaded. */
 export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string(), size: v.optional(v.number()) });
 /** A file someone sent, kept in storage until a turn takes it (brain.handleTurn, storedMedia). */
@@ -1677,6 +1682,8 @@ export default defineSchema({
     hidden: v.optional(v.boolean()),
     /** In a chat with someone other than the owner: the runner gives the engine no shell, files or computer, only Perry's guest tools. */
     guest: v.optional(v.boolean()),
+    /** There, the one message it may react to: the person's own, or a group's that tagged Perry. Unset, it reacts to none. */
+    guestMessage: v.optional(vGuestMessage),
     /** Immutable tool boundary for autonomous preparation, including after an owner answers the task. */
     preparation: v.optional(v.boolean()),
     /** The engine's model id to run this turn with. Unset means the engine's default. */
