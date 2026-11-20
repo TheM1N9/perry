@@ -345,6 +345,8 @@ export const receiveOther = internalAction({
     chatId: v.string(), group: v.boolean(), groupName: v.optional(v.string()),
     from: v.string(), fromName: v.optional(v.string()), fromOwner: v.boolean(),
     mentionsLinked: v.boolean(), repliesToLinked: v.boolean(), text: v.string(),
+    /** The file it came with, downloaded only for a chat that keeps files (contacts.keepsFiles). */
+    media: v.optional(v.array(vIncomingMedia)),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -358,7 +360,7 @@ export const receiveOther = internalAction({
       channel: "whatsapp", chatId: bareJid(args.chatId), kind: args.group ? "group" : "person",
       ...(args.groupName ? { chatName: args.groupName } : {}),
       from: { handle: whatsappHandle(args.from), ...(args.fromName ? { name: args.fromName } : {}), ...(owner ? { owner: true } : {}) },
-      text: args.text, addressed,
+      text: args.text, addressed, ...(args.media?.length ? { media: args.media } : {}),
     });
     return null;
   },
@@ -388,7 +390,7 @@ export const receive = internalAction({
         await ctx.runAction(internal.contacts.inbound, {
           channel: "whatsapp", chatId: bareJid(args.chatId), kind: "person",
           from: { handle: whatsappHandle(args.chatId), ...(args.name ? { name: args.name } : {}) },
-          text: args.media?.length && !args.text ? "(sent a file, which you cannot open here)" : args.text, addressed: true,
+          text: args.text, addressed: true, ...(args.media?.length ? { media: args.media } : {}),
         });
       }
       return null;

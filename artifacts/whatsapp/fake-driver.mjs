@@ -56,7 +56,7 @@ export default {
     })();
     return socket;
   },
-  async download(message) { return Buffer.from(message.fakeBytes ?? "", "base64"); },
+  async download(message) { await post("/download", { id: message.key?.id }); return Buffer.from(message.fakeBytes ?? "", "base64"); },
   loggedOut(update) { return update?.lastDisconnect?.error?.output?.statusCode === 401; },
   async qrPng(qr) { return `data:image/png;base64,${Buffer.from(qr).toString("base64")}`; },
 };

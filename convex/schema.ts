@@ -19,8 +19,10 @@ export const vLibraryHow = v.union(
 export const vLibraryFrom = v.union(
   v.literal("web"), v.literal("telegram"), v.literal("whatsapp"), v.literal("pet"), v.literal("job"), v.literal("task"), v.literal("folder"),
 );
-/** A file the owner sent on Telegram, before it is downloaded. */
+/** A file sent on Telegram, before it is downloaded. */
 export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string(), size: v.optional(v.number()) });
+/** A file someone sent, kept in storage until a turn takes it (brain.handleTurn, storedMedia). */
+export const vStoredFile = v.object({ storageId: v.id("_storage"), fileName: v.string(), contentType: v.string(), size: v.number() });
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
 /** What a line in `memories` is: a memory of one of the three layers, or a line of one of the owner's pages (pages.ts). */
 export const vLineKind = v.union(vMemoryKind, v.literal("page"));
@@ -788,8 +790,11 @@ export default defineSchema({
     waiting: v.optional(v.array(v.object({ text: v.string(), from: v.string(), at: v.number() }))),
     /** When a chat with them last passed something on to the owner (tell_owner), for a limit per hour. */
     told: v.optional(v.array(v.number())),
-    /** A group's latest messages, for context when Perry is mentioned there. */
-    recent: v.optional(v.array(v.object({ text: v.string(), from: v.string(), at: v.number() }))),
+    /**
+     * A group's latest messages, for context when Perry is mentioned there, with the files they came with
+     * while no turn has taken them: the next mention brings those along, and a line that drops off deletes its own.
+     */
+    recent: v.optional(v.array(v.object({ text: v.string(), from: v.string(), at: v.number(), files: v.optional(v.array(vStoredFile)) }))),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

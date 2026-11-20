@@ -67,6 +67,7 @@ import {
   type TurnHandle, type TurnResult, type TurnSink,
 } from "./engine";
 import { createEngines } from "./engines";
+import { readable } from "./readable";
 import { review } from "./review";
 import { writeUpMeeting } from "./meeting-notes";
 import { nameChat } from "./title";
@@ -818,11 +819,22 @@ async function main() {
     }
   }));
 
-  /** A file someone else sent is named in the message by the name they gave it: defused like their words. */
-  const guestFiles = <T extends { fileName: string }>(files: T[], guest?: boolean): T[] => guest ? files.map((file) => ({ ...file, fileName: defuse(file.fileName) })) : files;
-
   /** Where a chat with someone else runs: an empty folder, so nothing of the owner's is at hand. */
   const guestDir = () => { mkdirSync(PATHS.guest, { recursive: true }); return PATHS.guest; };
+
+  /**
+   * A message's files as its engine can read them (readable.ts): a PDF's pages as pictures and its
+   * text, an Office file's text, made in the folder the turn reads from. Someone else's turn has no
+   * files or shell to open the original with, so it gets what was made in its place, under names
+   * defused like their words; the owner's keeps the file too.
+   */
+  const prepared = async (attachments: Doc<"codexTurns">["attachments"], guest?: boolean) =>
+    await readable(await localise(attachments), guest ? guestDir() : PATHS.uploads, { guest });
+
+  /** The message, with what is inside its files after it. */
+  const withText = (asked: { prompt: string; skills?: NamedSkill[] }, text: string) => text ? { ...asked, prompt: `${asked.prompt}
+
+${text}` } : asked;
 
   /**
    * The skills a message of the owner's names ("$weekly-review", from the web
@@ -958,9 +970,9 @@ async function main() {
       const { engine, handle } = turn;
       const delivery = createSteerDelivery(async () => {
         await steerRunningTurn(engine, handle, async () => {
-          const attachments = guestFiles(await localise(steer.attachments), turn.guest);
+          const files = await prepared(steer.attachments, turn.guest);
           if (stopRequested.has(steer.turnId) || stopping.has(steer.turnId)) throw new Error("The reply was stopped before this message could join it.");
-          return { ...withSkills(engine, steer.prompt, turn.guest), attachments };
+          return { ...withText(withSkills(engine, steer.prompt, turn.guest), files.text), attachments: files.attachments };
         });
         console.log(dim(`  steered the ${engine.label} turn with a new message`));
       }, async (outcome) => {
@@ -1046,6 +1058,7 @@ async function main() {
           await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel, job.guest || job.preparation)).finally(() => { dog?.done(); releaseEngine(); });
           result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
         } else {
+          const files = await prepared(job.attachments, job.guest || job.preparation);
           const sink: TurnSink = {
             onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
             onAgents: (agents) => {
@@ -1092,8 +1105,8 @@ async function main() {
             // In a chat with someone else, what they wrote (and what was kept from it) reaches the engine defused, like the message.
             history: job.guest && job.history ? defuse(job.history) : job.history,
             recalled: job.guest && job.recalled ? defuse(job.recalled) : job.recalled,
-            ...withSkills(engine, job.prompt, job.guest || job.preparation),
-            attachments: guestFiles(await localise(job.attachments), job.guest || job.preparation),
+            ...withText(withSkills(engine, job.prompt, job.guest || job.preparation), files.text),
+            attachments: files.attachments,
             cwd: job.guest || job.preparation ? guestDir() : workdir,
             model: job.requestedModel,
             effort: job.requestedEffort,
