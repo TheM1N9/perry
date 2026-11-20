@@ -107,6 +107,7 @@ export const receiveOther = internalAction({
     media: v.optional(v.array(vTelegramMedia)),
     /** Before files came along: that it had some. */
     hasMedia: v.optional(v.boolean()),
+    messageId: v.optional(v.number()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -119,9 +120,9 @@ export const receiveOther = internalAction({
     }
     const facts: { name: string; owner?: string } = await ctx.runQuery(internal.ingest.otherFacts, {});
     const group = args.chatType === "group" || args.chatType === "supergroup";
-    const addressed = !group || callsBy(facts.name, args.text)
-      || Boolean(bot?.username && args.mentions?.includes(bot.username))
-      || Boolean(bot && args.replyToId === bot.id);
+    // Tagged: an @mention of the bot's own account, the only group message Perry reacts to.
+    const tagged = group && Boolean(bot?.username && args.mentions?.includes(bot.username));
+    const addressed = !group || tagged || callsBy(facts.name, args.text) || Boolean(bot && args.replyToId === bot.id);
     const handle = `${args.username ? `@${args.username} · ` : ""}id ${args.senderId}`;
     await ctx.runAction(internal.contacts.inbound, {
       channel: "telegram", chatId: args.chatId, kind: group ? "group" : "person",
@@ -129,6 +130,7 @@ export const receiveOther = internalAction({
       from: { handle, ...(args.name ? { name: args.name } : {}), ...(facts.owner && args.senderId === facts.owner ? { owner: true } : {}) },
       text: args.text || (args.hasMedia && !args.media?.length ? "(sent a file, which you cannot open here)" : ""),
       addressed, ...(args.media?.length ? { telegramMedia: args.media } : {}),
+      ...(args.messageId !== undefined ? { message: { id: String(args.messageId) } } : {}), ...(tagged ? { tagged: true } : {}),
     });
     return null;
   },
@@ -225,6 +227,7 @@ export const receive = internalMutation({
           chatId: args.chatId, senderId: args.senderId, text: args.text, title: args.title, name: args.name,
           chatType: args.chatType, username: args.username, replyToId: args.replyToId, mentions: args.mentions,
           ...(args.media?.length ? { media: args.media } : {}),
+          ...(args.messageId !== undefined ? { messageId: args.messageId } : {}),
         });
         return null;
     }

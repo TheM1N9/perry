@@ -335,7 +335,8 @@ const send_to_owner = createTool({
 
 const react_to_message = createTool({
   description:
-    "Add, replace or remove your reaction on a message in the owner's current web, WhatsApp or Telegram chat. " +
+    "Add, replace or remove your reaction on a message in this chat: the owner's web, WhatsApp or Telegram chat, or a chat with someone else. " +
+    "With someone else, only the message that started this turn can be reacted to, and in a group only one that tagged you; omit messageId there. " +
     "Required in active owner chats: acknowledge the current message before working or replying, then update the same reaction as progress and the actual outcome change. Match the message's tone; never signal success before work succeeds. " +
     "Choose any emoji the app supports; these are not fixed status categories. Reuse the same message id to change progress. " +
     "If a successful reaction is the whole response, finish with exactly NO_REPLY. A failed reaction still needs a useful reply.",
@@ -344,7 +345,7 @@ const react_to_message = createTool({
     messageId: z.string().max(200).optional().describe("Message id from this chat's reaction context. Omit for the owner's current/latest message; on web, current refers to the message that started this turn."),
   }),
   execute: async (ctx, input): Promise<{ status: "sent" | "queued" | "failed"; messageId?: string; error?: string }> => {
-    if (!ctx.turnId || ctx.fromJob) return { status: "failed", error: "Reactions are available only in an active owner chat." };
+    if (!ctx.turnId || ctx.fromJob) return { status: "failed", error: "Reactions are available only in an active chat." };
     return await ctx.runAction(internal.reactions.react, { turnId: ctx.turnId, ...input });
   },
 });

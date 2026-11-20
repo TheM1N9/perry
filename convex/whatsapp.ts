@@ -6,6 +6,8 @@ import { assertDashboardKey } from "./lib/auth";
 import { chunkWhatsApp, toWhatsApp } from "./lib/whatsappFormat";
 import { callsBy, whatsappHandle } from "./contacts";
 import { readPersona } from "./persona";
+import type { GuestTarget } from "./reactions";
+import { vGuestMessage } from "./schema";
 
 /**
  * WhatsApp, as a linked device (Baileys, the WhatsApp Web protocol), the way
@@ -229,7 +231,19 @@ export const react = internalMutation({
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const owner = await install(ctx);
-    if (!owner?.whatsappOwner || bareJid(args.to) !== owner.whatsappOwner || !(await linkRow(ctx))?.wanted) return false;
+    if (!owner?.whatsappOwner || !(await linkRow(ctx))?.wanted) return false;
+    // Someone else's chat: only the message its turn started from, there, while they are allowed (reactions.guestTarget).
+    if (bareJid(args.to) !== owner.whatsappOwner) {
+      const guest: GuestTarget | { error: string } | null = await ctx.runQuery(internal.reactions.guestTarget, { turnId: args.turnId, messageId: args.reaction.id });
+      if (!guest || "error" in guest || guest.channel !== "whatsapp" || guest.externalId !== args.to || await recipient(ctx, args.to) !== args.to) return false;
+      const reaction = { ...guest.message, fromMe: guest.message.fromMe ?? false, emoji: args.reaction.emoji };
+      const old = await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", "pending"))
+        .filter(q => q.and(q.eq(q.field("to"), args.to), q.eq(q.field("reaction.id"), reaction.id))).collect();
+      for (const row of old) await ctx.db.delete(row._id);
+      await ctx.db.insert("whatsappOutbox", { to: args.to, kind: "reaction", reaction, state: "pending", createdAt: Date.now(), attempts: 0 });
+      await ctx.db.patch(args.turnId, { reactionAt: Date.now() });
+      return true;
+    }
     const message = await ctx.runQuery(internal.reactions.target, { turnId: args.turnId, messageId: args.reaction.id });
     if (!message || message.channel !== "whatsapp" || message.externalId !== args.to) return false;
     const old = await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", "pending"))
@@ -347,6 +361,8 @@ export const receiveOther = internalAction({
     mentionsLinked: v.boolean(), repliesToLinked: v.boolean(), text: v.string(),
     /** The file it came with, downloaded only for a chat that keeps files (contacts.keepsFiles). */
     media: v.optional(v.array(vIncomingMedia)),
+    /** Its key, so Perry can react to it. */
+    message: v.optional(vGuestMessage),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -356,11 +372,14 @@ export const receiveOther = internalAction({
     const self = state.mode === "self";
     const owner = args.fromOwner || (Boolean(state.owner) && bareJid(args.from) === state.owner);
     const addressed = callsBy(name, args.text) || (!self && args.group && (args.mentionsLinked || args.repliesToLinked));
+    // Tagged: an @mention of Perry's own number. Linked as the owner, Perry has no account of its own to tag.
+    const tagged = !self && args.group && args.mentionsLinked;
     await ctx.runAction(internal.contacts.inbound, {
       channel: "whatsapp", chatId: bareJid(args.chatId), kind: args.group ? "group" : "person",
       ...(args.groupName ? { chatName: args.groupName } : {}),
       from: { handle: whatsappHandle(args.from), ...(args.fromName ? { name: args.fromName } : {}), ...(owner ? { owner: true } : {}) },
       text: args.text, addressed, ...(args.media?.length ? { media: args.media } : {}),
+      ...(args.message ? { message: args.message } : {}), ...(tagged ? { tagged: true } : {}),
     });
     return null;
   },
@@ -391,6 +410,7 @@ export const receive = internalAction({
           channel: "whatsapp", chatId: bareJid(args.chatId), kind: "person",
           from: { handle: whatsappHandle(args.chatId), ...(args.name ? { name: args.name } : {}) },
           text: args.text, addressed: true, ...(args.media?.length ? { media: args.media } : {}),
+          ...(args.messageId ? { message: { id: args.messageId, fromMe: args.fromMe ?? false, ...(args.remoteJid ? { remoteJid: args.remoteJid } : {}) } } : {}),
         });
       }
       return null;

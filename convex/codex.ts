@@ -25,7 +25,7 @@ import { assertQueueRoom, byQueuePosition, queuePosition, steerable, waitingCoun
 import { summarize } from "./lib/activity";
 import { HANDOFF_INSTRUCTIONS, handoffHistory, moveChat, resetWaitFor, retryable } from "./routing";
 import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
-import { vAccess, vCodexModel, vEngine, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage, vTurnErrorCode } from "./schema";
+import { vAccess, vCodexModel, vEngine, vGuestMessage, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage, vTurnErrorCode } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isInteractiveInput } from "../lib/interactive";
 import { citedMemories } from "../lib/reply-text";
@@ -204,6 +204,8 @@ export const enqueueTurn = internalMutation({
     hidden: v.optional(v.boolean()),
     /** A chat with someone other than the owner: the runner gives the engine no shell, files or computer. */
     guest: v.optional(v.boolean()),
+    /** There, the message that started the turn and may be reacted to (reactions.ts, guestTarget). */
+    guestMessage: v.optional(vGuestMessage),
     /** The engine to run on, which `model` is one of. Unset: the chat's own, else the owner's default. */
     engine: v.optional(vEngine),
     model: v.optional(v.string()),
@@ -262,6 +264,7 @@ export const enqueueTurn = internalMutation({
       ...(args.hidden ? { hidden: true } : {}),
       // Every turn in a chat with someone else is one, whoever queued it.
       ...(args.guest || conversation.contactId ? { guest: true } : {}),
+      ...(conversation.contactId && args.guestMessage ? { guestMessage: args.guestMessage } : {}),
       preparation: Boolean(task?.initiative && !task.initiative.ownerDirectedAt) || job?.builtin === "heartbeat",
       requestedModel: args.model,
       requestedEffort: args.effort,
@@ -272,7 +275,7 @@ export const enqueueTurn = internalMutation({
     if (running?.status === "running" && isSteering(args.policy, running, engine)) {
       if (args.outside) await ctx.db.patch(running._id, { outsideAt: Date.now() });
       // The running turn already carries recalled memory; a steer adds only the message.
-      const { recalled: _recalled, recallDigest: _digest, projectDigest: _project, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, guest: _guest, ...steer } = message;
+      const { recalled: _recalled, recallDigest: _digest, projectDigest: _project, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, guest: _guest, guestMessage: _message, ...steer } = message;
       const id = await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
       if (preparing) await ctx.db.delete(preparing._id);
       if (!preparing) await takeFromOutbox(ctx, conversation, args.prompt);
@@ -1109,6 +1112,7 @@ export const retryOn = internalMutation({
       ...(turn.outsideAt !== undefined ? { outsideAt: turn.outsideAt } : {}),
       ...(turn.hidden ? { hidden: true } : {}),
       ...(turn.guest ? { guest: true } : {}),
+      ...(turn.guestMessage ? { guestMessage: turn.guestMessage } : {}),
       ...(turn.preparation ? { preparation: true } : {}),
       requestedModel: args.route.model,
       requestedEffort: args.route.effort,

@@ -9,7 +9,7 @@ import { saveMessages } from "./lib/agent";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage } from "./lib/telegram";
 import { callName, readPersona } from "./persona";
 import { linesOf, mentionsOf } from "./pages";
-import { vStoredFile, vTelegramMedia } from "./schema";
+import { vGuestMessage, vStoredFile, vTelegramMedia } from "./schema";
 
 /**
  * Perry talking with people other than the owner, on Telegram and WhatsApp:
@@ -25,6 +25,8 @@ import { vStoredFile, vTelegramMedia } from "./schema";
  *     asked (kind "message"), with the message; allowed, it goes, and so does
  *     every later one.
  *   - In a group, Perry answers only when it is mentioned or replied to.
+ *   - Perry reacts to the message a turn answers: a person's own, always; in a
+ *     group, only one that tags Perry's account (inbound, reactions.guestTarget).
  *
  * Privacy is the point. Each person and group has a chat of its own
  * (conversations.contactId) that is sealed off from everything of the
@@ -123,6 +125,14 @@ export const keepsFiles = internalQuery({
 /** Files Perry can make something of: pictures and documents, not video or audio. */
 const readableFile = (contentType: string) => !/^(video|audio)\//.test(contentType);
 
+/** Blocked: nothing still waiting to go to them on WhatsApp goes, a reply or a reaction queued while it was offline. */
+async function dropOutgoing(ctx: MutationCtx, contact: Contact) {
+  if (contact.channel !== "whatsapp") return;
+  const pending = await ctx.db.query("whatsappOutbox").withIndex("by_state", (q) => q.eq("state", "pending"))
+    .filter((q) => q.eq(q.field("to"), contact.externalId)).collect();
+  for (const row of pending) await ctx.db.delete(row._id);
+}
+
 /** What WhatsApp's address book and groups list, or whoever wrote: known, not yet talked with. */
 export const learn = internalMutation({
   args: { items: v.array(v.object({ channel: vMessenger, externalId: v.string(), kind: vKind, name: v.optional(v.string()), handle: v.optional(v.string()) })) },
@@ -208,10 +218,14 @@ export const inbound = internalAction({
     media: v.optional(v.array(v.object({ base64: v.string(), fileName: v.string(), contentType: v.string() }))),
     /** Files that came with a Telegram message, still on Telegram's servers. */
     telegramMedia: v.optional(v.array(vTelegramMedia)),
+    /** The message as its app names it, so Perry can react to it. */
+    message: v.optional(vGuestMessage),
+    /** It tags Perry's own account: an @mention, not only its name or a reply to it. */
+    tagged: v.optional(v.boolean()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const { media, telegramMedia, ...message } = args;
+    const { media, telegramMedia, message: key, tagged, ...message } = args;
     // A file is stored only in a chat the owner allowed, and only one Perry can read; either way the message names it.
     const keeps = media?.length || telegramMedia?.length ? await ctx.runQuery(internal.contacts.keepsFiles, { channel: args.channel, externalId: args.chatId }) : false;
     const files: StoredFile[] = [];
@@ -246,11 +260,14 @@ export const inbound = internalAction({
       await ctx.runMutation(internal.contacts.record, { ...message, text, ...(files.length ? { files } : {}) });
     if (!outcome.kept) for (const file of files) await ctx.storage.delete(file.storageId).catch(() => {});
     if (outcome.action !== "turn" || !outcome.contactId) return null;
+    // A person's message is theirs to Perry; in a busy group, only one that tags Perry is reacted to.
+    const reactable = key && (args.kind === "person" || tagged === true) ? key : undefined;
     await ctx.runAction(internal.brain.handleTurn, {
       channel: args.channel, externalId: args.chatId, text: said(args.from, text),
       title: `${APP[args.channel]} · ${args.kind === "group" ? args.chatName ?? "a group" : args.from.name ?? args.from.handle}`,
       guest: outcome.contactId, ...(outcome.context ? { guestContext: outcome.context } : {}),
       ...(outcome.files?.length ? { storedMedia: outcome.files } : {}),
+      ...(reactable ? { guestMessage: reactable } : {}),
     });
     return null;
   },
@@ -418,8 +435,8 @@ export const noteTold = internalMutation({
  * for this person. Nothing else of the owner's.
  */
 export const guestPrompt = internalQuery({
-  args: { contactId: v.id("contacts"), conversationId: v.id("conversations") },
-  returns: v.object({ instructions: v.string(), brief: v.string(), memory: v.string(), now: v.string(), reminder: v.string() }),
+  args: { contactId: v.id("contacts"), conversationId: v.id("conversations"), reactable: v.optional(v.boolean()) },
+  returns: v.object({ instructions: v.string(), brief: v.string(), memory: v.string(), now: v.string(), reminder: v.string(), reacting: v.string() }),
   handler: async (ctx, args) => {
     const contact = await ctx.db.get(args.contactId);
     const persona = await readPersona(ctx);
@@ -446,6 +463,9 @@ export const guestPrompt = internalQuery({
         contact?.kind === "group"
           ? "This is a group: answer only what you were asked, briefly, as a short chat message. Say nothing when a message was not meant for you."
           : "Reply as a short chat message for a phone: plain text, a few sentences at most.",
+        contact?.kind === "group"
+          ? "Reactions: react only to a message that tagged you, and only when \"Reacting\" below says you may. Acknowledge it with react_to_message, with a reaction that fits it, when you start on it, and update the same reaction to match how it ended before you finish. Never react to anything else here: not to messages that only name you or reply to you, not to the rest of the group's talk, and never to a reaction. When a message was not meant for you and you stay silent, do not react either."
+          : "Reactions: acknowledge their message with react_to_message, with a reaction that fits it, when you start on it, and update the same reaction to match how it ended before you finish. Only when \"Reacting\" below says you may. Never react to a reaction, and when you stay silent, do not react either.",
       ].map((rule) => `- ${rule}`).join("\n"),
     ].join("\n\n");
     // With each message, not in the instructions: a resumed session keeps the instructions it started with,
@@ -458,7 +478,12 @@ export const guestPrompt = internalQuery({
       .slice(0, 60)
       .reverse();
     const memory = memories.length ? `# What you remember from this chat\n\n${memories.map((memory) => `- ${memory.text} (${memory._id})`).join("\n")}` : "";
-    return { instructions, brief, memory, reminder, now: `It is now ${ownerNow(await timezoneOf(ctx))}.` };
+    // Per message, like the brief: whether this one may be reacted to (contacts.inbound decided).
+    const reacting = args.reactable
+      ? "# Reacting\n\nYou may react to the message that started this turn: call react_to_message without a messageId. "
+        + `No other message${contact?.kind === "group" ? ", even one that tags you later," : ""} can be reacted to. If a reaction answers it fully, finish with exactly NO_REPLY.`
+      : "# Reacting\n\nNo reaction for this message: do not call react_to_message.";
+    return { instructions, brief, memory, reminder, reacting, now: `It is now ${ownerNow(await timezoneOf(ctx))}.` };
   },
 });
 
@@ -495,6 +520,7 @@ export const update = internalMutation({
       ...(args.block ? { status: "blocked" as const, waiting: undefined, ...await blockedRecent(ctx, contact) } : {}),
       updatedAt: Date.now(),
     });
+    if (args.block) await dropOutgoing(ctx, contact);
     return { updated: true };
   },
 });
@@ -596,6 +622,7 @@ export const setForDashboard = mutation({
       ...(args.brief !== undefined ? { brief: args.brief.trim().slice(0, 4000) || undefined } : {}),
       updatedAt: Date.now(),
     });
+    if (args.status === "blocked") await dropOutgoing(ctx, contact);
     return null;
   },
 });
