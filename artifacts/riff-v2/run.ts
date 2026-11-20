@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChat, sleep } from "../browser";
 
-// pnpm build, then: bun artifacts/riff-v2/run.ts [outDir]   (round 2: artifacts/riff-v2/round2)
+// pnpm build, then: bun artifacts/riff-v2/run.ts [outDir]   (round 3: artifacts/riff-v2/round3)
 //   --before <repo>   capture only the old Riff from another built checkout, for before-after-desktop.png
 // Riff v2: a production build on a free port with a fresh PERRY_HOME in a temp folder, a stand-in computer that
 // answers the editing chat's turns through the runner's own endpoints, the browser's speech recognition replaced by
@@ -34,6 +34,11 @@ import { openChat, sleep } from "../browser";
 //  15. Ghost text is too pale to read (heard words under 3:1, sent words under 4.5:1) or looks like settled text.
 //  16. On a phone the dock covers the line being typed or the document's last line, with or without the keyboard.
 //  17. The style picker offers skills that are not writing styles.
+// Round 3:
+//  18. The model picker opens a menu on top of a menu, or misses the thinking level.
+//  19. The model chip is cut off on a 390 px phone.
+//  20. While listening, the dock shows more than one status or more than one way to stop.
+//  21. Riff is not in the sidebar Board v5 left (New chat, Board, To-dos, Riff, Meetings, Library).
 
 const REPO = resolve(import.meta.dirname, "../..");
 const BEFORE = process.argv.includes("--before") ? resolve(process.argv[process.argv.indexOf("--before") + 1]) : null;
@@ -278,6 +283,9 @@ try {
     check("the most recent document is first", first === "Riff launch notes", first);
     const sidebar = await b.evaluate(`document.querySelector('[data-sidebar=sidebar]')?.innerText ?? ''`) as string;
     check("documents' editing chats stay out of the sidebar's chats", !sidebar.includes("Riff document"), sidebar.slice(0, 300));
+    const nav = await b.evaluate(`[...document.querySelectorAll('[data-sidebar=content] [data-sidebar=menu-button]')].map((el) => (el.getAttribute('aria-label') ?? el.innerText).split(':')[0].split(String.fromCharCode(10)).pop().trim()).filter(Boolean)`) as string[];
+    const want = ["New chat", "Board", "To-dos", "Riff", "Meetings", "Library"];
+    check("Riff sits in Board v5's sidebar (New chat, Board, To-dos, Riff, Meetings, Library)", want.every((item) => nav.includes(item)) && !nav.includes("Needs you") && !nav.includes("Work") && nav.indexOf("Riff") === nav.indexOf("To-dos") + 1, nav);
     await shot("riff-home-desktop.png");
 
     // --- New document in one action --------------------------------------------------------------------
@@ -480,28 +488,31 @@ try {
     // --- The model ----------------------------------------------------------------------------------------
     await go(`/live/${launch}`, "document.querySelector('[data-note-editor]') && document.querySelector('[data-riff-model]')");
     const openModels = async () => {
-      await click("[data-riff-dock] [data-reply-options]");
-      await waitFor("document.querySelector('[aria-label=\"Reply options\"][role=dialog], [role=dialog][aria-label=\"Reply options\"]') || document.querySelector('[aria-label=Model][role=combobox]')", "Reply options");
-      await click("[role=dialog] [aria-label=Model]");
-      await waitFor("document.querySelector('[role=listbox]') && [...document.querySelectorAll('[role=option]')].length >= 4", "the model list");
+      await click("[data-riff-model-chip]");
+      await waitFor("document.querySelectorAll('[data-riff-models] [data-model]').length >= 4", "the model menu");
     };
     await openModels();
-    const offered = await b.evaluate(`[...document.querySelectorAll('[role=listbox] [role=group]')].map((g) => g.innerText.replace(/\\s+/g, ' ').trim())`) as string[];
-    check("the dock offers the chat composer's model list, by engine", offered.length === 2 && offered[0].includes("GPT-5.5 mini") && offered[1].includes("Claude Opus 5.5"), offered);
+    const offered = await b.evaluate(`[...document.querySelectorAll('[data-riff-models] [role=group]')].map((g) => g.innerText.replace(/\\s+/g, ' ').trim())`) as string[];
+    check("the dock's model menu lists the models by engine", offered.length === 2 && offered[0].includes("GPT-5.5 mini") && offered[1].includes("Claude Opus 5.5"), offered);
+    const layers = await b.evaluate(`({ surfaces: document.querySelectorAll('[data-riff-models]').length, nested: document.querySelectorAll('[role=listbox], [data-riff-models] [data-riff-models]').length, thinking: [...document.querySelectorAll('[data-riff-models] [role=radio]')].map((n) => n.innerText) })`) as { surfaces: number; nested: number; thinking: string[] };
+    check("one surface: models and thinking together, no menu on a menu", layers.surfaces === 1 && layers.nested === 0 && JSON.stringify(layers.thinking) === JSON.stringify(["Default", "Low", "Medium", "High"]), layers);
     await shot("model-selector-desktop.png");
-    await clickText("[role=option]", "Claude Opus 5.5");
+    await click('[data-riff-models] [data-model="claude/claude-opus-5-5"]');
     const picked = await until(async () => { const c = await pub<{ engine?: string; model?: string }>("dashboard:getChat", { id: chat }); return c.engine === "claude" && c.model === "claude-opus-5-5" ? c : null; }, "the model to be kept with the document");
     check("picking a model keeps it with the document", Boolean(picked));
+    await waitFor("[...document.querySelectorAll('[data-riff-models] [role=radio]')].length === 4", "Opus's thinking levels");
+    await click('[data-riff-models] [data-effort="low"]');
+    await until(async () => (await pub<{ effort?: string }>("dashboard:getChat", { id: chat })).effort === "low", "the thinking level to be kept");
     await key("keyDown", "Escape", "Escape"); await key("keyUp", "Escape", "Escape");
     await sleep(300);
     await type("[data-riff-ask]", "Tighten the last line");
     await b.evaluate("document.querySelector('[data-riff-ask]').form.requestSubmit(); true");
     const onClaude = await nextTurn((turn) => turn.conversationId === chat && turn.prompt.includes("Tighten the last line"), "the edit's turn");
-    const used = onClaude as Turn & { engine?: string; requestedModel?: string };
-    check("the next edit runs on the picked model", used.engine === "claude" && used.requestedModel === "claude-opus-5-5", { engine: used.engine, model: used.requestedModel });
+    const used = onClaude as Turn & { engine?: string; requestedModel?: string; requestedEffort?: string };
+    check("the next edit runs on the picked model and thinking level", used.engine === "claude" && used.requestedModel === "claude-opus-5-5" && used.requestedEffort === "low", { engine: used.engine, model: used.requestedModel, effort: used.requestedEffort });
     await claim(onClaude); await finish(onClaude, "Nothing to change.");
     await go(`/live/${launch}`, "document.querySelector('[data-riff-model]')");
-    await waitFor("document.querySelector('[data-riff-model]').innerText === 'Claude Opus 5.5'", "the picked model after a reload");
+    await waitFor("document.querySelector('[data-riff-model]').innerText === 'Opus 5.5'", "the picked model, by its short name, after a reload");
     check("the picked model is still there after a reload", true);
 
     // --- 1280 px: one left edge -------------------------------------------------------------------------
@@ -529,6 +540,8 @@ try {
     await sleep(400);
     const dock = await b.evaluate(`(() => { const r = document.querySelector('[data-riff-dock] > div').getBoundingClientRect(); const mic = document.querySelector('[data-riff-mic]').getBoundingClientRect(); return { bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), mic: Math.round(mic.height) }; })()`) as { bottom: number; left: number; right: number; mic: number };
     check("on a phone the dock stays on screen, full width, with a 44 px mic", dock.bottom <= 844 && dock.left >= 0 && dock.right <= 390 && dock.mic >= 44 && (await overflow()) <= 0, dock);
+    const calm = await b.evaluate(`({ buttons: [...document.querySelectorAll('[data-riff-dock] button')].filter((n) => n.offsetParent).map((n) => n.getAttribute('aria-label') ?? n.innerText), placeholder: document.querySelector('[data-riff-ask]').placeholder })`) as { buttons: string[]; placeholder: string };
+    check("while listening the phone dock shows one status and one way to stop", calm.buttons.length === 1 && calm.buttons[0] === "Stop listening" && calm.placeholder === "Listening…", calm);
     await shot("doc-dictating-phone.png");
     await write(chat, launch, "append", "On the phone the dock sits under your thumb.");
     await finish(phoneTurn);
@@ -550,8 +563,8 @@ try {
     await waitFor("!document.querySelector('[data-riff-diff]')", "the phone reject");
     await b.evaluate("window.scrollTo(0, document.documentElement.scrollHeight); true");
     await openModels();
-    const pill = await b.evaluate(`(() => { const r = document.querySelector('[data-riff-dock] [data-reply-options]').getBoundingClientRect(); const ask = document.querySelector('[data-riff-ask]').getBoundingClientRect(); return { height: Math.round(r.height), width: Math.round(r.width), ask: Math.round(ask.width) }; })()`) as { height: number; width: number; ask: number };
-    check("on a phone the model sits in the dock, 44 px tall, leaving room to type", pill.height >= 44 && pill.width <= 130 && pill.ask >= 120, pill);
+    const pill = await b.evaluate(`(() => { const chip = document.querySelector('[data-riff-model-chip]'); const name = chip.querySelector('[data-riff-model]'); const r = chip.getBoundingClientRect(); const ask = document.querySelector('[data-riff-ask]').getBoundingClientRect(); return { text: name.innerText, height: Math.round(r.height), width: Math.round(r.width), clipped: name.scrollWidth > name.clientWidth + 1 || r.right > 390, ask: Math.round(ask.width), sheet: Boolean(document.querySelector('[data-riff-models][data-side=bottom]')) }; })()`) as { text: string; height: number; width: number; clipped: boolean; ask: number; sheet: boolean };
+    check("on a phone the chip reads the short name in full, 44 px tall, leaving room to type; the menu is a bottom sheet", pill.text === "Opus 5.5" && !pill.clipped && pill.height >= 44 && pill.ask >= 120 && pill.sheet, pill);
     await shot("model-selector-phone.png");
     await key("keyDown", "Escape", "Escape"); await key("keyUp", "Escape", "Escape");
     await sleep(200);

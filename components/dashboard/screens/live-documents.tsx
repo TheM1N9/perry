@@ -36,7 +36,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EmptyState, ListSkeleton, Page, TopBar } from "../common";
 import { useNoteSaves } from "./notes";
-import { ReplyOptions } from "../chat/composer";
+import { ModelMenu, shortModelName } from "../chat/model-menu";
 
 /* ================================ Home ================================ */
 
@@ -164,6 +164,7 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
   };
   const pickEffort = (next: string | undefined) => void setChatEffort({ key: dashboardKey, id: chatId, effort: next }).catch((cause) => toast.error(errorText(cause)));
   const [dockHeight, setDockHeight] = useState(0);
+  const [modelOpen, setModelOpen] = useState(false);
   const send = useMutation(api.notes.sendLive);
   const stopEdits = useMutation(api.dashboard.stopChat);
   const remove = useMutation(api.notes.remove);
@@ -454,6 +455,9 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
     row = <DockRow key="engine" tone="error" actions={<Button size="sm" variant="outline" onClick={() => { automatic.current = true; void latest.current(); }}>Retry</Button>}>{lastError}</DockRow>;
   }
 
+  const modelChip = "h-11 shrink-0 gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground md:h-8 md:px-2.5";
+  const chip = <><CpuIcon className="size-3.5 shrink-0" /><span className="whitespace-nowrap" data-riff-model>{modelInfo ? shortModelName(modelInfo.name) : "Default"}</span><ChevronDownIcon className="size-3 shrink-0 opacity-60" /></>;
+  const menu = <ModelMenu models={models} model={engine && modelId ? modelKey(engine, modelId) : undefined} onModel={pickModel} modelInfo={modelInfo} effort={effort} onEffort={pickEffort} />;
   const micLabel = !speech.supported ? "Voice needs a browser with speech recognition" : listening ? "Stop listening" : "Start listening";
 
   return <>
@@ -537,7 +541,9 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
             <input value={instruction} onChange={(event) => setInstruction(event.target.value)} maxLength={4_000} aria-label="Ask for a change" data-riff-ask
               placeholder={listening ? "Listening…" : "Ask for a change"}
               className="h-10 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground md:text-sm" />
+            {/* One status and one way to stop at a time: listening (the mic stops it), Perry writing (× stops him), or idle. */}
             {instruction.trim() ? <Button type="submit" size="icon-sm" className="size-10 shrink-0 rounded-full md:size-8" aria-label="Send instruction"><ArrowUpIcon /></Button>
+              : listening ? null
               : working ? <Tooltip>
                 <TooltipTrigger render={<Button type="button" variant="ghost" size="sm" className="min-h-11 shrink-0 gap-1.5 text-muted-foreground md:min-h-8" data-riff-stop aria-label="Perry is writing. Stop"
                   onClick={() => { halt(); speech.stop(); void stopEdits({ key: dashboardKey, id: chatId }).catch((cause) => setError(errorText(cause))); }} />}>
@@ -545,12 +551,14 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
                 </TooltipTrigger>
                 <TooltipContent>Stop Perry</TooltipContent>
               </Tooltip>
-              : !listening && speech.supported && <Kbd className="mr-1 shrink-0 max-md:hidden" data-riff-hotkey>{hotkey}</Kbd>}
+              : speech.supported && <Kbd className="mr-1 shrink-0 max-md:hidden" data-riff-hotkey>{hotkey}</Kbd>}
           </form>
-          <ReplyOptions models={models} model={engine && modelId ? modelKey(engine, modelId) : undefined} onModel={pickModel} modelInfo={modelInfo} effort={effort} onEffort={pickEffort}
-            align="end" sideOffset={18} hint="For this document's dictation and edits." triggerLabel={`Model: ${modelInfo?.name ?? "default"}`}
-            triggerClassName={cn("h-11 max-w-[7.5rem] shrink-0 gap-1 px-2.5 md:h-8 md:max-w-[11rem]", working && "max-md:max-w-11")}
-            trigger={<><CpuIcon className="size-3.5 shrink-0" /><span className={cn("truncate", working && "max-md:sr-only")} data-riff-model>{modelInfo?.name ?? "Default"}</span><ChevronDownIcon className="size-3 shrink-0 opacity-60 max-md:hidden" /></>} />
+          {!listening && !working && (mobile
+            ? <Button type="button" variant="ghost" size="sm" className={modelChip} aria-label={`Model: ${modelInfo?.name ?? "default"}`} data-riff-model-chip onClick={() => setModelOpen(true)}>{chip}</Button>
+            : <Popover open={modelOpen} onOpenChange={setModelOpen}>
+              <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className={modelChip} aria-label={`Model: ${modelInfo?.name ?? "default"}`} data-riff-model-chip />}>{chip}</PopoverTrigger>
+              <PopoverContent side="top" align="end" sideOffset={18} className="w-80 gap-0 p-1.5" data-riff-models>{menu}</PopoverContent>
+            </Popover>)}
         </Dock>
       </div>
     </main>
@@ -561,6 +569,13 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
         <div className="flex-1 overflow-y-auto px-2 pb-4">
           <HistoryList versions={versions} preview={preview} onPick={(version) => { setPreview(version); setHistoryOpen(false); }} />
         </div>
+      </SheetContent>
+    </Sheet>
+
+    <Sheet open={modelOpen && mobile} onOpenChange={setModelOpen}>
+      <SheetContent side="bottom" className="max-h-[80dvh] gap-0 rounded-t-2xl pb-[max(1rem,env(safe-area-inset-bottom))]" data-riff-models>
+        <SheetHeader className="pb-1"><SheetTitle>Model</SheetTitle></SheetHeader>
+        <div className="overflow-y-auto px-1.5">{menu}</div>
       </SheetContent>
     </Sheet>
 
