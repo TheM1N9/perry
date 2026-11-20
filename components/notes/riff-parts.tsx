@@ -2,7 +2,7 @@
 
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,15 +20,38 @@ export function tidy(text: string, startsSentence: boolean): string {
 }
 
 /** The dictation not yet in the document: sent and settling, unsent, and still being heard. */
-export function Ghost({ settling, unsent, heard, startsSentence }: { settling: string; unsent: string; heard: string; startsSentence: boolean }) {
+/**
+ * Two tones, both clearly lighter than settled text (the foreground): words on their way to Perry at about 6:1
+ * against the page, words still being heard at about 3.5:1. Readable at a glance, never mistaken for written.
+ */
+const SENT = "text-foreground/70";
+const HEARD = "text-foreground/55";
+
+/**
+ * The dictation not yet in the document: sent and settling, unsent, and still being heard. While it grows it stays
+ * in view above the dock (`clearance`, the dock's height), when it was already near the bottom of the screen.
+ */
+export function Ghost({ settling, unsent, heard, startsSentence, clearance = 0 }: { settling: string; unsent: string; heard: string; startsSentence: boolean; clearance?: number }) {
+  const ref = useRef<HTMLParagraphElement>(null);
   const parts = [
-    { key: "settling", text: tidy(settling, startsSentence), tone: "text-muted-foreground" },
-    { key: "unsent", text: tidy(unsent, startsSentence && !settling.trim()), tone: "text-muted-foreground" },
-    { key: "heard", text: tidy(heard, startsSentence && !settling.trim() && !unsent.trim()), tone: "text-muted-foreground/55" },
+    { key: "settling", text: tidy(settling, startsSentence), tone: SENT },
+    { key: "unsent", text: tidy(unsent, startsSentence && !settling.trim()), tone: SENT },
+    { key: "heard", text: tidy(heard, startsSentence && !settling.trim() && !unsent.trim()), tone: HEARD },
   ].filter((part) => part.text);
+  const shown = parts.map((part) => part.text).join(" ");
+  useLayoutEffect(() => {
+    const ghost = ref.current;
+    if (!ghost) return;
+    // Rects are in the layout viewport, which the dock sits at the bottom of (keyboard or not).
+    const view = window.innerHeight;
+    const rect = ghost.getBoundingClientRect();
+    const limit = view - clearance;
+    // Only when its end has slipped under the dock, not when the owner has scrolled up to read.
+    if (rect.bottom > limit && rect.top < limit + 120) ghost.scrollIntoView({ block: "end" });
+  }, [shown, clearance]);
   if (!parts.length) return null;
   return (
-    <p data-riff-ghost aria-live="off" className="prose-note riff-text mt-3 transition-opacity duration-200 ease-out">
+    <p ref={ref} data-riff-ghost aria-live="off" style={{ scrollMarginBottom: clearance + 8 }} className="prose-note riff-text mt-3 transition-opacity duration-200 ease-out">
       {parts.map((part, index) => <span key={part.key} data-part={part.key} className={part.tone}>{index ? " " : ""}{part.text}</span>)}
     </p>
   );
@@ -119,9 +142,44 @@ export function DockRow({ children, actions, tone }: { children: ReactNode; acti
   );
 }
 
-export function Dock({ row, children }: { row: ReactNode; children: ReactNode }) {
+/**
+ * How much of the layout viewport the on-screen keyboard covers: browsers that resize only the visual viewport
+ * (Chrome on Android since 108, Safari on iOS) leave a sticky bar behind the keyboard otherwise.
+ */
+function useKeyboardInset() {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    const view = window.visualViewport;
+    if (!view) return;
+    const measure = () => setInset(Math.max(0, Math.round(window.innerHeight - view.height - view.offsetTop)));
+    measure();
+    view.addEventListener("resize", measure);
+    view.addEventListener("scroll", measure);
+    return () => { view.removeEventListener("resize", measure); view.removeEventListener("scroll", measure); };
+  }, []);
+  return inset;
+}
+
+/**
+ * The dock, stuck to the bottom of the screen, or above the keyboard while it is open: the space it takes there
+ * grows by the keyboard's height, so the document's last line can always scroll clear of it. `onHeight` reports
+ * how much of the screen's bottom it covers, for the editor and the ghost to keep their lines above it.
+ */
+export function Dock({ row, children, onHeight }: { row: ReactNode; children: ReactNode; onHeight?: (height: number) => void }) {
+  const inset = useKeyboardInset();
+  const ref = useRef<HTMLDivElement>(null);
+  const report = useRef(onHeight);
+  report.current = onHeight;
+  useEffect(() => {
+    const dock = ref.current;
+    if (!dock) return;
+    const observer = new ResizeObserver(() => report.current?.(Math.ceil(dock.getBoundingClientRect().height)));
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div data-riff-dock className="sticky bottom-0 z-10 -mx-2 mt-auto bg-background px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:pb-6">
+    <div ref={ref} data-riff-dock style={{ paddingBottom: inset ? inset + 12 : undefined }}
+      className="sticky bottom-0 z-10 -mx-2 mt-auto bg-background px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:pb-6">
       <div className="overflow-hidden rounded-2xl border bg-background shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(0_0_0/0.12)]">
         <AnimatePresence initial={false}>{row}</AnimatePresence>
         <div className="flex items-center gap-2 p-2">{children}</div>

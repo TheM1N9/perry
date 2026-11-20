@@ -242,13 +242,20 @@ export function Composer({
 
 const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-sm font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-popup-open:bg-muted dark:bg-transparent dark:hover:bg-muted [&>svg:last-child]:hidden sm:[&>svg:last-child]:block";
 
+/** The model and thinking pickers, without access: the chat composer's and Riff's (live-documents.tsx). */
+export type ModelChoice = Pick<Pickers, "models" | "model" | "onModel" | "modelInfo" | "effort" | "onEffort">;
+
 /**
- * Which model, how hard it thinks, and what it may do on your computer. The
- * model and effort apply from the next reply, the access at once. Models are
- * grouped by engine once there is more than one; another engine's model moves
- * the chat there.
+ * Which model, and how hard it thinks, from the next reply: one popover, used
+ * by the chat composer and by a Riff document's dock. Models are grouped by
+ * engine once there is more than one; another engine's model moves the chat
+ * there. `trigger` is what opens it; `hint` says what the choice applies to.
  */
-function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, access, onAccess, accessDisabled }: Pickers) {
+export function ReplyOptions({ models, model, onModel, modelInfo, effort, onEffort, trigger, triggerClassName, triggerLabel = "Reply options", hint = "Model and thinking choices apply to the next reply.", align = "start", sideOffset }: ModelChoice & {
+  trigger: ReactNode; triggerClassName?: string; triggerLabel?: string; hint?: string; align?: "start" | "end";
+  /** Room between the trigger and the popover; Riff's clears the dock it sits in. */
+  sideOffset?: number;
+}) {
   // An engine can name its own default as an effort level ("default", from
   // ACP); the picker's own Default option already covers it, so it is not
   // offered twice.
@@ -267,52 +274,62 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
     { value: "default", label: defaultEffort ? `Default (${levelName(defaultEffort)})` : "Default" },
     ...efforts.map((level) => ({ value: level, label: levelName(level) })),
   ];
+  return (
+    <Popover>
+      <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className={cn("h-8 rounded-full text-muted-foreground", triggerClassName)} aria-label={triggerLabel} data-reply-options />}>
+        {trigger}
+      </PopoverTrigger>
+      <PopoverContent side="top" align={align} sideOffset={sideOffset} className="w-80 gap-4 p-4" aria-label="Reply options">
+        <div><h3 className="text-sm font-medium">Reply options</h3><p className="mt-1 text-xs text-muted-foreground">{hint}</p></div>
+        <div className="grid gap-3">
+          <div className="grid gap-2"><span className="text-xs text-muted-foreground">Model</span>
+            <Select items={modelItems} value={model ?? null} onValueChange={(value) => { if (value) onModel(value); }} disabled={!models?.length}>
+              <SelectTrigger aria-label="Model" className={cn(pill, "max-w-64")}>
+                <CpuIcon className="size-3.5" />
+                <SelectValue className="truncate" placeholder={models === undefined ? "Loading…" : "Default model"} />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false} align="start" side="top" className="max-h-80 w-72">
+                {engines.length > 1
+                  ? engines.map((engine) => (
+                      <SelectGroup key={engine}>
+                        <SelectLabel>{ENGINE_LABELS[engine]}</SelectLabel>
+                        {modelsOf(models ?? [], engine).map(modelItem)}
+                      </SelectGroup>
+                    ))
+                  : (models ?? []).map(modelItem)}
+              </SelectContent>
+            </Select>
+          </div>
+          {efforts.length > 0 && (
+            <div className="grid gap-2"><span className="text-xs text-muted-foreground">Thinking</span>
+              <Select items={effortItems} value={effort ?? "default"} onValueChange={(value) => onEffort(!value || value === "default" ? undefined : value)}>
+                <SelectTrigger aria-label="Thinking" className={pill}>
+                  <BrainIcon className="size-3.5" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false} align="start" side="top">
+                  {effortItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * Which model, how hard it thinks, and what it may do on your computer. The
+ * model and effort apply from the next reply, the access at once.
+ */
+function ModelPickers({ access, onAccess, accessDisabled, ...choice }: Pickers) {
   const accessItems = ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }));
   const AccessIcon = ACCESS_ICONS[access];
 
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-      <Popover>
-        <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className="h-8 rounded-full text-muted-foreground" aria-label="Reply options" />}>
-          <SlidersHorizontalIcon className="size-3.5" />Reply options
-        </PopoverTrigger>
-        <PopoverContent side="top" align="start" className="w-80 gap-4 p-4" aria-label="Reply options">
-          <div><h3 className="text-sm font-medium">Reply options</h3><p className="mt-1 text-xs text-muted-foreground">Model and thinking choices apply to the next reply.</p></div>
-          <div className="grid gap-3">
-          <div className="grid gap-2"><span className="text-xs text-muted-foreground">Model</span>
-      <Select items={modelItems} value={model ?? null} onValueChange={(value) => { if (value) onModel(value); }} disabled={!models?.length}>
-        <SelectTrigger aria-label="Model" className={cn(pill, "max-w-64")}>
-          <CpuIcon className="size-3.5" />
-          <SelectValue className="truncate" placeholder={models === undefined ? "Loading…" : "Default model"} />
-        </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="max-h-80 w-72">
-          {engines.length > 1
-            ? engines.map((engine) => (
-                <SelectGroup key={engine}>
-                  <SelectLabel>{ENGINE_LABELS[engine]}</SelectLabel>
-                  {modelsOf(models ?? [], engine).map(modelItem)}
-                </SelectGroup>
-              ))
-            : (models ?? []).map(modelItem)}
-        </SelectContent>
-      </Select>
-          </div>
-      {efforts.length > 0 && (
-        <div className="grid gap-2"><span className="text-xs text-muted-foreground">Thinking</span>
-        <Select items={effortItems} value={effort ?? "default"} onValueChange={(value) => onEffort(!value || value === "default" ? undefined : value)}>
-          <SelectTrigger aria-label="Thinking" className={pill}>
-            <BrainIcon className="size-3.5" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent alignItemWithTrigger={false} align="start" side="top">
-            {effortItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        </div>
-      )}
-          </div>
-        </PopoverContent>
-      </Popover>
+      <ReplyOptions {...choice} trigger={<><SlidersHorizontalIcon className="size-3.5" />Reply options</>} />
       {/* Not modal, so the ⓘ tips, which open outside the menu, get the pointer. */}
       <Select modal={false} items={accessItems} value={access} onValueChange={(value) => { if (value) onAccess(value as Access); }} disabled={accessDisabled}>
         <SelectTrigger aria-label="Access" className={cn(pill, access === "full" && "text-warning hover:text-warning")} title="Access changes apply immediately, including to the reply already running.">

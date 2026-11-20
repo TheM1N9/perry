@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowUpIcon, CopyIcon, DownloadIcon, EllipsisIcon, FileCodeIcon, HistoryIcon, LibraryIcon, MicIcon, PlusIcon, SendIcon, SparklesIcon, SquareIcon, Trash2Icon, UserRoundIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, ChevronDownIcon, CopyIcon, CpuIcon, DownloadIcon, EllipsisIcon, FileCodeIcon, HistoryIcon, LibraryIcon, MicIcon, PlusIcon, SendIcon, SparklesIcon, SquareIcon, Trash2Icon, UserRoundIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -11,6 +11,8 @@ import type { NoteSummary, NoteView } from "@/convex/notes";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RiffStyle, RiffVersion } from "@/convex/riff";
 import { matches } from "@/convex/lib/shortcuts";
+import { chatModel, currentModel, effortUnused, modelKey } from "@/convex/lib/commands";
+import { parseModelKey } from "@/convex/lib/engines";
 import { useSession } from "@/lib/session";
 import { copyText, errorText } from "@/lib/format";
 import { randomUUID } from "@/lib/uuid";
@@ -34,6 +36,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EmptyState, ListSkeleton, Page, TopBar } from "../common";
 import { useNoteSaves } from "./notes";
+import { ReplyOptions } from "../chat/composer";
 
 /* ================================ Home ================================ */
 
@@ -143,6 +146,24 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
   const { controller, state } = useNoteSaves(note);
   const draft = state.draft ?? note;
   const chat = useQuery(api.dashboard.getChat, { key: dashboardKey, id: chatId });
+  // The document's model and thinking are its editing chat's, the ones its runs use: picked here, kept with it,
+  // and the owner's default engine and model until picked (dashboard.createChat). The chat composer's picker.
+  const modelOptions = useQuery(api.models.options, { key: dashboardKey });
+  const setChatModel = useMutation(api.dashboard.setChatModel);
+  const setChatEffort = useMutation(api.dashboard.setChatEffort);
+  const models = modelOptions?.models;
+  const engine = chat?.engine;
+  const modelId = chat?.model || currentModel(models ?? [], undefined, engine);
+  const modelInfo = chatModel(models ?? [], modelId, engine);
+  const effort = modelInfo && effortUnused(modelInfo, chat?.effort || undefined) ? undefined : chat?.effort || undefined;
+  const pickModel = (key: string) => {
+    const parsed = parseModelKey(key);
+    const next = { id: parsed.id, engine: parsed.engine ?? engine };
+    if (!next.engine) return;
+    void setChatModel({ key: dashboardKey, id: chatId, model: next.id || undefined, engine: next.engine }).catch((cause) => toast.error(errorText(cause)));
+  };
+  const pickEffort = (next: string | undefined) => void setChatEffort({ key: dashboardKey, id: chatId, effort: next }).catch((cause) => toast.error(errorText(cause)));
+  const [dockHeight, setDockHeight] = useState(0);
   const send = useMutation(api.notes.sendLive);
   const stopEdits = useMutation(api.dashboard.stopChat);
   const remove = useMutation(api.notes.remove);
@@ -434,10 +455,9 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
   }
 
   const micLabel = !speech.supported ? "Voice needs a browser with speech recognition" : listening ? "Stop listening" : "Start listening";
-  const reviewing = Boolean(proposal) || Boolean(preview);
 
   return <>
-    <TopBar actions={<>
+    <TopBar solid actions={<>
       <StylePicker styles={styles} current={style} open={styleOpen} onOpenChange={setStyleOpen}
         onPick={(name) => void setStyle({ key: dashboardKey, id: note.id, style: name }).catch((cause) => toast.error(errorText(cause)))} />
       <Popover open={historyOpen && !mobile} onOpenChange={setHistoryOpen}>
@@ -496,12 +516,12 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
               {!format.supported && <p className="mb-3 text-xs text-muted-foreground">{format.reason} Edit the Markdown to keep its formatting.</p>}
               <Textarea aria-label="Document Markdown" value={draft.content} rows={24} className="min-h-[50vh] font-mono text-base md:text-sm" onChange={(event) => controller.edit({ content: event.target.value })} onBlur={() => void controller.flush()} />
             </> : <NoteEditor value={draft.content} label="Document" toolbar={false} placeholder="Start talking, or type" className={cn("riff-text", empty ? "min-h-[40vh]" : "min-h-0")}
-              onSelection={(text) => { selection.current = text; }}
+              onSelection={(text) => { selection.current = text; }} clearance={{ top: 48, bottom: dockHeight }}
               onChange={(content) => controller.edit({ content })} onBlur={() => void controller.flush()} />}
-          {!preview && <Ghost settling={settlingText} unsent={pending} heard={speech.interim} startsSentence={startsSentence} />}
+          {!preview && <Ghost settling={settlingText} unsent={pending} heard={speech.interim} startsSentence={startsSentence} clearance={dockHeight} />}
         </section>
         <div className="mt-8 min-h-4"><Meters content={preview?.content ?? proposal?.content ?? draft.content} postLimit={postLimit} /></div>
-        <Dock row={row}>
+        <Dock row={row} onHeight={setDockHeight}>
           <Tooltip>
             <TooltipTrigger render={
               <Button type="button" size="icon" aria-label={micLabel} aria-pressed={listening} disabled={!speech.supported || speech.phase === "stopping" || (!listening && state.status === "conflict")}
@@ -515,7 +535,7 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
           </Tooltip>
           <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
             <input value={instruction} onChange={(event) => setInstruction(event.target.value)} maxLength={4_000} aria-label="Ask for a change" data-riff-ask
-              placeholder={listening ? "Listening…" : reviewing ? "Ask for another change" : "Ask for a change"}
+              placeholder={listening ? "Listening…" : "Ask for a change"}
               className="h-10 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground md:text-sm" />
             {instruction.trim() ? <Button type="submit" size="icon-sm" className="size-10 shrink-0 rounded-full md:size-8" aria-label="Send instruction"><ArrowUpIcon /></Button>
               : working ? <Tooltip>
@@ -527,6 +547,10 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
               </Tooltip>
               : !listening && speech.supported && <Kbd className="mr-1 shrink-0 max-md:hidden" data-riff-hotkey>{hotkey}</Kbd>}
           </form>
+          <ReplyOptions models={models} model={engine && modelId ? modelKey(engine, modelId) : undefined} onModel={pickModel} modelInfo={modelInfo} effort={effort} onEffort={pickEffort}
+            align="end" sideOffset={18} hint="For this document's dictation and edits." triggerLabel={`Model: ${modelInfo?.name ?? "default"}`}
+            triggerClassName={cn("h-11 max-w-[7.5rem] shrink-0 gap-1 px-2.5 md:h-8 md:max-w-[11rem]", working && "max-md:max-w-11")}
+            trigger={<><CpuIcon className="size-3.5 shrink-0" /><span className={cn("truncate", working && "max-md:sr-only")} data-riff-model>{modelInfo?.name ?? "Default"}</span><ChevronDownIcon className="size-3 shrink-0 opacity-60 max-md:hidden" /></>} />
         </Dock>
       </div>
     </main>

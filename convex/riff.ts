@@ -150,15 +150,19 @@ export const setStyle = mutation({
 
 export type RiffStyle = { name: string; label: string; description: string; core: boolean; postLimit?: number };
 
-/** The core styles, then every usable skill in the skills folder. A skill of a core style's name takes its place. */
+/**
+ * The core styles, then the skills in the skills folder that are writing styles (`riff: true` in their
+ * frontmatter; lib/riffStyles.ts). Other skills stay out. A style skill of a core style's name takes its place.
+ */
 export const styles = action({
   args: { key: vKey },
   handler: async (_ctx, args): Promise<RiffStyle[]> => {
     assertDashboardKey(args.key);
-    const own = listSkills().filter((skill) => !skill.problem).map((skill): RiffStyle => {
-      let postLimit: number | undefined;
-      try { postLimit = readStyle(readFileSync(join(PATHS.skills, skill.folder, "SKILL.md"), "utf8")).postLimit; } catch {}
-      return { name: skill.name, label: styleLabel(skill.name), description: skill.description, core: isCoreStyle(skill.name), ...(postLimit ? { postLimit } : {}) };
+    const own = listSkills().filter((skill) => !skill.problem).flatMap((skill): RiffStyle[] => {
+      let style: ReturnType<typeof readStyle>;
+      try { style = readStyle(readFileSync(join(PATHS.skills, skill.folder, "SKILL.md"), "utf8")); } catch { return []; }
+      if (!style.style) return [];
+      return [{ name: skill.name, label: styleLabel(skill.name), description: skill.description, core: isCoreStyle(skill.name), ...(style.postLimit ? { postLimit: style.postLimit } : {}) }];
     });
     const core = Object.entries(CORE_STYLES).map(([name, skill]): RiffStyle => {
       const style = readStyle(skill);

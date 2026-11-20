@@ -24,7 +24,7 @@ import { SlashCommands } from "./slash-commands";
  * remembered, so a newer note from the server replaces what is shown without
  * the editor echoing it back as an edit.
  */
-export function NoteEditor({ value, onChange, onBlur, label, toolbar = true, placeholder = "Write, or type / for blocks…", onSelection, className }: {
+export function NoteEditor({ value, onChange, onBlur, label, toolbar = true, placeholder = "Write, or type / for blocks…", onSelection, className, clearance }: {
   value: string;
   onChange: (value: string) => void;
   onBlur?: () => void;
@@ -35,6 +35,8 @@ export function NoteEditor({ value, onChange, onBlur, label, toolbar = true, pla
   /** The words selected now, "" when none: what Riff's instructions are about. */
   onSelection?: (text: string) => void;
   className?: string;
+  /** What covers the screen's top and bottom (a sticky bar, Riff's dock): the caret is kept clear of them as you type. */
+  clearance?: { top: number; bottom: number };
 }) {
   const router = useRouter();
   const change = useRef(onChange);
@@ -92,6 +94,12 @@ export function NoteEditor({ value, onChange, onBlur, label, toolbar = true, pla
       redo: current.can().redo(),
     } : null,
   });
+  // ProseMirror scrolls the caret into view itself, and knows nothing of bars over the page.
+  useEffect(() => {
+    if (!editor || !clearance) return;
+    const margin = { top: clearance.top + 8, bottom: clearance.bottom + 8, left: 5, right: 5 };
+    editor.setOptions({ editorProps: { ...editor.options.editorProps, scrollMargin: margin, scrollThreshold: margin } });
+  }, [editor, clearance?.top, clearance?.bottom]);
   // A newer note from the server (Perry added to it, or the conflict was settled): shown in place.
   useEffect(() => {
     if (editor && value !== emitted.current) {

@@ -1,16 +1,20 @@
 /**
  * Riff's core styles. A style is a skill: a SKILL.md with a name, a
  * description and a body that tells Perry how to write. These three ship with
- * Perry; every skill in the owner's skills folder is offered beside them
- * (riff.ts), so a private style never needs to be in this repository.
+ * Perry; a skill in the owner's skills folder is offered beside them (riff.ts)
+ * when its frontmatter says `riff: true`, so a private style never needs to be
+ * in this repository and other skills stay out of the picker. A skill of a core
+ * style's name, with the flag, takes that style's place. See docs/riff-styles.md.
  *
- * Optional frontmatter any style may carry: `riff-post-limit: 280`, the most
- * characters in one post, posts being separated by a line of `---`.
+ * Frontmatter Riff reads:
+ *   riff: true             offered as a writing style in Riff
+ *   riff-post-limit: 280   the most characters in one post, posts being separated by a line of `---`
  */
 
 export const CORE_STYLES = {
   notes: `---
 name: notes
+riff: true
 description: Clear notes in your own words. Short paragraphs, lists where they help.
 ---
 Write what the owner says as clean, readable notes in their voice.
@@ -19,6 +23,7 @@ Write what the owner says as clean, readable notes in their voice.
 - Do not summarise, add ideas, or change the meaning.`,
   script: `---
 name: script
+riff: true
 description: A script to read aloud, one beat per paragraph.
 ---
 Write a script to be read aloud by the owner.
@@ -27,6 +32,7 @@ Write a script to be read aloud by the owner.
 - Remove fillers and false starts; keep the owner's phrasing and rhythm.`,
   thread: `---
 name: thread
+riff: true
 description: Short posts that each stand on their own.
 riff-post-limit: 280
 ---
@@ -43,15 +49,16 @@ export const DEFAULT_STYLE: CoreStyle = "notes";
 export const isCoreStyle = (name: string): name is CoreStyle => Object.prototype.hasOwnProperty.call(CORE_STYLES, name);
 
 /** A SKILL.md's name, description, post limit and body. */
-export function readStyle(skill: string): { name?: string; description?: string; postLimit?: number; body: string } {
+export function readStyle(skill: string): { name?: string; description?: string; style: boolean; postLimit?: number; body: string } {
   const text = skill.replace(/^﻿/, "");
   const block = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!block) return { body: text.trim() };
+  if (!block) return { style: false, body: text.trim() };
   const field = (key: string) => block[1].match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1].trim().replace(/^["']|["']$/g, "");
   const limit = Number(field("riff-post-limit"));
   return {
     name: field("name"),
     description: field("description"),
+    style: /^(true|yes)$/i.test(field("riff") ?? ""),
     ...(Number.isInteger(limit) && limit > 0 ? { postLimit: limit } : {}),
     body: text.slice(block[0].length).trim(),
   };

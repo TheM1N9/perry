@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openChat, sleep } from "../browser";
 
-// pnpm build, then: bun artifacts/riff-v2/run.ts [outDir]
+// pnpm build, then: bun artifacts/riff-v2/run.ts [outDir]   (round 2: artifacts/riff-v2/round2)
 //   --before <repo>   capture only the old Riff from another built checkout, for before-after-desktop.png
 // Riff v2: a production build on a free port with a fresh PERRY_HOME in a temp folder, a stand-in computer that
 // answers the editing chat's turns through the runner's own endpoints, the browser's speech recognition replaced by
@@ -28,6 +28,12 @@ import { openChat, sleep } from "../browser";
 //  11. On a 390 px phone the page overflows sideways, the dock leaves the screen, or a control is under 44 px.
 //  12. At 1280 or 1440 px the title, body, meters and dock do not share one left edge.
 //  13. Anything throws in the browser.
+// Round 2:
+//  14. The model picked in the dock is not the one the document's next run uses, or is lost on reload; a new
+//      document does not start on the owner's default model.
+//  15. Ghost text is too pale to read (heard words under 3:1, sent words under 4.5:1) or looks like settled text.
+//  16. On a phone the dock covers the line being typed or the document's last line, with or without the keyboard.
+//  17. The style picker offers skills that are not writing styles.
 
 const REPO = resolve(import.meta.dirname, "../..");
 const BEFORE = process.argv.includes("--before") ? resolve(process.argv[process.argv.indexOf("--before") + 1]) : null;
@@ -50,8 +56,8 @@ function check(name: string, ok: boolean, detail?: unknown) {
 
 // Skills in the temporary skills folder: two that read as styles, one that does not.
 const skill = (folder: string, text: string) => { mkdirSync(join(home, "skills", folder), { recursive: true }); writeFileSync(join(home, "skills", folder, "SKILL.md"), text); };
-skill("newsletter", "---\nname: newsletter\ndescription: A weekly letter to readers. Warm, specific, one idea per section.\n---\nWrite as a weekly newsletter.\n");
-skill("launch-post", "---\nname: launch-post\ndescription: A launch post for X. Short posts, a hook first.\nriff-post-limit: 280\n---\nWrite a launch thread.\n");
+skill("newsletter", "---\nname: newsletter\ndescription: A weekly letter to readers. Warm, specific, one idea per section.\nriff: true\n---\nWrite as a weekly newsletter.\n");
+skill("launch-post", "---\nname: launch-post\ndescription: A launch post for X. Short posts, a hook first.\nriff: true\nriff-post-limit: 280\n---\nWrite a launch thread.\n");
 skill("weekly-review", "---\nname: weekly-review\ndescription: Review the week from the journal and to-dos.\n---\nRead the journal.\n");
 
 const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex", PERRY_WAKE_DISABLED: "1" };
@@ -139,6 +145,18 @@ const SPEECH = `(() => {
     abort() { if (state.current === this) state.current = null; }
   }
   window.SpeechRecognition = window.webkitSpeechRecognition = Recognition;
+  // The on-screen keyboard, as browsers that resize only the visual viewport report it.
+  const real = window.visualViewport;
+  if (real) {
+    const fake = new EventTarget();
+    let keyboard = 0;
+    for (const name of ["width", "offsetLeft", "offsetTop", "pageLeft", "pageTop", "scale"]) Object.defineProperty(fake, name, { get: () => real[name] });
+    Object.defineProperty(fake, "height", { get: () => real.height - keyboard });
+    real.addEventListener("resize", () => fake.dispatchEvent(new Event("resize")));
+    real.addEventListener("scroll", () => fake.dispatchEvent(new Event("scroll")));
+    Object.defineProperty(window, "visualViewport", { get: () => fake });
+    state.keyboard = (height) => { keyboard = height; fake.dispatchEvent(new Event("resize")); return true; };
+  }
   // say(text, final, confidence, fresh): replace the last result while it is not final, else add one (fresh adds one anyway).
   state.say = (text, final, confidence = 0.9, fresh = false) => {
     const r = state.current; if (!r) return false;
@@ -158,7 +176,16 @@ try {
   await call("installation:setOnboarding", { state: "done" });
   await call("installation:setDefaultEngine", { engine: "codex" });
   await call("runner:createToken", { name: "PC", token: PC });
-  await runner("engines:report", { token: PC, engines: [{ kind: "codex", installed: true, signedIn: true, auth: { type: "chatgpt", plan: "pro" }, models: [{ id: "gpt-5.5", name: "GPT-5.5", isDefault: true, efforts: ["low", "medium", "high"], defaultEffort: "medium" }] }] });
+  await runner("engines:report", { token: PC, engines: [
+    { kind: "codex", installed: true, signedIn: true, auth: { type: "chatgpt", plan: "pro" }, models: [
+      { id: "gpt-5.5", name: "GPT-5.5", isDefault: true, efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+      { id: "gpt-5.5-mini", name: "GPT-5.5 mini", isDefault: false, efforts: ["low", "medium", "high"], defaultEffort: "low" },
+    ] },
+    ...(BEFORE ? [] : [{ kind: "claude", installed: true, signedIn: true, auth: { type: "subscription", plan: "max" }, models: [
+      { id: "claude-opus-5-5", name: "Claude Opus 5.5", isDefault: true, efforts: ["low", "medium", "high"], defaultEffort: "high" },
+      { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", isDefault: false, efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+    ] }]),
+  ] });
   await checkIn();
   beating = setInterval(() => void checkIn().catch(() => {}), 10_000);
 
@@ -258,8 +285,9 @@ try {
     await waitFor("location.pathname.startsWith('/live/') && document.querySelector('[data-riff-dock]')", "N to open a new document");
     check("N on the list opens a new document", true);
     await waitFor("document.querySelector('[data-note-editor]')", "the editor");
-    const emptyText = await b.evaluate(`[document.querySelector('[data-riff-ask]').placeholder, document.querySelector('[data-riff-title]').placeholder, document.querySelector('[data-note-editor] p')?.dataset.placeholder, document.querySelector('[data-riff-dock]').innerText.trim(), document.querySelector('[data-riff-crumb]').innerText].join('|')`);
-    check("an empty document asks for nothing but talking or typing", emptyText === "Ask for a change|Untitled|Start talking, or type|Alt+M|Untitled", emptyText);
+    const emptyText = await b.evaluate(`[document.querySelector('[data-riff-ask]').placeholder, document.querySelector('[data-riff-title]').placeholder, document.querySelector('[data-note-editor] p')?.dataset.placeholder, document.querySelector('[data-riff-dock]').innerText.replace(/\\s+/g, ' ').trim(), document.querySelector('[data-riff-crumb]').innerText].join('|')`);
+    check("an empty document asks for nothing but talking or typing", emptyText === "Ask for a change|Untitled|Start talking, or type|Alt+M GPT-5.5|Untitled", emptyText);
+    check("a new document starts on the owner's default model", (await text("[data-riff-model]")) === "GPT-5.5", await text("[data-riff-model]"));
     await shot("doc-empty-desktop.png");
     const fresh = await b.evaluate("location.pathname.split('/').pop()") as string;
 
@@ -283,6 +311,14 @@ try {
     check("sent words and words being heard both show until Perry writes", JSON.stringify(ghost).includes("settling:") && JSON.stringify(ghost).includes("heard:"), ghost);
     const gap = await b.evaluate(`Math.round(document.querySelector('[data-riff-ghost]').getBoundingClientRect().top - document.querySelector('[data-note-editor]').getBoundingClientRect().bottom)`) as number;
     check("ghost text sits right under the document's last line", gap >= 0 && gap <= 24, gap);
+    const tones = await b.evaluate(`(() => {
+      const paint = (el) => { const c = document.createElement("canvas"); c.width = c.height = 1; const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, 1, 1); g.fillStyle = getComputedStyle(document.querySelector("main")).backgroundColor; g.fillRect(0, 0, 1, 1); g.fillStyle = el ? getComputedStyle(el).color : "transparent"; g.fillRect(0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const ratio = (el) => { const a = lum(paint(el)); const page = lum(paint(null)); return Math.round(((Math.max(a, page) + 0.05) / (Math.min(a, page) + 0.05)) * 10) / 10; };
+      return { sent: ratio(document.querySelector('[data-riff-ghost] [data-part=settling]')), heard: ratio(document.querySelector('[data-riff-ghost] [data-part=heard]')), settled: ratio(document.querySelector('[data-note-editor] p')) };
+    })()`) as { sent: number; heard: number; settled: number };
+    notes.ghostContrast = tones;
+    check("ghost text is readable (sent ≥ 4.5:1, heard ≥ 3:1) and lighter than settled text", tones.sent >= 4.5 && tones.heard >= 3 && tones.heard < tones.sent && tones.sent < tones.settled - 5, tones);
     await shot("doc-dictating-desktop.png");
     const dictating = readFileSync(join(OUT, "doc-dictating-desktop.png"));
     const afterSentence = "So the next thing is that History keeps every version.";
@@ -394,7 +430,8 @@ try {
     await click("[data-riff-style-button]");
     await waitFor("document.querySelectorAll('[data-riff-styles] [data-style]').length >= 5", "the style list");
     const styles = await b.evaluate(`[...document.querySelectorAll('[data-riff-styles] [data-style]')].map((n) => n.dataset.style)`) as string[];
-    check("the picker offers the core styles, then the skills folder's", JSON.stringify(styles.slice(0, 3)) === JSON.stringify(["notes", "script", "thread"]) && styles.includes("newsletter") && styles.includes("launch-post"), styles);
+    check("the picker offers the core styles, then the skills folder's styles", JSON.stringify(styles.slice(0, 3)) === JSON.stringify(["notes", "script", "thread"]) && styles.includes("newsletter") && styles.includes("launch-post"), styles);
+    check("a skill that is not a writing style stays out of the picker", !styles.includes("weekly-review"), styles);
     await shot("doc-style-picker-desktop.png");
     await b.evaluate(`document.querySelector('[data-riff-styles] [data-style=launch-post]').click(); true`);
     await until(async () => (await getNote(thread)).riffStyle === "launch-post", "the style to change");
@@ -434,9 +471,38 @@ try {
     await b.evaluate("document.querySelector('[role=dialog] form').requestSubmit(); true");
     await waitFor("location.pathname.startsWith('/chat/')", "the hand-off chat");
     const handChat = await b.evaluate("location.pathname.split('/').pop()") as string;
+    await waitFor("[...document.querySelectorAll('button[aria-label=\"Reply options\"]')].some((n) => n.innerText.trim() === 'Reply options')", "the chat composer's Reply options");
+    check("the chat composer keeps its Reply options picker (shared with Riff)", true);
     const hand = await nextTurn((turn) => turn.conversationId === handChat, "the hand-off's turn");
     check("Send to someone asks Perry to send it through send_message", hand.prompt.includes("Asha on WhatsApp") && hand.prompt.includes("send_message") && hand.prompt.includes(launch), hand.prompt.slice(-400));
     await claim(hand); await finish(hand, "I'll ask you before sending.");
+
+    // --- The model ----------------------------------------------------------------------------------------
+    await go(`/live/${launch}`, "document.querySelector('[data-note-editor]') && document.querySelector('[data-riff-model]')");
+    const openModels = async () => {
+      await click("[data-riff-dock] [data-reply-options]");
+      await waitFor("document.querySelector('[aria-label=\"Reply options\"][role=dialog], [role=dialog][aria-label=\"Reply options\"]') || document.querySelector('[aria-label=Model][role=combobox]')", "Reply options");
+      await click("[role=dialog] [aria-label=Model]");
+      await waitFor("document.querySelector('[role=listbox]') && [...document.querySelectorAll('[role=option]')].length >= 4", "the model list");
+    };
+    await openModels();
+    const offered = await b.evaluate(`[...document.querySelectorAll('[role=listbox] [role=group]')].map((g) => g.innerText.replace(/\\s+/g, ' ').trim())`) as string[];
+    check("the dock offers the chat composer's model list, by engine", offered.length === 2 && offered[0].includes("GPT-5.5 mini") && offered[1].includes("Claude Opus 5.5"), offered);
+    await shot("model-selector-desktop.png");
+    await clickText("[role=option]", "Claude Opus 5.5");
+    const picked = await until(async () => { const c = await pub<{ engine?: string; model?: string }>("dashboard:getChat", { id: chat }); return c.engine === "claude" && c.model === "claude-opus-5-5" ? c : null; }, "the model to be kept with the document");
+    check("picking a model keeps it with the document", Boolean(picked));
+    await key("keyDown", "Escape", "Escape"); await key("keyUp", "Escape", "Escape");
+    await sleep(300);
+    await type("[data-riff-ask]", "Tighten the last line");
+    await b.evaluate("document.querySelector('[data-riff-ask]').form.requestSubmit(); true");
+    const onClaude = await nextTurn((turn) => turn.conversationId === chat && turn.prompt.includes("Tighten the last line"), "the edit's turn");
+    const used = onClaude as Turn & { engine?: string; requestedModel?: string };
+    check("the next edit runs on the picked model", used.engine === "claude" && used.requestedModel === "claude-opus-5-5", { engine: used.engine, model: used.requestedModel });
+    await claim(onClaude); await finish(onClaude, "Nothing to change.");
+    await go(`/live/${launch}`, "document.querySelector('[data-riff-model]')");
+    await waitFor("document.querySelector('[data-riff-model]').innerText === 'Claude Opus 5.5'", "the picked model after a reload");
+    check("the picked model is still there after a reload", true);
 
     // --- 1280 px: one left edge -------------------------------------------------------------------------
     await viewport(1280, 800);
@@ -481,15 +547,58 @@ try {
     check("on a phone every dock control is at least 44 px tall", buttons.every((h) => h >= 44), buttons);
     await shot("doc-diff-phone.png");
     await click("[data-riff-reject]");
+    await waitFor("!document.querySelector('[data-riff-diff]')", "the phone reject");
+    await b.evaluate("window.scrollTo(0, document.documentElement.scrollHeight); true");
+    await openModels();
+    const pill = await b.evaluate(`(() => { const r = document.querySelector('[data-riff-dock] [data-reply-options]').getBoundingClientRect(); const ask = document.querySelector('[data-riff-ask]').getBoundingClientRect(); return { height: Math.round(r.height), width: Math.round(r.width), ask: Math.round(ask.width) }; })()`) as { height: number; width: number; ask: number };
+    check("on a phone the model sits in the dock, 44 px tall, leaving room to type", pill.height >= 44 && pill.width <= 130 && pill.ask >= 120, pill);
+    await shot("model-selector-phone.png");
+    await key("keyDown", "Escape", "Escape"); await key("keyUp", "Escape", "Escape");
+    await sleep(200);
+    await key("keyDown", "Escape", "Escape"); await key("keyUp", "Escape", "Escape");
+    await sleep(300);
+
+    // Typing at the end of a long document: the line being typed and the last line stay above the dock.
+    const clearOfDock = () => b.evaluate(`(() => {
+      const dock = document.querySelector('[data-riff-dock] > div').getBoundingClientRect();
+      const range = getSelection().rangeCount ? getSelection().getRangeAt(0).getBoundingClientRect() : null;
+      return { dockTop: Math.round(dock.top), dockBottom: Math.round(dock.bottom), caret: range ? Math.round(range.bottom) : null };
+    })()`) as Promise<{ dockTop: number; dockBottom: number; caret: number | null }>;
+    await b.evaluate(`(() => { const editor = document.querySelector('[data-note-editor]'); editor.focus(); const range = document.createRange(); range.selectNodeContents(editor); range.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(range); return true; })()`);
+    const typeLine = async (words: string) => {
+      await key("keyDown", "Enter", "Enter"); await key("keyUp", "Enter", "Enter");
+      await b.send("Input.insertText", { text: words });
+      await sleep(250);
+    };
+    for (let line = 1; line <= 4; line++) await typeLine(`Typed on the phone, line ${line}, to see the caret stay above the dock.`);
+    const typing = await clearOfDock();
+    check("on a phone the line being typed stays above the dock", typing.caret !== null && typing.caret <= typing.dockTop, typing);
+    await b.evaluate("window.__speech.keyboard(300)");
+    await sleep(400);
+    for (let line = 5; line <= 7; line++) await typeLine(`With the keyboard open, line ${line}.`);
+    const keyboard = await clearOfDock();
+    check("with the keyboard open the dock sits above it and the line being typed above the dock", keyboard.dockBottom <= 844 - 300 && keyboard.caret !== null && keyboard.caret <= keyboard.dockTop, keyboard);
+    await b.evaluate("document.activeElement.blur(); window.scrollTo(0, document.documentElement.scrollHeight); true");
+    await sleep(300);
+    const last = await b.evaluate(`(() => { const blocks = document.querySelectorAll('[data-note-editor] > *'); const end = blocks[blocks.length - 1].getBoundingClientRect(); return { last: Math.round(end.bottom), dockTop: Math.round(document.querySelector('[data-riff-dock] > div').getBoundingClientRect().top) }; })()`) as { last: number; dockTop: number };
+    check("scrolled to the end, the document's last line clears the dock (keyboard open)", last.last <= last.dockTop, last);
+    await b.evaluate("window.__speech.keyboard(0)");
+    // What was typed is saved (leaving with unsaved words would ask first).
+    await until(async () => (await getNote(launch)).content.includes("With the keyboard open, line 7."), "the typed lines to be saved");
+    check("lines typed on the phone are saved", true);
     await viewport(1440, 900);
 
     // --- Before and after -----------------------------------------------------------------------------------
     let before: Buffer | null = null;
-    try { before = readFileSync(join(OUT, "before-desktop.png")); } catch {}
+    try { before = readFileSync(join(OUT, "before-desktop.png")); } catch { try { before = readFileSync(join(REPO, "artifacts", "riff-v2", "before-desktop.png")); } catch {} }
     if (before) {
       const panel = (label: string, image: Buffer) => `<figure style="margin:0"><figcaption style="margin:0 0 8px">${label}</figcaption><img src="data:image/png;base64,${image.toString("base64")}" style="width:720px;border:1px solid #e5e5e5;border-radius:8px;display:block"></figure>`;
       await viewport(1600, 760);
-      await b.send("Page.navigate", { url: "about:blank" });
+      const leaving = b.send("Page.navigate", { url: "about:blank" });
+      await sleep(1500);
+      const dialog = await b.send("Page.handleJavaScriptDialog", { accept: true }).then(() => true, () => false);
+      if (dialog) notes.leaveDialog = "a leave prompt was open and was accepted";
+      await leaving;
       await b.evaluate(`document.body.innerHTML = ${JSON.stringify(`<div style="display:inline-flex;gap:24px;padding:24px;font:500 14px system-ui;color:#555;background:#fff">${panel("Before (v1)", before)}${panel("After", dictating)}</div>`)}; document.body.style.margin = 0; true`);
       await sleep(500);
       const size = await b.evaluate(`(() => { const r = document.body.firstElementChild.getBoundingClientRect(); return { width: Math.ceil(r.width), height: Math.ceil(r.height) }; })()`) as { width: number; height: number };

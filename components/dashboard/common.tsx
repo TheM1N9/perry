@@ -119,9 +119,11 @@ export function RelativeTime({ at, className }: { at: number; className?: string
 }
 
 /** The bar across the top of a page: the sidebar toggle, and where you are. */
-export function TopBar({ children, actions }: { children?: ReactNode; actions?: ReactNode }) {
+/** `solid`: an opaque bar, for a page whose large text scrolls under it (Riff), where the blur reads as a smudge. */
+export function TopBar({ children, actions, solid }: { children?: ReactNode; actions?: ReactNode; solid?: boolean }) {
   return (
-    <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-transparent bg-background/85 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
+    <header className={cn("sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-transparent px-3",
+      solid ? "bg-background" : "bg-background/85 backdrop-blur-md supports-[backdrop-filter]:bg-background/70")}>
       <SidebarTrigger className="text-muted-foreground" />
       <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">{children}</div>
       {actions && <div className="flex items-center gap-1">{actions}</div>}
