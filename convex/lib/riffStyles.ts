@@ -64,7 +64,7 @@ export function readStyle(skill: string): { name?: string; description?: string;
   };
 }
 
-/** What a style's name reads as in the picker: "thread" → "Thread", "hackonomics-script" → "Hackonomics script". */
+/** What a style's name reads as in the picker: "thread" → "Thread", "podcast-script" → "Podcast script". */
 export const styleLabel = (name: string) => {
   const words = name.replace(/[-_]+/g, " ").trim();
   return words ? words[0].toLocaleUpperCase() + words.slice(1) : name;
