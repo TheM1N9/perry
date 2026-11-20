@@ -108,3 +108,27 @@ test("a new session numbers its results from 0 again", () => {
   phrases.restart();
   assert.deepEqual(phrases.read(0, [final("after the restart", 0.9)]).say, ["after the restart"]);
 });
+
+// Found in review (CodeRabbit on #367), written before the fix:
+//   8. A growing phrase that times out twice (each part counted from tentative) lands its start twice.
+//   9. What counted at the end of one session trims a phrase in the next that starts with the same words.
+
+test("a growing phrase counted from tentative twice adds only what is new the second time", () => {
+  const phrases = new FinalPhrases();
+  const results = [final("android says")];
+  phrases.read(0, results);
+  assert.deepEqual(phrases.flush(), ["android says"]);
+  results.push(final("android says this"));
+  phrases.read(1, results);
+  assert.deepEqual(phrases.flush(), ["this"]);
+  results.push(final("android says this once", 0.8));
+  assert.deepEqual(phrases.read(2, results).say, ["once"]);
+});
+
+test("what counted in one session does not trim the next session's phrases", () => {
+  const phrases = new FinalPhrases();
+  phrases.read(0, [final("okay")]);
+  assert.deepEqual(phrases.flush(), ["okay"]);
+  phrases.restart();
+  assert.deepEqual(phrases.read(0, [final("okay let's go", 0.9)]).say, ["okay let's go"]);
+});

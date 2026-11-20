@@ -27,10 +27,11 @@ export class FinalPhrases {
   /** The last phrase counted from tentative, which a confirmed final may repeat. */
   private counted = "";
 
-  /** A new recognition session numbers its results from 0 again. */
+  /** A new recognition session numbers its results from 0 again, and repeats nothing from the last. */
   restart() {
     this.finalThrough = -1;
     this.countedThrough = -1;
+    this.counted = "";
   }
 
   read(resultIndex: number, results: ArrayLike<SpeechResult>): { say: string[]; interim: string; waiting: boolean } {
@@ -52,10 +53,10 @@ export class FinalPhrases {
       for (const [index, text] of this.ordered()) {
         if (index > final.index) break;
         this.tentative.delete(index);
-        if (index !== final.index && !final.text.startsWith(text)) say.push(text);
+        const kept = index !== final.index && !final.text.startsWith(text) ? this.newPart(text) : "";
+        if (kept) say.push(kept);
       }
-      let text = final.text;
-      if (this.counted && text.startsWith(this.counted)) text = text.slice(this.counted.length).trim();
+      const text = this.newPart(final.text);
       this.counted = "";
       if (text) say.push(text);
     }
@@ -69,8 +70,15 @@ export class FinalPhrases {
     this.tentative.clear();
     if (!held.length) return [];
     this.countedThrough = Math.max(this.countedThrough, held[held.length - 1][0]);
+    // A phrase still growing may have counted part of itself already: only what is new counts again.
+    const out = held.map(([, text], at) => at === 0 ? this.newPart(text) : text).filter(Boolean);
     this.counted = held[held.length - 1][1];
-    return held.map(([, text]) => text);
+    return out;
+  }
+
+  /** What of a phrase is new, when it repeats the last phrase counted from tentative. */
+  private newPart(text: string): string {
+    return this.counted && text.startsWith(this.counted) ? text.slice(this.counted.length).trim() : text;
   }
 
   /** Drop what is waiting without counting it (the page went away). */
