@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  BellIcon, BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, LayoutDashboardIcon, LibraryIcon, ListChecksIcon, LockIcon, HeadphonesIcon, FilePenLineIcon,
+  BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, LayoutDashboardIcon, LibraryIcon, LockIcon, HeadphonesIcon, FilePenLineIcon,
   LifeBuoyIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { useAction, useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
@@ -41,7 +41,7 @@ import { ChannelIcon, PerryMark } from "./common";
 import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateControl } from "./updates";
-import { PauseControl, PauseMenuItem, PauseNotice, usePause } from "./pause";
+import { PauseMenuItem, PauseNotice, usePause } from "./pause";
 import { PlatypusArt } from "./platypus";
 import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
 import { Spinner } from "@/components/ui/spinner";
@@ -59,14 +59,13 @@ export function AppSidebar() {
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
   const count = useNeedsYouCount();
-  const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
-  const active = useQuery(api.dashboard.getActiveTaskCount, { key: dashboardKey }) ?? 0;
+  const peek = useBoardRail(pathname.startsWith("/board"));
 
   // On a phone the sidebar is a sheet; going somewhere closes it.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
 
   return (
-    <Sidebar collapsible="icon" variant="sidebar">
+    <Sidebar collapsible="icon" variant="sidebar" peek={peek.open} {...peek.handlers}>
       <SidebarHeader className="pb-0">
         <SidebarMenu>
           <SidebarMenuItem className="flex items-center gap-2 group-data-[collapsible=icon]:flex-col">
@@ -99,12 +98,14 @@ export function AppSidebar() {
                   <TooltipContent side="right">Search · {label("palette")}</TooltipContent>
                 </Tooltip>
               </SidebarMenuItem>
+              {/* The Board holds what Needs you and Work did: its count is what waits on you. */}
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} tooltip="Needs you · Approvals and updates" aria-label={count ? `Needs you: ${count} pending` : "Needs you"}>
-                  <BellIcon />
-                  <span>Needs you</span>
+                <SidebarMenuButton render={<Link href="/board" />} isActive={pathname.startsWith("/board")} tooltip={count ? `Board · ${count} need you` : "Board · What Perry is doing"}
+                  aria-label={count ? `Board: ${count} need you` : "Board: what Perry is doing"}>
+                  <LayoutDashboardIcon />
+                  <span>Board</span>
                 </SidebarMenuButton>
-                {count > 0 && <SidebarMenuBadge className="bg-warning-soft px-1.5 text-warning" aria-hidden>{count}</SidebarMenuBadge>}
+                {count > 0 && <SidebarMenuBadge className="bg-warning-soft px-1.5 text-warning" aria-hidden data-needs-you-count>{count}</SidebarMenuBadge>}
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/todos" />} isActive={pathname === "/todos"} tooltip="To-dos">
@@ -125,34 +126,9 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/brain" />} isActive={pathname.startsWith("/brain")} tooltip="Brain · Memory and notes" aria-label="Brain: memory and notes">
-                  <BrainIcon />
-                  <span>Brain</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/library" />} isActive={pathname.startsWith("/library")} tooltip="Library · Files" aria-label="Library: files">
                   <LibraryIcon />
                   <span>Library</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/work" />} isActive={pathname.startsWith("/work")} tooltip="Work · Tasks and schedules" aria-label={active ? `Work: ${active} active tasks` : "Work: tasks and schedules"}>
-                  <ListChecksIcon />
-                  <span>Work</span>
-                </SidebarMenuButton>
-                {active > 0 && <SidebarMenuBadge aria-hidden>{active}</SidebarMenuBadge>}
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/board" />} isActive={pathname.startsWith("/board")} tooltip="Board · What Perry is doing" aria-label="Board: what Perry is doing">
-                  <LayoutDashboardIcon />
-                  <span>Board</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/apps/connectors" />} isActive={pathname.startsWith("/apps")} tooltip="Apps & skills">
-                  <BlocksIcon />
-                  <span>Apps &amp; skills</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -161,7 +137,6 @@ export function AppSidebar() {
         <ChatGroups />
       </SidebarContent>
       <SidebarFooter className="gap-0.5">
-        <PauseControl active={active > 0 || Boolean(chats?.some((chat) => ["running", "needs-approval"].includes(chat.status ?? "")))} />
         <PauseNotice />
         <DesktopPet />
         <AccountMenu />
@@ -169,6 +144,41 @@ export function AppSidebar() {
       <SidebarRail />
     </Sidebar>
   );
+}
+
+/**
+ * On the Board the sidebar folds to its icons, so the board's own columns have the room; it unfolds over the
+ * page while the pointer or focus is on it, and the toggle (or ⌘B) still opens it for good. Leaving the Board
+ * puts it back as it was.
+ */
+function useBoardRail(onBoard: boolean) {
+  const { open, setOpen, isMobile } = useSidebar();
+  // Opened on the Board, it starts folded (shell.tsx), and was open before as far as anyone knows.
+  const before = useRef<boolean | null>(onBoard ? true : null);
+  const [peek, setPeek] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (onBoard && before.current === null) { before.current = open; if (open) setOpen(false); }
+    if (!onBoard && before.current !== null) { if (before.current && !open) setOpen(true); before.current = null; }
+    // Only the route decides; a toggle on the Board is the owner's to keep.
+  }, [onBoard]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => { if (!onBoard) setPeek(false); }, [onBoard]);
+  const show = (value: boolean, delay: number) => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setPeek(value), delay);
+  };
+  const live = onBoard && !open && !isMobile;
+  return {
+    open: live && peek,
+    handlers: live ? {
+      // A short wait, so a pointer passing on its way to the board does not open it.
+      onPointerEnter: () => show(true, 150),
+      onPointerLeave: () => show(false, 120),
+      onFocus: () => show(true, 0),
+      onBlur: (event: FocusEvent) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) show(false, 0); },
+    } : {},
+  };
 }
 
 function ChatGroups() {
@@ -479,6 +489,10 @@ function AccountMenu() {
                 <span className="truncate text-xs text-muted-foreground">{line}</span>
               </DropdownMenuLabel>
             </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            {/* Brain and Apps & skills live here and in Settings, out of the sidebar's way (their pages are as they were). */}
+            <DropdownMenuItem onClick={() => go("/brain")} data-you-brain><BrainIcon />Brain</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go("/apps/connectors")} data-you-apps><BlocksIcon />Apps &amp; skills</DropdownMenuItem>
             <DropdownMenuSeparator />
             <PauseMenuItem />
             <DropdownMenuItem onClick={() => go("/settings/usage")}><GaugeIcon />Usage</DropdownMenuItem>

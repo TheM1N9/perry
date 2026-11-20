@@ -28,7 +28,7 @@ export async function runCall(request: Request, options: { internal: boolean }) 
       const result = await backend().call(body.path, args, options);
       return Response.json({ value: result.value ?? null, ...(result.reads ? { reads: result.reads } : {}), ...(result.writes ? { writes: result.writes } : {}) });
     } catch (error) {
-      const status = error instanceof AuthenticationError ? error.status : error instanceof NotFound ? 404 : error instanceof ArgumentError ? 400 : error instanceof Refused ? 403 : 500;
+      const status = statusOf(error);
       if (status === 500) {
         const operation = body.path.replace(/[^\w:./-]/g, "?").slice(0, 120);
         const name = error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "AbortError", "TimeoutError"].includes(error.name) ? error.name : "InternalError";
@@ -37,6 +37,20 @@ export async function runCall(request: Request, options: { internal: boolean }) 
       return Response.json({ error: status === 500 ? "Perry could not complete this request." : (error instanceof Error ? error.message : String(error)).slice(0, 1000) }, { status });
     }
   } finally { release(); }
+}
+
+/**
+ * The status an expected failure answers with. Its class is known by name as well: in a production build the
+ * backend's modules can be a copy of their own, separate from this file's imports, and instanceof fails across the
+ * copies, which turned a wrong dashboard key (and an unknown function) into a 500.
+ */
+function statusOf(error: unknown): number {
+  const name = error instanceof Error ? error.name : "";
+  if (error instanceof AuthenticationError || name === "AuthenticationError") return (error as { status?: unknown }).status === 503 ? 503 : 401;
+  if (error instanceof NotFound || name === "NotFound") return 404;
+  if (error instanceof ArgumentError || name === "ArgumentError") return 400;
+  if (error instanceof Refused || name === "Refused") return 403;
+  return 500;
 }
 
 /** The CLI's calls carry the dashboard key; with it, internal functions can be called too. */

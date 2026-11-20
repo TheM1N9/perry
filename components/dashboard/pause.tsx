@@ -37,11 +37,38 @@ export function PauseControl({ active }: { active: boolean }) {
   if (!active || paused) return null;
   return <SidebarMenu data-global-pause><SidebarMenuItem>
     <ActionButton variant="outline" render={<SidebarMenuButton tooltip="Pause all work" />} className="h-8 justify-start gap-2 rounded-md px-2 font-normal group-data-[collapsible=icon]:justify-center" aria-label="Pause all work" disabled={!view}
-      confirm={{ title: "Pause all work?", body: "This stops current replies and tasks, and prevents schedules, watches and new replies from starting until you resume. Completed actions are not undone.", label: "Pause all work" }}
+      confirm={PAUSE_CONFIRM}
       action={() => setPaused(true)} success={PAUSED_TOAST}>
       <PauseIcon /><span className="group-data-[collapsible=icon]:hidden">Pause all work</span>
     </ActionButton>
   </SidebarMenuItem></SidebarMenu>;
+}
+
+/** The confirm every "Pause all work" asks first. */
+const PAUSE_CONFIRM = { title: "Pause all work?", body: "This stops current replies and tasks, and prevents schedules, watches and new replies from starting until you resume. Completed actions are not undone.", label: "Pause all work" };
+
+/**
+ * The same switch in the Board's header, where the work it stops is listed: "Pause all" while something runs,
+ * "Resume" while Perry is paused, nothing otherwise. `compact`: a shorter word, for a narrow header; never the icon
+ * alone, which a phone would read as the needs-you glyph.
+ */
+export function BoardPause({ active, compact = false }: { active: boolean; compact?: boolean }) {
+  const { view, paused, setPaused } = usePause();
+  if (!view || (!paused && !active)) return null;
+  if (paused) {
+    return (
+      <ActionButton variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-[12px]" aria-label="Resume Perry" data-pause="paused"
+        action={() => setPaused(false)} success="Perry is back on.">
+        <PlayIcon />resume
+      </ActionButton>
+    );
+  }
+  return (
+    <ActionButton variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground" aria-label="Pause all work" data-pause="running"
+      confirm={PAUSE_CONFIRM} action={() => setPaused(true)} success={PAUSED_TOAST}>
+      <PauseIcon />{compact ? "pause" : "pause all work"}
+    </ActionButton>
+  );
 }
 
 /** In the sidebar, above the computer: paused, with Resume; back on, what was missed. */

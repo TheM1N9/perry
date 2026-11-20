@@ -636,7 +636,8 @@ export const getChatRuns = query({
  * Only runs of one of the owner's chats, and of the same one, are read.
  */
 export const getRunSteps = query({
-  args: { key: vKey, runIds: v.array(v.id("runs")), limit: v.optional(v.number()) },
+  /** `agent`: one sub-agent's steps (runSpans.agent); without it, the turn's own, as before sub-agents had any. */
+  args: { key: vKey, runIds: v.array(v.id("runs")), limit: v.optional(v.number()), agent: v.optional(v.string()) },
   handler: async (ctx, args): Promise<WorkStep[]> => {
     assertDashboardKey(args.key);
     const limit = Math.max(1, Math.min(args.limit ?? RUN_STEPS, RUN_STEPS));
@@ -649,6 +650,7 @@ export const getRunSteps = query({
       // Newest first, so a long run keeps its latest activity.
       let taken = 0;
       for await (const span of ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", runId)).order("desc")) {
+        if (span.agent !== args.agent) continue;
         steps.push({
           ...describeStep(span),
           done: describeStep(span, { done: true }).label,

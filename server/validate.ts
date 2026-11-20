@@ -15,7 +15,7 @@ type Validator = {
   key?: Validator;
 };
 
-export class ArgumentError extends Error {}
+export class ArgumentError extends Error { override name = "ArgumentError"; }
 
 function check(value: unknown, validator: Validator, path: string, tableOf: (id: unknown) => string | null): void {
   const fail = (expected: string) => { throw new ArgumentError(`Argument ${path || "(args)"} should be ${expected}.`); };

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { filesId, ScopePicker, type Scope } from "./files";
 import { filePrefs, FILES, readCapped, writeCapped } from "./store";
+import { boardLink } from "@/lib/board-links";
 
 const STATUS: Record<string, { label: string; tone: string }> = {
   queued: { label: "Queued", tone: "bg-muted-foreground/40" },
@@ -63,7 +64,7 @@ function WorkItem({ item, now, onOpenFile }: { item: WorkspaceWork; now: number;
   const status = STATUS[item.status] ?? { label: item.status, tone: "bg-muted-foreground/40" };
   const detail = item.status === "failed" ? item.error : item.currentStep;
   const more = item.plan.length > 0 || item.outputs.length > 0;
-  const href = item.taskId ? `/work#task-${item.taskId}` : item.runId ? `/chat/${item.conversationId}?run=${item.runId}` : null;
+  const href = item.taskId ? boardLink({ channel: "tasks", thread: `task:${item.taskId}` }) : item.runId ? `/chat/${item.conversationId}?run=${item.runId}` : null;
   const head = <>
     <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", status.tone)} aria-hidden />
     <span className="min-w-0 flex-1">

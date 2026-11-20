@@ -38,7 +38,7 @@ const config: NextConfig = {
   // proxy.ts's to send on, without the ?tab=.
   async redirects() {
     return [
-      { source: "/tasks", destination: "/work", permanent: false },
+      { source: "/tasks", destination: "/board?channel=tasks", permanent: false },
       { source: "/about", destination: "/brain?open=about", permanent: false },
       // Memory and Notes became Brain (issue #210): a page, a search, and the old About you all land there.
       { source: "/memory", destination: "/brain", permanent: false },

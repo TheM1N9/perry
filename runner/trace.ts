@@ -8,7 +8,7 @@ import type { EngineItem, ItemStatus, ItemType, ProviderAgentUpdate, TokenUsage 
  * what changed since the last one.
  */
 
-export type Span = Pick<Doc<"runSpans">, "callId" | "kind" | "name" | "status" | "startedAt" | "endedAt" | "durationMs" | "input" | "output">;
+export type Span = Pick<Doc<"runSpans">, "callId" | "kind" | "name" | "status" | "startedAt" | "endedAt" | "durationMs" | "input" | "output" | "agent">;
 export type TraceReport = {
   spans: Span[];
   agents?: ProviderAgentUpdate[];
@@ -71,6 +71,7 @@ function describe(item: EngineItem): Omit<Span, "callId" | "startedAt" | "endedA
     status: STATUS[item.status],
     input: item.input === undefined ? undefined : truncate(item.input),
     output: item.output === undefined ? undefined : item.type === "command_execution" ? truncateTail(item.output) : truncate(item.output, item.type === "plan" ? 16_384 : SPAN_BYTES),
+    ...(item.agent ? { agent: item.agent } : {}),
   };
 }
 

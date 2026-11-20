@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, BrainIcon, LibraryIcon, CableIcon, CheckCircle2Icon, CpuIcon, FilePlusIcon, FileTextIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, LayoutDashboardIcon, ListChecksIcon, LockIcon, HeadphonesIcon,
+  ActivityIcon, BookUserIcon, BrainIcon, LibraryIcon, CableIcon, CalendarClockIcon, CheckCircle2Icon, EyeIcon, TargetIcon, CpuIcon, FilePlusIcon, FileTextIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, LayoutDashboardIcon, ListChecksIcon, LockIcon, HeadphonesIcon,
   MessageSquareIcon, MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, ShieldCheckIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -12,6 +12,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { noteHref } from "@/convex/lib/notes";
 import type { Found as BrainHit } from "@/convex/pages";
+import { boardLink, NEEDS_YOU } from "@/lib/board-links";
 import { useSession } from "@/lib/session";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import {
@@ -25,12 +26,16 @@ export const usePalette = () => useContext(PaletteContext);
 const PAGES = [
   { href: "/live", label: "Riff", icon: FileTextIcon },
   { href: "/meetings", label: "Meetings", icon: HeadphonesIcon },
-  { href: "/inbox", label: "Needs you", icon: InboxIcon },
+  { href: "/board", label: "Board", icon: LayoutDashboardIcon },
+  // What Needs you and Work were, now on the Board, under the names they had.
+  { href: boardLink({ tab: NEEDS_YOU }), label: "Needs you", icon: InboxIcon },
+  { href: boardLink({ channel: "tasks" }), label: "Tasks", icon: ListChecksIcon },
+  { href: boardLink({ channel: "jobs" }), label: "Schedules", icon: CalendarClockIcon },
+  { href: boardLink({ channel: "goals" }), label: "Goals", icon: TargetIcon },
+  { href: boardLink({ channel: "watches" }), label: "Watches", icon: EyeIcon },
   { href: "/todos", label: "To-dos", icon: CheckCircle2Icon },
   { href: "/brain", label: "Brain", icon: BrainIcon },
   { href: "/library", label: "Library", icon: LibraryIcon },
-  { href: "/work", label: "Work", icon: ListChecksIcon },
-  { href: "/board", label: "Board", icon: LayoutDashboardIcon },
   { href: "/apps/connectors", label: "Connectors", icon: CableIcon },
   { href: "/apps/skills", label: "Skills", icon: PuzzleIcon },
   { href: "/settings/general", label: "Settings", icon: SettingsIcon },

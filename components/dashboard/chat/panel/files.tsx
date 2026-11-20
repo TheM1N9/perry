@@ -20,6 +20,7 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { AudioPlayer, VideoPlayer } from "@/components/ui/media-player";
 import { Markdown } from "../markdown";
 import { useFilePrefs } from "./store";
+import { boardLink } from "@/lib/board-links";
 
 export type Scope = "chat" | "project";
 
@@ -194,7 +195,7 @@ function FilePreview({ item, onBack }: { item: WorkspaceFile | null | undefined;
       <p className="text-xs text-muted-foreground">
         {[item.provenance === "uploaded" ? "Sent here" : item.provenance === "attached" ? "Attached from Library" : "Made by Perry", item.versionLabel ?? roleLabel(item.role), item.status === "ready" ? bytes(item.size) : "Unavailable"].join(" · ")}
         {" · "}<Link href={`/chat/${item.source.conversationId}${item.source.messageKey ? `?message=${encodeURIComponent(item.source.messageKey)}` : item.source.runId ? `?run=${item.source.runId}` : ""}`} className="link">{item.source.title}</Link>
-        {item.source.taskId && <>{" · "}<Link href={`/work#task-${item.source.taskId}`} className="link">Task</Link></>}
+        {item.source.taskId && <>{" · "}<Link href={boardLink({ channel: "tasks", thread: `task:${item.source.taskId}` })} className="link">Task</Link></>}
       </p>
       <div className="my-3">
         {item.status !== "ready" ? <p className="text-sm text-muted-foreground">The registered file is missing or its storage is unavailable. Restore it on the host, then retry.</p>

@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "@/components/dashboard/approval-card";
 import { List } from "@/components/dashboard/common";
 import { Empty } from "./empty";
+import { boardLink } from "@/lib/board-links";
 
 const LABEL: Record<InboxItem["kind"], string> = {
   delivery: "Delivery needs review",
@@ -51,7 +52,7 @@ export function PetNeedsYou({ now, onChat, open }: {
               : item.kind === "delivery" ? { label: "Review", run: () => item.chatId ? onChat(item.chatId) : open("/settings/notifications") }
               : item.kind === "job-result" || (item.kind === "job-error" && item.chatId) ? { label: "Open", run: () => onChat(item.chatId!) }
                 : item.kind === "watch" ? { label: "Open page", run: () => window.open(item.url, "_blank") }
-                  : { label: "See task", run: () => open("/work?tab=plans") };
+                  : { label: "See task", run: () => open(boardLink({ channel: "tasks", thread: `task:${item.id}` })) };
             return (
               <li key={`${item.kind}-${item.id}`} className="px-3 py-2.5">
                 <p className="text-2xs text-muted-foreground">{LABEL[item.kind]} · {ago(item.at, now)}</p>

@@ -1369,6 +1369,11 @@ export default defineSchema({
     durationMs: v.optional(v.number()),
     input: v.optional(v.string()),
     output: v.optional(v.string()),
+    /**
+     * A step a sub-agent of the turn took (Claude's Agent or Task tool, a Codex spawned agent): the agent's id, as its
+     * child chat keeps it (conversations.providerAgent.id). Unset: the turn's own step, and every step from before.
+     */
+    agent: v.optional(v.string()),
   })
     .index("by_run", ["runId", "callId"])
     /** A run's steps in the order they started, so the newest are read first (dashboard.getRunSteps). */
