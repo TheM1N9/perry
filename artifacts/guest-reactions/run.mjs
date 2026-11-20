@@ -154,18 +154,21 @@ try {
     await finish(turn._id);
   });
 
-  await check("a chat no longer allowed, or Perry paused, gets no reaction", async () => {
+  await check("a chat no longer allowed, or Perry paused, gets no reaction, and a block drops one still queued", async () => {
     await call("whatsapp:receive", { chatId: PERSON, text: "One more thing", name: "Sam", messageId: "WA-DM-2", fromMe: false, remoteJid: PERSON });
     const turn = await claimLatest("whatsapp", PERSON);
     const contact = (await all("contacts")).find(row => row.externalId === PERSON);
-    await patch(contact._id, { status: "blocked" });
+    assert.equal((await reactionsTo(PERSON)).filter(row => row.state === "pending").length, 1, "the earlier reaction waits for WhatsApp");
+    await runtime.call("contacts:setForDashboard", { key: process.env.DASHBOARD_KEY, id: contact._id, status: "blocked" });
+    assert.equal((await reactionsTo(PERSON)).length, 0, "blocking drops what was still waiting to go to them");
     assert.equal((await react(turn._id, "👀")).status, "failed");
+    assert.equal((await reactionsTo(PERSON)).length, 0);
     await patch(contact._id, { status: "allowed" });
     const installation = (await all("installation"))[0];
     await patch(installation._id, { paused: { at: Date.now(), by: "web" } });
     assert.equal((await react(turn._id, "👀")).status, "failed");
     await patch(installation._id, { paused: undefined });
-    assert.ok((await reactionsTo(PERSON)).every(row => row.reaction.id === "WA-DM-1"));
+    assert.equal((await reactionsTo(PERSON)).length, 0);
     await finish(turn._id);
   });
 

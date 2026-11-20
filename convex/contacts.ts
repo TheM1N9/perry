@@ -125,6 +125,14 @@ export const keepsFiles = internalQuery({
 /** Files Perry can make something of: pictures and documents, not video or audio. */
 const readableFile = (contentType: string) => !/^(video|audio)\//.test(contentType);
 
+/** Blocked: nothing still waiting to go to them on WhatsApp goes, a reply or a reaction queued while it was offline. */
+async function dropOutgoing(ctx: MutationCtx, contact: Contact) {
+  if (contact.channel !== "whatsapp") return;
+  const pending = await ctx.db.query("whatsappOutbox").withIndex("by_state", (q) => q.eq("state", "pending"))
+    .filter((q) => q.eq(q.field("to"), contact.externalId)).collect();
+  for (const row of pending) await ctx.db.delete(row._id);
+}
+
 /** What WhatsApp's address book and groups list, or whoever wrote: known, not yet talked with. */
 export const learn = internalMutation({
   args: { items: v.array(v.object({ channel: vMessenger, externalId: v.string(), kind: vKind, name: v.optional(v.string()), handle: v.optional(v.string()) })) },
@@ -512,6 +520,7 @@ export const update = internalMutation({
       ...(args.block ? { status: "blocked" as const, waiting: undefined, ...await blockedRecent(ctx, contact) } : {}),
       updatedAt: Date.now(),
     });
+    if (args.block) await dropOutgoing(ctx, contact);
     return { updated: true };
   },
 });
@@ -613,6 +622,7 @@ export const setForDashboard = mutation({
       ...(args.brief !== undefined ? { brief: args.brief.trim().slice(0, 4000) || undefined } : {}),
       updatedAt: Date.now(),
     });
+    if (args.status === "blocked") await dropOutgoing(ctx, contact);
     return null;
   },
 });

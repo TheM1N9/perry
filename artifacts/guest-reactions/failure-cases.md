@@ -12,7 +12,7 @@ tagged". Failure cases written before the replay:
 - A guest turn reacts to another message id: a later message steered into the same turn,
   a message in another chat, or the owner's own chat.
 - A contact blocked mid-turn (no longer allowed: Perry is silent there) or a paused Perry
-  still reacts.
+  still reacts, or a reaction queued while WhatsApp was offline still goes after the block.
 - An incoming reaction in a group or contact chat (WhatsApp or Telegram, from a member or
   from the owner) starts a turn, so Perry reacts back and loops; a reaction-event turn reacts.
 - The guest tool list lacks react_to_message, or guest instructions do not say when to react.
