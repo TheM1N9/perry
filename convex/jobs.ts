@@ -279,11 +279,16 @@ export const chatFor = internalMutation({
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.id);
     if (!job) return null;
+    const origin = job.origin ? await ctx.db.get(job.origin) : null;
     const existing = job.conversationId ? await ctx.db.get(job.conversationId) : null;
     if (existing) {
       // A slow account read must not let the next heartbeat queue another investigation.
       if (job.builtin === "heartbeat" && (existing.pendingTurns ?? 0) > 0) return null;
-      await ctx.db.patch(existing._id, { pendingTurns: (existing.pendingTurns ?? 0) + 1, lastMessageAt: Date.now() });
+      await ctx.db.patch(existing._id, {
+        pendingTurns: (existing.pendingTurns ?? 0) + 1, lastMessageAt: Date.now(),
+        // Older job chats had no access; keep any setting the owner has since chosen.
+        ...(existing.access === undefined && origin ? { access: origin.access ?? "supervised" } : {}),
+      });
       return { externalId: existing.externalId, title: existing.title ?? job.name };
     }
     const title = `⏰ ${job.name}`;
@@ -293,6 +298,7 @@ export const chatFor = internalMutation({
       threadId: args.threadId,
       title,
       jobId: job._id,
+      access: origin ? origin.access ?? "supervised" : undefined,
       pendingTurns: 1,
       lastMessageAt: Date.now(),
       // Set up in a project's chat, it works in the project: its instructions, its chats and its memory.
