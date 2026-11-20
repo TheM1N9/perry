@@ -21,3 +21,11 @@ apps/v2/lib/use-typewriter.ts and apps/v2/lib/page-visibility.ts), and the
 long-lived tab and window agent rules in AGENTS.md (from CLAUDE.md). Files that
 contain adapted material say so in a comment naming the whirl source file, and
 were modified for Perry.
+
+Portions adapted from treg (https://github.com/superdesigndev/treg), licensed
+under the Apache License, Version 2.0 (see licenses/treg-LICENSE): the
+doomscroll skill's workflow, hand-back format and merge/rank script, as Perry's
+scroll skill (skills/scroll/SKILL.md) and internet_scroll's merge
+(convex/lib/scroll/merge.ts, from the skill's doomscroll.py). Files that contain
+adapted material say so, and were modified for Perry. Perry does not depend on
+treg; its optional treg source calls treg's public API with the owner's token.

@@ -55,6 +55,18 @@ import * as lib_provenance from "../convex/lib/provenance";
 import * as lib_recall from "../convex/lib/recall";
 import * as lib_riffStyles from "../convex/lib/riffStyles";
 import * as lib_routing from "../convex/lib/routing";
+import * as lib_scroll_index from "../convex/lib/scroll/index";
+import * as lib_scroll_merge from "../convex/lib/scroll/merge";
+import * as lib_scroll_net from "../convex/lib/scroll/net";
+import * as lib_scroll_sources_hackernews from "../convex/lib/scroll/sources/hackernews";
+import * as lib_scroll_sources_producthunt from "../convex/lib/scroll/sources/producthunt";
+import * as lib_scroll_sources_reddit from "../convex/lib/scroll/sources/reddit";
+import * as lib_scroll_sources_rss from "../convex/lib/scroll/sources/rss";
+import * as lib_scroll_sources_scrapecreators from "../convex/lib/scroll/sources/scrapecreators";
+import * as lib_scroll_sources_treg from "../convex/lib/scroll/sources/treg";
+import * as lib_scroll_sources_x from "../convex/lib/scroll/sources/x";
+import * as lib_scroll_sources_youtube from "../convex/lib/scroll/sources/youtube";
+import * as lib_scroll_types from "../convex/lib/scroll/types";
 import * as lib_secrets from "../convex/lib/secrets";
 import * as lib_settle_traces from "../convex/lib/settle-traces";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
@@ -91,6 +103,7 @@ import * as routing from "../convex/routing";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
 import * as screen from "../convex/screen";
+import * as scroll from "../convex/scroll";
 import * as secrets from "../convex/secrets";
 import * as skills from "../convex/skills";
 import * as speech from "../convex/speech";
@@ -163,6 +176,18 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/recall": lib_recall,
   "lib/riffStyles": lib_riffStyles,
   "lib/routing": lib_routing,
+  "lib/scroll/index": lib_scroll_index,
+  "lib/scroll/merge": lib_scroll_merge,
+  "lib/scroll/net": lib_scroll_net,
+  "lib/scroll/sources/hackernews": lib_scroll_sources_hackernews,
+  "lib/scroll/sources/producthunt": lib_scroll_sources_producthunt,
+  "lib/scroll/sources/reddit": lib_scroll_sources_reddit,
+  "lib/scroll/sources/rss": lib_scroll_sources_rss,
+  "lib/scroll/sources/scrapecreators": lib_scroll_sources_scrapecreators,
+  "lib/scroll/sources/treg": lib_scroll_sources_treg,
+  "lib/scroll/sources/x": lib_scroll_sources_x,
+  "lib/scroll/sources/youtube": lib_scroll_sources_youtube,
+  "lib/scroll/types": lib_scroll_types,
   "lib/secrets": lib_secrets,
   "lib/settle-traces": lib_settle_traces,
   "lib/shortcuts": lib_shortcuts,
@@ -199,6 +224,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "runner": runner,
   "runs": runs,
   "screen": screen,
+  "scroll": scroll,
   "secrets": secrets,
   "skills": skills,
   "speech": speech,

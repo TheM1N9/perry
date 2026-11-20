@@ -20,7 +20,7 @@
     "evals": "bun evals/run.ts",
     "service": "bun scripts/service.ts",
     "smoke": "bun scripts/smoke.ts",
-    "test": "bun test components",
+    "test": "bun test components artifacts/scroll",
     "codegen": "bun scripts/codegen.ts",
     "migrate": "bun scripts/migrate.ts"
   },

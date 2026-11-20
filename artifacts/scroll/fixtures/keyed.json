@@ -1,0 +1,34 @@
+{
+  "_about": "Answers in the shapes each provider documents: YouTube Data API search through a connected account, X API v2 recent search, ScrapeCreators TikTok keyword search and Instagram reels search, Product Hunt GraphQL, a treg routed call, and an RSS read from Perry's internet layer. Content is synthetic.",
+  "youtubeDiscovery": {"state": "available", "accounts": [{"id": "ca_youtube_1", "status": "ACTIVE"}], "actions": [
+    {"slug": "YOUTUBE_LIST_CAPTION_TRACK", "description": "List caption tracks", "inputSchema": {"type": "object", "properties": {"videoId": {"type": "string"}}, "required": ["videoId"]}},
+    {"slug": "YOUTUBE_SEARCH_YOU_TUBE", "description": "Search YouTube for videos, channels or playlists", "inputSchema": {"type": "object", "properties": {"q": {"type": "string"}, "part": {"type": "string"}, "type": {"type": "string"}, "maxResults": {"type": "integer"}, "publishedAfter": {"type": "string"}, "order": {"type": "string"}}, "required": ["q"]}}
+  ]},
+  "youtubeSearch": {"kind": "youtube#searchListResponse", "pageInfo": {"totalResults": 2, "resultsPerPage": 2}, "items": [
+    {"kind": "youtube#searchResult", "id": {"kind": "youtube#video", "videoId": "Hx3kq9AiJob"}, "snippet": {"publishedAt": "2026-11-20T12:00:05Z", "title": "I let an AI apply to 500 jobs for me. Here is what happened", "description": "An experiment with auto-apply tools.", "channelTitle": "Career Lab"}},
+    {"kind": "youtube#searchResult", "id": {"kind": "youtube#video", "videoId": "Qp7AiHire01"}, "snippet": {"publishedAt": "2026-11-20T15:30:00Z", "title": "Recruiters react to AI written resumes", "description": "Three recruiters, one hundred resumes.", "channelTitle": "Hiring Desk"}}
+  ]},
+  "x": {"data": [
+    {"id": "1859100000000000001", "text": "Our AI recruiter screened 10,000 applicants this week. We hired 3. Here is what we learned", "created_at": "2026-11-20T09:12:00.000Z", "author_id": "11", "lang": "en", "public_metrics": {"retweet_count": 210, "reply_count": 96, "like_count": 1800, "quote_count": 40, "impression_count": 240000}},
+    {"id": "1859100000000000002", "text": "Hot take: AI did not take your job, the hiring freeze did", "created_at": "2026-11-20T14:40:00.000Z", "author_id": "12", "lang": "en", "public_metrics": {"retweet_count": 12, "reply_count": 30, "like_count": 150, "quote_count": 3, "impression_count": 9000}}
+  ], "includes": {"users": [{"id": "11", "name": "Hiring Lead", "username": "hiringlead"}, {"id": "12", "name": "Sam", "username": "samtakes"}]}, "meta": {"result_count": 2, "newest_id": "1859100000000000002"}},
+  "tiktok": {"success": true, "search_item_list": [
+    {"aweme_info": {"aweme_id": "7439000000000000001", "desc": "POV: the AI interviewer asks you to explain a gap year #jobsearch #ai", "create_time": 1795160000, "author": {"unique_id": "jobhunter", "nickname": "Job Hunter"}, "statistics": {"play_count": 1200000, "digg_count": 150000, "comment_count": 2300, "share_count": 8000}, "share_url": "https://www.tiktok.com/@jobhunter/video/7439000000000000001?_r=1&u_code=abc"}},
+    {"aweme_info": {"aweme_id": "7439000000000000002", "desc": "how I got past the AI resume filter", "create_time": 1795176000, "author": {"unique_id": "resume.tips"}, "statistics": {"play_count": 40000, "digg_count": 3100, "comment_count": 120, "share_count": 400}}}
+  ], "cursor": 20},
+  "instagram": {"success": true, "reels": [
+    {"shortcode": "DQ1aiHire", "url": "https://www.instagram.com/reel/DQ1aiHire/", "caption": "Recruiters are using AI to read your resume. Here is how to write for both.", "taken_at": "2026-11-20T08:00:00.000Z", "like_count": 5400, "comment_count": 210, "video_play_count": 98000, "owner": {"username": "careercoach"},
+     "comments": [{"text": "so true", "like_count": 0, "owner": {"username": "a1"}}, {"text": "saving this", "like_count": 0, "owner": {"username": "a2"}}, {"text": "what about cover letters", "like_count": 0, "owner": {"username": "a3"}}]}
+  ]},
+  "producthunt": {"data": {"posts": {"edges": [
+    {"node": {"id": "901", "name": "HireLoop", "tagline": "An AI recruiter that books the first call for you", "description": "Screens applicants and schedules interviews.", "url": "https://www.producthunt.com/posts/hireloop", "votesCount": 412, "commentsCount": 38, "createdAt": "2026-11-20T08:01:00Z", "website": "https://www.producthunt.com/r/hireloop", "topics": {"edges": [{"node": {"name": "Hiring"}}, {"node": {"name": "Artificial Intelligence"}}]}}},
+    {"node": {"id": "902", "name": "PaintPal", "tagline": "Color palettes for designers", "description": "Pick colors faster.", "url": "https://www.producthunt.com/posts/paintpal", "votesCount": 900, "commentsCount": 60, "createdAt": "2026-11-20T08:01:00Z", "website": "https://www.producthunt.com/r/paintpal", "topics": {"edges": [{"node": {"name": "Design Tools"}}]}}}
+  ]}}},
+  "tregX": {"output": {"posts": [
+    {"id": "1859100000000000009", "text": "AI hiring tools rejected me for a job I already do", "url": "https://x.com/devrel_ana/status/1859100000000000009?s=46", "createdAt": "2026-11-20T11:00:00.000Z", "author": {"username": "devrel_ana"}, "likeCount": 4200, "replyCount": 310, "retweetCount": 520, "viewCount": 380000}
+  ], "next_cursor": null}, "_treg": {"served_by": "anyapi", "tried": ["anyapi"], "charged_micro": 750}},
+  "feed": {"status": "ok", "platform": "rss", "operation": "feed", "backend": "rss_feed", "items": [
+    {"kind": "feed_entry", "id": "post-1", "url": "https://blog.example.com/ai-hiring-report", "title": "Our 2026 AI hiring report", "author": "Ada", "publishedAt": "2026-11-20T07:00:00.000Z", "content": "We asked 300 companies how they hire with AI."},
+    {"kind": "feed_entry", "id": "post-0", "url": "https://blog.example.com/older", "title": "An older post", "publishedAt": "2026-11-01T07:00:00.000Z", "content": "From earlier this month."}
+  ]}
+}

@@ -72,6 +72,7 @@ import { review } from "./review";
 import { writeUpMeeting } from "./meeting-notes";
 import { nameChat } from "./title";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
+import { installCoreSkills } from "./core-skills";
 import { TurnTrace } from "./trace";
 import { runUpdate, updatePlan, withVersions } from "./versions";
 import { TURN_IDLE_MIN, TURN_MAX_MIN } from "../convex/lib/turnLimits";
@@ -202,6 +203,13 @@ async function main() {
 
   ensureHome();
   holdLock(token);
+  // Perry's own skills (skills/), into the skills folder; one that will not copy is only missing.
+  try {
+    const added = installCoreSkills();
+    if (added.length) console.log(dim(`Skills updated: ${added.join(", ")}`));
+  } catch (error) {
+    console.error(`Could not install Perry's skills: ${error instanceof Error ? error.message : String(error)}`);
+  }
   // Started by the Windows logon task, which cannot end what it started: `pnpm run service stop` ends this PID.
   const pidFile = process.env.PERRY_SERVICE_PID_FILE;
   if (pidFile) {
