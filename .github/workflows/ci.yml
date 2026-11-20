@@ -59,6 +59,16 @@ jobs:
           name: orphan-tasks-${{ runner.os }}
           path: artifacts/orphan-tasks/result.json
           if-no-files-found: ignore
+      # Files people send in group and contact chats reach the turn, and its engine gets page pictures and text
+      # it can read with no tools (artifacts/guest-files/failure-cases.md).
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/guest-files/run.mjs "${{ runner.temp }}/guest-files"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: guest-files-${{ runner.os }}
+          path: ${{ runner.temp }}/guest-files
+          if-no-files-found: error
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/jobs-inherit-access/run.mjs "${{ runner.temp }}/jobs-inherit-access"
       - if: always()
         uses: actions/upload-artifact@v4

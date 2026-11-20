@@ -103,7 +103,10 @@ export const receiveOther = internalAction({
   args: {
     chatId: v.string(), senderId: v.string(), text: v.string(), title: v.optional(v.string()), name: v.optional(v.string()),
     chatType: v.optional(v.string()), username: v.optional(v.string()), replyToId: v.optional(v.string()), mentions: v.optional(v.array(v.string())),
-    hasMedia: v.boolean(),
+    /** Its files, still on Telegram: contacts.inbound downloads them for a chat that keeps files. */
+    media: v.optional(v.array(vTelegramMedia)),
+    /** Before files came along: that it had some. */
+    hasMedia: v.optional(v.boolean()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -124,8 +127,8 @@ export const receiveOther = internalAction({
       channel: "telegram", chatId: args.chatId, kind: group ? "group" : "person",
       ...(group && args.title ? { chatName: args.title } : {}),
       from: { handle, ...(args.name ? { name: args.name } : {}), ...(facts.owner && args.senderId === facts.owner ? { owner: true } : {}) },
-      text: args.text || (args.hasMedia ? "(sent a file, which you cannot open here)" : ""),
-      addressed,
+      text: args.text || (args.hasMedia && !args.media?.length ? "(sent a file, which you cannot open here)" : ""),
+      addressed, ...(args.media?.length ? { telegramMedia: args.media } : {}),
     });
     return null;
   },
@@ -221,7 +224,7 @@ export const receive = internalMutation({
         await ctx.scheduler.runAfter(0, internal.ingest.receiveOther, {
           chatId: args.chatId, senderId: args.senderId, text: args.text, title: args.title, name: args.name,
           chatType: args.chatType, username: args.username, replyToId: args.replyToId, mentions: args.mentions,
-          hasMedia: Boolean(args.media?.length),
+          ...(args.media?.length ? { media: args.media } : {}),
         });
         return null;
     }

@@ -85,7 +85,7 @@ export async function latestVersionNow(kind: EngineKind, waitMs = 5_000): Promis
 // --- The command that updates it -----------------------------------------------
 
 /** Where a command is, as a shell on this computer would find it on PATH. */
-function onPath(command: string): string | undefined {
+export function onPath(command: string): string | undefined {
   if (isAbsolute(command)) return existsSync(command) ? command : undefined;
   const windows = process.platform === "win32";
   for (const dir of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {

@@ -130,16 +130,32 @@ const bare = (jid?: string | null) => (jid ?? "").replace(/:\d+(?=@)/, "");
 const sleep = (ms: number, signal: AbortSignal) => delay(ms, undefined, { signal })
   .catch((error) => { if (!signal.aborted) throw error; });
 
+type Fetched = { files: Array<{ base64: string; fileName: string; contentType: string }>; note: string };
+
+/**
+ * What a message holds, out of the wrappers WhatsApp puts around it: disappearing, view once, and a
+ * document sent with a caption (which comes inside documentWithCaptionMessage), as Baileys unwraps them.
+ */
+function innerOf(message: Record<string, any> | undefined): Record<string, any> | undefined {
+  let inner = message;
+  for (let depth = 0; depth < 5 && inner; depth++) {
+    const wrapped = inner.ephemeralMessage ?? inner.viewOnceMessage ?? inner.viewOnceMessageV2 ?? inner.viewOnceMessageV2Extension ?? inner.documentWithCaptionMessage;
+    if (!wrapped?.message) break;
+    inner = wrapped.message;
+  }
+  return inner;
+}
+
 /** The words of a message, whatever kind it is; media captions count. */
 function textOf(message: Record<string, any> | undefined): string {
-  if (!message) return "";
-  const inner = message.ephemeralMessage?.message ?? message.viewOnceMessage?.message ?? message.viewOnceMessageV2?.message ?? message;
+  const inner = innerOf(message);
+  if (!inner) return "";
   return (inner.conversation ?? inner.extendedTextMessage?.text ?? inner.imageMessage?.caption ?? inner.videoMessage?.caption ?? inner.documentMessage?.caption ?? "").trim();
 }
 
 function mediaOf(message: Record<string, any> | undefined): { kind: string; fileName: string; contentType: string } | null {
-  if (!message) return null;
-  const inner = message.ephemeralMessage?.message ?? message.viewOnceMessage?.message ?? message;
+  const inner = innerOf(message);
+  if (!inner) return null;
   if (inner.imageMessage) return { kind: "image", fileName: "photo.jpg", contentType: inner.imageMessage.mimetype ?? "image/jpeg" };
   if (inner.videoMessage) return { kind: "video", fileName: "video.mp4", contentType: inner.videoMessage.mimetype ?? "video/mp4" };
   // A voice note is audio with ptt set; it comes as Opus in Ogg.
@@ -273,18 +289,31 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     const group = remote.endsWith("@g.us");
     // In a group, WhatsApp's own echo of what Perry wrote as its own number is not news.
     if (mode === "separate" && key.fromMe) return;
-    const inner = message.message?.ephemeralMessage?.message ?? message.message ?? {};
-    const context = inner.extendedTextMessage?.contextInfo ?? inner.imageMessage?.contextInfo ?? inner.videoMessage?.contextInfo ?? {};
+    const inner = innerOf(message.message) ?? {};
+    const context = inner.extendedTextMessage?.contextInfo ?? inner.imageMessage?.contextInfo ?? inner.videoMessage?.contextInfo ?? inner.documentMessage?.contextInfo ?? {};
     const mentioned = ((context.mentionedJid ?? []) as string[]).map(bare);
     const quoted = bare(context.participant);
-    const text = textOf(message.message) || (mediaOf(message.message) ? "(sent a file, which you cannot open here)" : "");
-    if (!text) return;
+    const caption = textOf(message.message);
+    const media = mediaOf(message.message);
+    if (!caption && !media) return;
+    const chatId = bare(group ? remote : remote.endsWith("@lid") && key.remoteJidAlt ? key.remoteJidAlt : remote);
+    // A picture or document is downloaded only for a chat the owner allowed, for Perry to read when asked; anywhere
+    // else, and a video or voice note anywhere, is only named.
+    let fetched: Fetched = { files: [], note: "" };
+    if (media) {
+      const keeps = (media.kind === "image" || media.kind === "document")
+        && await runtime.runQuery("contacts:keepsFiles", { channel: "whatsapp", externalId: chatId }, internal).then((answer) => answer.value === true, () => false);
+      fetched = keeps ? await download(message, media, current) : { files: [], note: `\n\n(sent ${media.fileName}, which you cannot open here)` };
+    }
+    const text = `${caption}${fetched.note}`.trim();
+    if (!text && !fetched.files.length) return;
     // Who wrote it: the owner, linked as them and writing from their phone; else the sender, by number when WhatsApp gives it.
     const sender = key.fromMe ? bare(current.user?.id) : bare(group ? key.participantAlt ?? key.participant : key.remoteJidAlt ?? remote);
     const name = group ? await groupName(remote, current) : undefined;
     if (socket !== current || stop.signal.aborted) return;
     await runtime.runAction("whatsapp:receiveOther", {
-      chatId: bare(group ? remote : remote.endsWith("@lid") && key.remoteJidAlt ? key.remoteJidAlt : remote),
+      chatId,
+      ...(fetched.files.length ? { media: fetched.files } : {}),
       group,
       ...(name ? { groupName: name } : {}),
       from: sender,
@@ -326,18 +355,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     const text = textOf(message.message);
     const media = mediaOf(message.message);
     if (!text && !media) return;
-    const files: Array<{ base64: string; fileName: string; contentType: string }> = [];
-    let note = "";
-    if (media) {
-      try {
-        const bytes = await (await driverOf()).download(message, current);
-        if (bytes.byteLength > MEDIA_LIMIT) note = `\n\n(${media.fileName} was too big to download: WhatsApp files up to 20 MB.)`;
-        else files.push({ base64: bytes.toString("base64"), fileName: media.fileName, contentType: media.contentType });
-      } catch (error) {
-        note = `\n\n(${media.fileName} could not be downloaded from WhatsApp.)`;
-        console.error(`[perry] WhatsApp: could not download a file: ${String(error)}`);
-      }
-    }
+    const { files, note } = media ? await download(message, media, current) : { files: [], note: "" };
     if (mode === "separate" && current.readMessages) await current.readMessages([key]).catch(() => {});
     if (stop.signal.aborted || socket !== current) { seen.delete(id); return; }
     await runtime.runAction("whatsapp:receive", {
@@ -347,6 +365,18 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
       ...(files.length ? { media: files } : {}),
       messageId: id, fromMe: Boolean(key.fromMe), remoteJid: remote,
     }, internal).catch((error) => console.error(`[perry] WhatsApp message failed: ${error instanceof Error ? error.message : String(error)}`));
+  }
+
+  /** A message's file, or why it did not come. */
+  async function download(message: Record<string, any>, media: { fileName: string; contentType: string }, current: Socket): Promise<Fetched> {
+    try {
+      const bytes = await (await driverOf()).download(message, current);
+      if (bytes.byteLength > MEDIA_LIMIT) return { files: [], note: `\n\n(${media.fileName} was too big to download: WhatsApp files up to 20 MB.)` };
+      return { files: [{ base64: bytes.toString("base64"), fileName: media.fileName, contentType: media.contentType }], note: "" };
+    } catch (error) {
+      console.error(`[perry] WhatsApp: could not download a file: ${String(error)}`);
+      return { files: [], note: `\n\n(${media.fileName} could not be downloaded from WhatsApp.)` };
+    }
   }
 
   let driver: Promise<Driver> | null = null;
