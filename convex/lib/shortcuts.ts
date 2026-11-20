@@ -33,6 +33,12 @@ export const SHORTCUTS = {
     default: "CommandOrControl+Alt+Shift+Space",
     global: true,
   },
+  riffTalk: {
+    label: "Dictate in Riff",
+    description: "In a Riff document: hold, speak, let go. Tap to keep listening.",
+    default: "Alt+M",
+    global: false,
+  },
   palette: {
     label: "Search and commands",
     description: "Chats, pages and actions.",

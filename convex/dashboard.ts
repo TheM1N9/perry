@@ -194,13 +194,16 @@ export const listChats = query({
       .withIndex("by_channel_last", (q) => q.eq("channel", channel))
       .order("desc")
       .collect()))).flat().sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+    // A Riff document's editing chat belongs to its document (Riff), not to the list of chats.
+    const riffChats = new Set((await ctx.db.query("notes").withIndex("by_live_chat").filter((q) => q.neq(q.field("liveChatId"), undefined)).collect()).map((note) => note.liveChatId));
+    const listed = chats.filter((chat) => !riffChats.has(chat._id));
     const asking = new Set((await ctx.db.query("approvals")
       .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", Date.now() - APPROVAL_TTL_MS))
       .collect()).map((row) => row.conversationId));
     const jobs = new Map((await ctx.db.query("jobs").collect()).map((job) => [job._id, job]));
     const naming = await beingNamed(ctx);
     const tasks = new Map((await ctx.db.query("tasks").collect()).map((task) => [task._id, task]));
-    const summaries = await Promise.all(chats.map(async (chat): Promise<ChatSummary> => {
+    const summaries = await Promise.all(listed.map(async (chat): Promise<ChatSummary> => {
       const running = await isBusy(ctx, chat);
       const latestRun = running || asking.has(chat._id) ? null : await ctx.db.query("runs")
         .withIndex("by_conversation", (q) => q.eq("conversationId", chat._id))

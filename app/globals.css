@@ -354,6 +354,11 @@
     @apply text-md leading-[1.75] text-foreground [overflow-wrap:anywhere];
   }
   .prose-note > * + * { @apply mt-3; }
+  /* Riff: a page to write on, a step larger than a note (components/dashboard/screens/live-documents.tsx). */
+  .prose-note.riff-text { @apply text-[1.0625rem] leading-[1.75]; }
+  /* The diff and the ghost wrap exactly as TipTap's editor does, so nothing reflows when review starts or ends. */
+  [data-riff-diff], [data-riff-ghost] { white-space: break-spaces; font-variant-ligatures: none; font-feature-settings: "liga" 0; overflow-wrap: break-word; }
+  [data-riff-diff] del + ins { margin-left: 0.25em; }
   .prose-note h1, .prose-note h2, .prose-note h3 { @apply mt-7 font-semibold tracking-tight first:mt-0; }
   .prose-note h1 { @apply text-xl; }
   .prose-note h2 { @apply text-lg; }

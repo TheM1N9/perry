@@ -825,6 +825,22 @@ export default defineSchema({
     liveChatId: v.optional(v.id("conversations")),
     /** Recent speech batches accepted by the editing chat, bounded to 32 retry receipts. */
     liveBatches: v.optional(v.array(v.string())),
+    /** A Riff document's style: a skill's name (riff.ts), core or from the skills folder. Unset is Notes. */
+    riffStyle: v.optional(v.string()),
+    /** What the owner last asked of a Riff document's editing chat, to label the edit it proposes. */
+    riffAsk: v.optional(v.string()),
+    /**
+     * A Riff document's edit from Perry that changes words already there: held for the owner to accept or reject
+     * rather than written (notes.updateForAgent). What it was made against, so accepting can tell if that moved.
+     */
+    riffProposal: v.optional(v.object({
+      content: v.string(),
+      title: v.optional(v.string()),
+      baseContent: v.string(),
+      baseRevision: v.number(),
+      instruction: v.optional(v.string()),
+      at: v.number(),
+    })),
     /** Markdown. */
     content: v.string(),
     /** Bumped by every save; a save from an older one is refused. */
@@ -888,6 +904,20 @@ export default defineSchema({
     // A person's page by their key, for one step out on the map (brainMap.neighbourhoodOf).
     .index("by_person", ["person"])
     .searchIndex("search_text", { searchField: "search" }),
+
+  /**
+   * A Riff document's versions (riff.ts): what it said after each change, newest last, 60 kept per document.
+   * Runs of dictation, and of the owner's typing, merge into one version; each accepted edit and restore is its own.
+   */
+  riffVersions: defineTable({
+    noteId: v.id("notes"),
+    title: v.string(),
+    content: v.string(),
+    kind: v.union(v.literal("dictation"), v.literal("typing"), v.literal("edit"), v.literal("restore")),
+    /** The instruction an accepted edit came from. */
+    label: v.optional(v.string()),
+    at: v.number(),
+  }).index("by_note", ["noteId", "at"]),
 
   /**
    * A call the desktop pet listened to (meetings.ts): its page of notes, which is an ordinary note, and how far it
