@@ -184,6 +184,7 @@ export const chatFor = internalMutation({
     if (existing) return { externalId: existing.externalId, title: existing.title ?? task.title };
     const title = `🧩 ${task.title}`;
     const install = await ctx.db.query("installation").first();
+    const origin = task.origin ? await ctx.db.get(task.origin) : null;
     const conversationId = await ctx.db.insert("conversations", {
       channel: "web",
       externalId: `session:${args.threadId}`,
@@ -191,7 +192,7 @@ export const chatFor = internalMutation({
       title,
       taskId: task._id,
       ...(task.origin ? { parentConversationId: task.origin } : {}),
-      access: task.initiative || task.expiredApprovalId ? "supervised" : install?.defaultAccess,
+      access: task.initiative || task.expiredApprovalId ? "supervised" : origin ? origin.access ?? "supervised" : install?.defaultAccess,
       lastMessageAt: Date.now(),
       // Started from a project's chat, it works in the project: its instructions, its chats and its memory.
       ...await projectFrom(ctx, task.origin),
