@@ -33,7 +33,8 @@ async function viaFeed(plan: Plan, services: Services, signal: AbortSignal, subr
     : `https://www.reddit.com/search.rss?${query({ q: plan.searches[0] ?? plan.topic, sort: "top", t, limit: 50 })}`;
   let body: string;
   try {
-    body = text(await attempt(() => services.send(url, { method: "GET", headers: { "user-agent": AGENT, accept: "application/atom+xml, application/rss+xml" } }, signal), signal));
+    // Asked once, never again in the same run: a retry would spend the next minute's allowance.
+    body = text(await services.send(url, { method: "GET", headers: { "user-agent": AGENT, accept: "application/atom+xml, application/rss+xml" } }, signal));
   } catch (error) {
     // Reddit answers an anonymous reader it will not serve with an empty "Not Found" feed, or a 403 or 429.
     if (error instanceof SourceError && /404|refused|rate limited/.test(error.message)) throw new SourceError(`${error.message.replace("Not Found (HTTP 404)", "Not Found, HTTP 404")} from its public feed, as Reddit answers anonymous readers on some networks; ${APP_HINT}`);
@@ -41,7 +42,7 @@ async function viaFeed(plan: Plan, services: Services, signal: AbortSignal, subr
   }
   if (/<title>\s*Not Found\s*<\/title>/i.test(body) && !/<entry[\s>]/i.test(body)) throw new SourceError(`Not Found from its public feed, as Reddit answers anonymous readers on some networks; ${APP_HINT}`);
   let entries: ReturnType<typeof feedItems>;
-  try { entries = feedItems(body, url); } catch { throw new SourceError("its public feed was not readable"); }
+  try { entries = feedItems(body, url, 50); } catch { throw new SourceError("its public feed was not readable"); }
   fetched.posts = entries.map((entry) => ({
     // The post's own text comes before Reddit's "submitted by ... [link] [comments]" footer.
     source: "reddit", url: (entry.url ?? "").replace(/\/+$/, ""), text: plain([entry.title, entry.content.split(/\bsubmitted by\b/)[0].replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")].filter(Boolean).join(". ")),

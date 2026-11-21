@@ -58,7 +58,11 @@ Added after review (CodeRabbit on #371):
 - YouTube runs with no Composio key or no YouTube connection instead of saying how to connect.
 - Reddit with no app login is not tried over its public RSS, sends no descriptive User-Agent,
   spends Reddit's one-request-a-minute anonymous allowance on several requests, or reads its
-  "Not Found" feed (what Reddit answers anonymous readers on some networks) as an empty day.
+  "Not Found" feed (what Reddit answers anonymous readers on some networks) as an empty day,
+  retries the anonymous feed (spending the next minute's allowance), or stops at the internet
+  layer's 21 entries when it asked for 50.
+- A topic word that is filler ("is", "launches") is stemmed before it is dropped, so nothing
+  matches.
 - Lobsters, Google News or Product Hunt's public feed need a key, return stories off the topic,
   or keep entries older than the window; Google News titles keep their " - Publisher" suffix
   instead of naming the publisher.

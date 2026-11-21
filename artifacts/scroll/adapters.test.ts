@@ -122,6 +122,29 @@ test("Reddit without a key: its \"Not Found\" feed, a refusal or a rate limit is
   }
 });
 
+test("Reddit without a key: a server failure or a dropped connection is not tried again; a long feed is read past 21 entries", async () => {
+  for (const answer of [status(503), new Error("ECONNRESET")]) {
+    const { services, calls } = world({ routes: [[/reddit\.com/, answer]] });
+    const result = await run({ platforms: ["reddit"], subreddits: ["cscareerquestions"] }, services);
+    assert.equal(calls.length, 1, "one anonymous request a run, even after a failure");
+    assert.equal(source(result, "reddit")?.status, "failed");
+  }
+  const one = xml("reddit-top.xml").match(/<entry>[\s\S]*?<\/entry>/)![0];
+  const many = xml("reddit-top.xml").replace(/<entry>[\s\S]*<\/entry>/, Array.from({ length: 40 }, (_, index) => one.replaceAll("1gx0a1", `1gx${String(index).padStart(3, "0")}`)
+    // Distinct, short texts: the same words under 40 links would be near duplicates.
+    .replace(/<content[\s\S]*?<\/content>/, "").replace(/<title>[^<]*<\/title>/, `<title>Thread ${index}</title>`)).join("\n"));
+  const long = world({ routes: [[/reddit\.com/, feed(many)]] });
+  assert.equal((await run({ platforms: ["reddit"], subreddits: ["cscareerquestions"], limit: 80 }, long.services)).posts.length, 40);
+});
+
+test("about the topic: filler words dropped before endings are, so \"AI is new\" still means AI", async () => {
+  const { aboutTopic } = await import("../../convex/lib/scroll/types");
+  assert.equal(aboutTopic({ topic: "AI is new", searches: [] })("An AI assistant for recruiters"), true);
+  assert.equal(aboutTopic({ topic: "AI launches", searches: [] })("Three AI tools for designers"), true);
+  assert.equal(aboutTopic({ topic: "AI hiring", searches: [] })("Paint palettes for designers"), false);
+  assert.equal(aboutTopic({ topic: "AI hiring", searches: [] })("The aim of hiring"), false, "AI is a whole word, not a prefix");
+});
+
 test("Reddit with an app: each subreddit's top and a search through its API, threads not images, old ones dropped", async () => {
   const { services, calls } = world({ keys: { reddit: { username: "client-id-123", value: "client-secret-456" } }, routes: [[/access_token/, ok(reddit.token)], [/oauth\.reddit\.com\/r\/cscareerquestions\/top/, ok(reddit.top)], [/oauth\.reddit\.com\/search/, ok(reddit.search)]] });
   const result = await run({ platforms: ["reddit"], subreddits: ["r/cscareerquestions"], searches: ["AI hiring"] }, services);

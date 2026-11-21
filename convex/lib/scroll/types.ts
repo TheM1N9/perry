@@ -156,18 +156,20 @@ export async function parts<T>(fetched: Fetched, items: T[], label: (item: T) =>
 export const fresh = (): Fetched => ({ posts: [], notes: [] });
 /** Short words that say nothing of what a post is about. */
 const FILLER = new Set(["the", "and", "for", "with", "about", "from", "what", "how", "new", "launch", "launches", "launched", "people", "posting", "are", "is", "of", "to", "in", "on"]);
-const tokens = (text: string) => (text.toLowerCase().match(/[\p{L}\p{N}+#]+/gu) ?? []).map((word) => word.replace(/s$/, ""));
+const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}+#]+/gu) ?? [];
+/** Filler out first, then endings: "is" must not become "i", nor "launches" "launche". */
+const stem = (word: string) => word.replace(/s$/, "");
 /**
  * Whether a post from a source with no search of its own (Lobsters, Product Hunt) is about the topic:
  * every meaningful word of the topic or of one search is in it. A word of three letters or fewer
  * ("AI") must be a whole word; a longer one may differ in its ending ("hiring", "hires").
  */
 export function aboutTopic(plan: Pick<Plan, "topic" | "searches">): (text: string) => boolean {
-  const phrases = [plan.topic, ...plan.searches].map((phrase) => [...new Set(tokens(phrase).filter((word) => !FILLER.has(word)))]).filter((words) => words.length);
+  const phrases = [plan.topic, ...plan.searches].map((phrase) => [...new Set(words(phrase).filter((word) => !FILLER.has(word)).map(stem))]).filter((kept) => kept.length);
   return (text) => {
-    const have = tokens(text);
+    const have = words(text).map(stem);
     const has = (word: string) => have.some((token) => word.length <= 3 ? token === word : token.startsWith(word.slice(0, Math.max(4, word.length - 2))));
-    return phrases.some((words) => words.every(has));
+    return phrases.some((kept) => kept.every(has));
   };
 }
 
