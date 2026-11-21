@@ -60,6 +60,8 @@ import type * as lib_scroll_index from "../lib/scroll/index.js";
 import type * as lib_scroll_merge from "../lib/scroll/merge.js";
 import type * as lib_scroll_net from "../lib/scroll/net.js";
 import type * as lib_scroll_sources_hackernews from "../lib/scroll/sources/hackernews.js";
+import type * as lib_scroll_sources_lobsters from "../lib/scroll/sources/lobsters.js";
+import type * as lib_scroll_sources_news from "../lib/scroll/sources/news.js";
 import type * as lib_scroll_sources_producthunt from "../lib/scroll/sources/producthunt.js";
 import type * as lib_scroll_sources_reddit from "../lib/scroll/sources/reddit.js";
 import type * as lib_scroll_sources_rss from "../lib/scroll/sources/rss.js";
@@ -183,6 +185,8 @@ declare const fullApi: ApiFromModules<{
   "lib/scroll/merge": typeof lib_scroll_merge;
   "lib/scroll/net": typeof lib_scroll_net;
   "lib/scroll/sources/hackernews": typeof lib_scroll_sources_hackernews;
+  "lib/scroll/sources/lobsters": typeof lib_scroll_sources_lobsters;
+  "lib/scroll/sources/news": typeof lib_scroll_sources_news;
   "lib/scroll/sources/producthunt": typeof lib_scroll_sources_producthunt;
   "lib/scroll/sources/reddit": typeof lib_scroll_sources_reddit;
   "lib/scroll/sources/rss": typeof lib_scroll_sources_rss;

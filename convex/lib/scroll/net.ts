@@ -13,6 +13,8 @@ const BODY_BYTES = 5 * 1024 * 1024;
  * a replay can stand in for the internet (artifacts/scroll/run.mjs).
  */
 export const transport = {
+  /** A public page as Perry's guarded fetch returns it, for the internet layer's feed reader. */
+  raw: (url: string, signal: AbortSignal) => fetchPublic(url, signal),
   async get(url: string, signal: AbortSignal): Promise<Http> {
     const page = await fetchPublic(url, AbortSignal.any([signal, AbortSignal.timeout(REQUEST_MS)]));
     return { status: page.status, body: page.body, headers: page.retryAfter ? { "retry-after": page.retryAfter } : {} };

@@ -216,13 +216,13 @@ function assertFeedXml(xml: string) {
   if (stack.length) failure("malformed", "The feed is incomplete.", "Check the original feed URL.");
 }
 /** Turndown's installed DOM parser handles tags/entities; XML entities and DTDs are never expanded. */
-function feedItems(xml: string, base: string): Evidence[] {
+export function feedItems(xml: string, base: string, max = 21): Evidence[] {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml) || !/<(?:rss|feed)(?:\s|>)/i.test(xml)) failure("malformed", "This is not a supported RSS or Atom feed.", "Use the site's RSS/Atom feed URL.");
   assertFeedXml(xml);
   const entries = [...xml.matchAll(/<(item|entry)(?:\s[^>]*)?>[\s\S]*?<\/\1\s*>/gi)];
   if (entries.length !== [...xml.matchAll(/<(?:item|entry)(?:\s|>)/gi)].length || !/<\/(?:rss|feed)\s*>/i.test(xml)) failure("malformed", "The feed is incomplete or malformed.", "Check the feed at its original URL.");
   // One extra entry records that the requested maximum of 20 does not cover this feed.
-  return entries.slice(0, 21).map((entry, index) => {
+  return entries.slice(0, max).map((entry, index) => {
     let item: Evidence = { kind: "feed_entry", id: String(index), content: "" };
     const parser = new TurndownService();
     parser.addRule("feed-entry", { filter: (node) => ["ITEM", "ENTRY"].includes(node.nodeName), replacement: (_content, node) => {

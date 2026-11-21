@@ -21,7 +21,7 @@ what each topic already showed. You plan the run, judge the posts and write the 
    add a qualifier when the name is a common word ("Cursor AI editor", not "Cursor"). Keep one
    plain question in mind to judge posts against, such as "which AI products launched in the last
    day, and did people care?"
-2. **Resolve.** Name the places the topic lives: 2 to 4 subreddits, and the feed of a company
+2. **Resolve.** Name the places the topic lives: 2 to 4 subreddits (Reddit reads them in one go), and the feed of a company
    blog, changelog or newsletter when you know one. A launch topic also gets Product Hunt; Hacker
    News already brings its Show HN posts.
 3. **Scroll.** Call `internet_scroll` once with the topic, window, searches, subreddits and feeds.
@@ -47,12 +47,19 @@ what each topic already showed. You plan the run, judge the posts and write the 
 | Platform | Free | Set up by |
 | --- | --- | --- |
 | Hacker News | yes | nothing |
-| Reddit | yes, where Reddit allows anonymous reads | nothing; or a free Reddit app saved as "Reddit app" (client id as the username, secret as the password) in Settings → Logins & secrets |
+| Lobsters | yes | nothing; its hottest and newest stories about the topic |
+| News (Google News) | yes | nothing; one search per query |
+| Reddit | yes, over its public feeds, where Reddit allows anonymous readers | nothing; or a free Reddit app saved as "Reddit app" (client id as the username, secret as the password) in Settings → Logins & secrets, for scores and searches |
+| YouTube | yes | the YouTube account connected in Apps & skills → Connectors; or a treg token |
+| Product Hunt | yes, its public feed of launches | nothing; a developer token saved as "Product Hunt" adds votes |
 | RSS and Atom | yes | the feed URLs you pass |
-| YouTube | yes | a YouTube account connected in Apps & skills → Connectors; or a treg token |
 | X | no | an X API bearer token saved as "X API", or a treg token |
 | TikTok, Instagram | no | a ScrapeCreators key saved as "ScrapeCreators", or a treg token |
-| Product Hunt | no | a Product Hunt developer token saved as "Product Hunt" |
+
+Reddit's anonymous feed allows about one request a minute, so a run reads every subreddit you
+name in one feed and makes no keyword search; with no subreddits it makes one search. Its feed
+has no scores, so judge Reddit posts by what they say. Lobsters and Product Hunt have no search:
+only stories that name the topic or a search come back, so word the searches plainly.
 
 A treg token is saved as "treg" in Settings → Logins & secrets. treg charges per call; the
 coverage line says what a run cost. A platform that is not set up is listed as such: never

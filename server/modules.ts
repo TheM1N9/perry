@@ -59,6 +59,8 @@ import * as lib_scroll_index from "../convex/lib/scroll/index";
 import * as lib_scroll_merge from "../convex/lib/scroll/merge";
 import * as lib_scroll_net from "../convex/lib/scroll/net";
 import * as lib_scroll_sources_hackernews from "../convex/lib/scroll/sources/hackernews";
+import * as lib_scroll_sources_lobsters from "../convex/lib/scroll/sources/lobsters";
+import * as lib_scroll_sources_news from "../convex/lib/scroll/sources/news";
 import * as lib_scroll_sources_producthunt from "../convex/lib/scroll/sources/producthunt";
 import * as lib_scroll_sources_reddit from "../convex/lib/scroll/sources/reddit";
 import * as lib_scroll_sources_rss from "../convex/lib/scroll/sources/rss";
@@ -180,6 +182,8 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/scroll/merge": lib_scroll_merge,
   "lib/scroll/net": lib_scroll_net,
   "lib/scroll/sources/hackernews": lib_scroll_sources_hackernews,
+  "lib/scroll/sources/lobsters": lib_scroll_sources_lobsters,
+  "lib/scroll/sources/news": lib_scroll_sources_news,
   "lib/scroll/sources/producthunt": lib_scroll_sources_producthunt,
   "lib/scroll/sources/reddit": lib_scroll_sources_reddit,
   "lib/scroll/sources/rss": lib_scroll_sources_rss,

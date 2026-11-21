@@ -16,12 +16,18 @@ freshness. The ranking and the workflow are adapted from treg's open-source doom
 | Platform | Free | How it is read |
 | --- | --- | --- |
 | Hacker News | yes | Algolia's public search API |
-| Reddit | yes, where Reddit allows it | public JSON for a subreddit's top posts and a search; with a Reddit app, Reddit's API |
+| Reddit | yes, where Reddit allows it | its public Atom feeds with a User-Agent naming Perry: one request a run (every subreddit in one multireddit feed, or one search), since Reddit allows an anonymous reader about one a minute; no scores. With a Reddit app, Reddit's API, with scores |
+| Lobsters | yes | its public hottest and newest JSON, stories about the topic |
+| News | yes | Google News's public RSS search, one feed per search, limited to the window |
+| YouTube | yes, with an account | the YouTube account connected in Apps & skills → Connectors: YOUTUBE_SEARCH_YOU_TUBE, read-only, the way run_action reaches it, published in the window, most viewed first. Its answer has no counts, so YouTube's order breaks ties |
+| Product Hunt | yes | its public Atom feed, launches about the topic; with a developer token, its GraphQL API with votes |
 | RSS and Atom | yes | the feeds the agent passes, read by Perry's internet layer |
-| YouTube | yes, with an account | the YouTube account connected in Apps & skills → Connectors, through its discovered search |
 | X | needs a key | X's API (recent search) with a bearer token, or treg |
 | TikTok, Instagram | needs a key | ScrapeCreators, or treg |
-| Product Hunt | needs a key | Product Hunt's GraphQL API with a developer token; launches kept when they are about the topic |
+
+Lobsters and Product Hunt have no search, so a post is kept only when every meaningful word of
+the topic or of one search is in it (`aboutTopic` in types.ts). Signed-in scraping of X,
+Instagram or TikTok is deliberately not done.
 
 Keys are logins in **Settings → Logins & secrets**, found by name. The value is the key:
 
@@ -38,8 +44,9 @@ The same keys can come from the environment instead (`X_BEARER_TOKEN`, `SCRAPECR
 only to its own provider's API host over https (convex/lib/scroll/net.ts) and never appears in a
 result. A platform with no key is listed as "not set up", never filled in with guesses.
 
-Reddit turns away anonymous reads from some networks (HTTP 403). The coverage line then says so
-and names the Reddit app that reads through Reddit's API instead.
+Reddit turns away anonymous readers on some networks: its feeds answer an empty "Not Found"
+(HTTP 404), its JSON a 403. The coverage line then says so and names the Reddit app that reads
+through Reddit's API instead.
 
 ## Behaviour
 

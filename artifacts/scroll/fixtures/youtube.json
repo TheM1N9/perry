@@ -1,0 +1,101 @@
+{
+ "_recordedAt": 1795241777,
+ "_about": "A real YOUTUBE_SEARCH_YOU_TUBE answer through Perry's connected account (composio:execute, read-only), q 'AI hiring', order viewCount, last 24h; trimmed.",
+ "search": {
+  "etag": "UF4rrgBIytQ1NepQgSYukoSgojY",
+  "items": [
+   {
+    "etag": "Tan9hQVqKcQjz7dFfWyTV3mGTi4",
+    "id": {
+     "kind": "youtube#video",
+     "videoId": "Huqz1Vo_Ap8"
+    },
+    "kind": "youtube#searchResult",
+    "snippet": {
+     "channelId": "UCc7gpqMnnOSbU_F2-5MVVZw",
+     "channelTitle": "Sheryians Coding School",
+     "description": "Is frontend development dead in 2026? No. Nothing dies. The bar moves. In 2021–22, HTML, CSS, JavaScript and React were ...",
+     "liveBroadcastContent": "none",
+     "publishTime": "2026-11-20T13:30:08Z",
+     "publishedAt": "2026-11-20T13:30:08Z",
+     "title": "Is Frontend Development Actually Dead? (The AI Reality)"
+    }
+   },
+   {
+    "etag": "478SYbSeWUmdewvVESnELh1TPKI",
+    "id": {
+     "kind": "youtube#video",
+     "videoId": "ypvVi0oITFw"
+    },
+    "kind": "youtube#searchResult",
+    "snippet": {
+     "channelId": "UC2ojq-nuP8ceeHqiroeKhBA",
+     "channelTitle": "Nate Herk | AI Automation",
+     "description": "Sign up for CompactifAI API: ...",
+     "liveBroadcastContent": "none",
+     "publishTime": "2026-11-20T17:34:00Z",
+     "publishedAt": "2026-11-20T17:34:00Z",
+     "title": "How I’d Become a Forward Deployed Engineer in 2027 (no code)"
+    }
+   },
+   {
+    "etag": "_hecGhSMgF24oQA4QzDK-utSiGQ",
+    "id": {
+     "kind": "youtube#video",
+     "videoId": "hHZK0UL46GM"
+    },
+    "kind": "youtube#searchResult",
+    "snippet": {
+     "channelId": "UCVCa-_J1CLBzpT52EwuZ3yQ",
+     "channelTitle": "VisionX Lab",
+     "description": "Musk didn't hesitate when asked about hiring Jensen, calling him one of the most talented entrepreneur CEOs in history. He even ...",
+     "liveBroadcastContent": "none",
+     "publishTime": "2026-11-20T21:15:04Z",
+     "publishedAt": "2026-11-20T21:15:04Z",
+     "title": "Would Elon Musk Hire Jensen Huang? 🤯 #elonmusk #shorts"
+    }
+   },
+   {
+    "etag": "LJf3SoPqb4NGV6s3A1aKpLkGSdo",
+    "id": {
+     "kind": "youtube#video",
+     "videoId": "OTj1DU0MH4I"
+    },
+    "kind": "youtube#searchResult",
+    "snippet": {
+     "channelId": "UCOaxCaYkp-D5zhssRwXAR0A",
+     "channelTitle": "Xippai",
+     "description": "One open role. Zero patience. Weekend hiring decisions hit different. Let Xipp.AI help with candidate screening before “seems ...",
+     "liveBroadcastContent": "none",
+     "publishTime": "2026-11-20T14:12:07Z",
+     "publishedAt": "2026-11-20T14:12:07Z",
+     "title": "Hiring on Vibes at 6 PM Friday 💀 #Shorts #xippai #recruitmentexperts"
+    }
+   },
+   {
+    "etag": "-kK_4yr4ZAVCXUVW4keCLLVslxw",
+    "id": {
+     "kind": "youtube#video",
+     "videoId": "bYd_gSwmLNw"
+    },
+    "kind": "youtube#searchResult",
+    "snippet": {
+     "channelId": "UClQDYiE75-po906ZDbx_11g",
+     "channelTitle": "General Musings with Kevin Powell",
+     "description": "CSS Demystified, with a new module and 32% off through December 1st: https://cssdemystified.com/ Only about 4.5% of software ...",
+     "liveBroadcastContent": "none",
+     "publishTime": "2026-11-20T13:35:34Z",
+     "publishedAt": "2026-11-20T13:35:34Z",
+     "title": "This is going to backfire"
+    }
+   }
+  ],
+  "kind": "youtube#searchListResponse",
+  "nextPageToken": "CAoQAA",
+  "pageInfo": {
+   "resultsPerPage": 10,
+   "totalResults": 26565
+  },
+  "regionCode": "US"
+ }
+}
