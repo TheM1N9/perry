@@ -26,6 +26,8 @@ export type Post = {
   link?: string;
   /** The provider that served it, when it is not the platform itself (treg, ScrapeCreators). */
   via?: string;
+  /** Its place in the platform's own order (1 is first), for a platform that gives no counts (YouTube's most viewed). */
+  position?: number;
 };
 export type Scored = Post & { eng: number; pct: number; score: number };
 type Row = Record<string, unknown>;
@@ -133,7 +135,10 @@ export function rank(items: Post[], span: number, now: number): Scored[] {
     // Within its platform: 1k TikTok likes are not 1k HN points. Equal engagement, equal standing.
     const group = scored.filter((x) => x.source === source);
     const best = Math.max(...group.map((x) => x.eng));
-    for (const it of group) it.pct = best ? group.filter((x) => x.eng <= it.eng).length / group.length : 0.5;
+    // Ties go by the platform's own order where it gave one.
+    const ordered = group.some((x) => x.position !== undefined);
+    const below = (x: Scored, it: Scored) => x.eng < it.eng || (x.eng === it.eng && (x.position ?? 0) >= (it.position ?? 0));
+    for (const it of group) it.pct = best || ordered ? group.filter((x) => below(x, it)).length / group.length : 0.5;
   }
   for (const it of scored) { // plus absolute reach, or the best of a quiet platform outranks a viral clip
     const fresh = it.created === null ? 0.5 : Math.max(0, 1 - (now - it.created) / span);

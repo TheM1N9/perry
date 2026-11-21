@@ -216,7 +216,7 @@ function assertFeedXml(xml: string) {
   if (stack.length) failure("malformed", "The feed is incomplete.", "Check the original feed URL.");
 }
 /** Turndown's installed DOM parser handles tags/entities; XML entities and DTDs are never expanded. */
-function feedItems(xml: string, base: string): Evidence[] {
+export function feedItems(xml: string, base: string): Evidence[] {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml) || !/<(?:rss|feed)(?:\s|>)/i.test(xml)) failure("malformed", "This is not a supported RSS or Atom feed.", "Use the site's RSS/Atom feed URL.");
   assertFeedXml(xml);
   const entries = [...xml.matchAll(/<(item|entry)(?:\s[^>]*)?>[\s\S]*?<\/\1\s*>/gi)];

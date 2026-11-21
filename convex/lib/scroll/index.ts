@@ -7,7 +7,9 @@ import { rss } from "./sources/rss";
 import { youtube } from "./sources/youtube";
 import { xApi } from "./sources/x";
 import { scrapecreators } from "./sources/scrapecreators";
-import { producthunt } from "./sources/producthunt";
+import { producthunt, producthuntFeed } from "./sources/producthunt";
+import { lobsters } from "./sources/lobsters";
+import { news } from "./sources/news";
 import { treg } from "./sources/treg";
 
 /**
@@ -19,7 +21,7 @@ import { treg } from "./sources/treg";
  * fails is not swapped for another, and no request is tried more than twice.
  * A new source is a file in sources/ and a line here.
  */
-export const SOURCES: Source[] = [hackernews, reddit, youtube, xApi, scrapecreators, producthunt, treg, rss];
+export const SOURCES: Source[] = [hackernews, reddit, lobsters, youtube, news, xApi, scrapecreators, producthunt, producthuntFeed, treg, rss];
 
 export const scrollInput = z.object({
   topic: z.string().trim().min(2).max(200).describe("What to catch up on, in plain words. It names what this topic has already shown, so keep it the same between runs."),
@@ -30,7 +32,6 @@ export const scrollInput = z.object({
   feeds: z.array(z.string().url().max(2048)).max(10).optional().describe("RSS or Atom feed URLs for the topic (a company blog, a newsletter)."),
   limit: z.number().int().min(1).max(80).default(50).describe("How many posts to return, best first."),
   includeSeen: z.boolean().default(false).describe("Also return posts an earlier run of this topic showed. Off: only what is new since."),
-  youtubeAccount: z.string().min(1).max(200).optional().describe("The connected YouTube account to search with, when several are connected."),
 });
 export type ScrollInput = z.output<typeof scrollInput>;
 
@@ -74,7 +75,7 @@ export async function runScroll(input: ScrollInput, services: Services, options:
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const window = input.window ?? "24h";
   const searches = [...new Set((input.searches?.length ? input.searches : [input.topic]).map((search) => search.trim()))];
-  const plan: Plan = { topic: input.topic, searches, subreddits: input.subreddits ?? [], feeds: input.feeds ?? [], window, span: WINDOWS[window], now, youtubeAccount: input.youtubeAccount };
+  const plan: Plan = { topic: input.topic, searches, subreddits: input.subreddits ?? [], feeds: input.feeds ?? [], window, span: WINDOWS[window], now };
   const platforms = PLATFORMS.filter((platform) => !input.platforms || input.platforms.includes(platform));
   // The run's own deadline, cleared when it ends; whatever a source still has in flight then is stopped.
   const stopper = new AbortController();
@@ -99,6 +100,7 @@ export async function runScroll(input: ScrollInput, services: Services, options:
         get: (url, inner) => { calls++; return services.get(url, inner); },
         send: (url, init, inner) => { calls++; return services.send(url, init, inner); },
         internet: (request, inner) => { calls++; return services.internet(request, inner); },
+        connected: { apps: () => services.connected.apps(), run: (slug, args) => { calls++; return services.connected.run(slug, args); } },
       };
       let unset = setUpHint(platform);
       for (const source of candidates) {
@@ -127,7 +129,8 @@ export async function runScroll(input: ScrollInput, services: Services, options:
     if (!row.posts) {
       row.status = "empty";
       const inWindow = (fetched?.posts ?? []).filter((post) => post.created === null || now - post.created <= plan.span).length;
-      row.note = [inWindow ? "nothing new since the last run" : "no posts in the window", row.note].filter(Boolean).join("; ");
+      // A source that keeps only posts about the topic says why it has none; otherwise the window does.
+      row.note = inWindow ? ["nothing new since the last run", row.note].filter(Boolean).join("; ") : row.note || "no posts in the window";
     }
   }
   const answered = rows.some(({ row }) => row.status === "ok" || row.status === "empty");

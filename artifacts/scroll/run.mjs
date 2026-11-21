@@ -42,19 +42,38 @@ for (const listing of [reddit.top, reddit.search]) for (const child of listing.d
 const keyed = fixture("keyed.json");
 for (const tweet of keyed.x.data) tweet.created_at = new Date(Date.parse(tweet.created_at) + shift * 1000).toISOString();
 for (const entry of keyed.tiktok.search_item_list) entry.aweme_info.create_time += shift;
+// Feeds recorded at their own times, moved the same way.
+const text = name => readFileSync(join(here, "fixtures", name), "utf8");
+const moved = (xml, recordedAt) => xml
+  .replace(/<pubDate>([^<]+)<\/pubDate>/g, (_all, date) => `<pubDate>${new Date(Date.parse(date) + (now - recordedAt) * 1000).toUTCString()}</pubDate>`)
+  .replace(/<(published|updated)>([^<]+)<\/\1>/g, (_all, tag, date) => `<${tag}>${new Date(Date.parse(date) + (now - recordedAt) * 1000).toISOString()}</${tag}>`);
+const lobstersRecorded = fixture("lobsters.json");
+const googleNews = moved(text("google-news.xml"), lobstersRecorded._recordedAt);
+const redditFeed = moved(text("reddit-top.xml"), FIXTURE_NOW);
+const productHuntFeed = moved(text("producthunt-feed.xml"), lobstersRecorded._recordedAt);
 const hits = [];
 const answer = body => ({ status: 200, body: JSON.stringify(body), headers: {} });
 transport.get = async (url) => {
   hits.push({ via: "get", url });
   const { hostname, pathname } = new URL(url);
   if (hostname === "hn.algolia.com") return answer(hn);
-  if (hostname === "www.reddit.com" && pathname.endsWith("/top.json")) return answer(reddit.top);
-  if (hostname === "www.reddit.com" && pathname === "/search.json") return answer(reddit.search);
+  if (hostname === "lobste.rs" && pathname === "/hottest.json") return answer(lobstersRecorded.hottest);
+  if (hostname === "lobste.rs" && pathname === "/newest.json") return answer(lobstersRecorded.newest);
   return { status: 404, body: "{}", headers: {} };
+};
+// What Perry's internet layer reads feeds with (lib/internet.ts): Google News and Product Hunt.
+transport.raw = async (url) => {
+  hits.push({ via: "raw", url });
+  const { hostname, pathname } = new URL(url);
+  const page = (body, contentType) => ({ url, status: 200, body, contentType, challenged: false });
+  if (hostname === "news.google.com" && pathname === "/rss/search") return page(googleNews, "application/xml");
+  if (hostname === "www.producthunt.com" && pathname === "/feed") return page(productHuntFeed, "application/atom+xml");
+  return { url, status: 404, body: "", contentType: "", challenged: false };
 };
 transport.send = async (url, init) => {
   hits.push({ via: "send", url, headers: init.headers });
   const { hostname, pathname } = new URL(url);
+  if (hostname === "www.reddit.com" && pathname.endsWith("/top.rss")) return { status: 200, body: redditFeed, headers: {} };
   if (hostname === "api.x.com") return answer(keyed.x);
   if (hostname === "treg.to" && pathname === "/call/treg.tiktok.search.videos") return { ...answer({ output: { videos: keyed.tiktok.search_item_list }, _treg: { charged_micro: 1000 } }), headers: { "x-treg-cost-micro": "1000" } };
   return { status: 404, body: "{}", headers: {} };
@@ -98,7 +117,7 @@ try {
   const owner = await insert("conversations", { channel: "web", externalId: "scroll-owner", threadId: "scroll-owner-thread", createdAt: at });
   const ownerTurn = await insert("codexTurns", { runnerId: runner, conversationId: owner, status: "running", prompt: "What is the internet saying about AI hiring?", engine: "codex", createdAt: at });
   const topic = "AI hiring";
-  const free = { topic, window: "24h", searches: ["AI hiring", "AI recruiter"], subreddits: ["cscareerquestions"] };
+  const free = { topic, window: "24h", searches: ["AI hiring", "AI recruiter"], subreddits: ["cscareerquestions"], platforms: ["hackernews", "reddit"] };
 
   await check("internet_scroll is offered to the owner's turns and never to a chat with someone else", async () => {
     const listed = await mcp("tools/list");
@@ -122,38 +141,45 @@ try {
     }
   });
 
-  let first;
-  await check("a scroll of the free sources: ranked posts, marked untrusted, the turn marked as having read outside, every platform in the coverage line", async () => {
-    const { value } = await scroll({ ...free, limit: 4 });
+  await check("every keyless source in one scroll: ranked posts, marked untrusted, the turn marked as having read outside, every platform in the coverage line", async () => {
+    const { value } = await scroll({ topic: "AI hiring across the web", window: "24h", searches: ["AI hiring", "AI recruiter"], subreddits: ["cscareerquestions", "recruitinghell"] });
     assert.match(value.untrusted, /data/);
-    first = value.result;
-    report.sample = { coverage: first.coverage, sources: first.sources, posts: first.posts.slice(0, 4) };
-    assert.equal(first.posts.length, 4);
-    assert.ok(first.posts.every((post, index) => index === 0 || first.posts[index - 1].score >= post.score), "best first");
-    assert.ok(first.posts.every(post => /^https:\/\/(news\.ycombinator\.com|www\.reddit\.com)\//.test(post.url)));
-    for (const expected of [/^hackernews 3/, /reddit 3/, /youtube not set up/, /x not set up/, /tiktok not set up/, /instagram not set up/, /producthunt not set up/, /rss skipped \(no feeds given\)/, /\d+ duplicates?, 1 too old, 0 already seen$/]) assert.match(first.coverage, expected);
-    assert.match(first.sources.find(row => row.platform === "x").note, /X API.*Logins & secrets|Logins & secrets/);
-    assert.equal(first.nothingNew, false);
-    assert.equal(first.shownKeys, undefined, "what it remembers is not handed to the agent");
+    const all = value.result;
+    report.sample = { coverage: all.coverage, sources: all.sources, posts: all.posts.slice(0, 6) };
+    assert.ok(all.posts.every((post, index) => index === 0 || all.posts[index - 1].score >= post.score), "best first");
+    for (const expected of [/^hackernews 3 · reddit 2 · lobsters 0 \(none of its 16 latest stories is about the topic\) · youtube not set up · news 6 · x not set up · tiktok not set up · instagram not set up · producthunt 0 \(none of its 6 latest launches is about the topic\) · rss skipped \(no feeds given\) · /, /, 1 too old, 0 already seen$/]) assert.match(all.coverage, expected);
+    assert.match(all.sources.find(row => row.platform === "youtube").note, /Connect YouTube in Apps & skills/);
+    assert.equal(all.sources.find(row => row.platform === "producthunt").provider, "Product Hunt feed", "free without a token");
+    assert.match(all.sources.find(row => row.platform === "x").note, /Logins & secrets/);
+    assert.ok(all.posts.some(post => post.platform === "news" && post.author === "HR Brew"));
+    assert.equal(all.nothingNew, false);
+    assert.equal(all.shownKeys, undefined, "what it remembers is not handed to the agent");
     assert.ok((await get(ownerTurn)).outsideAt, "what it read counts as from outside");
-    assert.ok(hits.every(hit => hit.via === "get" && /^(hn\.algolia\.com|www\.reddit\.com)$/.test(new URL(hit.url).hostname)), "free sources only, through the guarded fetch");
+    const reddit = hits.filter(hit => new URL(hit.url).hostname === "www.reddit.com");
+    assert.equal(reddit.length, 1, "one Reddit request a run");
+    assert.match(reddit[0].headers["user-agent"], /^perry-scroll\/1\.0/);
+    assert.ok(hits.every(hit => ({ get: ["hn.algolia.com", "lobste.rs"], raw: ["news.google.com", "www.producthunt.com"], send: ["www.reddit.com"] })[hit.via].includes(new URL(hit.url).hostname)), "keyless hosts only");
   });
 
+  let first;
   await check("a repeat run of the topic returns only what is new, then nothing; another topic starts fresh", async () => {
+    first = (await scroll({ ...free, limit: 3 })).value.result;
+    assert.equal(first.posts.length, 3);
+    assert.match(first.coverage, /^hackernews 3 · reddit 2 · \d+ duplicates?, 1 too old, 0 already seen$/);
     const shown = new Set(first.posts.map(post => post.url));
-    const second = (await scroll({ ...free, limit: 4 })).value.result;
-    assert.equal(second.posts.length, 2, "the two of six not shown yet");
+    const second = (await scroll({ ...free, limit: 3 })).value.result;
+    assert.equal(second.posts.length, 2, "the two of five not shown yet");
     assert.ok(second.posts.every(post => !shown.has(post.url)), "nothing shown before");
-    assert.match(second.coverage, /^hackernews 2 · reddit 0 \(nothing new since the last run\) · .* 4 already seen$/);
+    assert.match(second.coverage, / 3 already seen$/);
     const third = (await scroll({ ...free, limit: 50 })).value;
     assert.equal(third.result.posts.length, 0);
     assert.equal(third.result.nothingNew, true);
     assert.match(third.result.coverage, /hackernews 0 \(nothing new since the last run\)/);
     assert.match(third.result.note, /Nothing new/);
     const seenRow = (await all("scrollSeen")).find(row => /^ai-hiring-[0-9a-f]{8}$/.test(row.topic));
-    assert.equal(seenRow.keys.length, 6);
+    assert.equal(seenRow.keys.length, 5);
     const other = (await scroll({ ...free, topic: "AI jobs" })).value.result;
-    assert.equal(other.posts.length, 6, "a different topic has its own memory");
+    assert.equal(other.posts.length, 5, "a different topic has its own memory");
     const again = (await scroll({ ...free, includeSeen: true, limit: 2 })).value.result;
     assert.equal(again.posts.length, 2, "asked to, it shows them again");
   });
@@ -168,10 +194,10 @@ try {
     assert.equal(x.headers.authorization, "Bearer synthetic-x-bearer-0123456789");
     const viaTreg = hits.find(hit => hit.url === "https://treg.to/call/treg.tiktok.search.videos");
     assert.equal(viaTreg.headers["x-treg-token"], "synthetic-treg-token-0123456789");
-    assert.ok(hits.every(hit => hit.via === "send"));
+    assert.ok(hits.every(hit => hit.via === "send" || new URL(hit.url).hostname === "www.producthunt.com"), "keyed requests go out as keyed; Product Hunt's feed needs none");
     assert.equal(result.sources.find(row => row.platform === "x").provider, "X API");
     assert.equal(result.sources.find(row => row.platform === "tiktok").provider, "treg");
-    assert.match(result.coverage, /^x 2 · tiktok 2 via treg · instagram failed \(HTTP 404\) · producthunt not set up · /);
+    assert.match(result.coverage, /^x 2 · tiktok 2 via treg · instagram failed \(HTTP 404\) · producthunt 0 \(none of its 6 latest launches is about the topic\) · /);
     assert.match(result.coverage, /\$0\.001 on treg$/);
     assert.ok(result.posts.some(post => post.url === "https://x.com/hiringlead/status/1859100000000000001"));
     assert.ok(!text.includes("synthetic-x-bearer-0123456789") && !text.includes("synthetic-treg-token-0123456789"));

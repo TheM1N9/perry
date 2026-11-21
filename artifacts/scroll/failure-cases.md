@@ -51,6 +51,20 @@ Added after review (CodeRabbit on #371):
 - A request refused locally (too big, wrong host) is sent again; a paid treg search retried
   after a dropped connection is charged twice.
 
+## Round 2: keyless sources (Mani: "it should work without keys")
+
+- YouTube says "not set up" while a YouTube account is connected in Apps & skills, or runs a
+  search operation that is not read-only, or treats a Composio key problem as "nothing found".
+- YouTube runs with no Composio key or no YouTube connection instead of saying how to connect.
+- Reddit with no app login is not tried over its public RSS, sends no descriptive User-Agent,
+  spends Reddit's one-request-a-minute anonymous allowance on several requests, or reads its
+  "Not Found" feed (what Reddit answers anonymous readers on some networks) as an empty day.
+- Lobsters, Google News or Product Hunt's public feed need a key, return stories off the topic,
+  or keep entries older than the window; Google News titles keep their " - Publisher" suffix
+  instead of naming the publisher.
+- Product Hunt with a token does not use the token, or without one says "not set up" although
+  its public feed is free.
+
 ## End to end (run.mjs, isolated PERRY_HOME, real backend over SQLite)
 
 - `internet_scroll` is not offered to the owner's chats over MCP, or is offered to a chat

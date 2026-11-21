@@ -1,0 +1,308 @@
+{
+ "_recordedAt": 1795241777,
+ "hottest": [
+  {
+   "short_id": "gn5qb1",
+   "created_at": "2026-11-19T13:50:25.512-06:00",
+   "title": "Rebuilding my local voice assistant pipeline",
+   "url": "https://blog.platypush.tech/article/Rewriting-my-voice-assistant-pipeline",
+   "score": 12,
+   "flags": 2,
+   "comment_count": 0,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "blacklight",
+   "user_is_author": true,
+   "tags": [
+    "ai",
+    "python"
+   ],
+   "short_id_url": "https://lobste.rs/s/gn5qb1",
+   "comments_url": "https://lobste.rs/s/gn5qb1/rebuilding_my_local_voice_assistant"
+  },
+  {
+   "short_id": "pnfs5p",
+   "created_at": "2026-11-19T10:45:34.347-06:00",
+   "title": "Hiring a Systems Programmer for Boxem",
+   "url": "",
+   "score": 15,
+   "flags": 11,
+   "comment_count": 11,
+   "description": "<p>Handmade Cities <a href=\"https://guide.handmadecities.com/docs/support/employment/\" rel=\"ugc\">has</a> a job referral program, where engineers and employers reach out about open roles. (It's a free ",
+   "description_plain": "Handmade Cities [has](https://guide.handmadecities.com/docs/support/employment/) a job referral program, where engineers and employers reach out about open roles. (It's a free community service, so I'",
+   "submitter_user": "abnercoimbre",
+   "user_is_author": true,
+   "tags": [
+    "c",
+    "job"
+   ],
+   "short_id_url": "https://lobste.rs/s/pnfs5p",
+   "comments_url": "https://lobste.rs/s/pnfs5p/hiring_systems_programmer_for_boxem"
+  },
+  {
+   "short_id": "usdf7t",
+   "created_at": "2026-11-19T04:50:28.630-06:00",
+   "title": "Ruby2Shell (GHSA-34m4-m9fh-gqp5)",
+   "url": "https://verialabs.com/ruby2shell/",
+   "score": 30,
+   "flags": 0,
+   "comment_count": 6,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "bezdomni",
+   "user_is_author": false,
+   "tags": [
+    "ruby",
+    "security"
+   ],
+   "short_id_url": "https://lobste.rs/s/usdf7t",
+   "comments_url": "https://lobste.rs/s/usdf7t/ruby2shell_ghsa_34m4_m9fh_gqp5"
+  },
+  {
+   "short_id": "gftix3",
+   "created_at": "2026-11-19T13:55:10.812-06:00",
+   "title": "Visualizing a Ledger with pgledger-ui",
+   "url": "https://www.pgrs.net/2026/11/19/visualizing-a-ledger-with-pgledger-ui/",
+   "score": 7,
+   "flags": 1,
+   "comment_count": 0,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "pgr0ss",
+   "user_is_author": true,
+   "tags": [
+    "databases",
+    "visualization"
+   ],
+   "short_id_url": "https://lobste.rs/s/gftix3",
+   "comments_url": "https://lobste.rs/s/gftix3/visualizing_ledger_with_pgledger_ui"
+  },
+  {
+   "short_id": "bk5nfs",
+   "created_at": "2026-11-19T02:37:13.161-06:00",
+   "title": "Distributed, high-performance blob storage on SQLite",
+   "url": "https://zerodha.tech/blog/high-performance-distributed-blob-storage/",
+   "score": 30,
+   "flags": 1,
+   "comment_count": 3,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "gowthamgts",
+   "user_is_author": false,
+   "tags": [
+    "distributed",
+    "rust"
+   ],
+   "short_id_url": "https://lobste.rs/s/bk5nfs",
+   "comments_url": "https://lobste.rs/s/bk5nfs/distributed_high_performance_blob"
+  },
+  {
+   "short_id": "spmgsd",
+   "created_at": "2026-11-18T02:51:09.576-06:00",
+   "title": "Codeberg's domain suddenly disappeared from their account, site is unreachable",
+   "url": "https://social.anoxinon.de/@Codeberg/117636454915265360",
+   "score": 230,
+   "flags": 0,
+   "comment_count": 78,
+   "description": "<p><del>Note: codeberg's servers are up, it's just the domain that's gone. It works perfectly after adding the following line to <code>/etc/hosts</code>:</del></p>\n<pre><code>217.197.84.140 codeberg.o",
+   "description_plain": "~~Note: codeberg's servers are up, it's just the domain that's gone. It works perfectly after adding the following line to `/etc/hosts`:~~\r\n\r\n```\r\n217.197.84.140 codeberg.org\r\n```\r\n\r\nUpdate: it's now ",
+   "submitter_user": "mort",
+   "user_is_author": false,
+   "tags": [
+    "vcs"
+   ],
+   "short_id_url": "https://lobste.rs/s/spmgsd",
+   "comments_url": "https://lobste.rs/s/spmgsd/codeberg_s_domain_suddenly_disappeared"
+  },
+  {
+   "short_id": "xn50o0",
+   "created_at": "2026-11-19T04:17:55.143-06:00",
+   "title": "PHP 8.6 Release Announcement",
+   "url": "https://www.php.net/releases/8.6/en.php",
+   "score": 21,
+   "flags": 0,
+   "comment_count": 5,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "luke8086",
+   "user_is_author": false,
+   "tags": [
+    "php",
+    "release"
+   ],
+   "short_id_url": "https://lobste.rs/s/xn50o0",
+   "comments_url": "https://lobste.rs/s/xn50o0/php_8_6_release_announcement"
+  },
+  {
+   "short_id": "yd2dkh",
+   "created_at": "2026-11-20T04:52:02.517-06:00",
+   "title": "Crafting Targeted MP4 Fuzzers",
+   "url": "https://atredis.com/blog/2026/11/16/crafting-targeted-mp4-fuzzers/",
+   "score": 1,
+   "flags": 0,
+   "comment_count": 0,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "cameron",
+   "user_is_author": false,
+   "tags": [
+    "security"
+   ],
+   "short_id_url": "https://lobste.rs/s/yd2dkh",
+   "comments_url": "https://lobste.rs/s/yd2dkh/crafting_targeted_mp4_fuzzers"
+  }
+ ],
+ "newest": [
+  {
+   "short_id": "ixhrac",
+   "created_at": "2026-11-20T22:31:29.960-06:00",
+   "title": "From Skiplists to B+ Trees: Making Valkey Sorted Sets More Memory Efficient",
+   "url": "https://valkey.io/blog/from-skiplist-to-b+tree/",
+   "score": 1,
+   "flags": 0,
+   "comment_count": 0,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "kana",
+   "user_is_author": false,
+   "tags": [
+    "compsci",
+    "databases",
+    "performance"
+   ],
+   "short_id_url": "https://lobste.rs/s/ixhrac",
+   "comments_url": "https://lobste.rs/s/ixhrac/from_skiplists_b_trees_making_valkey"
+  },
+  {
+   "short_id": "79x708",
+   "created_at": "2026-11-20T22:14:02.531-06:00",
+   "title": "Scaling Git horizontally: how we moved beyond Multi-Raft",
+   "url": "https://enroute.sh/blog/scaling-horizontally-how-we-moved-beyond-multi-raft",
+   "score": 2,
+   "flags": 0,
+   "comment_count": 0,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "pksunkara",
+   "user_is_author": false,
+   "tags": [
+    "vcs"
+   ],
+   "short_id_url": "https://lobste.rs/s/79x708",
+   "comments_url": "https://lobste.rs/s/79x708/scaling_git_horizontally_how_we_moved"
+  },
+  {
+   "short_id": "1n8fzn",
+   "created_at": "2026-11-20T18:46:40.624-06:00",
+   "title": "Slopstrap: Make your site look hastily vibecoded",
+   "url": "https://slopstrap.mikelacher.com/l",
+   "score": 4,
+   "flags": 5,
+   "comment_count": 3,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "skycam",
+   "user_is_author": false,
+   "tags": [
+    "css",
+    "satire",
+    "web"
+   ],
+   "short_id_url": "https://lobste.rs/s/1n8fzn",
+   "comments_url": "https://lobste.rs/s/1n8fzn/slopstrap_make_your_site_look_hastily"
+  },
+  {
+   "short_id": "1qkbmq",
+   "created_at": "2026-11-20T18:16:57.556-06:00",
+   "title": "DNS Stamps Specification",
+   "url": "https://dnscrypt.info/stamps-specifications/",
+   "score": 1,
+   "flags": 0,
+   "comment_count": 0,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "zk",
+   "user_is_author": false,
+   "tags": [
+    "networking"
+   ],
+   "short_id_url": "https://lobste.rs/s/1qkbmq",
+   "comments_url": "https://lobste.rs/s/1qkbmq/dns_stamps_specification"
+  },
+  {
+   "short_id": "4qcr3k",
+   "created_at": "2026-11-20T15:54:45.756-06:00",
+   "title": "Verifying formal models of Raft implementations",
+   "url": "https://antithesis.com/blog/2026/verifying-formal-models/",
+   "score": 6,
+   "flags": 0,
+   "comment_count": 0,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "a4j",
+   "user_is_author": false,
+   "tags": [
+    "formalmethods"
+   ],
+   "short_id_url": "https://lobste.rs/s/4qcr3k",
+   "comments_url": "https://lobste.rs/s/4qcr3k/verifying_formal_models_raft"
+  },
+  {
+   "short_id": "s5mwve",
+   "created_at": "2026-11-20T13:23:28.889-06:00",
+   "title": "Actual curl rewrites in rust",
+   "url": "https://daniel.haxx.se/blog/2026/11/17/actual-curl-rewrites-in-rust/comment-page-1/#comments",
+   "score": 0,
+   "flags": 1,
+   "comment_count": 1,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "pocket_walrus",
+   "user_is_author": false,
+   "tags": [
+    "c",
+    "programming",
+    "rust"
+   ],
+   "short_id_url": "https://lobste.rs/s/s5mwve",
+   "comments_url": "https://lobste.rs/s/s5mwve/actual_curl_rewrites_rust"
+  },
+  {
+   "short_id": "o5coeq",
+   "created_at": "2026-11-20T12:39:29.070-06:00",
+   "title": "Internet Archive Staffers Are Unionizing",
+   "url": "https://cwa-union.org/news/releases/internet-archive-workers-launch-union-campaign-communications-workers-america",
+   "score": 46,
+   "flags": 0,
+   "comment_count": 6,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "skalnik",
+   "user_is_author": false,
+   "tags": [
+    "culture"
+   ],
+   "short_id_url": "https://lobste.rs/s/o5coeq",
+   "comments_url": "https://lobste.rs/s/o5coeq/internet_archive_staffers_are"
+  },
+  {
+   "short_id": "18c0lq",
+   "created_at": "2026-11-20T10:44:09.585-06:00",
+   "title": "Alice v0.6.0",
+   "url": "https://www.alicecaml.org/blog/alice-v0-6-0/",
+   "score": 16,
+   "flags": 0,
+   "comment_count": 3,
+   "description": "",
+   "description_plain": "",
+   "submitter_user": "olex",
+   "user_is_author": false,
+   "tags": [
+    "ml",
+    "release"
+   ],
+   "short_id_url": "https://lobste.rs/s/18c0lq",
+   "comments_url": "https://lobste.rs/s/18c0lq/alice_v0_6_0"
+  }
+ ]
+}

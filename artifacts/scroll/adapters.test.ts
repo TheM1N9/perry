@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runScroll, type ScrollInput } from "../../convex/lib/scroll/index";
 import { SourceError, type Http, type Key, type KeyName, type Services } from "../../convex/lib/scroll/types";
-import type { InternetRequest, InternetResult } from "../../convex/lib/internet";
+import { executeInternet, type InternetRequest, type InternetResult } from "../../convex/lib/internet";
 
 // Each source against recorded answers (Hacker News is a real one, trimmed), no network:
 // `pnpm test` (bun test). Cases: failure-cases.md.
@@ -12,6 +12,10 @@ const fixtures = (name: string) => JSON.parse(readFileSync(join(import.meta.dirn
 const hn = fixtures("hackernews.json");
 const reddit = fixtures("reddit.json");
 const keyed = fixtures("keyed.json");
+const youtubeAnswer = fixtures("youtube.json");
+const lobstersAnswer = fixtures("lobsters.json");
+const xml = (name: string) => readFileSync(join(import.meta.dirname, "fixtures", name), "utf8");
+const feed = (body: string): Http => ({ status: 200, body, headers: { "content-type": "application/atom+xml" } });
 /** 2026-11-20T17:20:00Z, a few hours after the newest fixture. */
 const NOW = 1_795_200_000;
 
@@ -20,9 +24,11 @@ type Answer = Http | Error | ((call: Call) => Http | Error | Promise<Http | Erro
 const ok = (body: unknown, headers: Record<string, string> = {}): Http => ({ status: 200, body: JSON.stringify(body), headers });
 const status = (code: number): Http => ({ status: code, body: "{}", headers: {} });
 
-function world(options: { routes?: Array<[RegExp, Answer]>; keys?: Partial<Record<KeyName, Key>>; internet?: (request: InternetRequest) => InternetResult | Promise<InternetResult> } = {}) {
+type Connected = { apps?: { configured: boolean; apps: string[]; error?: string }; run?: (slug: string, args: Record<string, unknown>) => { ok: boolean; data?: unknown; error?: string } };
+function world(options: { routes?: Array<[RegExp, Answer]>; keys?: Partial<Record<KeyName, Key>>; internet?: (request: InternetRequest) => InternetResult | Promise<InternetResult>; connected?: Connected } = {}) {
   const calls: Call[] = [];
   const internetCalls: InternetRequest[] = [];
+  const connectedCalls: Array<{ slug: string; args: Record<string, unknown> }> = [];
   const answer = async (call: Call): Promise<Http> => {
     calls.push(call);
     const route = options.routes?.find(([pattern]) => pattern.test(call.url));
@@ -34,22 +40,23 @@ function world(options: { routes?: Array<[RegExp, Answer]>; keys?: Partial<Recor
   const services: Services = {
     get: (url) => answer({ via: "get", url, method: "GET", headers: {} }),
     send: (url, init) => answer({ via: "send", url, method: init.method, headers: init.headers, body: init.body }),
+    // Feeds go through the real internet layer and its feed reader, over the same routes.
     internet: async (request) => {
       internetCalls.push(request);
-      if (!options.internet) return unavailable("setup_required");
-      return await options.internet(request);
+      if (options.internet) return await options.internet(request);
+      return await executeInternet(request, {
+        fetch: async (url) => { const reply = await answer({ via: "get", url, method: "GET", headers: {} }); return { url, status: reply.status, body: reply.body, contentType: reply.headers["content-type"] ?? "", challenged: false }; },
+        page: async () => { throw new Error("no page reads in these tests"); },
+        connected: async () => ({ state: "setup_required", actions: [], accounts: [] }),
+      }, new AbortController().signal);
+    },
+    connected: {
+      apps: async () => options.connected?.apps ?? { configured: false, apps: [] },
+      run: async (slug, args) => { connectedCalls.push({ slug, args }); return options.connected?.run?.(slug, args) ?? { ok: false, error: "not connected" }; },
     },
     keys: options.keys ?? {},
   };
-  return { services, calls, internetCalls };
-}
-function unavailable(state: "setup_required" | "available" | "expired_auth", discovery: Record<string, unknown> = {}): InternetResult {
-  return { status: "unavailable", platform: "youtube", operation: "search", backend: "connected", retrievedAt: new Date(NOW * 1000).toISOString(), cacheAgeMs: 0, items: [], sources: [],
-    coverage: { kind: "search", pagesRead: 0, hasMore: false, truncated: false, missingFields: [] }, warnings: [], attempts: [],
-    discovery: { state, actions: [], accounts: [], ...discovery } as InternetResult["discovery"] };
-}
-function connectedData(data: unknown): InternetResult {
-  return { ...unavailable("available"), status: "partial", items: [{ kind: "connector_data", id: "YOUTUBE_SEARCH_YOU_TUBE", content: JSON.stringify(data) }] };
+  return { services, calls, internetCalls, connectedCalls };
 }
 const run = (input: Partial<ScrollInput>, services: Services, seen = new Set<string>(), deadlineMs?: number) =>
   runScroll({ topic: "AI hiring", window: "24h", ...input } as ScrollInput, services, { seen, now: NOW, signal: new AbortController().signal, ...(deadlineMs ? { deadlineMs } : {}) });
@@ -75,40 +82,66 @@ test("Hacker News: one search per query inside the window, the discussion linked
   assert.equal(result.dropped.duplicates, 3);
 });
 
-test("Reddit: each subreddit's top and a search, threads not images, old ones dropped", async () => {
-  const { services, calls } = world({ routes: [[/\/r\/cscareerquestions\/top\.json/, ok(reddit.top)], [/\/search\.json/, ok(reddit.search)]] });
+test("Reddit without a key: one public RSS request for every subreddit, with a User-Agent that says who asks", async () => {
+  const { services, calls } = world({ routes: [[/www\.reddit\.com\/r\/cscareerquestions\+recruitinghell\/top\.rss/, feed(xml("reddit-top.xml"))]] });
+  const result = await run({ platforms: ["reddit"], subreddits: ["r/cscareerquestions", "recruitinghell"], searches: ["AI hiring"] }, services);
+  assert.equal(calls.length, 1, "Reddit allows an anonymous reader about one request a minute");
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, "/r/cscareerquestions+recruitinghell/top.rss");
+  assert.equal(url.searchParams.get("t"), "day");
+  assert.equal(calls[0].via, "send");
+  assert.match(calls[0].headers["user-agent"], /^perry-scroll\/1\.0 \(\+https:\/\/github\.com\/TheM1N9\/perry\)$/);
+  assert.equal(source(result, "reddit")?.status, "ok");
+  assert.equal(source(result, "reddit")?.provider, "Reddit");
+  assert.deepEqual(result.posts.map((post) => post.url).sort(), [
+    "https://www.reddit.com/r/cscareerquestions/comments/1gx0a1/got_rejected_by_an_ai_interviewer",
+    "https://www.reddit.com/r/recruitinghell/comments/1gx1b7/recruiter_admitted_ai_screener",
+  ]);
+  const first = result.posts.find((post) => post.url.includes("1gx0a1"))!;
+  assert.equal(first.author, "quiet_backend_dev");
+  assert.equal(first.text, "Got rejected by an AI interviewer before talking to a single human. Applied to 40 roles this month. One AI video interview rejected me eleven minutes after I finished.");
+  assert.equal(result.dropped.old, 1);
+  assert.match(source(result, "reddit")?.note ?? "", /no keyword search/);
+
+  const search = world({ routes: [[/www\.reddit\.com\/search\.rss/, feed(xml("reddit-top.xml"))]] });
+  await run({ platforms: ["reddit"], searches: ["AI hiring"], window: "3d" }, search.services);
+  assert.equal(new URL(search.calls[0].url).searchParams.get("q"), "AI hiring", "no subreddits: one search");
+  assert.equal(new URL(search.calls[0].url).searchParams.get("t"), "week");
+});
+
+test("Reddit without a key: its \"Not Found\" feed, a refusal or a rate limit is a failure that says how to fix it", async () => {
+  for (const [answer, why] of [[{ status: 404, body: xml("reddit-not-found.xml"), headers: {} }, /Not Found/], [feed(xml("reddit-not-found.xml").replace("<title>Not Found</title>", "<title>Not Found</title>")), /Not Found/], [status(429), /rate limited/], [status(403), /refused/]] as Array<[Http, RegExp]>) {
+    const { services, calls } = world({ routes: [[/reddit\.com/, answer]] });
+    const result = await run({ platforms: ["reddit"], subreddits: ["cscareerquestions"] }, services);
+    assert.equal(calls.length, 1, "not retried");
+    const row = source(result, "reddit");
+    assert.equal(row?.status, "failed");
+    assert.match(row?.note ?? "", why);
+    assert.match(row?.note ?? "", /Reddit app/);
+    assert.equal(result.noSource, true, "not a quiet day");
+  }
+});
+
+test("Reddit with an app: each subreddit's top and a search through its API, threads not images, old ones dropped", async () => {
+  const { services, calls } = world({ keys: { reddit: { username: "client-id-123", value: "client-secret-456" } }, routes: [[/access_token/, ok(reddit.token)], [/oauth\.reddit\.com\/r\/cscareerquestions\/top/, ok(reddit.top)], [/oauth\.reddit\.com\/search/, ok(reddit.search)]] });
   const result = await run({ platforms: ["reddit"], subreddits: ["r/cscareerquestions"], searches: ["AI hiring"] }, services);
-  assert.deepEqual(calls.map((call) => new URL(call.url).pathname), ["/r/cscareerquestions/top.json", "/search.json"]);
-  assert.ok(calls.every((call) => call.via === "get" && new URL(call.url).searchParams.get("t") === "day"));
+  assert.deepEqual(calls.map((call) => new URL(call.url).pathname), ["/api/v1/access_token", "/r/cscareerquestions/top", "/search"]);
+  assert.ok(calls.slice(1).every((call) => new URL(call.url).searchParams.get("t") === "day"));
   const urls = result.posts.map((post) => post.url);
   assert.ok(urls.includes("https://www.reddit.com/r/cscareerquestions/comments/1gx0a2/offer_letter_automated"), "the thread, not i.redd.it");
   assert.ok(urls.includes("https://www.reddit.com/r/recruitinghell/comments/1gx1b7/recruiter_admitted_ai_screener"));
   assert.equal(urls.filter((url) => url.includes("1gx0a1")).length, 1);
   assert.equal(result.dropped.old, 1);
   assert.equal(source(result, "reddit")?.posts, 3);
-  const week = world({ routes: [[/reddit/, ok(reddit.top)]] });
-  await run({ platforms: ["reddit"], subreddits: ["cscareerquestions"], window: "3d" }, week.services);
-  assert.equal(new URL(week.calls[0].url).searchParams.get("t"), "week");
 });
 
-test("Reddit: a listing's posts, never a longer list inside one post (its awards)", async () => {
+test("Reddit with an app: a listing's posts, never a longer list inside one post (its awards)", async () => {
   const awarded = structuredClone(reddit.top);
   awarded.data.children[0].data.all_awardings = Array.from({ length: 8 }, (_, index) => ({ id: `award_${index}`, name: "Helpful", count: 1 }));
-  const { services } = world({ routes: [[/\/r\/cscareerquestions\/top\.json/, ok(awarded)], [/search\.json/, ok({ kind: "Listing", data: { children: [] } })]] });
+  const { services } = world({ keys: { reddit: { username: "client-id-123", value: "client-secret-456" } }, routes: [[/access_token/, ok(reddit.token)], [/\/r\/cscareerquestions\/top/, ok(awarded)], [/search/, ok({ kind: "Listing", data: { children: [] } })]] });
   const result = await run({ platforms: ["reddit"], subreddits: ["cscareerquestions"] }, services);
   assert.equal(result.posts.length, 2);
   assert.ok(result.posts.every((post) => post.url.startsWith("https://www.reddit.com/r/cscareerquestions/comments/")));
-});
-
-test("Reddit: turned away anonymously, it stops asking, says why and how to fix it", async () => {
-  const { services, calls } = world({ routes: [[/reddit\.com/, status(403)]] });
-  const result = await run({ platforms: ["reddit"], subreddits: ["cscareerquestions", "recruitinghell"], searches: ["AI hiring"] }, services);
-  assert.equal(calls.length, 1, "no retry of a refusal, and no more asking once refused");
-  const row = source(result, "reddit");
-  assert.equal(row?.status, "failed");
-  assert.match(row?.note ?? "", /403/);
-  assert.match(row?.note ?? "", /Reddit app/);
-  assert.match(result.coverage, /reddit failed/);
 });
 
 test("Reddit: with an app key, an app-only token from Reddit, sent only to Reddit's API", async () => {
@@ -137,51 +170,91 @@ test("RSS: each feed through Perry's internet layer; skipped, and said so, witho
   assert.match(none.coverage, /rss skipped \(no feeds given\)/);
 });
 
-test("YouTube: not set up without a connected account; with one, the discovered search with only the arguments its schema takes", async () => {
-  const off = world();
-  const missing = await run({ platforms: ["youtube"] }, off.services);
-  assert.equal(source(missing, "youtube")?.status, "not_set_up");
-  assert.match(source(missing, "youtube")?.note ?? "", /Connect YouTube/);
+test("YouTube through the connected account: YouTube's own read-only search for the window, most viewed first", async () => {
+  const off = await run({ platforms: ["youtube"] }, world().services);
+  assert.equal(source(off, "youtube")?.status, "not_set_up");
+  assert.match(source(off, "youtube")?.note ?? "", /Connect YouTube.*no Composio key/);
+  const elsewhere = await run({ platforms: ["youtube"] }, world({ connected: { apps: { configured: true, apps: ["gmail"] } } }).services);
+  assert.equal(source(elsewhere, "youtube")?.status, "not_set_up");
+  assert.match(source(elsewhere, "youtube")?.note ?? "", /^Connect YouTube in Apps & skills/);
 
-  const on = world({ internet: (request) => request.connector ? connectedData(keyed.youtubeSearch) : unavailable("available", keyed.youtubeDiscovery) });
-  const result = await run({ platforms: ["youtube"], searches: ["AI hiring"] }, on.services);
-  const executed = on.internetCalls.find((request) => request.connector);
-  assert.ok(executed?.connector);
-  assert.equal(executed.connector.accountId, "ca_youtube_1");
-  assert.equal(executed.connector.slug, "YOUTUBE_SEARCH_YOU_TUBE");
-  assert.deepEqual(Object.keys(executed.connector.args).sort(), ["maxResults", "order", "part", "publishedAfter", "q", "type"]);
-  assert.equal(executed.connector.args.publishedAfter, new Date((NOW - 86_400) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"));
-  assert.equal(source(result, "youtube")?.status, "ok");
-  assert.deepEqual(result.posts.map((post) => post.url).sort(), ["https://www.youtube.com/watch?v=Hx3kq9AiJob", "https://www.youtube.com/watch?v=Qp7AiHire01"]);
-  assert.equal(result.posts.find((post) => post.url.endsWith("Hx3kq9AiJob"))?.author, "Career Lab");
+  const on = world({ connected: { apps: { configured: true, apps: ["gmail", "youtube"] }, run: () => ({ ok: true, data: youtubeAnswer.search }) } });
+  const now = youtubeAnswer._recordedAt;
+  const result = await runScroll({ topic: "AI hiring", window: "24h", searches: ["AI hiring", "AI jobs", "AI recruiter"] } as ScrollInput, on.services, { seen: new Set(), now, signal: new AbortController().signal });
+  assert.deepEqual(on.connectedCalls.map((call) => call.slug), ["YOUTUBE_SEARCH_YOU_TUBE", "YOUTUBE_SEARCH_YOU_TUBE"], "two searches at most");
+  assert.deepEqual(on.connectedCalls[0].args, { q: "AI hiring", part: "snippet", type: "video", order: "viewCount", maxResults: 25, publishedAfter: new Date((now - 86_400) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") });
+  const row = source(result, "youtube");
+  assert.equal(row?.status, "ok");
+  assert.equal(row?.provider, "YouTube (connected account)");
+  const videos = result.posts.filter((post) => post.platform === "youtube");
+  assert.equal(videos.length, 5);
+  assert.equal(videos[0].url, `https://www.youtube.com/watch?v=${youtubeAnswer.search.items[0].id.videoId}`, "YouTube's most viewed first");
+  assert.equal(videos[0].author, youtubeAnswer.search.items[0].snippet.channelTitle);
+  assert.ok(videos.every((post) => post.likes === undefined && post.views === undefined), "no counts invented");
 
-  const broken = world({ internet: () => ({ ...unavailable("available", { state: "degraded" }), error: { code: "unavailable", message: "Connected operation discovery failed.", repair: "Recheck later." } }) });
-  const degraded = await run({ platforms: ["youtube"] }, broken.services);
-  assert.equal(source(degraded, "youtube")?.status, "failed", "a failed discovery is not a missing setup");
-  assert.match(source(degraded, "youtube")?.note ?? "", /discovery failed/);
+  const expired = world({ connected: { apps: { configured: true, apps: ["youtube"] }, run: () => ({ ok: false, error: "This account's sign-in expired. Reconnect it in Apps & skills." }) } });
+  assert.match(source(await run({ platforms: ["youtube"] }, expired.services), "youtube")?.note ?? "", /reconnecting/);
+  const refused = world({ connected: { apps: { configured: true, apps: ["youtube"] }, run: () => ({ ok: false, error: "The connected action could not complete." }) } });
+  assert.equal(source(await run({ platforms: ["youtube"] }, refused.services), "youtube")?.status, "failed");
+});
 
-  const two = world({ internet: (request) => request.connector ? connectedData(keyed.youtubeSearch) : unavailable("available", { ...keyed.youtubeDiscovery, accounts: [{ id: "ca_1", status: "ACTIVE" }, { id: "ca_2", status: "ACTIVE" }] }) });
-  const several = await run({ platforms: ["youtube"] }, two.services);
-  assert.equal(source(several, "youtube")?.status, "failed");
-  assert.match(source(several, "youtube")?.note ?? "", /youtubeAccount/);
-  assert.ok(!two.internetCalls.some((request) => request.connector), "never picks one of several accounts by itself");
-  const chosen = await run({ platforms: ["youtube"], youtubeAccount: "ca_2" }, two.services);
-  assert.equal(source(chosen, "youtube")?.status, "ok");
+test("Lobsters: its hottest and newest stories, only those about the topic and in the window", async () => {
+  const now = lobstersAnswer._recordedAt;
+  const { services, calls } = world({ routes: [[/lobste\.rs\/hottest\.json/, ok(lobstersAnswer.hottest)], [/lobste\.rs\/newest\.json/, ok(lobstersAnswer.newest)]] });
+  const result = await runScroll({ topic: "Lobsters fixture", window: "1w", searches: ["voice assistant", "sorted sets"], platforms: ["lobsters"] } as ScrollInput, services, { seen: new Set(), now, signal: new AbortController().signal });
+  assert.deepEqual(calls.map((call) => call.url), ["https://lobste.rs/hottest.json", "https://lobste.rs/newest.json"]);
+  assert.ok(calls.every((call) => call.via === "get"));
+  const voice = result.posts.find((post) => post.text.startsWith("Rebuilding my local voice assistant pipeline"));
+  assert.equal(voice?.url, "https://lobste.rs/s/gn5qb1/rebuilding_my_local_voice_assistant");
+  assert.equal(voice?.link, "https://blog.platypush.tech/article/Rewriting-my-voice-assistant-pipeline");
+  assert.equal(voice?.author, "blacklight");
+  assert.ok(result.posts.some((post) => post.text.includes("Sorted Sets")));
+  assert.ok(result.posts.length < lobstersAnswer.hottest.length + lobstersAnswer.newest.length, "off-topic stories are left out");
+  const quiet = await runScroll({ topic: "quantum knitting", window: "24h", platforms: ["lobsters"] } as ScrollInput, services, { seen: new Set(), now, signal: new AbortController().signal });
+  assert.equal(source(quiet, "lobsters")?.status, "empty");
+});
+
+test("Google News: one RSS search per query for the window, the publisher named, its suffix cut from the title", async () => {
+  const { services, calls } = world({ routes: [[/news\.google\.com\/rss\/search/, feed(xml("google-news.xml"))]] });
+  const now = Math.floor(Date.parse("2026-11-21T00:00:00Z") / 1000);
+  const result = await runScroll({ topic: "AI hiring", window: "24h", searches: ["AI hiring", "AI jobs"], platforms: ["news"] } as ScrollInput, services, { seen: new Set(), now, signal: new AbortController().signal });
+  assert.equal(calls.length, 2);
+  assert.equal(new URL(calls[0].url).searchParams.get("q"), "AI hiring when:24h");
+  const doom = result.posts.find((post) => post.text.startsWith("Hiring is in an"));
+  assert.equal(doom?.author, "HR Brew");
+  assert.ok(!doom?.text.endsWith("HR Brew"));
+  assert.match(doom?.url ?? "", /^https:\/\/news\.google\.com\//);
+  assert.equal(source(result, "news")?.posts, 6, "the second search's copies are duplicates");
+});
+
+test("Product Hunt without a token: its public feed, only launches about the topic; with one, the API", async () => {
+  const body = xml("producthunt-feed.xml");
+  const entries = [...body.matchAll(/<title>([^<]+)<\/title>/g)].map((match) => match[1]).slice(1);
+  const name = entries[0];
+  const { services, calls } = world({ routes: [[/www\.producthunt\.com\/feed/, feed(body)]] });
+  const now = Math.floor(Date.parse("2026-11-21T06:00:00Z") / 1000);
+  const result = await runScroll({ topic: name, window: "1w", platforms: ["producthunt"] } as ScrollInput, services, { seen: new Set(), now, signal: new AbortController().signal });
+  assert.deepEqual(calls.map((call) => call.url), ["https://www.producthunt.com/feed"]);
+  assert.equal(source(result, "producthunt")?.provider, "Product Hunt feed");
+  assert.ok(result.posts.length >= 1 && result.posts.every((post) => post.text.startsWith(name)), "only the launch the topic names");
+  assert.ok(!result.posts[0].text.includes("Discussion"), "the feed's footer is cut");
+  const keyedWorld = world({ keys: { producthunt: { value: "ph-token" } }, routes: [[/api\.producthunt\.com/, ok(keyed.producthunt)]] });
+  assert.equal(source(await run({ platforms: ["producthunt"] }, keyedWorld.services), "producthunt")?.provider, "Product Hunt");
 });
 
 test("keyed platforms without a key are not set up, named with how, and never called", async () => {
   const { services, calls } = world({ routes: [[/hn\.algolia/, ok(hn)]] });
   const result = await run({}, services);
-  for (const platform of ["x", "tiktok", "instagram", "producthunt"]) {
+  for (const platform of ["x", "tiktok", "instagram"]) {
     const row = source(result, platform);
     assert.equal(row?.status, "not_set_up", platform);
     assert.match(row?.note ?? "", /Logins & secrets/);
   }
-  assert.ok(calls.every((call) => /hn\.algolia\.com|reddit\.com/.test(call.url)), "only free sources were asked");
+  assert.ok(calls.every((call) => /hn\.algolia\.com|reddit\.com|lobste\.rs|news\.google\.com|producthunt\.com\/feed/.test(call.url)), "only free sources were asked");
   assert.match(result.coverage, /x not set up/);
   assert.match(result.coverage, /tiktok not set up/);
-  assert.match(result.coverage, /producthunt not set up/);
   assert.match(result.coverage, /youtube not set up/);
+  assert.doesNotMatch(result.coverage, /producthunt not set up/, "its public feed needs no key");
 });
 
 test("X with an API bearer token: one recent search of every query, its metrics and links", async () => {
@@ -279,11 +352,11 @@ test("a failing request is tried again once at most, and only for a server failu
 });
 
 test("one part failing keeps the rest; a slow source times out without holding up the others", async () => {
-  const mixed = world({ routes: [[/\/r\/good\/top/, ok(reddit.top)], [/\/r\/gone\/top/, status(404)], [/search\.json/, ok(reddit.search)]] });
+  const mixed = world({ keys: { reddit: { username: "client-id-123", value: "client-secret-456" } }, routes: [[/access_token/, ok(reddit.token)], [/\/r\/good\/top/, ok(reddit.top)], [/\/r\/gone\/top/, status(404)], [/oauth\.reddit\.com\/search/, ok(reddit.search)]] });
   const result = await run({ platforms: ["reddit"], subreddits: ["gone", "good"] }, mixed.services);
   assert.equal(source(result, "reddit")?.status, "ok");
   assert.match(source(result, "reddit")?.note ?? "", /r\/gone: HTTP 404/);
-  const slow = world({ routes: [[/hn\.algolia/, () => new Promise<Http>(() => {})], [/reddit/, ok(reddit.top)]] });
+  const slow = world({ routes: [[/hn\.algolia/, () => new Promise<Http>(() => {})], [/reddit/, feed(xml("reddit-top.xml"))]] });
   const started = Date.now();
   const timed = await run({ platforms: ["hackernews", "reddit"], subreddits: ["cscareerquestions"] }, slow.services, new Set(), 300);
   assert.ok(Date.now() - started < 3000);
@@ -293,7 +366,7 @@ test("one part failing keeps the rest; a slow source times out without holding u
 });
 
 test("the coverage line, the dropped counts, and a repeat run returning only what is new", async () => {
-  const { services } = world({ routes: [[/hn\.algolia/, ok(hn)], [/reddit\.com\/r\//, ok(reddit.top)], [/reddit\.com\/search/, ok(reddit.search)]] });
+  const { services } = world({ keys: { reddit: { username: "client-id-123", value: "client-secret-456" } }, routes: [[/hn\.algolia/, ok(hn)], [/access_token/, ok(reddit.token)], [/reddit\.com\/r\//, ok(reddit.top)], [/reddit\.com\/search/, ok(reddit.search)]] });
   const first = await run({ platforms: ["hackernews", "reddit"], subreddits: ["cscareerquestions"], limit: 3 }, services);
   assert.equal(first.posts.length, 3);
   assert.equal(first.nothingNew, false);
