@@ -12,6 +12,11 @@ Ways this can fail (recorded before implementation):
 - Events during a run start overlapping turns instead of one follow-up batch.
 - A batch exceeding the event text limit silently truncates later filenames.
 - A quiet result or a failed run never releases the folder queue.
+- Pausing an active turn loses its unfinished batch; resuming must put that
+  batch ahead of later arrivals, removing duplicates without reordering.
+- Disabling a job while it waits for an engine leaves an active lock forever.
+- A routing/thread/chat/scheduling error before the brain turn is queued leaves
+  an active lock; retry must retain the batch and undo a chat reservation.
 - Queued work disappears when the runtime restarts.
 - Paused, disabled, deleted, or unrelated jobs run unexpectedly.
 - Files the owner explicitly skips while paused reappear on the next arrival.

@@ -133,6 +133,68 @@ try {
     assert.ok(!prompts().at(-1).includes("skip-me.txt"));
     await finish(id);
   });
+  await check("pausing an active batch retains it ahead of later files", async () => {
+    await event("pause-active.txt"); await sleep(350); await drain();
+    await event("pause-later.txt");
+    await patch(installation, { paused: { at: Date.now(), by: "web" } });
+    await call("pause:missedJob", { id });
+    await finish(id, "Stopped before it finished.");
+    assert.deepEqual((await get(id)).pendingFiles, [join(folder, "pause-active.txt"), join(folder, "pause-later.txt")]);
+    await patch(installation, { paused: undefined });
+    await call("pause:runMissedFrom", { ids: [id] }); await drain();
+    assert.ok(prompts().at(-1).includes("pause-active.txt"));
+    assert.ok(prompts().at(-1).includes("pause-later.txt"));
+    await finish(id);
+  });
+  await check("disable while waiting restores the batch for re-enable", async () => {
+    await event("waiting.txt");
+    sql.prepare("DELETE FROM _scheduled WHERE name = 'jobs:runFolder'").run();
+    await call("jobs:runFolder", { id });
+    sql.prepare("DELETE FROM _scheduled WHERE name = 'jobs:run'").run();
+    await call("jobs:wait", { id, until: Date.now() + 60_000, why: "Synthetic engine wait" });
+    await call("jobs:update", { id, enabled: false });
+    assert.ok(!(await get(id)).activeFiles?.length);
+    assert.deepEqual((await get(id)).pendingFiles, [join(folder, "waiting.txt")]);
+    const before = prompts().length;
+    await call("jobs:run", { id, waited: true });
+    assert.equal(prompts().length, before);
+    await call("jobs:update", { id, enabled: true }); await sleep(350); await drain();
+    assert.ok(prompts().at(-1).includes("waiting.txt"));
+    await finish(id);
+  });
+  await check("failure before a turn starts retries its filenames", async () => {
+    const failedFolder = join(scratch, "failed-start");
+    const failedId = await makeJob(failedFolder);
+    await call("jobs:onEvent", { folder: failedFolder, files: [join(failedFolder, "retry-start.txt")], event: "Synthetic file" });
+    const mutate = runtime.runMutation.bind(runtime);
+    let failed = false;
+    runtime.runMutation = async (name, args, options) => {
+      if (name === "jobs:chatFor" && args.id === failedId && !failed) { failed = true; throw new Error("Synthetic thread-start failure"); }
+      return mutate(name, args, options);
+    };
+    try { await sleep(350); await drain(); }
+    finally { runtime.runMutation = mutate; }
+    assert.ok(failed);
+    assert.ok(!(await get(failedId)).activeFiles?.length);
+    assert.deepEqual((await get(failedId)).pendingFiles, [join(failedFolder, "retry-start.txt")]);
+    await until(async () => { await drain(); return prompts().at(-1).includes("retry-start.txt"); }, "failed start never retried", 10_000);
+    await finish(failedId);
+  });
+  await check("failed brain scheduling releases its chat reservation", async () => {
+    await event("retry-brain.txt");
+    const schedule = runtime.schedule.bind(runtime);
+    let failed = false;
+    runtime.schedule = (name, args, at) => {
+      if (name === "brain:handleTurn" && args.text.includes("retry-brain.txt") && !failed) { failed = true; throw new Error("Synthetic brain scheduling failure"); }
+      return schedule(name, args, at);
+    };
+    try { await sleep(350); await drain(); }
+    finally { runtime.schedule = schedule; }
+    assert.ok(failed);
+    assert.equal((await get((await get(id)).conversationId)).pendingTurns, 0);
+    await until(async () => { await drain(); return prompts().at(-1).includes("retry-brain.txt"); }, "brain scheduling never retried", 10_000);
+    await finish(id);
+  });
   await check("watcher retries failed enqueue and ignores partial/duplicate writes", async () => {
     const retryFolder = join(scratch, "retry");
     const retryId = await makeJob(retryFolder);
