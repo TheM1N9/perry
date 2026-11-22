@@ -212,7 +212,7 @@ try {
     } else {
       writeFileSync(join(scratch, "bin/perry"), `#!/bin/sh\nexec bun '${join(repo, "scripts/perry.ts").replaceAll("'", "'\"'\"'")}' "$@"\n`, { mode: 0o755 });
     }
-    const registered = await call("workers:register", { name: "worker ' & $ \" quotes", result, ask: "Report 'checks' & failures $true" });
+    const registered = await call("workers:register", { name: "worker ' & $ \" quotes", result: result.replaceAll("\\", "/"), ask: "Report 'checks' & failures $true" });
     const reply = await shellCommand(registered.command);
     assert.equal(reply.code, 0, reply.output);
     assert.ok((await rows("workerEvents")).some(row => row.eventId === registered.eventId));

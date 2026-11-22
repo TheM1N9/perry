@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { isAbsolute } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { v } from "convex/values";
 import { internalAction, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -18,6 +18,7 @@ export const register = internalAction({
   handler: async (ctx, args): Promise<Registration> => {
     const input = workerRegistration.parse({ name: args.name, result: args.result, ...(args.ask ? { ask: args.ask } : {}) });
     if (!isAbsolute(input.result)) throw new Error("Worker result needs an absolute path.");
+    input.result = resolve(input.result);
     const eventId = crypto.randomUUID();
     const token = randomBytes(32).toString("hex");
     const expiresAt = Date.now() + 7 * 24 * 60 * 60_000;
