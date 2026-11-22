@@ -125,6 +125,10 @@ async function runMissed(ctx: MutationCtx, id: Id<"jobs">): Promise<boolean> {
   if (!job?.missed) return false;
   const event = job.trigger ? job.missed.event : undefined;
   await ctx.db.patch(job._id, { missed: undefined, lastRunAt: Date.now(), lastResult: undefined, lastError: undefined });
+  if (job.trigger?.kind === "folder" && job.pendingFiles?.length && !job.activeFiles?.length) {
+    await ctx.scheduler.runAfter(0, internal.jobs.runFolder, { id: job._id });
+    return true;
+  }
   await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id, ...(event !== undefined ? { event } : {}) });
   return true;
 }
