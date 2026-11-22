@@ -39,19 +39,17 @@ async function home(ctx: QueryCtx): Promise<Target | null> {
 }
 
 /**
- * Where something from this conversation goes. A job's chat is not one the
- * owner talks in: it reports where the job was set up, and a job with no such
- * chat reports to the messaging channel.
+ * Jobs and tasks report where they were set up. Missing origins and cycles
+ * fall back to the owner's messaging channel.
  */
 export async function targetOf(ctx: QueryCtx, conversationId?: Id<"conversations">): Promise<Target | null> {
   let chat = conversationId ? await ctx.db.get(conversationId) : null;
-  // A job set up by another job reports where that one does; three steps is plenty.
-  for (let hops = 0; chat?.jobId && hops < 3; hops++) {
-    const job: Doc<"jobs"> | null = await ctx.db.get(chat.jobId);
-    chat = job?.origin ? await ctx.db.get(job.origin) : null;
+  for (let hops = 0; chat && !chat.contactId && (chat.jobId || chat.taskId) && hops < 8; hops++) {
+    const work: Doc<"jobs"> | Doc<"tasks"> | null = chat.jobId ? await ctx.db.get(chat.jobId) : await ctx.db.get(chat.taskId!);
+    chat = work?.origin ? await ctx.db.get(work.origin) : null;
   }
   // A chat with someone else is never where the owner is asked or told anything: that goes to the owner.
-  if (!chat || chat.contactId) return await home(ctx);
+  if (!chat || chat.contactId || chat.jobId || chat.taskId) return await home(ctx);
   if (chat.channel === "web") return { channel: "web", conversationId: chat._id };
   return { channel: chat.channel, externalId: chat.externalId, conversationId: chat._id };
 }

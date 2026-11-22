@@ -18,7 +18,12 @@ calling a paid engine. Each run writes result.json to its supplied output folder
 - Queued preparation survives restart; completion includes the result's actual
   text, its path, worker name and reporting question with outside provenance.
 - Shell quotes/spaces/metacharacters survive the generated last-step command.
+- Receipt reads can fail after HTTP headers; retry the same accepted event.
+- Mixed job/task origins and cycles must reach an owner destination. Commands
+  too long for the launcher must be refused before a registration is saved.
 - CLI errors exit nonzero without printing the dashboard key or worker token.
+- Import/setup failures must leave a failed result.json with the failure detail,
+  even before an HTTP listener or SQLite runtime exists.
 
 Manual model verification remains separate: the replay proves the actual file
 snapshot and reporting instruction reach Perry, not what an engine will write.

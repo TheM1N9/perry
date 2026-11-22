@@ -22,11 +22,12 @@ export const register = internalAction({
     const eventId = crypto.randomUUID();
     const token = randomBytes(32).toString("hex");
     const expiresAt = Date.now() + 7 * 24 * 60 * 60_000;
+    const command = workerCommand({ ...input, eventId, token, port: Number(process.env.PERRY_PORT ?? 7377) });
     await ctx.runMutation(internal.workers.saveRegistration, {
       ...input, eventId, tokenHash: tokenHash(token), expiresAt,
       ...(args.conversationId ? { origin: args.conversationId } : {}),
     });
-    return { eventId, token, expiresAt, command: workerCommand({ ...input, eventId, token, port: Number(process.env.PERRY_PORT ?? 7377) }) };
+    return { eventId, token, expiresAt, command };
   },
 });
 
@@ -61,10 +62,7 @@ export const accept = internalMutation({
       return { eventId: input.eventId, duplicate: true, conversationId: previous.conversationId, turnId: previous.turnId };
     }
     await assertRunning(ctx);
-    // Task chats report to their origin, rather than consuming a task's own completion turn.
-    let source = origin ? await ctx.db.get(origin) : null;
-    if (source?.taskId) { const task = await ctx.db.get(source.taskId); origin = task?.origin; source = origin ? await ctx.db.get(origin) : null; }
-    const target = await targetOf(ctx, source?._id);
+    const target = await targetOf(ctx, origin);
     const channel = target?.channel ?? "web";
     let chat = target?.conversationId ? await ctx.db.get(target.conversationId) : null;
     if (!chat) {

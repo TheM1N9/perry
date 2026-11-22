@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { isAdmin } from "./api";
 import { busyResponse, requestBytes, requestOriginAllowed, requestSlot, RequestLimitError } from "./request-limits";
-import { MAX_WORKER_RESULT, workerEvent, workerRegistration } from "../lib/worker-webhook";
+import { MAX_WORKER_RESULT, WORKER_COMMAND_TOO_LONG, workerEvent, workerRegistration } from "../lib/worker-webhook";
 import type { Runtime } from "./runtime";
 
 /** Worker tokens have no access to generic backend calls or registration. */
@@ -32,6 +32,7 @@ export async function workerRequest(request: Request, runtime: Pick<Runtime, "ca
       return Response.json(result.value, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
+      if (message === WORKER_COMMAND_TOO_LONG) return Response.json({ error: message }, { status: 400 });
       const status = message === "WORKER_UNAUTHORIZED" ? 401 : message === "WORKER_SCOPE" ? 403 : message === "WORKER_CONFLICT" ? 409 : 503;
       return Response.json({ error: status === 409 ? "This event id already has different result data." : status === 503 ? "Perry cannot admit this worker report yet. Retry the same event." : "Worker credentials refused." }, { status });
     }

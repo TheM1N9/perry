@@ -49,17 +49,21 @@ export async function notify(args: string[], env: Record<string, string>): Promi
           method: "POST", headers: { "content-type": "application/json", ...(!register && values.token ? { authorization: `Bearer ${values.token}` } : { "x-perry-key": key! }) },
           body: JSON.stringify(payload), signal: AbortSignal.timeout(10_000), redirect: "error",
         });
+        if (response.ok) {
+          const receipt = await response.json();
+          console.log(register ? JSON.stringify(receipt, null, 2) : `Perry notified (${receipt.eventId}${receipt.duplicate ? ", already received" : ""}).`);
+          return true;
+        }
       } catch {
         if (attempt === 4 || register) throw new Error("Perry is unreachable; retry the same command when it is running");
         await new Promise(done => setTimeout(done, 250 * 2 ** attempt)); continue;
       }
-      if (response.ok) {
-        const receipt = await response.json();
-        console.log(register ? JSON.stringify(receipt, null, 2) : `Perry notified (${receipt.eventId}${receipt.duplicate ? ", already received" : ""}).`);
-        return true;
-      }
       if (!register && (response.status === 429 || response.status >= 500) && attempt < 4) {
         await new Promise(done => setTimeout(done, 250 * 2 ** attempt)); continue;
+      }
+      if (register && response.status === 400) {
+        console.error("Worker registration refused. Check the fields and shorten the name, path or question; the completion command must fit in 7000 characters.");
+        return false;
       }
       throw new Error(`Perry refused the worker request (HTTP ${response.status})`);
     }

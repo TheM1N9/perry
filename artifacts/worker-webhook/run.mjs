@@ -10,75 +10,80 @@ import { DatabaseSync } from "node:sqlite";
 if (!process.argv[2]) throw new Error("Pass a disposable output directory");
 const out = resolve(process.argv[2]);
 mkdirSync(out, { recursive: true });
-const scratch = mkdtempSync(join(tmpdir(), "perry-worker-webhook-"));
-process.env.PERRY_HOME = scratch;
-process.env.DASHBOARD_KEY = "synthetic-worker-dashboard-key";
-process.env.PERRY_CREDENTIAL_KEY = "35".repeat(32);
-const originalFetch = globalThis.fetch;
-globalThis.fetch = (input, init) => {
-  const destination = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-  if (destination.hostname !== "127.0.0.1") throw new Error("External IO disabled for webhook replay");
-  return originalFetch(input, init);
-};
-const [{ Runtime }, { default: schema }, { modules }, { workerRequest }] = await Promise.all([
-  import("../../server/runtime.ts"), import("../../convex/schema.ts"),
-  import("../../server/modules.ts"), import("../../server/worker-webhook.ts"),
-]);
-let sql = new DatabaseSync(join(scratch, "test.sqlite"));
-let runtime = new Runtime(sql, schema, modules, { storageDir: join(scratch, "storage") });
-const call = async (name, args = {}) => (await runtime.call(name, args, { internal: true })).value;
-const insert = (table, doc) => runtime.exclusive(() => runtime.store.insert(table, doc));
-const patch = (id, doc) => runtime.exclusive(() => runtime.store.patch(id, doc));
-const rows = table => runtime.exclusive(() => runtime.store.query(table).collect());
-let dropNextReply = false;
-const server = createServer(async (req, res) => {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const response = await workerRequest(new Request(`http://127.0.0.1${req.url}`, {
-    method: req.method, headers: req.headers, body: Buffer.concat(chunks),
-  }), runtime);
-  if (dropNextReply) { dropNextReply = false; res.destroy(); return; }
-  res.writeHead(response.status, Object.fromEntries(response.headers));
-  res.end(Buffer.from(await response.arrayBuffer()));
-});
-await new Promise(done => server.listen(0, "127.0.0.1", done));
-const url = `http://127.0.0.1:${server.address().port}`;
-process.env.PERRY_PORT = String(server.address().port);
-const post = async (body, token, extra = {}) => {
-  const response = await fetch(`${url}/api/workers/notify`, { method: "POST", headers: {
-    "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...extra,
-  }, body: JSON.stringify(body) });
-  return { status: response.status, body: await response.json() };
-};
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const cli = args => new Promise((done, reject) => {
-  const child = spawn(process.env.PERRY_TEST_BUN ?? "bun", [join(repo, "scripts/perry.ts"), ...args], {
-    cwd: scratch, env: process.env, windowsHide: true,
-  });
-  let output = "";
-  child.stdout.on("data", chunk => output += chunk);
-  child.stderr.on("data", chunk => output += chunk);
-  child.on("error", reject);
-  child.on("exit", code => done({ code, output }));
-});
-const shellCommand = command => new Promise((done, reject) => {
-  const executable = process.platform === "win32" ? "powershell.exe" : "/bin/sh";
-  const args = process.platform === "win32" ? ["-NoProfile", "-NonInteractive", "-Command", command] : ["-c", command];
-  const child = spawn(executable, args, { cwd: scratch, env: { ...process.env, PATH: `${join(scratch, "bin")}${process.platform === "win32" ? ";" : ":"}${process.env.PATH}` }, windowsHide: true });
-  let output = "";
-  child.stdout.on("data", chunk => output += chunk); child.stderr.on("data", chunk => output += chunk);
-  child.on("error", reject); child.on("exit", code => done({ code, output }));
-});
 const report = { at: new Date().toISOString(), passed: false, cases: [] };
-const check = async (name, fn) => {
-  try { await fn(); report.cases.push({ name, passed: true }); }
-  catch (error) { report.cases.push({ name, passed: false, error: String(error) }); }
-};
-let installation, chat;
-const result = join(scratch, "result ' & $ with spaces.md");
-writeFileSync(result, "Implemented the worker webhook.\nVerified HTTP, SQLite and retries.\n");
-const body = { eventId: "manual-1", name: "test worker", result, text: readFileSync(result, "utf8") };
+const save = () => writeFileSync(join(out, "result.json"), JSON.stringify(report, null, 2) + "\n");
+save();
+const originalFetch = globalThis.fetch;
+let scratch, sql, runtime, server;
 try {
+  scratch = mkdtempSync(join(tmpdir(), "perry-worker-webhook-"));
+  process.env.PERRY_HOME = scratch;
+  process.env.DASHBOARD_KEY = "synthetic-worker-dashboard-key";
+  process.env.PERRY_CREDENTIAL_KEY = "35".repeat(32);
+  globalThis.fetch = (input, init) => {
+    const destination = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+    if (destination.hostname !== "127.0.0.1") throw new Error("External IO disabled for webhook replay");
+    return originalFetch(input, init);
+  };
+  const [{ Runtime }, { default: schema }, { modules }, { workerRequest }] = await Promise.all([
+    import("../../server/runtime.ts"), import("../../convex/schema.ts"),
+    import("../../server/modules.ts"), import("../../server/worker-webhook.ts"),
+  ]);
+  sql = new DatabaseSync(join(scratch, "test.sqlite"));
+  runtime = new Runtime(sql, schema, modules, { storageDir: join(scratch, "storage") });
+  const call = async (name, args = {}) => (await runtime.call(name, args, { internal: true })).value;
+  const insert = (table, doc) => runtime.exclusive(() => runtime.store.insert(table, doc));
+  const patch = (id, doc) => runtime.exclusive(() => runtime.store.patch(id, doc));
+  const rows = table => runtime.exclusive(() => runtime.store.query(table).collect());
+  let dropNextReply = false;
+  let truncateNextReply = false;
+  server = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const response = await workerRequest(new Request(`http://127.0.0.1${req.url}`, {
+      method: req.method, headers: req.headers, body: Buffer.concat(chunks),
+    }), runtime);
+    if (dropNextReply) { dropNextReply = false; res.destroy(); return; }
+    res.writeHead(response.status, Object.fromEntries(response.headers));
+    if (truncateNextReply) { truncateNextReply = false; res.write('{"eventId":'); setTimeout(() => res.destroy(), 30); return; }
+    res.end(Buffer.from(await response.arrayBuffer()));
+  });
+  await new Promise(done => server.listen(0, "127.0.0.1", done));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  process.env.PERRY_PORT = String(server.address().port);
+  const post = async (body, token, extra = {}) => {
+    const response = await fetch(`${url}/api/workers/notify`, { method: "POST", headers: {
+      "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...extra,
+    }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  };
+  const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+  const cli = args => new Promise((done, reject) => {
+    const child = spawn(process.env.PERRY_TEST_BUN ?? "bun", [join(repo, "scripts/perry.ts"), ...args], {
+      cwd: scratch, env: process.env, windowsHide: true,
+    });
+    let output = "";
+    child.stdout.on("data", chunk => output += chunk);
+    child.stderr.on("data", chunk => output += chunk);
+    child.on("error", reject);
+    child.on("exit", code => done({ code, output }));
+  });
+  const shellCommand = command => new Promise((done, reject) => {
+    const executable = process.platform === "win32" ? "powershell.exe" : "/bin/sh";
+    const args = process.platform === "win32" ? ["-NoProfile", "-NonInteractive", "-Command", command] : ["-c", command];
+    const child = spawn(executable, args, { cwd: scratch, env: { ...process.env, PATH: `${join(scratch, "bin")}${process.platform === "win32" ? ";" : ":"}${process.env.PATH}` }, windowsHide: true });
+    let output = "";
+    child.stdout.on("data", chunk => output += chunk); child.stderr.on("data", chunk => output += chunk);
+    child.on("error", reject); child.on("exit", code => done({ code, output }));
+  });
+  const check = async (name, fn) => {
+    try { await fn(); report.cases.push({ name, passed: true }); }
+    catch (error) { report.cases.push({ name, passed: false, error: String(error) }); }
+  };
+  let installation, chat;
+  const result = join(scratch, "result ' & $ with spaces.md");
+  writeFileSync(result, "Implemented the worker webhook.\nVerified HTTP, SQLite and retries.\n");
+  const body = { eventId: "manual-1", name: "test worker", result, text: readFileSync(result, "utf8") };
   installation = await insert("installation", { defaultEngine: "codex", onboarding: "skipped", createdAt: Date.now() });
   const threadId = await call("agentStore:createThread", {});
   chat = await call("conversations:create", { channel: "web", externalId: "session:worker-origin", threadId, title: "Worker origin" });
@@ -151,6 +156,14 @@ try {
     const registered = JSON.parse(reply.output);
     dropNextReply = true;
     const sent = await cli(["notify", "--name", "Lost reply", "--result", result, "--event", registered.eventId, "--token", registered.token]);
+    assert.equal(sent.code, 0, sent.output);
+    assert.ok(sent.output.includes("already received"));
+    assert.equal((await rows("workerEvents")).filter(event => event.eventId === registered.eventId).length, 1);
+  });
+  await check("receipt body interrupted after headers retries the accepted event", async () => {
+    const registered = await call("workers:register", { name: "Truncated receipt", result, conversationId: chat });
+    truncateNextReply = true;
+    const sent = await cli(["notify", "--name", "Truncated receipt", "--result", result, "--event", registered.eventId, "--token", registered.token]);
     assert.equal(sent.code, 0, sent.output);
     assert.ok(sent.output.includes("already received"));
     assert.equal((await rows("workerEvents")).filter(event => event.eventId === registered.eventId).length, 1);
@@ -234,13 +247,46 @@ try {
     const { isAdmin } = await import("../../server/api.ts");
     assert.equal(isAdmin(new Request(url, { headers: { authorization: `Bearer ${registration.token}` } })), false);
   });
+  await check("job and task origin chains reach the owner chat, with cycle fallback", async () => {
+    const ownerThread = await call("agentStore:createThread", {});
+    const owner = await call("conversations:create", { channel: "web", externalId: "chain-owner", threadId: ownerThread });
+    const task = await call("tasks:queue", { title: "Synthetic task", prompt: "Synthetic work", origin: owner });
+    const taskThread = await call("agentStore:createThread", {});
+    const taskChat = await call("conversations:create", { channel: "web", externalId: "chain-task", threadId: taskThread });
+    await patch(taskChat, { taskId: task });
+    const job = await call("jobs:create", { name: "Synthetic job", prompt: "Synthetic work", origin: taskChat, at: new Date(Date.now() + 3600_000).toISOString() });
+    const jobThread = await call("agentStore:createThread", {});
+    const jobChat = await call("conversations:create", { channel: "web", externalId: "chain-job", threadId: jobThread });
+    await patch(jobChat, { jobId: job.id });
+    const request = { ...body, eventId: "job-task-chain", chat: jobChat };
+    const reply = await post(request, null, { "x-perry-key": process.env.DASHBOARD_KEY });
+    assert.equal(reply.status, 200); assert.equal(reply.body.conversationId, owner);
+    await patch(task, { origin: jobChat });
+    const cycle = await post({ ...request, eventId: "origin-cycle" }, null, { "x-perry-key": process.env.DASHBOARD_KEY });
+    assert.equal(cycle.status, 200);
+    const destination = (await rows("conversations")).find(row => row._id === cycle.body.conversationId);
+    assert.equal(destination.externalId, "dashboard");
+  });
+  await check("unusable completion commands are refused before saving registration", async () => {
+    const before = (await rows("workers")).length;
+    await assert.rejects(call("workers:register", { name: "界".repeat(200), result, ask: "界".repeat(2000) }), /Shorten/);
+    assert.equal((await rows("workers")).length, before);
+  });
   report.passed = report.cases.every(item => item.passed);
+} catch (error) {
+  report.passed = false;
+  report.cases.push({ name: "setup or replay", passed: false, error: String(error) });
 } finally {
-  await new Promise(done => server.close(done));
-  await runtime.stop(); sql.close();
   globalThis.fetch = originalFetch;
-  writeFileSync(join(out, "result.json"), JSON.stringify(report, null, 2) + "\n");
-  rmSync(scratch, { recursive: true, force: true });
+  try {
+    if (server?.listening) await new Promise(done => server.close(done));
+    await runtime?.stop(); sql?.close();
+    if (scratch) rmSync(scratch, { recursive: true, force: true });
+  } catch (error) {
+    report.passed = false;
+    report.cases.push({ name: "cleanup", passed: false, error: String(error) });
+  }
+  save();
 }
 console.log(JSON.stringify(report, null, 2));
 if (!report.passed) process.exitCode = 1;

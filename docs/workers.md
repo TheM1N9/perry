@@ -22,6 +22,8 @@ perry notify --completion <encoded-registration> --port 7377
 The encoded registration contains the name, result path, question, event id and
 token as base64url JSON. This protects arguments from shell parsing, including
 Windows' `.cmd` launcher; it is not encryption. Never edit or override it.
+Registration refuses a generated command longer than 7,000 characters before
+saving anything. Shorten the name, result path or reporting question in that case.
 
 The token expires after seven days and only submits that registered completion,
 with its name, path, reporting question and destination. Perry stores its SHA-256
