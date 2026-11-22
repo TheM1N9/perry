@@ -3,7 +3,7 @@
 // and the internet is the recorded fixtures in ./fixtures, served through lib/scroll/net.ts's transport.
 // pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/scroll/run.mjs <outDir>
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -223,7 +223,10 @@ try {
     const skills = join(scratch, "skills");
     const shipped = readFileSync(resolve(here, "../../skills/scroll/SKILL.md"), "utf8");
     const installed = join(skills, "scroll", "SKILL.md");
-    assert.deepEqual(installCoreSkills(undefined, skills), ["scroll"]);
+    const shippedNames = readdirSync(resolve(here, "../../skills"), { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && existsSync(resolve(here, "../../skills", entry.name, "SKILL.md")))
+      .map(entry => entry.name).sort();
+    assert.deepEqual(installCoreSkills(undefined, skills).sort(), shippedNames);
     assert.equal(readFileSync(installed, "utf8"), shipped);
     assert.match(shipped, /^name: scroll$/m);
     assert.ok(!/—/.test(shipped), "no em dashes in the skill");

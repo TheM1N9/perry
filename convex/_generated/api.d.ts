@@ -123,6 +123,7 @@ import type * as wake from "../wake.js";
 import type * as web from "../web.js";
 import type * as whatsapp from "../whatsapp.js";
 import type * as work from "../work.js";
+import type * as workers from "../workers.js";
 import type * as workspace from "../workspace.js";
 
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
@@ -248,6 +249,7 @@ declare const fullApi: ApiFromModules<{
   web: typeof web;
   whatsapp: typeof whatsapp;
   work: typeof work;
+  workers: typeof workers;
   workspace: typeof workspace;
 }>;
 

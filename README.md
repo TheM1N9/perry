@@ -43,6 +43,10 @@ Want to inspect the installer first? Read [install.ps1](install.ps1) or [install
 3. Try: **“Remember that I prefer short replies”** or **“Remind me to call Sam tomorrow at 2 PM.”**
 4. Connect email, calendars or other services under **Apps & skills** when you need them. Link WhatsApp or Telegram from Settings if you want to chat on your phone.
 
+External workers can report completion with `perry notify --name <worker> --result <file>`.
+Use `register_worker` in a chat, or `perry worker register`, to get a scoped final-step
+command that reports back to the originating chat. See [worker webhooks](docs/workers.md).
+
 Your computer needs to stay on and connected for Perry to answer or run scheduled work.
 
 <details>
