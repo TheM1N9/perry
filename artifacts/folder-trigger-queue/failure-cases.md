@@ -14,6 +14,7 @@ Ways this can fail (recorded before implementation):
 - A quiet result or a failed run never releases the folder queue.
 - Queued work disappears when the runtime restarts.
 - Paused, disabled, deleted, or unrelated jobs run unexpectedly.
+- Files the owner explicitly skips while paused reappear on the next arrival.
 - A file's repeated write notifications enqueue duplicates; partial files and
   files already present at registration trigger runs.
 - A failed enqueue is remembered as delivered and is never retried.

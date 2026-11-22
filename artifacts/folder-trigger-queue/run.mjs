@@ -123,6 +123,16 @@ try {
     for (let i = 0; i < 105; i++) assert.ok(batches.includes(`A new file arrived: ${join(folder, `overflow-${i}.txt`)}`));
     await finish(id);
   });
+  await check("skipping paused files does not replay them on the next arrival", async () => {
+    await patch(installation, { paused: { at: Date.now(), by: "web" } });
+    await event("skip-me.txt");
+    await call("pause:skipMissedFrom", { id });
+    await patch(installation, { paused: undefined });
+    await event("keep-me.txt"); await sleep(350); await drain();
+    assert.ok(prompts().at(-1).includes("keep-me.txt"));
+    assert.ok(!prompts().at(-1).includes("skip-me.txt"));
+    await finish(id);
+  });
   await check("watcher retries failed enqueue and ignores partial/duplicate writes", async () => {
     const retryFolder = join(scratch, "retry");
     const retryId = await makeJob(retryFolder);

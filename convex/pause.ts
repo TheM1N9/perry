@@ -139,7 +139,10 @@ async function skipMissed(ctx: MutationCtx, id?: Id<"jobs">): Promise<number> {
   let skipped = 0;
   for (const job of jobs) {
     if (!job?.missed) continue;
-    await ctx.db.patch(job._id, { missed: undefined });
+    await ctx.db.patch(job._id, {
+      missed: undefined,
+      ...(job.trigger?.kind === "folder" ? { pendingFiles: undefined, activeFiles: undefined } : {}),
+    });
     skipped += 1;
   }
   return skipped;
