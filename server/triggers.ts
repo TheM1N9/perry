@@ -62,14 +62,16 @@ async function loadDriver(): Promise<TriggerDriver> {
 
 /** Watch one folder for new files; `onFile` hears each once it has settled. */
 type FolderWatch = { watcher: FSWatcher; dev: number; ino: number };
-function watchFolder(path: string, onFile: (file: string) => void, onClose: () => void): FolderWatch | null {
+function watchFolder(path: string, onFile: (file: string) => Promise<void>, onClose: () => void): FolderWatch | null {
   const stat = statSync(path, { throwIfNoEntry: false });
   if (!stat?.isDirectory()) return null;
   // What is there already is not new.
   const known = new Set(readdirSync(path));
   const settling = new Map<string, ReturnType<typeof setTimeout>>();
-  const watcher = watch(path, (_type, name) => {
-    if (!name || PARTIAL.test(name)) return;
+  const delivering = new Set<string>();
+  let closed = false;
+  const settle = (name: string) => {
+    if (closed || PARTIAL.test(name) || delivering.has(name)) return;
     clearTimeout(settling.get(name));
     settling.set(name, setTimeout(() => {
       settling.delete(name);
@@ -79,14 +81,41 @@ function watchFolder(path: string, onFile: (file: string) => void, onClose: () =
       // Gone again: if it comes back, it is new again.
       if (!isFile) { known.delete(name); return; }
       if (known.has(name)) return;
-      known.add(name);
-      onFile(file);
+      delivering.add(name);
+      void onFile(file).then(() => {
+        if (!closed) known.add(name);
+      }).catch((error) => {
+        console.error(`[perry] could not queue ${file}: ${String(error)}`);
+        // Leave it unknown: the next directory scan retries it.
+      }).finally(() => { delivering.delete(name); });
     }, SETTLE_MS));
+  };
+  // fs.watch can coalesce notifications or omit the filename. Scan as a
+  // fallback, without resetting the settling timers of files already seen.
+  const scan = () => {
+    try {
+      const entries = readdirSync(path, { withFileTypes: true });
+      const names = new Set(entries.map((entry) => entry.name));
+      for (const name of known) if (!names.has(name)) known.delete(name);
+      for (const entry of entries) {
+        if (entry.isFile() && !known.has(entry.name) && !settling.has(entry.name)) settle(entry.name);
+      }
+    } catch (error) {
+      console.error(`[perry] cannot scan ${path}: ${String(error)}`);
+    }
+  };
+  const watcher = watch(path, (_type, name) => {
+    if (name) settle(name);
+    else scan();
   });
+  const poll = setInterval(scan, SETTLE_MS);
   watcher.once("close", () => {
+    closed = true;
+    clearInterval(poll);
     for (const timer of settling.values()) clearTimeout(timer);
     settling.clear();
     known.clear();
+    delivering.clear();
     onClose();
   });
   watcher.on("error", (error) => {
@@ -105,10 +134,9 @@ export function runTriggers(runtime: Runtime): () => void {
   let busy = false;
   let again = false;
 
-  const onEvent = (args: { instanceIds?: string[]; folder?: string; event: string }) => {
+  const onEvent = async (args: { instanceIds?: string[]; folder?: string; files?: string[]; event: string }) => {
     if (stopped) return;
-    runtime.runMutation("jobs:onEvent", args, internal)
-      .catch((error) => console.error(`[perry] an event could not start its job: ${String(error)}`));
+    await runtime.runMutation("jobs:onEvent", args, internal);
   };
 
   const reconcile = async () => {
@@ -128,7 +156,7 @@ export function runTriggers(runtime: Runtime): () => void {
           const stat = statSync(path, { throwIfNoEntry: false });
           if (current && stat?.isDirectory() && stat.dev === current.dev && stat.ino === current.ino) continue;
           current?.watcher.close();
-          const watcher = watchFolder(path, (file) => onEvent({ folder: path, event: `A new file arrived: ${file}` }), () => {
+          const watcher = watchFolder(path, (file) => onEvent({ folder: path, files: [file], event: `A new file arrived: ${file}` }), () => {
             if (watchers.get(path) === watcher) watchers.delete(path);
           });
           if (!watcher && !watchers.has(path)) console.error(`[perry] cannot watch ${path}: there is no such folder`);
@@ -151,7 +179,9 @@ export function runTriggers(runtime: Runtime): () => void {
         driver ??= loadDriver().catch((error) => { driver = null; throw error; });
         const loaded = await driver;
         if (stopped) return;
-        const close = await loaded.subscribe(key, (event) => onEvent(event));
+        const close = await loaded.subscribe(key, (event) => {
+          void onEvent(event).catch((error) => console.error(`[perry] an event could not start its job: ${String(error)}`));
+        });
         if (stopped) { await close(); return; }
         subscription = { key: wanted, close };
         console.log("[perry] listening for app events");

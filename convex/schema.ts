@@ -1441,6 +1441,10 @@ export default defineSchema({
     runAt: v.optional(v.number()),
     /** What starts it instead of a time: an event in a connected app, or a file landing in a folder (triggers.ts). */
     trigger: v.optional(vTrigger),
+    /** Settled files awaiting a folder run, and the batch held until it finishes. */
+    pendingFiles: v.optional(v.array(v.string())),
+    activeFiles: v.optional(v.array(v.string())),
+    folderScheduled: v.optional(v.boolean()),
     prompt: v.string(),
     enabled: v.boolean(),
     builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"), v.literal("brain-review"))),
