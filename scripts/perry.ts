@@ -955,7 +955,7 @@ async function update() {
 }
 
 const HELP = `
-  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | pet | brain | run | uninstall
+  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | pet | brain | notify | worker | run | uninstall
 
   ${bold("setup")}      set Perry up (or check it), start it in the background, open the dashboard;
              ${bold("--engine")} codex|claude|grok|antigravity picks the default engine without asking
@@ -965,6 +965,8 @@ const HELP = `
   ${bold("logs")}       what it has been saying; -f to follow
   ${bold("open")}       open the dashboard, already unlocked
   ${bold("update")}     pull the latest Perry, install, rebuild, restart
+  ${bold("notify")}     --name <worker> --result <file> [--ask <text>] [--chat <id>] [--event <id>] [--token <token>]
+  ${bold("worker")}     register --name <worker> --result <file> [--chat <id>] [--ask <text>]; returns a final-step notify command
   ${bold("migrate")}    bring chats and memory over from Convex, where Perry used to keep them
   ${bold("doctor")}     check this machine and Perry's server
   ${bold("pair")}       a new code to claim Perry on Telegram
@@ -984,6 +986,11 @@ async function main() {
     case "logs": return process.exit(exec(bunScript("service.ts", ["logs", ...rest])).code);
     case "open": return process.exit((await open()) ? 0 : 1);
     case "update": return update();
+    case "notify": return process.exit((await (await import("./notify")).notify(rest, readEnvFile())) ? 0 : 1);
+    case "worker": {
+      if (rest[0] !== "register") { say("Use perry worker register --name <worker> --result <file> [--chat <id>]"); process.exit(1); }
+      return process.exit((await (await import("./notify")).notify(rest, readEnvFile())) ? 0 : 1);
+    }
     case "doctor": return process.exit(exec(bunScript("doctor.ts", rest)).code);
     case "pair": return process.exit(exec(bunScript("pair.ts")).code);
     case "migrate": return process.exit(exec(bunScript("migrate.ts", rest)).code);

@@ -96,6 +96,14 @@ jobs:
           if-no-files-found: error
       # Logic checked on its own, without a browser or the network (components/**/*.test.ts, artifacts/scroll/*.test.ts).
       - run: pnpm test
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/worker-webhook/run.mjs "${{ runner.temp }}/worker-webhook"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: worker-webhook-${{ runner.os }}
+          path: ${{ runner.temp }}/worker-webhook/result.json
+          if-no-files-found: error
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/folder-trigger-queue/run.mjs "${{ runner.temp }}/folder-trigger-queue"
       - if: always()
         uses: actions/upload-artifact@v4

@@ -37,6 +37,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "find_contact", "send_message", "send_to_owner", "react_to_message", "update_contact",
   "library_list", "library_find", "library_add",
   "upload_files",
+  "register_worker",
   "list_meetings", "read_meeting_transcript",
   "interactive_create", "interactive_read", "interactive_update",
 ];

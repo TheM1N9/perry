@@ -122,6 +122,7 @@ import * as wake from "../convex/wake";
 import * as web from "../convex/web";
 import * as whatsapp from "../convex/whatsapp";
 import * as work from "../convex/work";
+import * as workers from "../convex/workers";
 import * as workspace from "../convex/workspace";
 
 export const modules: Record<string, Record<string, unknown>> = {
@@ -245,5 +246,6 @@ export const modules: Record<string, Record<string, unknown>> = {
   "web": web,
   "whatsapp": whatsapp,
   "work": work,
+  "workers": workers,
   "workspace": workspace,
 };

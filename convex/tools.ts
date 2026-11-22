@@ -1877,6 +1877,15 @@ const interactive_update = createTool({
 });
 
 export const ALL_TOOLS = {
+  register_worker: createTool({
+    description: "Before launching an external CLI worker, register its completion webhook. Returns the exact perry notify command with a scoped token and event id; append it as the worker's final step after writing its result file. Reports return to this chat, or the owner's main channel if it is deleted. Never use a timer or folder-watch reporting job for worker completion. Tokens expire after seven days; treat the command as a credential.",
+    inputSchema: z.object({ name: z.string().min(1).max(200), result: z.string().min(1).max(4096).describe("Absolute result file path, written before notification."), ask: z.string().max(2000).optional() }),
+    execute: async (ctx, input): Promise<import("./workers").Registration> => {
+      if (ctx.readOnly) throw new Error(HELD_FOR_OWNER("start a worker"));
+      if (!ctx.conversationId) throw new Error("Worker registration needs an owner conversation.");
+      return await ctx.runAction(internal.workers.register, { ...input, conversationId: ctx.conversationId });
+    },
+  }),
   upload_files: createTool({
     description: "Transfer explicitly approved local files to a Channel Desk create_upload reservation without a browser or shell HTTP request. Write a local JSON manifest containing requestId, takeId, uploadId and files, each with path, key, size, type, url and headers from create_upload, plus its reservationProof; pass only manifestPath here so signed URLs stay out of tool arguments. Streamed transfers keep URL-free, conversation-scoped receipts and retry transient failures. Reuse the same manifest/requestId to resume. If needs_fresh_urls, call create_upload with its SAME requestId to refresh links and update this manifest, then retry; never make a duplicate take. Optional signed HEAD verificationUrl verifies uncertain committed PUTs. needs_verification is not success. Only status uploaded means all files transferred; then call finalize_version with script, transcript, packaging and credits, and read back review status. Never finalizes, publishes, starts QC, uses saved credentials or follows redirects. Use only for the owner's approved files and destination.",
     inputSchema: uploadManifestSchema,

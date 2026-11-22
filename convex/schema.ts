@@ -189,6 +189,15 @@ export const vEngineAuth = v.object({
  * message. Everything below is scoped to that one owner.
  */
 export default defineSchema({
+  workers: defineTable({
+    eventId: v.string(), tokenHash: v.string(), name: v.string(), result: v.string(),
+    ask: v.optional(v.string()), origin: v.optional(v.id("conversations")),
+    expiresAt: v.number(), createdAt: v.number(),
+  }).index("by_token", ["tokenHash"]),
+  workerEvents: defineTable({
+    eventId: v.string(), fingerprint: v.string(), name: v.string(), result: v.string(),
+    conversationId: v.id("conversations"), turnId: v.id("codexTurns"), receivedAt: v.number(),
+  }).index("by_event", ["eventId"]),
   interactiveAnswers: defineTable({
     conversationId: v.id("conversations"), requestId: v.string(), creationHash: v.string(), schemaVersion: v.literal(1), revision: v.number(),
     definition: v.string(), values: v.string(), previous: v.optional(v.string()), lastRequest: v.optional(v.string()), lastHash: v.optional(v.string()),
