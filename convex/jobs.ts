@@ -504,15 +504,20 @@ export async function recoverJob(ctx: MutationCtx, job: Doc<"jobs">): Promise<bo
 
 /** After a job's turn: remember how it went, and tell the owner if it had something to say. */
 export const finished = internalMutation({
-  args: { id: v.id("jobs"), result: v.optional(v.string()), error: v.optional(v.string()) },
+  args: { id: v.id("jobs"), result: v.optional(v.string()), error: v.optional(v.string()), turnId: v.optional(v.id("codexTurns")) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.id);
     if (!job) return null;
+    if (args.turnId && await ctx.db.query("sent").withIndex("by_job_turn", q => q.eq("jobTurnId", args.turnId)).first()) return null;
+    const turn = args.turnId ? await ctx.db.get(args.turnId) : null;
+    const files = turn?.mediaKey && turn.conversationId === job.conversationId
+      ? (await ctx.db.query("chatAttachments").withIndex("by_message", q => q.eq("conversationId", turn.conversationId).eq("messageKey", turn.mediaKey!)).collect()).filter(file => !file.removedAt)
+      : [];
     // A follow-up question names the thread it asks about; that thread is not asked about again.
     // Only a real memory id counts, so ordinary words after "asked:" stay.
     const asked: Id<"memories">[] = [];
-    const result = args.result?.replace(ASKED_LINE, (line, raw: string) => {
+    const result = (files.length && (!args.result?.trim() || args.result.trim() === QUIET) ? "Files prepared." : args.result)?.replace(ASKED_LINE, (line, raw: string) => {
       const id = ctx.db.normalizeId("memories", raw);
       if (!id) return line;
       asked.push(id);
@@ -522,7 +527,8 @@ export const finished = internalMutation({
       const thread = await ctx.db.get(id);
       if (thread && !thread.tags.includes("asked")) await ctx.db.patch(thread._id, { tags: [...thread.tags, "asked"] });
     }
-    await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500), ...(args.error ? {} : { recovery: undefined }) });
+    const report = files.length ? `Files prepared; delivery is not confirmed yet.\n\nRun report (written before delivery):\n${result}` : result;
+    await ctx.db.patch(job._id, { lastResult: report?.slice(0, 500), lastError: args.error?.slice(0, 500), ...(args.error ? {} : { recovery: undefined }) });
     // Stopped by a plan's limit: it runs again where there is room, or after the reset.
     const recovering = args.error && LIMIT_HIT.test(args.error) && await recoverJob(ctx, (await ctx.db.get(job._id))!);
     if (job.activeFiles?.length && !recovering) {
@@ -540,11 +546,11 @@ export const finished = internalMutation({
         if (normalized.length <= 600 && alerts.some((alert) => alert.replace(/^Alerted the owner at \d{2}:\d{2}: /, "") === normalized)) return null;
       }
       // Kept in its note too, under the day: a weekly review's log grows a section a week. A deleted note is let go.
-      const kept = job.noteId && !args.error ? await appendRun(ctx, job.noteId, result) : null;
+      const kept = job.noteId && !args.error ? await appendRun(ctx, job.noteId, report ?? result) : null;
       if (job.noteId && !args.error && !kept) await ctx.db.patch(job._id, { noteId: undefined });
       const noted = kept ? `\n\n_Added to your note “${kept.title}”._` : "";
       // Back to the chat it was set up in; the heartbeat and the others to the messaging channel (channels.ts).
-      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}${noted}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name }, ...(job.builtin === "heartbeat" ? { heartbeatAlert: result } : {}) });
+      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${report}${noted}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name }, ...(files.length ? { attachmentIds: files.map(file => file._id), jobTurnId: args.turnId } : {}), ...(job.builtin === "heartbeat" ? { heartbeatAlert: result } : {}) });
     }
     return null;
   },

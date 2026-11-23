@@ -34,6 +34,14 @@ jobs:
       - run: pnpm exec tsc --noEmit -p convex
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec tsc --noEmit -p artifacts
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/job-share-file/run.mjs "${{ runner.temp }}/job-share-file"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: job-share-file-${{ runner.os }}
+          path: ${{ runner.temp }}/job-share-file/result.json
+          if-no-files-found: error
       - run: pnpm exec node --experimental-strip-types artifacts/pr-300/stream-integration.mjs
       - run: pnpm exec node artifacts/pr-300/file-render-integration.mjs
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/run.mjs

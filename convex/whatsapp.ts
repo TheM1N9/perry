@@ -36,6 +36,16 @@ async function install(ctx: QueryCtx) {
   return await ctx.db.query("installation").first();
 }
 
+async function revokeOwnerOutgoing(ctx: MutationCtx, to: string | undefined) {
+  if (!to) return;
+  const pending = await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", "pending"))
+    .filter(q => q.eq(q.field("to"), to)).collect();
+  for (const row of pending) await ctx.db.patch(row._id, { state: "failed", error: "WhatsApp ownership changed before delivery." });
+  for (const id of new Set(pending.flatMap(row => row.notificationId ? [row.notificationId] : []))) {
+    await ctx.runMutation(internal.notify.whatsappOutcome, { id });
+  }
+}
+
 /** A JID without its device part, so the owner's phone and linked devices are one chat. */
 export const bareJid = (jid: string) => jid.replace(/:\d+(?=@)/, "");
 
@@ -117,6 +127,7 @@ export const unlink = mutation({
     if (link) await ctx.db.patch(link._id, { wanted: false, status: "off", qr: undefined, code: undefined, me: undefined, error: undefined, updatedAt: Date.now() });
     const owner = await install(ctx);
     if (owner) await ctx.db.patch(owner._id, { whatsappOwner: undefined, ...(owner.homeChannel === "whatsapp" ? { homeChannel: undefined } : {}) });
+    await revokeOwnerOutgoing(ctx, owner?.whatsappOwner);
     return null;
   },
 });
@@ -170,12 +181,16 @@ export const report = internalMutation({
       const owner = await install(ctx);
       if (owner && owner.whatsappOwner !== bareJid(args.me)) {
         await ctx.db.patch(owner._id, { whatsappOwner: bareJid(args.me), claimedAt: owner.claimedAt ?? Date.now() });
+        await revokeOwnerOutgoing(ctx, owner.whatsappOwner);
       }
     }
     if (args.status === "logged-out") {
       // Unlinked from the phone: the owner links again from the dashboard.
       const owner = await install(ctx);
-      if (owner?.whatsappOwner) await ctx.db.patch(owner._id, { whatsappOwner: undefined });
+      if (owner?.whatsappOwner) {
+        await ctx.db.patch(owner._id, { whatsappOwner: undefined });
+        await revokeOwnerOutgoing(ctx, owner.whatsappOwner);
+      }
     }
     return null;
   },
@@ -206,16 +221,21 @@ async function recipient(ctx: QueryCtx, to: string): Promise<string | null> {
   return contact?.status === "allowed" ? jid : null;
 }
 
+async function nextOutboxTime(ctx: QueryCtx): Promise<number> {
+  const last = await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", "pending")).order("desc").first();
+  return Math.max(Date.now(), (last?.createdAt ?? 0) + 1);
+}
+
 /**
  * Queue a message for a WhatsApp chat: Markdown turned into WhatsApp's
  * formatting and split to its length. Only the owner, or someone they allowed.
  */
-export async function queueText(ctx: MutationCtx, to: string, markdown: string): Promise<boolean> {
+export async function queueText(ctx: MutationCtx, to: string, markdown: string, notificationId?: Id<"sent">): Promise<boolean> {
   const jid = await recipient(ctx, to);
   if (!jid) return false;
-  const now = Date.now();
+  const now = await nextOutboxTime(ctx);
   for (const [index, text] of chunkWhatsApp(toWhatsApp(markdown)).entries()) {
-    await ctx.db.insert("whatsappOutbox", { to: jid, kind: "text", text, state: "pending", createdAt: now + index, attempts: 0 });
+    await ctx.db.insert("whatsappOutbox", { to: jid, kind: "text", text, state: "pending", createdAt: now + index, attempts: 0, ...(notificationId ? { notificationId } : {}) });
   }
   return true;
 }
@@ -259,13 +279,13 @@ export const react = internalMutation({
 
 /** A file for the owner: a picture, video or voice note shows as one, anything else as a document. Only ever the owner's. */
 export const sendFile = internalMutation({
-  args: { to: v.string(), storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string() },
+  args: { to: v.string(), storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string(), notificationId: v.optional(v.id("sent")) },
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const owner = await install(ctx);
     if (!owner?.whatsappOwner || bareJid(args.to) !== owner.whatsappOwner) return false;
-    const { to: _to, ...file } = args;
-    await ctx.db.insert("whatsappOutbox", { to: owner.whatsappOwner, kind: "file", file, state: "pending", createdAt: Date.now(), attempts: 0 });
+    const { to: _to, notificationId, ...attachment } = args;
+    await ctx.db.insert("whatsappOutbox", { to: owner.whatsappOwner, kind: "file", file: attachment, state: "pending", createdAt: await nextOutboxTime(ctx), attempts: 0, ...(notificationId ? { notificationId } : {}) });
     return true;
   },
 });
@@ -287,13 +307,20 @@ export const pending = internalQuery({
     await ctx.db.query("whatsappOutbox").withIndex("by_state", (q) => q.eq("state", "pending")).take(20),
 });
 
+/** A flush snapshot may have been revoked while an earlier message was in flight. */
+export const canSend = internalQuery({
+  args: { id: v.id("whatsappOutbox") },
+  returns: v.boolean(),
+  handler: async (ctx, args) => (await ctx.db.get(args.id))?.state === "pending",
+});
+
 /** Sent, or failed for good after a few tries; either way it leaves the queue. */
 export const sent = internalMutation({
   args: { id: v.id("whatsappOutbox"), error: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
-    if (!row) return null;
+    if (!row || row.state !== "pending") return null;
     if (!args.error) await ctx.db.patch(row._id, { state: "sent", sentAt: Date.now() });
     else if (row.attempts + 1 >= 3) {
       await ctx.db.patch(row._id, { state: "failed", attempts: row.attempts + 1, error: args.error.slice(0, 500) });
@@ -303,6 +330,7 @@ export const sent = internalMutation({
       }
     }
     else await ctx.db.patch(row._id, { attempts: row.attempts + 1, error: args.error.slice(0, 500) });
+    if (row.notificationId) await ctx.runMutation(internal.notify.whatsappOutcome, { id: row.notificationId });
     // Sent messages are not kept: the chat's own history has them.
     const old = await ctx.db.query("whatsappOutbox").withIndex("by_state", (q) => q.eq("state", "sent").lt("createdAt", Date.now() - 86_400_000)).take(100);
     for (const stale of old) await ctx.db.delete(stale._id);

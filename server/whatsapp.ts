@@ -124,7 +124,7 @@ async function loadDriver(): Promise<Driver> {
 }
 
 type Link = { mode: "self" | "separate"; wanted: boolean; phone?: string; status: string; me?: string } | null;
-type Outgoing = { _id: string; to: string; kind: "text" | "typing" | "file" | "reaction"; text?: string; reaction?: { id: string; fromMe: boolean; remoteJid?: string; participant?: string; emoji: string }; file?: { storageId?: string; localPath?: string; fileName: string; contentType: string } };
+type Outgoing = { _id: string; attempts: number; to: string; kind: "text" | "typing" | "file" | "reaction"; text?: string; reaction?: { id: string; fromMe: boolean; remoteJid?: string; participant?: string; emoji: string }; file?: { storageId?: string; localPath?: string; fileName: string; contentType: string } };
 
 const bare = (jid?: string | null) => (jid ?? "").replace(/:\d+(?=@)/, "");
 const sleep = (ms: number, signal: AbortSignal) => delay(ms, undefined, { signal })
@@ -209,6 +209,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
         if (!rows.length || !isCurrent()) break;
         for (const row of rows) {
           if (!isCurrent()) return;
+          if (!(await runtime.runQuery("whatsapp:canSend", { id: row._id }, internal)).value) continue;
           let error: string | undefined;
           try {
             if (row.kind === "typing") {
@@ -235,6 +236,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
               const bytes = await readFile(path);
               if (bytes.byteLength > 64 * 1024 * 1024) throw new Error(`${row.file.fileName} is too big for WhatsApp`);
               if (!isCurrent()) return;
+              if (!(await runtime.runQuery("whatsapp:canSend", { id: row._id }, internal)).value) continue;
               const type = row.file.contentType;
               const content = type.startsWith("image/") && !type.includes("svg") ? { image: bytes, mimetype: type }
                 : type.startsWith("video/") ? { video: bytes, mimetype: type }
@@ -253,6 +255,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
           }
           await runtime.runMutation("whatsapp:sent", { id: row._id, ...(error ? { error } : {}) }, internal);
           if (error && !connected) return;
+          // Retry this row before later files, so a carousel cannot arrive 1, 3, 2.
+          if (error && row.attempts + 1 < 3) break;
         }
       }
     })().catch(error => console.error(`[perry] WhatsApp outbox could not be processed: ${String(error)}`)).finally(() => { flushing = null; });

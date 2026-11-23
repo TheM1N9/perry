@@ -1550,6 +1550,9 @@ export default defineSchema({
    * day's limit) is here with no sentAt until it goes, grouped with the rest.
    */
   sent: defineTable({
+    jobTurnId: v.optional(v.id("codexTurns")),
+    attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
+    queuedAt: v.optional(v.number()),
     taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string(), turnId: v.optional(v.id("codexTurns")) })),
     from: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder"), v.literal("offer"), v.literal("other")),
     /** The job or watch it came from; an offer names what it offers to pause. */
@@ -1578,6 +1581,8 @@ export default defineSchema({
     .index("by_sent", ["sentAt"])
     .index("by_reserved", ["reservedAt"])
     .index("by_delivery", ["deliveryState", "reservedAt"])
+    .index("by_batch", ["batchId"])
+    .index("by_job_turn", ["jobTurnId"])
     .index("by_decision_task", ["taskDecision.taskId", "createdAt"])
     .index("by_decision_turn", ["taskDecision.turnId"])
     .index("by_from", ["fromId", "createdAt"]),
@@ -1588,6 +1593,7 @@ export default defineSchema({
    * so a reply written while it reconnects goes when it is back.
    */
   whatsappOutbox: defineTable({
+    notificationId: v.optional(v.id("sent")),
     to: v.string(),
     kind: v.union(v.literal("text"), v.literal("typing"), v.literal("file"), v.literal("reaction")),
     text: v.optional(v.string()),
@@ -1599,7 +1605,7 @@ export default defineSchema({
     sentAt: v.optional(v.number()),
     attempts: v.number(),
     error: v.optional(v.string()),
-  }).index("by_state", ["state", "createdAt"]),
+  }).index("by_state", ["state", "createdAt"]).index("by_notification", ["notificationId"]),
 
   /** What a runner asked the owner before acting on their machine. See approvals.ts. */
   approvals: defineTable({

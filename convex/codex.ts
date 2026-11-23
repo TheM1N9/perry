@@ -1411,7 +1411,7 @@ export const finalizeTurn = internalAction({
         // A run stopped part-way (/stop, Pause Perry) has no result to send; what it wrote stays in its chat.
         await ctx.runMutation(internal.jobs.finished, job.stopped && !job.error
           ? { id: conversation.jobId, error: "Stopped before it finished." }
-          : { id: conversation.jobId, result: job.response, error: job.error });
+          : { id: conversation.jobId, result: job.response, error: job.error, turnId: args.id });
         await done("reportedAt");
       }
       // A job with nothing to say leaves no trace in its chat.

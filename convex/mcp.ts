@@ -237,7 +237,7 @@ export const handle = httpAction(async (ctx, request) => {
           const shared = parsed.data.id
             ? await ctx.runMutation(internal.media.shareFromLibrary, { turnId: access.turnId, id: parsed.data.id })
             : await ctx.runMutation(internal.media.shareFromTurn, { turnId: access.turnId, path: parsed.data.path! });
-          return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ shared: true, ...shared }) }] });
+          return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ attached: true, delivery: "pending", note: "Attached to this turn. Delivery to a messaging app happens after the turn finishes and is not confirmed yet. Do not claim the file has been sent.", ...shared }) }] });
         } catch (error) {
           return toolError(message.id, error);
         }
