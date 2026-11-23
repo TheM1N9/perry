@@ -124,7 +124,7 @@ async function loadDriver(): Promise<Driver> {
 }
 
 type Link = { mode: "self" | "separate"; wanted: boolean; phone?: string; status: string; me?: string } | null;
-type Outgoing = { _id: string; to: string; kind: "text" | "typing" | "file" | "reaction"; text?: string; reaction?: { id: string; fromMe: boolean; remoteJid?: string; participant?: string; emoji: string }; file?: { storageId?: string; localPath?: string; fileName: string; contentType: string } };
+type Outgoing = { _id: string; attempts: number; to: string; kind: "text" | "typing" | "file" | "reaction"; text?: string; reaction?: { id: string; fromMe: boolean; remoteJid?: string; participant?: string; emoji: string }; file?: { storageId?: string; localPath?: string; fileName: string; contentType: string } };
 
 const bare = (jid?: string | null) => (jid ?? "").replace(/:\d+(?=@)/, "");
 const sleep = (ms: number, signal: AbortSignal) => delay(ms, undefined, { signal })
@@ -253,6 +253,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
           }
           await runtime.runMutation("whatsapp:sent", { id: row._id, ...(error ? { error } : {}) }, internal);
           if (error && !connected) return;
+          // Retry this row before later files, so a carousel cannot arrive 1, 3, 2.
+          if (error && row.attempts + 1 < 3) break;
         }
       }
     })().catch(error => console.error(`[perry] WhatsApp outbox could not be processed: ${String(error)}`)).finally(() => { flushing = null; });

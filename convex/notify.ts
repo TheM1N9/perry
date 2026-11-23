@@ -1,12 +1,14 @@
 import { v } from "convex/values";
+import { readFile, stat } from "node:fs/promises";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, type ActionCtx, type QueryCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { loadConversation } from "./brain";
 import type { Target } from "./channels";
 import { ownerClock, timezoneOf } from "./jobs";
 import { saveMessages } from "./lib/agent";
-import { sendButtons, sendMessage, TelegramError } from "./lib/telegram";
+import { sendButtons, sendFile, sendMessage, TelegramError, UPLOAD_LIMIT } from "./lib/telegram";
+import { queueText } from "./whatsapp";
 import { startOfDay } from "./lib/calendar";
 import { decisionActive, vDecisionReview, type DecisionReviewResult } from "./taskDecisions";
 
@@ -33,6 +35,8 @@ const vButtons = v.array(v.array(v.object({ text: v.string(), data: v.string() }
 const vFrom = v.object({ kind: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder")), id: v.optional(v.string()), name: v.optional(v.string()) });
 
 const vRow = {
+  jobTurnId: v.optional(v.id("codexTurns")),
+  attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
   taskDecision: v.optional(v.object({ taskId: v.id("tasks"), version: v.string(), turnId: v.optional(v.id("codexTurns")) })),
   from: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder"), v.literal("offer"), v.literal("other")),
   fromId: v.optional(v.string()),
@@ -49,6 +53,8 @@ const IGNORED_AFTER = 3;
 
 export const deliver = internalAction({
   args: {
+    jobTurnId: v.optional(v.id("codexTurns")),
+    attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
     text: v.string(),
     /** The conversation this came from: a job's chat, or the chat a job or watch was set up in. */
     origin: v.optional(v.id("conversations")),
@@ -65,6 +71,8 @@ export const deliver = internalAction({
     // A web-only owner reads it on the dashboard, in the job's own chat.
     if (!target) return false;
     const row = {
+      ...(args.jobTurnId ? { jobTurnId: args.jobTurnId } : {}),
+      ...(args.attachmentIds?.length ? { attachmentIds: args.attachmentIds } : {}),
       from: args.from?.kind ?? ("other" as const),
       ...(args.from?.id ? { fromId: args.from.id } : {}),
       ...(args.from?.name ? { name: args.from.name } : {}),
@@ -76,7 +84,8 @@ export const deliver = internalAction({
     };
     // Whether it may go now is decided and its place taken in one step: messages ready at once (three
     // jobs finishing together) are each counted against the day's limit, not all let through.
-    const admitted: { id: Id<"sent">; held: boolean } = await ctx.runMutation(internal.notify.admit, { ...row, keepsRules: target.channel !== "web" && args.from?.kind !== "reminder" });
+    const admitted: { id: Id<"sent">; held: boolean; duplicate?: boolean } = await ctx.runMutation(internal.notify.admit, { ...row, keepsRules: target.channel !== "web" && args.from?.kind !== "reminder" });
+    if (admitted.duplicate) return true;
     const outcome = admitted.held ? "held" : await send(ctx, target, args.text, args.buttons, [admitted.id]);
     if (outcome === "failed") return false;
     if (args.heartbeatAlert) await ctx.runMutation(internal.memories.noteAlert, { text: args.heartbeatAlert, at: ownerClock(await ctx.runQuery(internal.jobs.ownerTimezone, {})) });
@@ -151,6 +160,7 @@ async function send(ctx: ActionCtx, target: Target, text: string, buttons: Butto
     if (rows.length !== ids.length || rows.some(row => row.deliveryState !== "sending" || row.recipient && (target.channel === "web" || row.recipient !== target.externalId))) throw new Error("The notification destination changed. Check the current account before sending again.");
     const conversationId = target.channel === "web" ? target.conversationId
       : target.conversationId ?? (await loadConversation(ctx, target.channel, target.externalId))._id;
+    let attachmentError: string | undefined;
     if (target.channel === "telegram") {
       if (install?.ownerChannel !== "telegram" || target.externalId !== install.ownerExternalId) throw new Error("Telegram is no longer paired to this recipient.");
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
@@ -161,12 +171,36 @@ async function send(ctx: ActionCtx, target: Target, text: string, buttons: Butto
       };
       if (!(await ctx.runMutation(internal.notify.beginExternal, { ids }))) throw new Error("This follow-up was withdrawn before external delivery.");
       externalStarted = true;
+      const files: Doc<"chatAttachments">[] = await ctx.runQuery(internal.notify.files, { ids });
+      const failures: string[] = [];
+      for (const file of files) {
+        try {
+          let blob: Blob | null;
+          if (file.storageId) {
+            const metadata = await ctx.storage.getMetadata(file.storageId);
+            if (!metadata || metadata.size > UPLOAD_LIMIT) throw new Error("missing or too big for Telegram");
+            blob = await ctx.storage.get(file.storageId);
+          } else {
+            if (!file.localPath || (await stat(file.localPath)).size > UPLOAD_LIMIT) throw new Error("missing or too big for Telegram");
+            blob = new Blob([new Uint8Array(await readFile(file.localPath))], { type: file.contentType });
+          }
+          if (!blob) throw new Error("missing from storage");
+          await sendFile(token, target.externalId, { blob, fileName: file.fileName, contentType: file.contentType });
+          acknowledged = true;
+        } catch (error) {
+          console.error(`Could not send job attachment ${file.fileName}: ${String(error)}`);
+          failures.push(`Could not send ${file.fileName}.`);
+        }
+      }
+      attachmentError = failures.length ? failures.join("\n") : undefined;
+      if (attachmentError) text = `${attachmentError}\n\n${text}`;
       if (buttons) await onSent(await sendButtons(token, target.externalId, text, buttons), text);
       else await sendMessage(token, target.externalId, text, { markdown: true, onSent });
       acknowledged = true;
     }
-    const completed: boolean = await ctx.runMutation(internal.notify.completeDelivery, { ids, conversationId, text, ...(target.channel === "whatsapp" ? { whatsappTo: target.externalId } : {}) });
+    const completed: boolean = await ctx.runMutation(internal.notify.completeDelivery, { ids, conversationId, text, ...(attachmentError ? { attachmentError } : {}), ...(target.channel === "whatsapp" ? { whatsappTo: target.externalId } : {}) });
     if (!completed) return externalStarted ? "uncertain" : "failed";
+    if (attachmentError) return "failed";
     return "delivered";
   } catch (error) {
     const definiteRefusal = !acknowledged && error instanceof TelegramError && error.code >= 400 && error.code < 500;
@@ -236,8 +270,12 @@ export const holdReason = internalQuery({ args: {}, handler: async (ctx): Promis
  */
 export const admit = internalMutation({
   args: { ...vRow, keepsRules: v.boolean() },
-  returns: v.object({ id: v.id("sent"), held: v.boolean() }),
+  returns: v.object({ id: v.id("sent"), held: v.boolean(), duplicate: v.optional(v.boolean()) }),
   handler: async (ctx, { keepsRules, ...row }) => {
+    if (row.jobTurnId) {
+      const existing = await ctx.db.query("sent").withIndex("by_job_turn", q => q.eq("jobTurnId", row.jobTurnId)).unique();
+      if (existing) return { id: existing._id, held: existing.deliveryState === "held", duplicate: true };
+    }
     const wait = keepsRules ? await holdReasonOf(ctx) : null;
     const id = await ctx.db.insert("sent", { ...row, createdAt: Date.now(), deliveryState: wait ? "held" : "sending", ...(wait ? { heldFor: wait } : { reservedAt: Date.now() }) });
     if (!wait) await ctx.db.patch(id, { batchId: id });
@@ -246,6 +284,56 @@ export const admit = internalMutation({
       await ctx.db.delete(old._id);
     }
     return { id, held: Boolean(wait) };
+  },
+});
+
+async function filesOf(ctx: QueryCtx, rows: Doc<"sent">[]): Promise<Doc<"chatAttachments">[]> {
+  const files: Doc<"chatAttachments">[] = [];
+  for (const row of rows) for (const id of row.attachmentIds ?? []) {
+    const file = await ctx.db.get(id);
+    if (file && !file.removedAt) files.push(file);
+  }
+  return files;
+}
+
+export const files = internalQuery({
+  args: { ids: v.array(v.id("sent")) },
+  handler: async (ctx, args): Promise<Doc<"chatAttachments">[]> => {
+    const rows = await Promise.all(args.ids.map(id => ctx.db.get(id)));
+    return await filesOf(ctx, rows.filter((row): row is Doc<"sent"> => Boolean(row)));
+  },
+});
+
+async function recordFileOutcome(ctx: MutationCtx, row: Doc<"sent">, error?: string) {
+  if (!row.jobTurnId) return;
+  const turn = await ctx.db.get(row.jobTurnId);
+  const chat = turn ? await ctx.db.get(turn.conversationId) : null;
+  const job = chat?.jobId ? await ctx.db.get(chat.jobId) : null;
+  const status = error ?? "Files delivered.";
+  // Late transport receipts belong to their run, never a newer run's report.
+  if (turn && job && (job.lastRunAt ?? 0) <= turn.createdAt) {
+    await ctx.db.patch(job._id, { lastResult: `${status}\n\nRun report (written before delivery):\n${turn.response ?? ""}`.slice(0, 500), lastError: (error ?? turn.error)?.slice(0, 500) });
+  }
+  if (chat) await saveMessages(ctx, { threadId: chat.threadId, messages: [{ role: "assistant", content: status }] });
+}
+
+export const whatsappOutcome = internalMutation({
+  args: { id: v.id("sent") },
+  handler: async (ctx, args) => {
+    const receipt = await ctx.db.get(args.id);
+    if (!receipt || !["sending", "failed"].includes(receipt.deliveryState ?? "") || receipt.queuedAt === undefined) return;
+    const outbox = await ctx.db.query("whatsappOutbox").withIndex("by_notification", q => q.eq("notificationId", args.id)).collect();
+    if (!outbox.length) return;
+    const failed = outbox.filter(row => row.state === "failed");
+    if (!failed.length && outbox.some(row => row.state !== "sent")) return;
+    const error = failed.length ? failed.map(row => row.file ? `Could not send ${row.file.fileName}.` : "Could not send the job report on WhatsApp.").join("\n") : undefined;
+    if (error === receipt.deliveryError && receipt.deliveryState === "failed") return;
+    const rows = await ctx.db.query("sent").withIndex("by_batch", q => q.eq("batchId", receipt._id)).collect();
+    for (const row of rows) {
+      await ctx.db.patch(row._id, { deliveryState: error ? "failed" : "delivered", deliveryError: error, ...(error ? {} : { sentAt: Date.now() }) });
+      await recordFileOutcome(ctx, row, error);
+    }
+    if (error) await queueText(ctx, outbox[0].to, error);
   },
 });
 
@@ -327,12 +415,12 @@ export const claimHeld = internalMutation({
 });
 
 export const completeDelivery = internalMutation({
-  args: { ids: v.array(v.id("sent")), conversationId: v.id("conversations"), text: v.string(), whatsappTo: v.optional(v.string()) },
+  args: { ids: v.array(v.id("sent")), conversationId: v.id("conversations"), text: v.string(), whatsappTo: v.optional(v.string()), attachmentError: v.optional(v.string()) },
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const first = args.ids[0] ? await ctx.db.get(args.ids[0]) : null;
     if (!first) return false;
-    if (first.deliveryState === "delivered") return true;
+    if (first.deliveryState === "delivered" || first.queuedAt !== undefined) return true;
     if (first.batchId !== first._id) throw new Error("This delivery attempt is no longer active.");
     const rows: Doc<"sent">[] = [];
     let eligible = true;
@@ -352,12 +440,27 @@ export const completeDelivery = internalMutation({
     if (rows.some(row => !["sending", "uncertain"].includes(row.deliveryState ?? ""))) throw new Error("This delivery attempt is no longer active.");
     const chat = await ctx.db.get(args.conversationId);
     if (!chat || chat.contactId) throw new Error("The owner's destination chat is no longer available.");
-    if (args.whatsappTo && !(await ctx.runMutation(internal.whatsapp.send, { to: args.whatsappTo, text: args.text }))) throw new Error("WhatsApp is no longer paired to this recipient.");
-    await saveMessages(ctx, { threadId: chat.threadId, messages: [{ role: "assistant", content: args.text }] });
+    const owner = await ctx.db.query("installation").first();
+    if (args.whatsappTo && (!owner?.claimedAt || owner.whatsappOwner !== args.whatsappTo)) throw new Error("WhatsApp is no longer paired to this recipient.");
+    const files = await filesOf(ctx, rows);
+    const tracked = Boolean(args.whatsappTo && files.length);
+    if (args.whatsappTo) {
+      if (!(await queueText(ctx, args.whatsappTo, args.text, tracked ? first._id : undefined))) throw new Error("WhatsApp is no longer paired to this recipient.");
+      for (const file of files) {
+        if (!(await ctx.runMutation(internal.whatsapp.sendFile, { to: args.whatsappTo, fileName: file.fileName, contentType: file.contentType, ...(file.storageId ? { storageId: file.storageId } : {}), ...(file.localPath ? { localPath: file.localPath } : {}), notificationId: first._id }))) throw new Error(`Could not queue ${file.fileName} for WhatsApp.`);
+      }
+    }
+    const mediaKey = `notification-${first._id}`;
+    for (const file of files) {
+      const { _id, _creationTime, conversationId, messageKey, ...copy } = file;
+      await ctx.db.insert("chatAttachments", { ...copy, conversationId: chat._id, messageKey: mediaKey });
+    }
+    await saveMessages(ctx, { threadId: chat.threadId, messages: [{ role: "assistant", content: `${args.text}${files.length ? `\n\n<!-- attachments: ${mediaKey} -->` : ""}` }] });
     await ctx.runMutation(internal.conversations.noteUnprompted, { id: chat._id, text: args.text });
     const now = Date.now();
     for (const row of rows) {
-      await ctx.db.patch(row._id, { deliveryState: "delivered", sentAt: now, deliveryError: undefined });
+      await ctx.db.patch(row._id, { deliveryState: tracked ? "sending" : args.attachmentError ? "failed" : "delivered", ...(tracked ? { queuedAt: now } : { sentAt: now }), deliveryError: args.attachmentError });
+      if (!tracked && row.attachmentIds?.length) await recordFileOutcome(ctx, row, args.attachmentError);
     }
     return true;
   },
@@ -371,6 +474,7 @@ export const failDelivery = internalMutation({
       if (row && row.deliveryState !== "delivered") {
         const state = row.externalStartedAt !== undefined && (row.cancelledAt !== undefined || row.deliveryState === "uncertain") ? "uncertain" : args.state;
         await ctx.db.patch(id, { deliveryState: state, deliveryError: args.error, ...(state === "failed" ? { reservedAt: undefined } : {}) });
+        if (row.attachmentIds?.length) await recordFileOutcome(ctx, row, `${state === "uncertain" ? "File delivery was not confirmed." : "Files were not delivered."} ${args.error}`);
       }
     }
     return null;
@@ -380,7 +484,7 @@ export const failDelivery = internalMutation({
 export const recoverDeliveries = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const rows = await ctx.db.query("sent").withIndex("by_delivery", q => q.eq("deliveryState", "sending").lt("reservedAt", Date.now()-5*60_000)).take(200);
+    const rows = await ctx.db.query("sent").withIndex("by_delivery", q => q.eq("deliveryState", "sending").lt("reservedAt", Date.now()-5*60_000)).filter(q => q.eq(q.field("queuedAt"), undefined)).take(200);
     for (const row of rows) await ctx.db.patch(row._id, { deliveryState: "uncertain", deliveryError: "This attempt was interrupted without confirmation. Check the destination before sending again; Perry will not automatically repeat it." });
     return null;
   },
@@ -399,7 +503,7 @@ export const releaseHeld = internalAction({
     if (!waiting.length) return null;
     if (await ctx.runQuery(internal.notify.holdReason, {})) return null;
     const groups = new Map<string, Doc<"sent">[]>();
-    for (const row of waiting) { const key = JSON.stringify([row.origin, row.channel, row.recipient, row.taskDecision]); groups.set(key, [...(groups.get(key) ?? []), row]); }
+    for (const row of waiting) { const key = JSON.stringify([row.origin, row.channel, row.recipient, row.taskDecision, row.attachmentIds?.length ? row._id : undefined]); groups.set(key, [...(groups.get(key) ?? []), row]); }
     for (const rows of groups.values()) {
       const origin = rows[0].origin;
       const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: origin });
