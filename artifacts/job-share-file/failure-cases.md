@@ -27,4 +27,6 @@ Failure inventory, written before the regression and implementation:
 - A stopped or quiet run unexpectedly sends files, or a file-only run sends nothing.
 - Web delivery loses attachment links; text-only and legacy notification paths regress.
 - A changed or unpaired recipient receives files admitted for someone else.
+- Unlink, logout or owner replacement leaves queued rows or a flush snapshot able to send private files.
+- Partial delivery releases a daily-limit slot, while a genuinely unsent attempt must release it.
 - Tests touch the running installation, leak timers, or leave disposable data behind.

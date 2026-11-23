@@ -249,7 +249,7 @@ async function sentToday(ctx: QueryCtx, timezone: string): Promise<number> {
     ctx.db.query("sent").withIndex("by_sent", q => q.gte("sentAt", midnight)).collect(),
     ctx.db.query("sent").withIndex("by_reserved", q => q.gte("reservedAt", midnight)).collect(),
   ]);
-  return new Set([...sent, ...reserved].filter(row => row.channel !== "web" && row.from !== "reminder" && row.deliveryState !== "failed").map(row => row.batchId ?? row.sentAt ?? row._id)).size;
+  return new Set([...sent, ...reserved].filter(row => row.channel !== "web" && row.from !== "reminder" && (row.deliveryState !== "failed" || row.sentAt !== undefined)).map(row => row.batchId ?? row.sentAt ?? row._id)).size;
 }
 
 /** Why a message for the phone must wait now, if it must. */
@@ -327,13 +327,18 @@ export const whatsappOutcome = internalMutation({
     const failed = outbox.filter(row => row.state === "failed");
     if (!failed.length && outbox.some(row => row.state !== "sent")) return;
     const error = failed.length ? failed.map(row => row.file ? `Could not send ${row.file.fileName}.` : "Could not send the job report on WhatsApp.").join("\n") : undefined;
-    if (error === receipt.deliveryError && receipt.deliveryState === "failed") return;
+    const sentAt = outbox.some(row => row.state === "sent") ? receipt.sentAt ?? Date.now() : undefined;
+    if (error === receipt.deliveryError && receipt.deliveryState === "failed") {
+      if (sentAt && !receipt.sentAt) await ctx.db.patch(receipt._id, { sentAt });
+      return;
+    }
     const rows = await ctx.db.query("sent").withIndex("by_batch", q => q.eq("batchId", receipt._id)).collect();
     for (const row of rows) {
-      await ctx.db.patch(row._id, { deliveryState: error ? "failed" : "delivered", deliveryError: error, ...(error ? {} : { sentAt: Date.now() }) });
+      await ctx.db.patch(row._id, { deliveryState: error ? "failed" : "delivered", deliveryError: error, ...(sentAt ? { sentAt } : {}) });
       await recordFileOutcome(ctx, row, error);
     }
-    if (error) await queueText(ctx, outbox[0].to, error);
+    const owner = await ctx.db.query("installation").first();
+    if (error && owner?.claimedAt && owner.whatsappOwner === outbox[0].to) await queueText(ctx, outbox[0].to, error);
   },
 });
 

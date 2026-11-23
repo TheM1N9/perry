@@ -18,6 +18,7 @@ process.env.DASHBOARD_KEY = "synthetic-job-files-key";
 process.env.PERRY_CREDENTIAL_KEY = "38".repeat(32);
 process.env.TELEGRAM_BOT_TOKEN = "999:synthetic";
 let rejectFile;
+let rejectText = false;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   const method = String(url).match(/\/bot[^/]+\/(\w+)$/)?.[1];
@@ -26,6 +27,7 @@ globalThis.fetch = async (url, init) => {
     ? Object.fromEntries([...init.body].map(([key, value]) => [key, typeof value === "string" ? value : { name: value.name, size: value.size }]))
     : JSON.parse(init?.body ?? "{}");
   report.telegram.push({ method, body });
+  if (rejectText && method === "sendMessage") return Response.json({ ok: false, error_code: 400, description: "synthetic text refusal" });
   if (rejectFile && Object.values(body).some(value => value?.name === rejectFile)) return Response.json({ ok: false, error_code: 400, description: "synthetic file refusal" });
   return Response.json({ ok: true, result: { message_id: 5000 + report.telegram.length } });
 };
@@ -43,6 +45,7 @@ const all = table => runtime.exclusive(() => runtime.store.query(table).collect(
 const OWNER = "100@s.whatsapp.net";
 const token = "synthetic-job-files-runner";
 let installation;
+let whatsappLink;
 const takeScheduled = async name => {
   const rows = sql.prepare("SELECT id, args FROM _scheduled WHERE name = ? ORDER BY createdAt, rowid").all(name);
   for (const row of rows) {
@@ -89,6 +92,7 @@ const check = async (name, work) => {
 const pendingFor = id => all("whatsappOutbox").then(rows => rows.filter(row => row.notificationId === id));
 try {
   installation = await insert("installation", { defaultEngine: "codex", onboarding: "skipped", claimedAt: Date.now(), whatsappOwner: OWNER, ownerChannel: "telegram", ownerExternalId: "42", createdAt: Date.now() });
+  whatsappLink = await insert("whatsappLink", { mode: "separate", wanted: true, status: "connected", updatedAt: Date.now() });
   await insert("runners", { name: "Synthetic runner", token, createdAt: Date.now(), lastSeenAt: Date.now(), engines: [{ kind: "codex", installed: true, signedIn: true, auth: {}, models: [], updatedAt: Date.now() }] });
   await check("WhatsApp job queues ordered files and waits for transport acknowledgement", async () => {
     const r = await run({ response: "Slides prepared.\n" + "x".repeat(9000), files: ["s01.png", "s02.png", "s01.png", "s03.png"] });
@@ -142,6 +146,7 @@ try {
     assert.ok((await all("whatsappOutbox")).some(row => row.kind === "text" && /Could not send s02.png/.test(row.text)));
     for (const row of rows.filter(row => row !== failed)) await call("whatsapp:sent", { id: row._id });
     assert.equal((await get(r.receipt._id)).deliveryState, "failed");
+    assert.equal(typeof (await get(r.receipt._id)).sentAt, "number", "partial WhatsApp delivery still counts against the daily limit");
   });
   await check("multiple held runs retain separate receipts and share order", async () => {
     await patch(installation, { dailyLimit: 1 });
@@ -207,7 +212,7 @@ try {
     assert.equal((await pendingFor(r.receipt._id)).length, 0);
     assert.equal((await get(r.receipt._id)).deliveryState, "failed");
     assert.match((await get(r.jobId)).lastError, /not delivered/);
-    await patch(installation, { whatsappOwner: OWNER });
+    await patch(installation, { whatsappOwner: OWNER, dailyLimit: undefined });
   });
   await check("missing and API-refused Telegram files are reported while later files arrive", async () => {
     rejectFile = "s02.png";
@@ -230,13 +235,44 @@ try {
     const attachments = (await all("chatAttachments")).filter(row => row.conversationId === r.originId);
     assert.equal(attachments.length, 3);
   });
+  await check("partial Telegram delivery keeps its daily-limit slot; unsent text releases it", async () => {
+    for (const row of await all("sent")) await patch(row._id, { sentAt: undefined, reservedAt: undefined });
+    await patch(installation, { dailyLimit: 1 });
+    const partial = await run({ channel: "telegram", files: ["missing-quota.png"] });
+    assert.equal(partial.receipt.deliveryState, "failed");
+    const later = await run({ channel: "telegram", files: [] });
+    assert.equal(later.receipt.deliveryState, "held");
+    await patch(installation, { dailyLimit: undefined });
+    await call("notify:releaseHeld");
+    for (const row of await all("sent")) await patch(row._id, { sentAt: undefined, reservedAt: undefined });
+    rejectText = true;
+    const unsent = await run({ channel: "telegram", files: [] });
+    rejectText = false;
+    assert.equal(unsent.receipt.deliveryState, "failed");
+    await patch(installation, { dailyLimit: 1 });
+    assert.equal((await run({ channel: "telegram", files: [] })).receipt.deliveryState, "delivered");
+    await patch(installation, { dailyLimit: undefined });
+  });
+  for (const change of ["unlink", "logged-out", "replacement"]) await check(`${change} revokes pending WhatsApp files and their receipts`, async () => {
+    await patch(installation, { whatsappOwner: OWNER });
+    await patch(whatsappLink, { mode: change === "replacement" ? "self" : "separate", wanted: true });
+    const r = await run();
+    const snapshot = await pendingFor(r.receipt._id);
+    if (change === "unlink") await call("whatsapp:unlink", { key: process.env.DASHBOARD_KEY });
+    else await call("whatsapp:report", change === "logged-out" ? { status: "logged-out" } : { status: "connected", me: "200@s.whatsapp.net" });
+    assert.ok((await pendingFor(r.receipt._id)).every(row => row.state === "failed"));
+    assert.equal((await get(r.receipt._id)).deliveryState, "failed");
+    for (const row of snapshot) assert.equal(await call("whatsapp:canSend", { id: row._id }), false);
+    assert.match((await get(r.jobId)).lastError, /Could not send/);
+    await patch(installation, { whatsappOwner: OWNER });
+  });
   await check("real WhatsApp outbox retries before later slides and tears down its connection", async () => {
     for (const row of await all("whatsappOutbox")) await runtime.exclusive(() => runtime.store.delete(row._id));
     const r = await run({ files: ["wire01.png", "wire02.png", "wire03.png"] });
     process.env.PERRY_WHATSAPP_DRIVER = fileURLToPath(new URL("./whatsapp-driver.mjs", import.meta.url));
     const driver = await import("./whatsapp-driver.mjs");
     driver.failures.set("wire02.png", 1);
-    await insert("whatsappLink", { mode: "separate", wanted: true, status: "connected", updatedAt: Date.now() });
+    await patch(whatsappLink, { mode: "separate", wanted: true, status: "connected", updatedAt: Date.now() });
     const { runWhatsApp } = await import("../../server/whatsapp.ts");
     const listeners = runtime.events.listenerCount("change");
     const stop = runWhatsApp(runtime);
@@ -251,8 +287,22 @@ try {
       assert.equal((await get(missing.receipt._id)).deliveryState, "failed");
       assert.match((await get(missing.jobId)).lastError, /missing-wire.png/);
       assert.deepEqual(driver.attempts.filter(row => row.name !== "text").map(row => row.name), ["wire01.png", "wire02.png", "wire02.png", "wire03.png", "wire01.png", "wire03.png"]);
+      const emptyDeadline = Date.now() + 10_000;
+      while ((await call("whatsapp:pending")).length && Date.now() < emptyDeadline) await delay(25);
+      const beforeRevocation = driver.attempts.length;
+      driver.hooks.afterSend = async () => {
+        driver.hooks.afterSend = undefined;
+        await call("whatsapp:report", { status: "logged-out" });
+      };
+      const revoked = await run({ files: ["private01.png", "private02.png"] });
+      const revokedDeadline = Date.now() + 10_000;
+      while ((await get(revoked.receipt._id)).deliveryState === "sending" && Date.now() < revokedDeadline) await delay(25);
+      await delay(1100);
+      assert.equal((await get(revoked.receipt._id)).deliveryState, "failed");
+      assert.ok(driver.attempts.slice(beforeRevocation).every(row => row.name === "text"), "a stale flush snapshot must not send the revoked files");
       report.whatsapp = driver.attempts;
     } finally {
+      driver.hooks.afterSend = undefined;
       await stop();
     }
     assert.equal(runtime.events.listenerCount("change"), listeners);

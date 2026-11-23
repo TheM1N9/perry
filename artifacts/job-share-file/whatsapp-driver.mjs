@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 export const attempts = [];
 export const failures = new Map();
 export const sockets = [];
+export const hooks = { afterSend: undefined };
 
 export default {
   async connect() {
@@ -25,6 +26,7 @@ export default {
           failures.set(name, remaining - 1);
           throw new Error("Synthetic transient failure");
         }
+        if (hooks.afterSend) await hooks.afterSend({ to, name });
         return { key: { id: `synthetic-${attempts.length}` } };
       },
       async logout() {},

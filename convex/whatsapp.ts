@@ -36,6 +36,16 @@ async function install(ctx: QueryCtx) {
   return await ctx.db.query("installation").first();
 }
 
+async function revokeOwnerOutgoing(ctx: MutationCtx, to: string | undefined) {
+  if (!to) return;
+  const pending = await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", "pending"))
+    .filter(q => q.eq(q.field("to"), to)).collect();
+  for (const row of pending) await ctx.db.patch(row._id, { state: "failed", error: "WhatsApp ownership changed before delivery." });
+  for (const id of new Set(pending.flatMap(row => row.notificationId ? [row.notificationId] : []))) {
+    await ctx.runMutation(internal.notify.whatsappOutcome, { id });
+  }
+}
+
 /** A JID without its device part, so the owner's phone and linked devices are one chat. */
 export const bareJid = (jid: string) => jid.replace(/:\d+(?=@)/, "");
 
@@ -117,6 +127,7 @@ export const unlink = mutation({
     if (link) await ctx.db.patch(link._id, { wanted: false, status: "off", qr: undefined, code: undefined, me: undefined, error: undefined, updatedAt: Date.now() });
     const owner = await install(ctx);
     if (owner) await ctx.db.patch(owner._id, { whatsappOwner: undefined, ...(owner.homeChannel === "whatsapp" ? { homeChannel: undefined } : {}) });
+    await revokeOwnerOutgoing(ctx, owner?.whatsappOwner);
     return null;
   },
 });
@@ -170,12 +181,16 @@ export const report = internalMutation({
       const owner = await install(ctx);
       if (owner && owner.whatsappOwner !== bareJid(args.me)) {
         await ctx.db.patch(owner._id, { whatsappOwner: bareJid(args.me), claimedAt: owner.claimedAt ?? Date.now() });
+        await revokeOwnerOutgoing(ctx, owner.whatsappOwner);
       }
     }
     if (args.status === "logged-out") {
       // Unlinked from the phone: the owner links again from the dashboard.
       const owner = await install(ctx);
-      if (owner?.whatsappOwner) await ctx.db.patch(owner._id, { whatsappOwner: undefined });
+      if (owner?.whatsappOwner) {
+        await ctx.db.patch(owner._id, { whatsappOwner: undefined });
+        await revokeOwnerOutgoing(ctx, owner.whatsappOwner);
+      }
     }
     return null;
   },
@@ -290,6 +305,13 @@ export const pending = internalQuery({
   args: {},
   handler: async (ctx): Promise<Doc<"whatsappOutbox">[]> =>
     await ctx.db.query("whatsappOutbox").withIndex("by_state", (q) => q.eq("state", "pending")).take(20),
+});
+
+/** A flush snapshot may have been revoked while an earlier message was in flight. */
+export const canSend = internalQuery({
+  args: { id: v.id("whatsappOutbox") },
+  returns: v.boolean(),
+  handler: async (ctx, args) => (await ctx.db.get(args.id))?.state === "pending",
 });
 
 /** Sent, or failed for good after a few tries; either way it leaves the queue. */
