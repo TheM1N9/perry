@@ -1,5 +1,9 @@
 # Live browser and selected session import (#286)
 
+For the current native window, engine selection, input transport and T3 host
+comparison, see [Browser architecture](browser-architecture.md). The original
+design and validation notes below describe the earlier implementation.
+
 ## Design
 
 Reuse the existing Chromium CDP host. Native embedding cannot work in the web dashboard across local and remote installations; authenticated, uncached image frames plus a small allowlisted input protocol show the exact selected CDP target without embedding arbitrary sites. Frames are ephemeral and never enter chat/media storage. This first transport polls at a bounded rate; it is intended for observing and taking over, not video playback.

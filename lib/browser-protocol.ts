@@ -2,11 +2,22 @@ import { z } from "zod";
 
 export const browserIdentity = z.object({ sessionId: z.string(), tabId: z.string(), revision: z.number().int() });
 export type BrowserIdentity = z.infer<typeof browserIdentity>;
+export const browserViewport = z.object({ width: z.number().int().min(320).max(2560), height: z.number().int().min(240).max(1600) });
+export const browserInput = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("pointer"), phase: z.enum(["mouseMoved", "mousePressed", "mouseReleased"]), x: z.number().min(0).max(16384), y: z.number().min(0).max(16384), button: z.enum(["none", "left", "middle", "right"]), buttons: z.number().int().min(0).max(7), clickCount: z.number().int().min(0).max(3), modifiers: z.number().int().min(0).max(15) }),
+  z.object({ type: z.literal("wheel"), x: z.number().min(0).max(16384), y: z.number().min(0).max(16384), deltaX: z.number().min(-3000).max(3000), deltaY: z.number().min(-3000).max(3000) }),
+  z.object({ type: z.literal("text"), text: z.string().max(10_000) }),
+  z.object({ type: z.literal("key"), key: z.string().max(50), code: z.string().max(50), keyCode: z.number().int().min(0).max(255), modifiers: z.number().int().min(0).max(15) }),
+]);
+export type BrowserInput = z.infer<typeof browserInput>;
 export const browserState = z.object({
   importEnabled: z.boolean(),
   source: z.enum(["perry", "chrome"]).default("perry"),
+  nativeWindow: z.boolean().default(false),
   state: z.enum(["closed", "live", "paused", "disconnected"]),
   identity: browserIdentity.nullable(),
+  viewport: z.object({ width: z.number().positive().max(16384), height: z.number().positive().max(16384) }).default({ width: 1280, height: 900 }),
+  canGoBack: z.boolean().default(false), canGoForward: z.boolean().default(false),
   tabs: z.array(z.object({ id: z.string(), title: z.string(), url: z.string() })),
   loading: z.boolean(), error: z.string().nullable(),
   dialog: z.object({ type: z.string(), message: z.string() }).nullable(),
@@ -20,7 +31,7 @@ export type NativeImportChoices = z.infer<typeof nativeImportChoices>;
 export const nativeImportProfiles = z.array(z.object({ id: z.string(), browser: z.string(), label: z.string(), cookies: z.number(), passwords: z.number(), history: z.number(), extensions: z.number() }));
 export const browserRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status") }),
-  z.object({ action: z.literal("start") }),
+  z.object({ action: z.literal("start"), nativeWindow: z.boolean().optional() }),
   z.object({ action: z.literal("connectChrome") }),
   z.object({ action: z.literal("takeover") }),
   z.object({ action: z.literal("resume"), identity: browserIdentity }),
@@ -31,6 +42,10 @@ export const browserRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("newTab"), identity: browserIdentity }),
   z.object({ action: z.literal("closeTab"), identity: browserIdentity }),
   z.object({ action: z.literal("back"), identity: browserIdentity }),
+  z.object({ action: z.literal("forward"), identity: browserIdentity }),
+  z.object({ action: z.literal("stop"), identity: browserIdentity }),
+  z.object({ action: z.literal("viewport"), identity: browserIdentity, ...browserViewport.shape }),
+  z.object({ action: z.literal("input"), identity: browserIdentity, input: browserInput }),
   z.object({ action: z.literal("reload"), identity: browserIdentity }),
   z.object({ action: z.literal("click"), identity: browserIdentity, ...point }),
   z.object({ action: z.literal("scroll"), identity: browserIdentity, ...point, deltaY: z.number().min(-3000).max(3000) }),

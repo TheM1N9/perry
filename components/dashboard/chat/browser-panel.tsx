@@ -12,8 +12,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { InfoTip } from "../common";
 import { Spinner } from "./work";
 import { BrowserImportDialog } from "./browser-import-dialog";
+import { BrowserPage } from "./browser-page";
 import { useSession } from "@/lib/session";
-import { browserIdentity, browserState, importPreview, importProfile, importResult, type BrowserRequest, type BrowserState } from "@/lib/browser-protocol";
+import { browserIdentity, browserState, importPreview, importProfile, importResult, type BrowserInput, type BrowserRequest, type BrowserState } from "@/lib/browser-protocol";
 
 const frameSchema = z.object({ image: z.string(), identity: browserIdentity, capturedAt: z.number() });
 const sessionsSchema = z.array(z.object({ site: z.string(), source: z.string(), count: z.number(), note: z.string() }));
@@ -24,6 +25,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   const [state, setState] = useState<BrowserState | null>(null);
   const stateRef = useRef(state);
   const [frame, setFrame] = useState<z.infer<typeof frameSchema> | null>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const [connection, setConnection] = useState("Connecting");
   const [connectionError, setConnectionError] = useState("");
   const [error, setError] = useState("");
@@ -57,7 +59,11 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
     if (!response.ok) throw new Error(z.object({ error: z.string() }).parse(data).error);
     return data;
   }, [conversationId, dashboardKey]);
-  const apply = useCallback((next: BrowserState) => { stateRef.current = next; setState(next); }, []);
+  const apply = useCallback((next: BrowserState) => {
+    if (JSON.stringify(next.identity) !== JSON.stringify(stateRef.current?.identity)) setFrame(null);
+    stateRef.current = next;
+    setState(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+  }, []);
 
   // The panel's width in device pixels, in steps, so the frames Chrome sends are as sharp as the panel and no bigger.
   const sectionRef = useRef<HTMLElement>(null);
@@ -65,7 +71,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   useEffect(() => {
     const element = sectionRef.current;
     if (!element) return;
-    const measure = () => setWidth(Math.min(1280, Math.max(320, Math.ceil(element.clientWidth * (window.devicePixelRatio || 1) / 160) * 160)));
+    const measure = () => setWidth(Math.min(2560, Math.max(320, Math.ceil(element.clientWidth * (window.devicePixelRatio || 1) / 160) * 160)));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
@@ -99,7 +105,10 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
               apply(message.state);
               if (!message.state.identity) setFrame(null);
               setConnection(message.state.state === "disconnected" ? "Disconnected" : "Connected"); setConnectionError("");
-            } else setFrame(message.frame);
+            } else if (JSON.stringify(message.frame.identity) === JSON.stringify(stateRef.current?.identity)) {
+              if (imageRef.current) imageRef.current.src = `data:image/jpeg;base64,${message.frame.image}`;
+              setFrame(previous => previous && JSON.stringify(previous.identity) === JSON.stringify(message.frame.identity) ? previous : message.frame);
+            }
           }
         }
         if (active) throw new Error("Browser connection lost. Retrying.");
@@ -113,38 +122,28 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
     return () => { active = false; clearTimeout(retry); abort.abort(); setFrame(null); };
   }, [conversationId, dashboardKey, width, apply]);
 
-  // A wheel sends many small turns: added up while one scroll is on its way, and sent as one after.
-  const wheel = useRef<{ busy: boolean; deltaY: number; at: { x: number; y: number } }>({ busy: false, deltaY: 0, at: { x: 0, y: 0 } });
-  async function scroll(at: { x: number; y: number }, deltaY: number) {
-    const expected = stateRef.current?.identity;
-    const pending = wheel.current;
-    pending.deltaY += deltaY; pending.at = at;
-    if (pending.busy) return;
-    pending.busy = true;
-    try {
-      while (pending.deltaY) {
-        const current = stateRef.current;
-        const amount = Math.max(-3000, Math.min(3000, pending.deltaY));
-        pending.deltaY = 0;
-        if (current?.state !== "paused" || !expected || JSON.stringify(current.identity) !== JSON.stringify(expected)) break;
-        await call({ action: "scroll", identity: expected, ...pending.at, deltaY: amount }).catch(() => {});
-      }
-    } finally { pending.busy = false; pending.deltaY = 0; }
-  }
   useEffect(() => { setUrl(currentTab?.url === "about:blank" ? "" : currentTab?.url ?? ""); }, [currentTab?.url]);
 
-  async function act(request: BrowserRequest) {
-    setError("");
-    try { const next = browserState.parse(await call(request)); apply(next); if (next.state === "closed" || next.state === "disconnected") setFrame(null); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Browser action failed."); setFrame(null); }
+  function act(request: BrowserRequest): Promise<void> {
+    const signal = requests.current?.signal;
+    manualQueue.current = manualQueue.current.then(async () => {
+      if (signal?.aborted) return;
+      setError("");
+      const next = browserState.parse(await call(request, signal));
+      apply(next);
+      if (next.state === "closed" || next.state === "disconnected") setFrame(null);
+    }).catch(cause => { if (!signal?.aborted) setError(cause instanceof Error ? cause.message : "Browser action failed."); });
+    return manualQueue.current;
   }
-  function manual(request: Omit<Extract<BrowserRequest, { action: "text" }>, "identity"> | Omit<Extract<BrowserRequest, { action: "key" }>, "identity">) {
-    // Serialize owner keystrokes without ever queuing agent actions.
+  function manual(input: BrowserInput): Promise<void> {
+    // Pointer, wheel and keyboard share one queue and one observed page.
     const expected = stateRef.current?.identity;
+    const signal = requests.current?.signal;
     manualQueue.current = manualQueue.current.then(async () => {
       const current = stateRef.current;
-      if (current?.state === "paused" && expected && JSON.stringify(current.identity) === JSON.stringify(expected)) await act({ ...request, identity: expected });
-    });
+      if (!signal?.aborted && current?.state === "paused" && expected && JSON.stringify(current.identity) === JSON.stringify(expected)) await call({ action: "input", input, identity: expected }, signal);
+    }).catch(cause => { if (!signal?.aborted) setError(cause instanceof Error ? cause.message : "Browser input failed."); });
+    return manualQueue.current;
   }
   async function run<T>(work: () => Promise<T>) {
     setBusy(true); setError("");
@@ -156,10 +155,6 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
     if (state?.importEnabled) await run(async () => setProfiles(z.array(importProfile).parse(await call({ action: "profiles" })).filter(item => item.browser === "Firefox")));
     if (paused && activeIdentity && state?.source !== "chrome") await run(async () => setSessions(sessionsSchema.parse(await call({ action: "sessions", identity: activeIdentity }))));
   }
-  const point = (event: { currentTarget: HTMLElement; clientX: number; clientY: number }) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: Math.max(0, Math.min(1280, (event.clientX - rect.left) * 1280 / rect.width)), y: Math.max(0, Math.min(900, (event.clientY - rect.top) * 900 / rect.height)) };
-  };
   const visibleFrame = frame && state?.identity && JSON.stringify(frame.identity) === JSON.stringify(state.identity) && connection === "Connected" ? frame : null;
 
   const open = Boolean(state?.identity);
@@ -168,15 +163,21 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
     : state?.state === "live" ? { text: "Perry is browsing", tone: "bg-success motion-safe:animate-pulse" }
     : { text: "Not open", tone: "bg-muted-foreground/40" };
 
-  return <section ref={sectionRef} className="flex h-full min-h-0 flex-col text-sm" aria-label="Live browser" data-browser-state={state?.state ?? "loading"}>
+  return <section ref={sectionRef} className="flex h-full min-h-0 flex-col text-sm" aria-label="Live browser" data-browser-state={state?.state ?? "loading"} data-browser-revision={state?.identity?.revision}>
     <div className="flex shrink-0 items-center gap-2 px-3 py-2">
       <span className={`size-2 shrink-0 rounded-full ${status.tone}`} aria-hidden />
-      <span role="status" className="mr-auto min-w-0 truncate text-xs font-medium text-muted-foreground">{state?.source === "chrome" ? "Chrome · " : ""}{status.text}{state?.loading ? " · Loading" : ""}</span>
+      <span role="status" className="mr-auto min-w-0 truncate text-xs font-medium text-muted-foreground">{state?.nativeWindow && open ? "Desktop · " : state?.source === "chrome" ? "Chrome · " : ""}{status.text}{state?.loading ? " · Loading" : ""}</span>
       {open && (paused ? <Button size="sm" onClick={() => activeIdentity && void act({ action: "resume", identity: activeIdentity })}><PlayIcon />Resume Perry</Button>
         : <Button size="sm" variant="outline" onClick={() => { setFrame(null); void act({ action: "takeover" }); }}><PauseIcon />Pause & take over</Button>)}
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label="Browser actions" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-44">
+          {!open && <DropdownMenuItem onClick={() => void run(() => act({ action: "start", nativeWindow: false }))}>Open in panel only</DropdownMenuItem>}
+          {open && activeIdentity && <>
+            <DropdownMenuItem disabled={!paused} onClick={() => void act({ action: "viewport", identity: activeIdentity, width: Math.max(320, Math.min(2560, sectionRef.current?.clientWidth ?? 1280)), height: Math.max(240, Math.min(1600, (sectionRef.current?.clientHeight ?? 1020) - 120)) })}>Fit page to panel</DropdownMenuItem>
+            <DropdownMenuItem disabled={!paused} onClick={() => void act({ action: "viewport", identity: activeIdentity, width: 1280, height: 900 })}>Desktop viewport (1280 × 900)</DropdownMenuItem>
+            <DropdownMenuItem disabled={!paused} onClick={() => void act({ action: "viewport", identity: activeIdentity, width: 390, height: 844 })}>Phone viewport (390 × 844)</DropdownMenuItem>
+          </>}
           {state?.importEnabled && <DropdownMenuItem onClick={() => setImportOpen(true)}>Import from browser</DropdownMenuItem>}
           <DropdownMenuItem onClick={() => void openSettings()}>Connections</DropdownMenuItem>
           {open && <DropdownMenuItem disabled={!paused} onClick={() => activeIdentity && void act({ action: "close", identity: activeIdentity })}>{state?.source === "chrome" ? "Disconnect Chrome" : "Close browser"}</DropdownMenuItem>}
@@ -196,8 +197,9 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
         {paused && <Button size="icon-sm" variant="ghost" className="size-7" aria-label="New browser tab" onClick={() => state.identity && void act({ action: "newTab", identity: state.identity })}><PlusIcon /></Button>}
       </div>}
       <form className="flex items-center gap-1 p-1.5" onSubmit={(event) => { event.preventDefault(); if (state?.identity && url) void act({ action: "navigate", identity: state.identity, url: /^https?:\/\//i.test(url) ? url : `https://${url}` }); }}>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Go back" disabled={!paused} onClick={() => state?.identity && void act({ action: "back", identity: state.identity })}><ArrowLeftIcon /></Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Reload browser page" disabled={!paused} onClick={() => state?.identity && void act({ action: "reload", identity: state.identity })}><RefreshCwIcon /></Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Go back" disabled={!paused || !state?.canGoBack} onClick={() => state?.identity && void act({ action: "back", identity: state.identity })}><ArrowLeftIcon /></Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Go forward" disabled={!paused || !state?.canGoForward} onClick={() => state?.identity && void act({ action: "forward", identity: state.identity })}><ArrowRightIcon /></Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label={state?.loading ? "Stop loading page" : "Reload browser page"} disabled={!paused} onClick={() => state?.identity && void act({ action: state.loading ? "stop" : "reload", identity: state.identity })}>{state?.loading ? <XIcon /> : <RefreshCwIcon />}</Button>
         <Input aria-label="Browser address" value={url} disabled={!paused} onChange={(event) => setUrl(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="h-8 min-w-0 flex-1 rounded-full bg-background px-3 text-xs disabled:opacity-100 disabled:text-muted-foreground" placeholder={paused ? "Type an address" : ""} />
         <Button type="submit" size="icon-sm" variant="ghost" aria-label="Go to address" className={paused && url && url !== currentTab?.url ? "" : "hidden"}><ArrowRightIcon /></Button>
       </form>
@@ -211,31 +213,12 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
         <p className="mt-3 text-sm font-medium">Perry's browser</p>
         <p className="mt-1 max-w-64 text-xs leading-relaxed text-muted-foreground">Perry browses here for this chat. Watch it work, or take over to sign in somewhere for it.</p>
         <Button size="sm" className="mt-4" disabled={busy} onClick={() => void run(() => act({ action: "start" }))}>{busy ? "Opening…" : "Open browser"}</Button>
-      </div> : visibleFrame ? <div className="p-2"><div role="application" aria-label={paused ? "Browser page. Click to focus, type or paste; Tab moves within the page. Escape returns focus to browser controls." : "Browser page, view only. Pause to take over."} tabIndex={paused ? 0 : -1} className="group/page relative aspect-[1280/900] w-full overflow-hidden rounded-md bg-white ring-1 ring-border outline-offset-2 focus-visible:outline-2 focus-visible:outline-primary"
-        onClick={(event) => {
-          // Where the click fell, read before focusing: focus must not scroll the panel and move the page under it.
-          const at = point(event);
-          event.currentTarget.focus({ preventScroll: true });
-          if (paused && activeIdentity) void act({ action: "click", identity: activeIdentity, ...at });
-        }}
-        onWheel={(event) => { if (paused) void scroll(point(event), event.deltaY); }}
-        onPaste={(event) => { if (paused) { event.preventDefault(); manual({ action: "text", text: event.clipboardData.getData("text").slice(0, 10000) }); } }}
-        onKeyDown={(event) => {
-          if (!paused) return;
-          if (event.key === "Escape") { event.currentTarget.blur(); return; }
-          if (event.key === "v" && (event.ctrlKey || event.metaKey)) return;
-          event.preventDefault();
-          if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) manual({ action: "text", text: event.key });
-          else manual({ action: "key", key: event.key, code: event.code, keyCode: event.keyCode, modifiers: (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0) });
-        }}>
-        {/* Owner-only ephemeral image. No URL key, media record, disk capture or model attachment. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`data:image/jpeg;base64,${visibleFrame.image}`} alt={`Live page: ${currentTab?.title || "Browser"}`} draggable={false} className="pointer-events-none h-full w-full" />
-        {!paused && <span className="pointer-events-none absolute right-2 bottom-2 rounded-full bg-foreground/75 px-2.5 py-1 text-2xs font-medium text-background opacity-0 transition-opacity group-hover/page:opacity-100">View only · take over to use it</span>}
-      </div></div> : <div className="p-2"><div className="grid aspect-[1280/900] w-full place-items-center rounded-md bg-muted/40 text-xs text-muted-foreground ring-1 ring-border"><p className="flex items-center gap-2"><Spinner />{connection !== "Connected" ? `${connection}…` : "Loading page…"}</p></div></div>}
+        {state.importEnabled && <Button size="sm" variant="ghost" className="mt-2" disabled={busy} onClick={() => void run(() => act({ action: "start", nativeWindow: false }))}>Open in panel only</Button>}
+      </div> : visibleFrame && state ? <BrowserPage key={JSON.stringify(state.identity)} image={visibleFrame.image} imageRef={imageRef} title={currentTab?.title || "Browser"} paused={paused} viewport={state.viewport} onInput={manual} />
+        : <div className="grid w-full place-items-center bg-muted/40 text-xs text-muted-foreground" style={{ aspectRatio: `${state?.viewport.width ?? 1280}/${state?.viewport.height ?? 900}` }}><p className="flex items-center gap-2"><Spinner />{connection !== "Connected" ? `${connection}...` : "Loading page..."}</p></div>}
       {paused && <Collapsible className="px-3 py-1">
         <CollapsibleTrigger render={<Button size="xs" variant="ghost" className="group -ml-2 text-muted-foreground" />}><ChevronRightIcon className="transition-transform group-data-panel-open:rotate-90" />Type into page</CollapsibleTrigger>
-        <CollapsibleContent className="pt-2"><form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); if (typing) { manual({ action: "text", text: typing }); setTyping(""); } }}>
+        <CollapsibleContent className="pt-2"><form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); if (typing) { void manual({ type: "text", text: typing }); setTyping(""); } }}>
           <Input type="password" autoComplete="off" value={typing} onChange={(event) => setTyping(event.target.value)} aria-label="Text for the focused browser field" placeholder="Text for the focused page field" className="min-w-0 flex-1" />
           <Button type="submit" size="sm" variant="outline" disabled={!typing}>Type</Button>
         </form></CollapsibleContent>
