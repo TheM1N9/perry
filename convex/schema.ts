@@ -442,27 +442,32 @@ export default defineSchema({
 
   /**
    * A background task's outcome on its way back to the chat that queued it
-   * (issue #271): Perry reads it there in a turn of its own and tells the owner,
-   * rather than the task's words going to the owner as they are. Kept until
-   * that turn has gone through; after HANDOFF_TRIES failed tries (no engine has
-   * room, the runner is away) the owner gets the task's own notice instead.
+   * (issue #271): sibling results share a delivery run, which joins the parent's
+   * running turn when supported. Finalization acknowledges the exact run;
+   * repeated delivery failures wait for the agent without notifying the owner.
    */
   taskHandoffs: defineTable({
     taskId: v.id("tasks"),
     /** The chat that queued the task: Perry's turn there reads it. */
     conversationId: v.id("conversations"),
-    outcome: v.union(v.literal("done"), v.literal("blocked"), v.literal("failed")),
-    /** What the owner gets if Perry cannot take it: the task's own notice. */
+    outcome: v.union(v.literal("done"), v.literal("blocked"), v.literal("failed"), v.literal("waiting")),
+    /** Saved outcome text, retained for older handoffs and inspection. */
     notice: v.string(),
+    /** The child's original words, retained even when its task is resumed. */
+    report: v.optional(v.string()),
     /** What its turn is listed as in Activity, and found by. */
     label: v.string(),
-    state: v.union(v.literal("pending"), v.literal("answered"), v.literal("fallback")),
+    state: v.union(v.literal("pending"), v.literal("answered"), v.literal("waiting"), v.literal("fallback")),
     tries: v.number(),
     triedAt: v.optional(v.number()),
+    /** Exact delivery run, shared by siblings batched into the same turn or steer. */
+    runId: v.optional(v.id("runs")),
     createdAt: v.number(),
     settledAt: v.optional(v.number()),
   })
     .index("by_task", ["taskId"])
+    .index("by_run", ["runId"])
+    .index("by_conversation_state", ["conversationId", "state"])
     .index("by_state", ["state"]),
 
   /**
@@ -1844,6 +1849,8 @@ export default defineSchema({
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
     prompt: v.string(),
+    hidden: v.optional(v.boolean()),
+    outsideAt: v.optional(v.number()),
     history: v.optional(v.string()),
     instructions: v.string(),
     preparation: v.optional(v.boolean()),

@@ -475,6 +475,7 @@ export const snapshot = internalQuery({
       nextDecisionCursor: page.isDone ? undefined : page.continueCursor,
       tasks: tasks.map((t) => ({
         id: t._id,
+        chatId: t.conversationId,
         title: t.title,
         status: t.status,
         goalId: t.goalId,

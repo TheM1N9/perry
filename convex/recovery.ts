@@ -5,6 +5,7 @@ import { internalMutation } from "./_generated/server";
 import { FINALIZE_LEASE_MS, queueSteer } from "./codex";
 import { turnHealth } from "./lib/turn-health";
 import { settleRunSpans } from "./lib/settle-traces";
+import { settleHandoffs } from "./tasks";
 
 /**
  * Durable turns. The runner keeps finished Codex results on disk and delivers
@@ -136,8 +137,10 @@ export const sweep = internalMutation({
       if (args.only && steer.conversationId !== args.only) continue;
       const turn = await ctx.db.get(steer.turnId);
       if (turn?.status === "running") continue;
-      if (!turn || !(await ctx.db.get(steer.conversationId))) await ctx.db.delete(steer._id);
-      else await queueSteer(ctx, steer, { error: "The reply ended before this message could join it." });
+      if (!turn || !(await ctx.db.get(steer.conversationId))) {
+        await ctx.db.delete(steer._id);
+        await settleHandoffs(ctx, steer.runId, false);
+      } else await queueSteer(ctx, steer, { error: "The reply ended before this message could join it." });
       requeued += 1;
     }
 
@@ -161,6 +164,7 @@ export const sweep = internalMutation({
         if (run.status === "running" && run.startedAt < now - STUCK_CHAT_MS) {
           await ctx.db.patch(run._id, { status: "error", error: "This turn was interrupted before Codex answered. Send the message again.", errorCode: "restarted", finishedAt: now });
           await settleRunSpans(ctx, run._id, now, "recovery");
+          await settleHandoffs(ctx, run._id, false);
         }
       }
       released += 1;

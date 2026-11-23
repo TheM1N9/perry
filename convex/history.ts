@@ -2,7 +2,7 @@ import { listMessages, searchMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { internalAction } from "./_generated/server";
+import { internalAction, internalQuery } from "./_generated/server";
 
 /**
  * The agent's view of past conversations, on every channel: search them by
@@ -79,14 +79,17 @@ export const search = internalAction({
   },
 });
 
+export type ChatHistory = {
+  chat?: string;
+  channel?: string;
+  messages: Array<{ role: string; date: string; text: string }>;
+  note?: string;
+  activity?: Activity;
+};
+
 export const read = internalAction({
-  args: { chatId: v.string(), limit: v.optional(v.number()), from: v.optional(v.id("conversations")) },
-  handler: async (ctx, args): Promise<{
-    chat?: string;
-    channel?: string;
-    messages: Array<{ role: string; date: string; text: string }>;
-    note?: string;
-  }> => {
+  args: { chatId: v.string(), limit: v.optional(v.number()), from: v.optional(v.id("conversations")), runId: v.optional(v.string()), cursor: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<ChatHistory> => {
     const chats: Chat[] = await ctx.runQuery(internal.conversations.list, {});
     const chat = chats.find((item) => item._id === args.chatId);
     if (!chat) return { messages: [], note: "No chat with that id. Ids come from search_chats." };
@@ -98,7 +101,33 @@ export const read = internalAction({
     });
     const messages = page.page.reverse()
       .filter((item) => (item.message?.role === "user" || item.message?.role === "assistant") && item.text?.trim())
-      .map((item) => ({ role: item.message!.role, date: day(item._creationTime), text: item.text!.replace(MARKER, "").trim().slice(0, 4000) }));
-    return { chat: titleOf(chat), channel: chat.channel, messages, ...(page.isDone ? {} : { note: "Older messages exist; these are the most recent." }) };
+      .map((item) => ({ role: item.message!.role, date: day(item._creationTime), text: item.text!.replace(MARKER, "").trim().slice(0, 16000) }));
+    const activity: Activity = await ctx.runQuery(internal.history.activity, { chatId: chat._id, runId: args.runId, cursor: args.cursor });
+    return { chat: titleOf(chat), channel: chat.channel, messages, activity, ...(page.isDone ? {} : { note: "Older messages exist; these are the most recent." }) };
+  },
+});
+
+type Activity = {
+  runs: Array<{ id: string; status: string; startedAt: number; error?: string }>;
+  steps?: Array<{ kind: string; name: string; status: string; input?: string; output?: string }>;
+  nextCursor?: string;
+  note?: string;
+};
+
+/** Called only after read has checked project and guest access to this chat. */
+export const activity = internalQuery({
+  args: { chatId: v.id("conversations"), runId: v.optional(v.string()), cursor: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<Activity> => {
+    const recent = await ctx.db.query("runs").withIndex("by_conversation", q => q.eq("conversationId", args.chatId)).order("desc").take(10);
+    const runs = recent.map(run => ({ id: run._id, status: run.status, startedAt: run.startedAt, error: run.error }));
+    if (!args.runId) return { runs };
+    const id = ctx.db.normalizeId("runs", args.runId);
+    const run = id ? await ctx.db.get(id) : null;
+    if (!run || run.conversationId !== args.chatId) return { runs, note: "That run does not belong to this chat." };
+    const page = await ctx.db.query("runSpans").withIndex("by_run", q => q.eq("runId", run._id)).paginate({ numItems: 5, cursor: args.cursor ?? null });
+    return {
+      runs, steps: page.page.map(span => ({ kind: span.kind, name: span.name, status: span.status, input: span.input, output: span.output })),
+      ...(!page.isDone ? { nextCursor: page.continueCursor } : {}),
+    };
   },
 });

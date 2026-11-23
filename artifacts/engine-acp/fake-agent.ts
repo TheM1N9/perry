@@ -428,15 +428,21 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
   }
   // A background task's outcome, back in the chat that queued it (convex/tasks.ts, handOff): answer the owner from its report.
   if (text.startsWith("🧩 A background task you queued here came back")) {
-    const report = /----- task report -----\n([^\n]*)/.exec(text)?.[1] ?? "";
-    log({ handoff: text.slice(0, 2000) });
+    const report = [...text.matchAll(/----- task report -----\n([\s\S]*?)\n----- end of task report -----/g)].map(match => match[1]).join("\n\n");
+    log({ handoff: text });
     await stream([`Back from the task: `, report], 30);
     return done("end_turn");
   }
   // A background task's turn (convex/tasks.ts, promptFor): "FINISH <outcome> <summary>" on a line of its prompt calls
   // finish_task; answered, it finishes done with the answer. "THEN-LIMITED" after it: from then on every turn hits the limit.
   const taskId = /\(task id (\w+)\)/.exec(text)?.[1];
-  const answered = /The owner answered your question: "([^"]*)"/.exec(text)?.[1];
+  const answered = /The owner(?: answered your question|\'s reply): "(?:The owner\'s instruction: )?([^"\n]*)/.exec(text)?.[1];
+  const result = /^RESULT ([\s\S]*)/m.exec(text)?.[1].split("\n\nYou are working on this by yourself:")[0];
+  if (taskId && (result !== undefined || text.includes("EMPTY-RESULT") || text.includes("Your last turn had no final result"))) {
+    const retry = text.includes("Your last turn had no final result");
+    await stream([retry ? "Recovered complete result: summary.md, checked by readback." : result ?? ""], 10);
+    return done("end_turn");
+  }
   const finish = text.split("\n").map((line) => line.trim()).find((line) => line.startsWith("FINISH "));
   if (taskId && (answered !== undefined || finish)) {
     const [, outcome = "done", ...rest] = answered !== undefined ? ["FINISH", "done", `Carried on with ${answered}.`] : finish!.split(" ");

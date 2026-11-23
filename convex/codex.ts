@@ -6,6 +6,7 @@ import { ConvexError, v, type Infer } from "convex/values";
 import { markUsed } from "./archive";
 import { TAKE_LONGER_MAX_MIN } from "./lib/turnLimits";
 import { settleRunSpans } from "./lib/settle-traces";
+import { settleHandoffs } from "./tasks";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { createThread, saveMessages } from "./lib/agent";
@@ -275,8 +276,8 @@ export const enqueueTurn = internalMutation({
     if (running?.status === "running" && isSteering(args.policy, running, engine)) {
       if (args.outside) await ctx.db.patch(running._id, { outsideAt: Date.now() });
       // The running turn already carries recalled memory; a steer adds only the message.
-      const { recalled: _recalled, recallDigest: _digest, projectDigest: _project, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, guest: _guest, guestMessage: _message, ...steer } = message;
-      const id = await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
+      const { recalled: _recalled, recallDigest: _digest, projectDigest: _project, flush: _flush, checkpoint: _checkpoint, guest: _guest, guestMessage: _message, ...steer } = message;
+      const id = await ctx.db.insert("codexSteers", { ...steer, ...(args.outside ? { outsideAt: Date.now() } : {}), turnId: running._id, runnerId: running.runnerId!, status: "pending" });
       if (preparing) await ctx.db.delete(preparing._id);
       if (!preparing) await takeFromOutbox(ctx, conversation, args.prompt);
       return id;
@@ -348,7 +349,8 @@ export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, gi
     conversationId: steer.conversationId,
     runId: steer.runId,
     prompt: steer.prompt,
-    ...(isInteractiveInput(steer.prompt) ? { outsideAt: Date.now() } : {}),
+    ...(steer.outsideAt !== undefined || isInteractiveInput(steer.prompt) ? { outsideAt: steer.outsideAt ?? Date.now() } : {}),
+    ...(steer.hidden ? { hidden: true } : {}),
     history: steer.history,
     instructions: steer.instructions,
     preparation: steer.preparation,
@@ -1263,7 +1265,7 @@ export const getTurn = internalQuery({
         ...(job.error !== undefined ? { error: clean(job.error) } : {}),
       },
       conversation,
-      steers: steers.map((steer) => clean(steer.prompt)),
+      steers: steers.filter(steer => !steer.hidden).map((steer) => clean(steer.prompt)),
     };
   },
 });
@@ -1299,6 +1301,9 @@ export const markFinalized = internalMutation({
         finishedAt,
       });
     }
+    for (const runId of [job.runId, ...steers.map(steer => steer.runId)]) {
+      await settleHandoffs(ctx, runId, job.status === "done" && !job.stopped && Boolean(job.response?.trim()));
+    }
     // A compaction is not a message: the chat was never marked busy for it.
     // A checkpoint is not a message either: the web chat never counted it as one it sent.
     const conversation = job.kind === "compact" || job.checkpoint ? null : await ctx.db.get(job.conversationId);
@@ -1308,7 +1313,10 @@ export const markFinalized = internalMutation({
     });
     // Finish the task in the same transaction: a retry cannot slip between finalization and its task callback.
     if (conversation?.taskId && !job.flush && !job.reactionOnly) {
-      await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, ...(job.error ? { error: job.error } : {}) });
+      await ctx.runMutation(internal.tasks.afterTurn, {
+        id: conversation.taskId, ...(job.stopped ? { error: job.error ?? STOPPED } : job.error && turnErrorCode(job) !== "empty_reply" ? { error: job.error } : {}),
+        ...(job.response !== undefined ? { response: hide(job.response, await savedValues(ctx)) } : {}),
+      });
     }
     return null;
   },
@@ -1553,7 +1561,7 @@ export const outwardAllowed = internalQuery({
     const turn = await ctx.db.get(args.turnId);
     if (!turn || turn.outsideAt === undefined) return true;
     const steers = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id).eq("status", "applied")).collect();
-    return steers.some((steer) => !isInteractiveInput(steer.prompt) && (steer.appliedAt ?? 0) > turn.outsideAt!);
+    return steers.some((steer) => !steer.hidden && steer.outsideAt === undefined && !isInteractiveInput(steer.prompt) && (steer.appliedAt ?? 0) > turn.outsideAt!);
   },
 });
 
