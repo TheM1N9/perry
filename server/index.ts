@@ -255,6 +255,7 @@ export async function startBackend() {
     .then(() => runtime.runAction("library:sync", {}, { internal: true }))
     .catch((error) => console.error(`[perry] could not bring the Library up to date: ${String(error)}`));
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
+  await runtime.runMutation("tasks:resumeHandoffs", {}, { internal: true });
   runtime.start();
   // In the background, so years of Brain never hold up the dashboard: its index brought up to date, then the lines
   // without a vector from the model in use (new ones, or all of them after the model changed) embedded.

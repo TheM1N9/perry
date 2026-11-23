@@ -15,6 +15,8 @@ registerHooks({
     if (url === "fixture:browser") return { format: "module", shortCircuit: true, source: `
       export const browserControl=(scope)=>globalThis.__streamFixture.control(scope);
       export const retainBrowserView=(scope)=>globalThis.__streamFixture.retain(scope);
+      export const browserViewport=()=>({width:1280,height:900});
+      export const releaseOwnerInput=async()=>{};
       export const identity=(scope)=>globalThis.__streamFixture.identity(scope);
       export const withBrowserView=async(scope,run)=>{await Promise.resolve();return run();};
       export const hostWatch=(listener)=>globalThis.__streamFixture.watch(listener);

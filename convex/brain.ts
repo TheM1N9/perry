@@ -542,6 +542,7 @@ export const handleTurn = internalAction({
     guestMessage: v.optional(vGuestMessage),
     /** It carries something from outside (an event that started a job: an email, a file): the turn starts as having read it (issue #136). */
     outside: v.optional(v.boolean()),
+    policy: v.optional(v.union(v.literal("steer"), v.literal("queue"))),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -564,7 +565,10 @@ export const handleTurn = internalAction({
       return null;
     }
     // The owner wrote: what Perry sent them on its own is not being ignored (notify.ts).
-    if (!guest && !conversation.jobId && !conversation.taskId && !args.hidden) await ctx.runMutation(internal.installation.ownerWrote, {});
+    if (!guest && !conversation.jobId && !conversation.taskId && !args.hidden) {
+      await ctx.runMutation(internal.installation.ownerWrote, {});
+      await ctx.runMutation(internal.tasks.resumeHandoffs, { conversationId: conversation._id });
+    }
     const telegramToken = channel === "telegram"
       ? await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" })
       : null;
@@ -707,7 +711,7 @@ export const handleTurn = internalAction({
           ...(guest ? { guest: true } : {}),
           ...(guest && args.guestMessage ? { guestMessage: args.guestMessage } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
-          policy: conversation.jobId || conversation.taskId || args.outside ? "queue" : "steer",
+          policy: args.policy ?? (conversation.jobId || conversation.taskId || args.outside ? "queue" : "steer"),
           ...(args.outside ? { outside: true } : {}),
         });
         delegated = true;

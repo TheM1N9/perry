@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalQuery, type QueryCtx } from "./_generated/server";
+import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 /**
  * Where the assistant speaks. One rule, as messaging-native assistants have it
@@ -59,6 +60,24 @@ export const target = internalQuery({
   handler: async (ctx, args): Promise<Target | null> => await targetOf(ctx, args.conversationId),
 });
 
+/** Resolve an agent chat for a hidden report; this does not send anything to the owner. */
+export async function reportingChat(ctx: MutationCtx, origin?: Id<"conversations">): Promise<Doc<"conversations">> {
+  const target = await targetOf(ctx, origin);
+  const channel = target?.channel ?? "web";
+  let chat = target?.conversationId ? await ctx.db.get(target.conversationId) : null;
+  if (!chat) {
+    const externalId = target && target.channel !== "web" ? target.externalId : "dashboard";
+    chat = await ctx.db.query("conversations").withIndex("by_channel_external", q => q.eq("channel", channel).eq("externalId", externalId)).unique();
+    if (!chat) {
+      const threadId: string = await ctx.runMutation(internal.agentStore.createThread, {});
+      const id: Id<"conversations"> = await ctx.runMutation(internal.conversations.create, { channel, externalId, threadId, title: "Perry" });
+      chat = await ctx.db.get(id);
+    }
+  }
+  if (!chat || chat.contactId || chat.jobId || chat.taskId) throw new Error("Report destination is unavailable.");
+  return chat;
+}
+
 const PHONE_STYLE = "Write for a phone: short paragraphs, a line starting with • for each point, no tables or headings, links bare on their own line.";
 
 /**
@@ -82,7 +101,7 @@ export const describe = internalQuery({
     const handoff = `${linked.length ? `The owner has linked ${linked.join(" and ")}.` : "The owner has not linked a messaging app."} When they explicitly ask to send something to themselves or continue in another app, use send_to_owner with that channel, the message and a short summary of the relevant conversation. You already know their paired destinations; do not ask for a number or look them up as a contact. The message and context will be available when they reply there. An unpaired app must be connected in Settings; never substitute a different app.`;
     const elsewhere = "Memory and USER.md are the same on every channel; each conversation keeps its own history, and search_chats and read_chat reach the others.";
     if (chat.taskId) {
-      return `## Where you are\n\nThis is the chat of a background task you are working on by yourself; the owner is not reading along. Report through the task tools (set_plan, finish_task): only what you finish with reaches them, where they asked for the task; a reply alone reaches no one. ${elsewhere}`;
+      return `## Where you are\n\nThis is the chat of a background task you are working on by yourself; the owner is not reading along. Keep its plan current with set_plan. Your final reply returns to the parent Perry agent as its result, rather than being sent to the owner. Use finish_task for a blocked question or failure. The parent handles the result and writes any owner-facing reply. ${elsewhere}`;
     }
     if (chat.jobId) {
       const to = await targetOf(ctx, chat._id);
