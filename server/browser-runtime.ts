@@ -2,15 +2,21 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Browser, BrowserTag, detectBrowserPlatform, getInstalledBrowsers, install, resolveBuildId } from "@puppeteer/browsers";
 import { HOME } from "../runner/home";
+import { findBrowser } from "../convex/lib/browser";
 
 const cacheDir = join(HOME, "browser", "runtime");
 let installing: Promise<string> | undefined;
-/** Dedicated engine and profile: never falls back to an owner's personal browser. */
+export function nativeBrowserAvailable() {
+  return process.platform === "win32" || process.platform === "darwin" || Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+}
+/** Prefer an installed engine. launch() always supplies Perry's separate chat profile. */
 export async function browserExecutable() {
   if (process.env.PERRY_BROWSER_PATH) {
     if (!existsSync(process.env.PERRY_BROWSER_PATH)) throw new Error("The browser engine is unavailable. Check PERRY_BROWSER_PATH.");
     return process.env.PERRY_BROWSER_PATH;
   }
+  const native = findBrowser();
+  if (native) return native;
   installing ??= (async () => {
     const installed = (await getInstalledBrowsers({ cacheDir })).filter(item => item.browser === Browser.CHROME && existsSync(item.executablePath)).sort((a, b) => b.buildId.localeCompare(a.buildId, undefined, { numeric: true }));
     mkdirSync(cacheDir, { recursive: true, mode: 0o700 });

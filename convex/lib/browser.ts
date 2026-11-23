@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { HOME, PATHS } from "../../runner/home";
 import { homedir } from "node:os";
+import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
 /**
@@ -32,6 +33,9 @@ type Control = {
   upload: number | null; downloads: Map<string, { id: string; name: string; state: string }>;
   connections: Map<string, Tab>;
   source: "perry" | "chrome"; ownedTargets: Set<string>;
+  viewport?: { width: number; height: number };
+  nativeWindow?: boolean;
+  ownerPointer?: { tabId: string; x: number; y: number; buttons: number };
 };
 type Lease = { control: Control; controller: "agent" | "owner" | "viewer"; revision: number; epoch: number; started: boolean; signal?: AbortSignal };
 const states = (globalThis as typeof globalThis & { __perryBrowsers?: Map<string, Control>; __perryBrowserContext?: AsyncLocalStorage<Lease> });
@@ -197,19 +201,27 @@ async function launch(): Promise<Tab> {
     rmSync(join(profile, "DevToolsActivePort"), { force: true });
     let extensions: string[] = [];
     try { extensions = z.array(z.string().regex(/^Default\/PerryExtensions\/[a-p]{32}\/[\d._]+$/)).parse(JSON.parse(readFileSync(join(profile, "perry-extensions.json"), "utf8"))).map(path => join(profile, path)); } catch {}
+    // Let the OS choose an available port before launching regular Chrome.
+    const port = await new Promise<number>((resolve, reject) => {
+      const probe = createServer().once("error", reject).listen(0, "127.0.0.1", () => {
+        const address = probe.address();
+        if (!address || typeof address === "string") { probe.close(); reject(new Error("The browser port is unavailable.")); return; }
+        probe.close(error => error ? reject(error) : resolve(address.port));
+      });
+    });
+    ensureCurrent();
     child = spawn(/*turbopackIgnore: true*/ path, [
-      `--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check",
-      "--window-size=1280,900", ...(extensions.length ? [`--load-extension=${extensions.join(",")}`] : []), ...(process.env.PERRY_BROWSER_HEADED === "1" ? [] : ["--headless=new"]), "about:blank",
+      `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "--no-first-run", "--no-default-browser-check",
+      "--window-size=1280,900", ...(extensions.length ? [`--load-extension=${extensions.join(",")}`] : []), ...((state.nativeWindow ?? process.env.PERRY_BROWSER_HEADED === "1") ? [] : ["--headless=new"]), "about:blank",
     ], { stdio: "ignore", windowsHide: true });
     child.on("error", () => {});
-    let port = 0;
-    for (let i = 0; i < 100 && !port; i++) {
+    let targets: Array<{ id: string; type: string; webSocketDebuggerUrl: string }> = [];
+    for (let i = 0; i < 100 && !targets.some(target => target.type === "page"); i++) {
       await new Promise((resolve) => setTimeout(resolve, 150));
       ensureCurrent();
-      try { port = Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split(/\r?\n/)[0]); } catch {}
+      try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(500) })).json() as typeof targets; } catch {}
+      if (child.exitCode !== null) throw new Error("Perry's browser did not start.");
     }
-    if (!port) { child.kill(); throw new Error("Perry's browser did not start."); }
-    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ id: string; type: string; webSocketDebuggerUrl: string }>;
     const page = targets.find((target) => target.type === "page");
     if (!page) { child.kill(); throw new Error("Perry's browser opened no tab."); }
     ensureCurrent();
@@ -270,7 +282,19 @@ async function launch(): Promise<Tab> {
 
 async function prepareTab(tab: Tab, state: Control) {
   tab.listeners.add((method, params) => {
+    if (method === "Runtime.bindingCalled" && params.name === "__perryVisibleTab" && state.nativeWindow && state.current !== tab) {
+      void withBrowserView(state.scope, async () => {
+        if (state.connections.get(tab.targetId) !== tab) return;
+        const visible = await evaluate<boolean>(tab, 'document.visibilityState === "visible"');
+        if (!visible || state.current === tab) return;
+        if (state.current?.idle) clearTimeout(state.current.idle);
+        state.current = tab;
+        state.controller = "owner"; state.private = true; state.epoch++; state.revision++;
+        saveBrowserControl(state.scope);
+      }).catch(() => {});
+    }
     if (method === "Page.frameNavigated" && !params.frame.parentId && state.current === tab) pageChanged(state);
+    if (method === "Page.navigatedWithinDocument" && state.current === tab) pageChanged(state);
     if (method === "Page.frameStartedLoading" && state.current === tab) state.loading = true;
     if (method === "Page.frameStoppedLoading" && state.current === tab) state.loading = false;
     if (method === "Page.javascriptDialogOpening" && state.current === tab) state.dialog = { type: String(params.type), message: String(params.message).slice(0, 500) };
@@ -278,12 +302,35 @@ async function prepareTab(tab: Tab, state: Control) {
     if (method === "Page.fileChooserOpened") state.upload = Number(params.backendNodeId);
 
   });
-  await send(tab, "Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  if (!(state.nativeWindow ?? process.env.PERRY_BROWSER_HEADED === "1")) await send(tab, "Emulation.setDeviceMetricsOverride", { ...browserViewport(), deviceScaleFactor: 1, mobile: false });
   await send(tab, "Page.enable");
   await send(tab, "Runtime.enable");
+  if (state.nativeWindow) {
+    await send(tab, "Runtime.addBinding", { name: "__perryVisibleTab" });
+    const source = '(() => { const notify = () => { if (document.visibilityState === "visible") window.__perryVisibleTab("visible"); }; document.addEventListener("visibilitychange", notify); notify(); })()';
+    await send(tab, "Page.addScriptToEvaluateOnNewDocument", { source });
+    await send(tab, "Runtime.evaluate", { expression: source });
+  }
   await send(tab, "Page.setInterceptFileChooserDialog", { enabled: true });
 }
 /** Trusted local host helpers. Never exposed as arbitrary CDP or credential tools. */
+export function browserViewport() { return control().viewport ?? { width: 1280, height: 900 }; }
+export async function resizeBrowser(width: number, height: number) {
+  const state = control();
+  await releaseOwnerInput();
+  for (const tab of state.connections.values()) await send(tab, "Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+  state.viewport = { width, height };
+  state.revision++;
+}
+export async function releaseOwnerInput() {
+  const state = control(), pointer = state.ownerPointer;
+  state.ownerPointer = undefined;
+  const tab = pointer && state.connections.get(pointer.tabId);
+  if (!pointer || !tab) return;
+  for (const [button, mask] of [["left", 1], ["right", 2], ["middle", 4]] as const) if (pointer.buttons & mask) {
+    await send(tab, "Input.dispatchMouseEvent", { type: "mouseReleased", x: pointer.x, y: pointer.y, button, buttons: 0, clickCount: 0 });
+  }
+}
 export async function hostCommand(method: string, params: object = {}): Promise<unknown> {
   const current = await tab(), state = control();
   if (state.source === "chrome" && method.startsWith("Target.")) {
@@ -311,7 +358,24 @@ export async function hostTargets() {
     const result = z.object({ targetInfos: z.array(z.object({ targetId: z.string(), type: z.string(), title: z.string(), url: z.string() })) }).parse(await send(control().root!, "Target.getTargets"));
     return result.targetInfos.filter(target => target.type === "page" && control().ownedTargets.has(target.targetId)).map(target => ({ ...target, id: target.targetId, webSocketDebuggerUrl: undefined }));
   }
-  return z.array(z.object({ id: z.string(), type: z.string(), title: z.string(), url: z.string(), webSocketDebuggerUrl: z.string().optional() })).parse(await (await fetch(`http://127.0.0.1:${current.port}/json/list`, { signal: AbortSignal.timeout(3000) })).json()).filter((target) => target.type === "page");
+  const targets = z.array(z.object({ id: z.string(), type: z.string(), title: z.string(), url: z.string(), webSocketDebuggerUrl: z.string().optional() })).parse(await (await fetch(`http://127.0.0.1:${current.port}/json/list`, { signal: AbortSignal.timeout(3000) })).json()).filter((target) => target.type === "page");
+  const state = control();
+  for (const [id, open] of state.connections) {
+    if (targets.some(target => target.id === id)) continue;
+    if (open.idle) clearTimeout(open.idle);
+    open.ws.close();
+    state.connections.delete(id);
+  }
+  // Desktop tabs can be opened and selected outside the dashboard. Observe
+  // their native visibility so the stream and agent follow the owner's tab.
+  if (state.nativeWindow) for (const target of targets) {
+    if (state.connections.has(target.id) || !target.webSocketDebuggerUrl) continue;
+    const open: Tab = Object.assign(await connect(target.webSocketDebuggerUrl), { targetId: target.id, child: current.child, port: current.port, idle: null });
+    state.connections.set(target.id, open);
+    try { await prepareTab(open, state); }
+    catch (error) { open.ws.close(); state.connections.delete(target.id); throw error; }
+  }
+  return targets;
 }
 export async function selectHostTab(id: string) {
   const state = control();
@@ -361,6 +425,7 @@ function send(tab: Session, method: string, params: object = {}, signal = contex
   return new Promise((resolve, reject) => {
     try { checkLease(); signal?.throwIfAborted(); } catch (error) { reject(error); return; }
     const transport = tab.parent ?? tab;
+    if (transport.ws.readyState !== WebSocket.OPEN) { reject(new Error("Perry's browser closed.")); return; }
     const id = ++transport.next;
     const finish = (error?: unknown, value?: unknown) => {
       transport.pending.delete(id);
@@ -388,7 +453,7 @@ async function tab(): Promise<Tab> {
   const current = state.current ?? launched;
   checkLease();
   if (current.idle) clearTimeout(current.idle);
-  current.idle = setTimeout(() => { void withBrowserView(state.scope, async () => closeBrowser()); }, IDLE_MS);
+  if (!state.nativeWindow) current.idle = setTimeout(() => { void withBrowserView(state.scope, async () => closeBrowser()); }, IDLE_MS);
   return current;
 }
 
@@ -402,6 +467,7 @@ export function closeBrowser() {
     send(open, "Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {}),
   ]) : [];
   state.promise = null; state.current = null; state.revision++; state.epoch++;
+  state.ownerPointer = undefined;
   for (const open of state.connections.values()) { if (open.idle) clearTimeout(open.idle); if (state.source !== "chrome") open.ws.close(); }
   state.connections.clear(); state.root = null; state.ownedTargets.clear(); state.source = "perry";
   state.downloads.clear(); state.dialog = null; state.upload = null; state.loading = false;
@@ -682,7 +748,7 @@ const PREVIEWS_KEPT = 300;
  */
 export async function preview(): Promise<string> {
   if (control().private) throw new Error("Agent capture is paused for private browsing.");
-  const shot = await send(await tab(), "Page.captureScreenshot", { format: "jpeg", quality: 60, optimizeForSpeed: true, clip: { x: 0, y: 0, width: 1280, height: 900, scale: 0.5 } }) as { data: string };
+  const shot = await send(await tab(), "Page.captureScreenshot", { format: "jpeg", quality: 60, optimizeForSpeed: true, clip: { x: 0, y: 0, ...browserViewport(), scale: 0.5 } }) as { data: string };
   mkdirSync(PATHS.steps, { recursive: true });
   const path = join(PATHS.steps, `browser-${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 6)}.jpg`);
   writeFileSync(path, Buffer.from(shot.data, "base64"));

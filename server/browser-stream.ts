@@ -12,7 +12,7 @@ type Cast = {
 };
 const casts = ((globalThis as typeof globalThis & { __perryScreencasts?: Map<string, Cast> }).__perryScreencasts ??= new Map());
 const identityKey = (identity: BrowserIdentity | null) => JSON.stringify(identity);
-const widthOf = (cast: Cast) => Math.min(1280, Math.max(320, ...[...cast.watchers].map((watcher) => watcher.width)));
+const widthOf = (cast: Cast) => Math.min(2560, Math.max(320, ...[...cast.watchers].map((watcher) => watcher.width)));
 
 /** Serialize stop/start transitions, coalescing concurrent subscription changes. */
 function follow(scope: string): Promise<void> {
@@ -37,7 +37,11 @@ async function updateCast(scope: string, cast: Cast) {
   cast.tabId = null;
   // Keep the cast registered until its stop completes, so a new viewer joins
   // this lifecycle rather than racing a second cast on the same CDP tab.
-  if (!cast.watchers.size) { casts.delete(scope); return; }
+  if (!cast.watchers.size) {
+    await browser.withBrowserView(scope, browser.releaseOwnerInput).catch(() => {});
+    casts.delete(scope);
+    return;
+  }
   if (!current) return;
   await browser.withBrowserView(scope, async () => {
     if (!cast.watchers.size) { cast.again = true; return; }
@@ -63,8 +67,11 @@ async function updateCast(scope: string, cast: Cast) {
       active = false;
       capture.stop();
       await capture.send("Page.stopScreencast").catch(() => {});
+      await capture.send("Emulation.setFocusEmulationEnabled", { enabled: false }).catch(() => {});
     };
-    await capture.send("Page.startScreencast", { format: "jpeg", quality: 70, maxWidth: width, maxHeight: Math.round(width * 900 / 1280), everyNthFrame: 1 });
+    const viewport = browser.browserViewport();
+    await capture.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+    await capture.send("Page.startScreencast", { format: "jpeg", quality: 80, maxWidth: width, maxHeight: Math.round(width * viewport.height / viewport.width), everyNthFrame: 1 });
   }).catch(async () => { await cast.stop?.(); cast.stop = null; cast.tabId = null; });
 }
 
