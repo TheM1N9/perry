@@ -149,9 +149,15 @@ export const revokeRunner = internalMutation({
     const id = ctx.db.normalizeId("runners", args.runnerId);
     if (!id) return null;
     await ctx.db.patch(id, { revoked: true });
+    for (const request of await ctx.db.query("machineRequests").withIndex("by_runner", q => q.eq("runnerId", id)).collect()) {
+      if (request.status !== "queued" && request.status !== "running") continue;
+      await ctx.db.patch(request._id, { status: "error", error: "This computer was disconnected. Inspect its workspace before retrying an operation.", updatedAt: Date.now() });
+      if (request.projectId && (await ctx.db.get(request.projectId))?.workspaceRequestId === request._id) await ctx.db.patch(request.projectId, { workspaceRequestId: undefined });
+    }
+    for (const session of await ctx.db.query("terminalSessions").withIndex("by_runner", q => q.eq("runnerId", id)).collect()) if (session.status === "running") await ctx.db.patch(session._id, { status: "exited", updatedAt: Date.now() });
     // Chats that ran on it move to whichever runner is online next.
     for (const chat of await ctx.db.query("conversations").collect()) {
-      if (chat.codexRunnerId === id) await ctx.db.patch(chat._id, { codexRunnerId: undefined });
+      if (chat.codexRunnerId === id) await ctx.db.patch(chat._id, { codexRunnerId: undefined, resume: undefined, codexThreadId: undefined });
     }
     return null;
   },

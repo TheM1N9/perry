@@ -27,7 +27,7 @@ import { enabled as interactiveEnabled } from "./interactive";
 
 export const CODEX_TOOLS: readonly ToolName[] = [
   "brain_search", "brain_read", "brain_write", "brain_append", "brain_pin", "brain_list", "brain_neighbors", "brain_link", "brain_summarize", "brain_lately", "brain_review", "brain_propose", "recall", "remember", "forget",
-  "save_secret", "list_secrets", "use_secret", "update_identity", "review_skill", "install_skill", "search_chats", "read_chat", "read_page", "browser",
+  "save_secret", "list_secrets", "use_secret", "update_identity", "review_skill", "install_skill", "search_chats", "read_chat", "read_chat_attachment", "read_page", "browser",
   "list_connectors", "find_action", "run_action", "internet_read", "internet_search", "internet_status", "internet_scroll",
   "status_report", "start_task", "queue_task", "resume_task", "manage_task_decision", "steer_task", "set_plan", "finish_task", "set_goal", "update_goal",
   "take_initiative", "review_initiative", "review_decision",

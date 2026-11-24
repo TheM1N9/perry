@@ -18,16 +18,26 @@ export async function createThread(ctx: Writer, args: { userId?: string; title?:
 }
 
 /** A fresh engine session's view of the chat so far: its last messages, as lines. */
-export async function historyOf(ctx: Runner, conversation: Pick<Doc<"conversations">, "threadId">): Promise<string | undefined> {
+export function handoffText(messages: Array<{ message?: { role: string }; text?: string }>, chatId?: string): string | undefined {
+  const lines = messages.filter(item => item.message?.role === "user" || item.message?.role === "assistant")
+    .map(item => `${item.message!.role}: ${item.text ?? ""}`);
+  const complete = lines.join("\n\n");
+  if (!complete) return undefined;
+  if (complete.length <= 96_000) return complete;
+  const opening = lines.slice(0, 8).map(line => line.slice(0, 3000)).join("\n\n");
+  const tail = lines.slice(8).join("\n\n").slice(-64_000);
+  return `${opening}\n\n[Context handoff shortened. Earlier requirements above are retained. Full messages and attachment references remain available through read_chat with chatId ${chatId ?? "this chat"}; use its cursor to read older pages. Read the original record before relying on omitted details.]\n\n${tail}`;
+}
+
+export async function historyOf(ctx: Runner, conversation: Pick<Doc<"conversations">, "threadId"> & { _id?: string }): Promise<string | undefined> {
   const page = await listMessages(ctx, {
     threadId: conversation.threadId,
     excludeToolMessages: true,
-    paginationOpts: { cursor: null, numItems: 60 },
+    paginationOpts: { cursor: null, numItems: 150 },
   });
-  const lines = page.page.reverse()
-    .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
-    .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
-  return lines.join("\n\n").slice(-24_000) || undefined;
+  if (page.isDone) return handoffText(page.page.reverse(), conversation._id);
+  const first = await ctx.runQuery(internal.agentStore.firstMessages, { threadId: conversation.threadId });
+  return handoffText([...first, { message: { role: "assistant" }, text: `[Older messages available using read_chat, chatId ${conversation._id}, cursor ${page.continueCursor}.]` }, ...page.page.reverse()], conversation._id);
 }
 
 export async function listMessages(

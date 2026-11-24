@@ -23,6 +23,10 @@ import { FilesSurface } from "./files";
 import { usePanelState, type PanelState, type SurfaceId } from "./store";
 import { WorkSurface } from "./work";
 import { AgentsSurface } from "../agents";
+import { TerminalIcon, GitBranchIcon, SmartphoneIcon } from "lucide-react";
+import { TerminalSurface } from "./terminal";
+import { GitSurface } from "./git";
+import { DevicesSurface } from "./devices";
 
 /**
  * The panel beside a chat, after T3 Code's right panel (RightPanelTabs.tsx, PreviewPanelShell.tsx): tabs of
@@ -49,6 +53,9 @@ const SURFACE_LIST: Surface[] = [
   { id: "browser", label: "Browser", letter: "B", icon: GlobeIcon },
   { id: "agents", label: "Agents", letter: "A", icon: BotIcon },
   { id: "work", label: "Work", letter: "W", icon: ListChecksIcon },
+  { id: "terminal", label: "Terminal", letter: "T", icon: TerminalIcon },
+  { id: "git", label: "Git review", letter: "G", icon: GitBranchIcon },
+  { id: "devices", label: "Devices", letter: "V", icon: SmartphoneIcon },
 ];
 const SURFACE = Object.fromEntries(SURFACE_LIST.map((surface) => [surface.id, surface])) as Record<SurfaceId, Surface>;
 
@@ -133,6 +140,9 @@ export function ChatPanel({ panel, conversationId, project, details }: {
     browser: conversationId ? null : unstarted,
     agents: conversationId ? null : unstarted,
     work: conversationId ? null : unstarted,
+    terminal: conversationId ? null : unstarted,
+    git: conversationId ? null : unstarted,
+    devices: conversationId ? null : unstarted,
   };
 
   // The panel's own keys (Settings → Keyboard shortcuts): show or hide it, and pick a surface for it.
@@ -352,6 +362,9 @@ function PanelBody({ panel, mode, reasons, conversationId, project, details, wid
     : active === "details" ? <Details details={details} />
     : active === "files" ? <FilesSurface conversationId={conversationId} project={project} scope={state.scope} onScope={panel.setScope} />
     : active === "agents" && conversationId ? <AgentsSurface conversationId={conversationId} />
+    : active === "terminal" && conversationId ? <TerminalSurface key={conversationId} conversationId={conversationId} project={project} />
+    : active === "git" && conversationId ? <GitSurface key={conversationId} conversationId={conversationId} project={project} />
+    : active === "devices" && conversationId ? <DevicesSurface key={conversationId} conversationId={conversationId} />
     : active === "work" && conversationId ? <WorkSurface conversationId={conversationId} project={project} scope={state.scope} onScope={panel.setScope} onOpenFiles={reasons.files ? undefined : () => panel.openSurface("files")} />
     // Mounted only while its tab is shown: hidden, the live view stops and nothing streams.
     : active === "browser" && conversationId ? <div className="flex min-h-0 flex-1 flex-col" data-surface="browser"><BrowserPanel key={conversationId} conversationId={conversationId} onClose={() => panel.closeSurface("browser")} /></div>

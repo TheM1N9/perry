@@ -1,4 +1,5 @@
 import { deliverTurnInOrder } from "./lib/turn-delivery";
+import { ArgumentError } from "../server/validate";
 import { REACTION_ONLY } from "./reactions";
 import { deleteStream, snapshotStream, streamBody, streamState } from "./lib/turn-stream";
 import { turnErrorCode, turnErrorDetail, turnErrorText } from "../lib/turn-errors";
@@ -8,7 +9,7 @@ import { TAKE_LONGER_MAX_MIN } from "./lib/turnLimits";
 import { settleRunSpans } from "./lib/settle-traces";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { createThread, saveMessages } from "./lib/agent";
+import { createThread, saveMessages, handoffText, historyOf } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
 import { COMPACTED, runLabel, type Access } from "./lib/commands";
 import { ENGINE_LABELS, ENGINES, NO_ENGINE, refusal, type EngineKind } from "./lib/engines";
@@ -113,15 +114,24 @@ export const updateAuth = mutation({
  * only to a runner that can lock its engine down for it.
  */
 export async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<Id<"runners"> | null> {
+  const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
+  const projectRunner = project?.workspace?.runnerId ?? project?.runnerId;
+  if (projectRunner) {
+    const runner = await ctx.db.get(projectRunner);
+    if (!runner || !isOnline(runner) || !engineUsable(runner, engine)) return null;
+    if (conversation.codexRunnerId !== runner._id) await ctx.db.patch(conversation._id, { codexRunnerId: runner._id, resume: undefined, codexThreadId: undefined });
+    return runner._id;
+  }
   const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
   const online = (item: Doc<"runners">) => isOnline(item) && engineUsable(item, engine) && (!conversation.contactId || engineLockable(item, engine));
-  if (pinned && online(pinned)) return pinned._id;
+  if (pinned && online(pinned)) { if (project) await ctx.db.patch(project._id, { runnerId: pinned._id }); return pinned._id; }
   const sameComputer = (item: Doc<"runners">) => !!pinned?.hostname && item.hostname === pinned.hostname && item.platform === pinned.platform;
   const runner = (await ctx.db.query("runners").order("desc").take(20))
     .filter((item) => online(item) && (!conversation.codexRunnerId || sameComputer(item)))
     .sort((a, b) => (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0))[0];
   if (!runner) return null;
   await ctx.db.patch(conversation._id, { codexRunnerId: runner._id });
+  if (project) await ctx.db.patch(project._id, { runnerId: runner._id });
   return runner._id;
 }
 
@@ -143,6 +153,7 @@ export const prepareTurn = internalMutation({
   handler: async (ctx, args): Promise<Id<"codexTurns">> => {
     const chat = await ctx.db.get(args.conversationId);
     if (!chat) throw new Error("This chat was deleted.");
+    if (chat.projectId && (await ctx.db.get(chat.projectId))?.workspaceRequestId) throw new ArgumentError("Wait for this project's workspace to finish moving.");
     const engine = await engineFor(ctx, chat);
     const running = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", chat._id).eq("status", "running")).first();
     const queued = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", chat._id).eq("status", "queued")).collect();
@@ -374,10 +385,15 @@ export const queuedTurns = query({
     const runner = await authenticate(ctx, args.token);
     // Paused, the runner is given nothing to start.
     if (await pausedAt(ctx)) return [];
-    return (await ctx.db.query("codexTurns")
+    const queued = await ctx.db.query("codexTurns")
       .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "queued"))
       .filter(q => q.eq(q.field("waiting"), undefined))
-      .order("asc").take(20)).sort(byQueuePosition);
+      .order("asc").take(20);
+    const available = await Promise.all(queued.map(async turn => {
+      const chat = await ctx.db.get(turn.conversationId);
+      return chat?.projectId && (await ctx.db.get(chat.projectId))?.workspaceRequestId ? null : turn;
+    }));
+    return available.filter(turn => turn !== null).sort(byQueuePosition);
   },
 });
 
@@ -559,6 +575,23 @@ export const runningTurns = query({
   },
 });
 
+export const sessionHistory = query({
+  args: { token: v.string(), id: v.id("codexTurns") },
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token), turn = await ctx.db.get(args.id);
+    if (!turn || turn.runnerId !== runner._id || turn.status !== "running") throw new Error("This session is unavailable.");
+    const chat = await ctx.db.get(turn.conversationId);
+    const threadId = chat ? ctx.db.normalizeId("agentThreads", chat.threadId) : null;
+    if (!chat || !threadId) return null;
+    const first = await ctx.db.query("agentMessages").withIndex("by_thread_order", q => q.eq("threadId", threadId)).order("asc").take(8);
+    const recent = await ctx.db.query("agentMessages").withIndex("by_thread_order", q => q.eq("threadId", threadId)).order("desc").take(150);
+    const seen = new Set(first.map(message => message._id));
+    const older = recent.length === 150 && first.some(message => !recent.some(item => item._id === message._id))
+      ? [{ message: { role: "assistant" }, text: `[Messages between the opening and recent history are available through read_chat, chatId ${chat._id}, cursor ${recent.at(-1)!.order}.]` }] : [];
+    return handoffText([...first, ...older, ...recent.reverse().filter(message => !seen.has(message._id))], chat._id) ?? null;
+  },
+});
+
 export const claimTurn = mutation({
   args: { token: v.string(), id: v.id("codexTurns") },
   handler: async (ctx, args) => {
@@ -570,6 +603,10 @@ export const claimTurn = mutation({
     if (await pausedAt(ctx)) return null;
     const conversation = await ctx.db.get(job.conversationId);
     if (!conversation) return null;
+    const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
+    if (project?.workspaceRequestId) return null;
+    const projectRunner = project?.workspace?.runnerId ?? project?.runnerId;
+    if (projectRunner && projectRunner !== runner._id) return null;
     const running = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", job.conversationId).eq("status", "running"))
       .first();
@@ -590,6 +627,8 @@ export const claimTurn = mutation({
     }
     return {
       ...job,
+      ...(conversation.projectId ? { projectId: conversation.projectId, cwd: project?.workspace?.path } : {}),
+      history: job.history ?? (resumeCursor ? undefined : await historyOf(ctx, conversation)),
       ...(job.resetResumes ? { prompt: `Continue the previous request after the usage reset. Use the recorded progress and do not repeat completed actions.\n\nOriginal owner request:\n${job.prompt}` } : {}),
       engine,
       // Older runners already honor guest lockdown; keep native tools disabled even before they understand preparation.
@@ -983,10 +1022,12 @@ export const finishTurn = mutation({
       const local = item.localPath && ABSOLUTE_PATH.test(item.localPath) ? item.localPath : undefined;
       if (!stored && !local) continue;
       mediaKey = `codex-${job._id}`;
-      // A shared file uploaded for Telegram gains its copy; the chat keeps serving it from the machine.
+      // The stored copy is reachable even when the runner is on another computer.
       const row = stored && local ? shared.find((existing) => existing.localPath === local && !existing.storageId) : undefined;
       if (row) {
-        await ctx.db.patch(row._id, { storageId: item.storageId, size: stored!.size });
+        await ctx.db.patch(row._id, { storageId: item.storageId, localPath: undefined, size: stored!.size });
+        for (const entry of await ctx.db.query("library").withIndex("by_path", q => q.eq("localPath", local!)).collect()) await ctx.db.patch(entry._id, { storageId: item.storageId, localPath: undefined, size: stored!.size });
+        await indexInLibrary(ctx, row._id);
         continue;
       }
       // What the turn made (a generated image), in the Library as Perry's (library.ts).

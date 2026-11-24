@@ -300,6 +300,7 @@ export type TurnInput = {
   prompt: string;
   attachments: EngineAttachment[];
   cwd: string;
+  projectId?: string;
   /** One of the engine's models. Unset leaves the engine's own. */
   model?: string;
   /** A reasoning effort the model takes. Unset leaves the session's own. */
@@ -319,6 +320,8 @@ export type TurnInput = {
 };
 
 export type TurnSink = {
+  onHistory?(): Promise<string | undefined>;
+  onQuestions?(nativeId: string, questions: Array<{ id: string; header: string; question: string; options: Array<{ label: string; description: string }>; multiple?: boolean }>): Promise<Record<string, string[]> | null>;
   /**
    * A new session started for the chat; its next turns resume it. Called
    * before the turn runs. `replaces` is the chat's session it takes over from,

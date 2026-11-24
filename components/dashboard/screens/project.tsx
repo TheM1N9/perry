@@ -64,6 +64,10 @@ export function ProjectScreen() {
       <Section title="Instructions" tip="Every chat in the project follows them, from your next message.">
         <Instructions key={project.id} project={project} />
       </Section>
+      <Section title="Workspace">
+        <p className="text-sm text-muted-foreground">{project.workspace ? `${project.workspace.mode === "worktree" ? "Git worktree" : "Folder"}: ${project.workspace.path}${project.workspace.branch ? ` · ${project.workspace.branch}` : ""}` : "Chats in this project share an isolated folder on their computer."}</p>
+        <p className="mt-2 text-sm text-muted-foreground">Open Terminal or Git in a project chat to choose a computer, folder, or new Git worktree.</p>
+      </Section>
       <Section title="Brain" tip="What Perry remembers here and the pages you keep here. Only this project's chats see them, except its Journey, which all your chats can read." actions={<NewPage project={project} />}>
         <ProjectBrain project={project} />
       </Section>

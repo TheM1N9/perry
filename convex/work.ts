@@ -112,6 +112,7 @@ export const updateTask = internalMutation({
       if (value !== undefined) patch[key] = value;
     }
     await ctx.db.patch(id, patch);
+    if (rest.status === "done" || rest.status === "failed") await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
     if (rest.status === "cancelled") {
       await ctx.db.patch(id, { waiting: undefined });
       if (task.conversationId && await ctx.db.get(task.conversationId)) {
@@ -478,6 +479,8 @@ export const snapshot = internalQuery({
         title: t.title,
         status: t.status,
         goalId: t.goalId,
+        projectId: t.projectId,
+        dependsOn: t.dependsOn,
         initiative: t.initiative,
         plan: t.plan,
         ownerUpdates: (t.steering ?? []).map((update) => ({ text: update.text, createdAt: update.createdAt })),

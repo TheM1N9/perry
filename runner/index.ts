@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { turnErrorCode, type TurnErrorCode } from "../lib/turn-errors";
+import { MachineHost, projectDirectory } from "./machine-host";
 import { createSteerDelivery, steerRunningTurn, type SteerDelivery } from "./task-steering";
 import { createReplyStream, streamFlushMs } from "./stream-reply";
 /**
@@ -232,6 +233,9 @@ async function main() {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
   const client = new BackendClient(url);
+  const machineHost = new MachineHost(client, token, workdir);
+  await machineHost.start();
+  process.on("exit", () => machineHost.stop());
 
   // Available to startup and regular check-ins; the Active type is declared below.
   const active = new Map<string, Active>();
@@ -266,20 +270,29 @@ async function main() {
    * throws and takes the whole runner down; so a failure is logged and the
    * query subscribed to again shortly.
    */
+  const subscriptions = new Set<() => void>();
+  let subscriptionsStopped = false;
   const watch = <Query extends FunctionReference<"query">>(
     query: Query,
     args: FunctionArgs<Query>,
     onResult: (result: FunctionReturnType<Query>) => void,
   ) => {
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let unsubscribe: (() => void) | undefined;
     const subscribe = () => {
-      const unsubscribe = client.onUpdate(query, args, onResult, (error) => {
+      if (subscriptionsStopped) return;
+      unsubscribe = client.onUpdate(query, args, onResult, (error) => {
         console.error(red(`  ${getFunctionName(query)} failed: ${message(error)}; trying again shortly.`));
-        unsubscribe();
-        setTimeout(subscribe, 5_000);
+        unsubscribe?.();
+        if (/runner token is not valid/i.test(message(error))) machineHost.stop();
+        if (!subscriptionsStopped) retry = setTimeout(subscribe, 5_000);
       });
     };
+    subscriptions.add(() => { clearTimeout(retry); unsubscribe?.(); });
     subscribe();
   };
+
+  watch(api.machines.queued, { token }, requests => machineHost.accept(requests));
 
   // Without a terminal, stdin may already be closed and would read as "no"; ask only the dashboard then.
   const terminal = process.stdin.isTTY ? rl : null;
@@ -771,39 +784,28 @@ async function main() {
   // web chats serve them from there. Telegram needs the bytes, so for a
   // Telegram chat both are uploaded to Convex too. Past Telegram's 50 MB the
   // chat gets a download link instead, so the upload stops somewhere sensible.
-  // The web and WhatsApp read generated files from this machine; Telegram needs them uploaded.
+  // Keep a backend copy so files remain reachable from other computers.
   const keepMedia = async (turnId: Id<"codexTurns">, channel: "web" | "telegram" | "whatsapp", images: GeneratedImage[] = []) => {
     const media: NonNullable<TurnRecord["media"]> = [];
     for (const image of images) {
       try {
-        if (channel !== "telegram") {
-          let localPath = image.path;
-          if (!localPath) {
-            localPath = join(PATHS.files, "generated", `${randomUUID()}.png`);
-            await mkdir(dirname(localPath), { recursive: true });
-            await writeFile(localPath, Buffer.from(image.base64 ?? "", "base64"), { flag: "wx" });
-          }
-          media.push({ localPath, fileName: `${image.id}.png`, contentType: "image/png" });
-          continue;
-        }
         const bytes = image.path ? await readFile(image.path) : Buffer.from(image.base64 ?? "", "base64");
         media.push({ storageId: await upload(turnId, bytes, "image/png"), fileName: `${image.id}.png`, contentType: "image/png" });
       } catch (error) {
         console.error(red(`  Could not keep a generated image: ${message(error)}`));
       }
     }
-    if (channel !== "telegram") return media;
     const shared = await client.query(api.codex.sharedFiles, { token, id: turnId }).catch(() => []);
     for (const file of shared) {
       try {
         if ((await stat(file.localPath)).size > SHARED_UPLOAD_LIMIT) {
-          console.log(dim(`  ${file.fileName} is too big to send to Telegram; it stays here`));
+          console.log(dim(`  ${file.fileName} exceeds the shared-file upload limit; it stays on this computer`));
           continue;
         }
         const storageId = await upload(turnId, await readFile(file.localPath), file.contentType);
         media.push({ storageId, localPath: file.localPath, fileName: file.fileName, contentType: file.contentType });
       } catch (error) {
-        console.error(red(`  Could not upload ${file.fileName} for Telegram: ${message(error)}`));
+        console.error(red(`  Could not keep a backend copy of ${file.fileName}: ${message(error)}`));
       }
     }
     return media;
@@ -812,18 +814,29 @@ async function main() {
   // Attachments stored in the cloud (a Telegram photo, say) are fetched into the
   // uploads folder first, so the engine reads every attachment from this disk.
   const localise = async (attachments: NonNullable<Doc<"codexTurns">["attachments"]> = []) => Promise.all(attachments.map(async (attachment) => {
-    if (attachment.localPath || !attachment.url) return attachment;
+    if (!attachment.url) return attachment;
     try {
-      const response = await fetch(client.resolve(attachment.url));
+      const response = await fetch(client.resolve(attachment.url), { signal: AbortSignal.timeout(90_000), ...(attachment.url.startsWith("/api/runner/files/") ? { headers: { authorization: `Bearer ${token}` } } : {}) });
       if (!response.ok) throw new Error(`download failed (${response.status})`);
+      if (Number(response.headers.get("content-length")) > 64 * 1024 ** 2) throw new Error("Attachment exceeds 64 MB.");
+      if (!response.body) throw new Error("Attachment was empty.");
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = []; let size = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read(); if (done) break;
+          size += value.length;
+          if (size > 64 * 1024 ** 2) throw new Error("Attachment exceeds 64 MB.");
+          chunks.push(value);
+        }
+      } finally { await reader.cancel(); }
       const extension = extname(attachment.fileName).toLowerCase().replace(/[^.a-z0-9]/g, "");
       const localPath = join(PATHS.uploads, `${randomUUID()}${extension}`);
       await mkdir(PATHS.uploads, { recursive: true });
-      await writeFile(localPath, Buffer.from(await response.arrayBuffer()));
+      await writeFile(localPath, Buffer.concat(chunks));
       return { ...attachment, localPath };
     } catch (error) {
-      console.error(red(`  Could not fetch ${attachment.fileName}: ${message(error)}`));
-      return attachment;
+      throw new Error(`Could not fetch ${attachment.fileName}: ${message(error)}`);
     }
   }));
 
@@ -1068,6 +1081,7 @@ ${text}` } : asked;
         } else {
           const files = await prepared(job.attachments, job.guest || job.preparation);
           const sink: TurnSink = {
+            onHistory: async () => (await client.query(api.codex.sessionHistory, { token, id: job._id })) ?? undefined,
             onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
             onAgents: (agents) => {
               void client.mutation(api.codex.agentProgress, { token, id: job._id, agents })
@@ -1101,12 +1115,26 @@ ${text}` } : asked;
               turn.asking += 1;
               return answer(request, job.conversationId, kind).finally(() => { turn.asking -= 1; dog?.active(); });
             },
+            onQuestions: async (nativeId, questions) => {
+              turn.asking += 1;
+              try {
+                const id = await client.mutation(api.questions.request, { token, turnId: job._id, nativeId, questions });
+                while (!stopRequested.has(job._id)) {
+                  const response = await client.query(api.questions.response, { token, id });
+                  if (response.cancelled) return null;
+                  if (response.answers) return response.answers;
+                  await new Promise(done => setTimeout(done, 500));
+                }
+                return null;
+              } finally { turn.asking -= 1; dog?.active(); }
+            },
           };
           dog = watchdog(engine, { idleMs: TURN_IDLE_MS, maxMs: TURN_TIMEOUT_MS }, () => turn.handle, {
             patient: () => patience[job._id] ?? 0,
             waiting: () => turn.asking > 0,
             end: () => endTurn(job._id),
           });
+          if (job.projectId && !job.cwd) await mkdir(projectDirectory(job.projectId), { recursive: true });
           const outcome: TurnResult = await unlessGivenUp(engine.runTurn({
             resumeCursor: job.resumeCursor,
             instructions: job.instructions,
@@ -1115,7 +1143,8 @@ ${text}` } : asked;
             recalled: job.guest && job.recalled ? defuse(job.recalled) : job.recalled,
             ...withText(withSkills(engine, job.prompt, job.guest || job.preparation), files.text),
             attachments: files.attachments,
-            cwd: job.guest || job.preparation ? guestDir() : workdir,
+            cwd: job.guest || job.preparation ? guestDir() : job.cwd ?? (job.projectId ? projectDirectory(job.projectId) : workdir),
+            ...(job.projectId ? { projectId: job.projectId } : {}),
             model: job.requestedModel,
             effort: job.requestedEffort,
             access: job.access ?? "supervised",
@@ -1411,6 +1440,10 @@ ${text}` } : asked;
   const meetingPoll = setInterval(() => { void writeMeetings(); }, 60_000);
 
   const stop = async () => {
+    subscriptionsStopped = true;
+    for (const unsubscribe of subscriptions) unsubscribe();
+    subscriptions.clear();
+    machineHost.stop();
     clearInterval(heartbeat);
     clearInterval(meetingPoll);
     clearInterval(meetingLease);

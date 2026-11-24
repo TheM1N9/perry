@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { BrowserIdentity } from "../../lib/browser-protocol";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME, PATHS } from "../../runner/home";
 import { homedir } from "node:os";
@@ -38,9 +38,11 @@ type Control = {
   ownerPointer?: { tabId: string; x: number; y: number; buttons: number };
 };
 type Lease = { control: Control; controller: "agent" | "owner" | "viewer"; revision: number; epoch: number; started: boolean; signal?: AbortSignal };
-const states = (globalThis as typeof globalThis & { __perryBrowsers?: Map<string, Control>; __perryBrowserContext?: AsyncLocalStorage<Lease> });
+const states = (globalThis as typeof globalThis & { __perryBrowsers?: Map<string, Control>; __perryBrowserContext?: AsyncLocalStorage<Lease>; __perryBrowserProfileTransfers?: Set<string>; __perryBrowserClosingProfiles?: Set<string> });
 const context = states.__perryBrowserContext ??= new AsyncLocalStorage<Lease>();
 states.__perryBrowsers ??= new Map();
+const profileTransfers = states.__perryBrowserProfileTransfers ??= new Set<string>();
+const closingProfiles = states.__perryBrowserClosingProfiles ??= new Set<string>();
 function control(scope = context.getStore()?.control.scope ?? "public-reader"): Control {
   const lease = context.getStore();
   if (lease?.control.scope === scope) {
@@ -51,7 +53,7 @@ function control(scope = context.getStore()?.control.scope ?? "public-reader"): 
   if (!found) {
     if (states.__perryBrowsers!.size >= 100) for (const old of states.__perryBrowsers!.values()) retire(old);
     let saved: { controller: "agent" | "owner"; private: boolean; error?: string } = { controller: "agent", private: false };
-    try { saved = z.object({ controller: z.enum(["agent", "owner"]), private: z.boolean(), error: z.string().optional() }).parse(JSON.parse(readFileSync(/*turbopackIgnore: true*/ join(profileDirectory(scope), "perry-control.json"), "utf8"))); } catch {}
+    try { saved = z.object({ controller: z.enum(["agent", "owner"]), private: z.boolean(), error: z.string().optional() }).parse(JSON.parse(readFileSync(/*turbopackIgnore: true*/ join(controlDirectory(scope), "perry-control.json"), "utf8"))); } catch {}
     found = { scope, leases: 0, viewers: 0, ownerBusy: false, sessionApprovalEpoch: -1, id: randomUUID(), revision: 0, epoch: 0, controller: saved.controller, root: null, promise: null, current: null, busy: false, private: saved.private, loading: false, error: saved.error ?? null, dialog: null, upload: null, downloads: new Map(), connections: new Map(), source: "perry", ownedTargets: new Set() };
     states.__perryBrowsers!.set(scope, found);
   }
@@ -73,7 +75,81 @@ export function retainBrowserView(scope: string): () => void {
   let released = false;
   return () => { if (!released) { released = true; state.viewers--; retire(state); } };
 }
-export function profileDirectory(scope: string) { return join(PROFILE, "chats", createHash("sha256").update(scope).digest("hex")); }
+function controlDirectory(scope: string) { return join(PROFILE, "chats", createHash("sha256").update(scope).digest("hex")); }
+export function browserProfileId(scope: string): string {
+  if (scope === "public-reader") return "private";
+  try { return z.string().regex(/^(personal|private|[a-f0-9-]{36})$/).parse(JSON.parse(readFileSync(join(controlDirectory(scope), "profile.json"), "utf8")).id); } catch {}
+  return existsSync(join(controlDirectory(scope), "Default")) ? "private" : "personal";
+}
+function profileLocations(): Record<string, string> {
+  try { return z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)).parse(JSON.parse(readFileSync(join(PROFILE, "profile-locations.json"), "utf8"))); } catch { return {}; }
+}
+export function profileDirectory(scope: string) {
+  const id = browserProfileId(scope), legacy = profileLocations()[id];
+  return id === "private" ? controlDirectory(scope) : legacy ? join(PROFILE, "chats", legacy) : join(PROFILE, "profiles", id);
+}
+const profileNames = () => {
+  try { return z.record(z.string(), z.string().max(80)).parse(JSON.parse(readFileSync(join(PROFILE, "profile-names.json"), "utf8"))); } catch { return {}; }
+};
+export function browserProfiles(scope: string) {
+  const names = { personal: "Personal", ...profileNames() };
+  const promoted = Object.values(profileLocations()).includes(createHash("sha256").update(scope).digest("hex"));
+  return [...(promoted ? [] : [{ id: "private", name: "This chat only", inUse: false }]), ...Object.entries(names).filter(([id]) => /^(personal|[a-f0-9-]{36})$/.test(id)).map(([id, name]) => ({ id, name, inUse: [...states.__perryBrowsers!.values()].some(state => state.scope !== scope && browserProfileId(state.scope) === id && Boolean(state.promise || state.current)) }))];
+}
+export function createBrowserProfile(name: string) {
+  const names = profileNames();
+  if (!name.trim() || name.length > 80 || Object.keys(names).length >= 20) throw new Error("This profile needs a name; up to 20 profiles can be saved.");
+  const id = randomUUID(); names[id] = name.trim();
+  mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
+  const temp = join(PROFILE, "profile-names.json.tmp");
+  writeFileSync(temp, JSON.stringify(names), { mode: 0o600 });
+  renameSync(temp, join(PROFILE, "profile-names.json"));
+  return id;
+}
+export async function saveBrowserProfile(scope: string, name: string) {
+  const id = createBrowserProfile(name);
+  if (browserProfileId(scope) === "private") {
+    await useBrowserProfile(scope, "private", false);
+    // Chrome's OS-backed cookie encryption can bind a legacy profile to its path.
+    const locations = profileLocations(); locations[id] = createHash("sha256").update(scope).digest("hex");
+    const temp = join(PROFILE, "profile-locations.json.tmp");
+    writeFileSync(temp, JSON.stringify(locations), { mode: 0o600 });
+    renameSync(temp, join(PROFILE, "profile-locations.json"));
+    await useBrowserProfile(scope, id, false);
+  }
+  return id;
+}
+export async function useBrowserProfile(scope: string, id: string, transfer: boolean) {
+  if (!browserProfiles(scope).some(profile => profile.id === id)) throw new Error("This profile no longer exists.");
+  const selecting = control(scope);
+  if (selecting.busy || selecting.ownerBusy) throw new Error("Another browser action is still running. Wait for it to finish.");
+  const location = profileLocations()[id];
+  const destination = id === "private" ? controlDirectory(scope) : location ? join(PROFILE, "chats", location) : join(PROFILE, "profiles", id);
+  const source = profileDirectory(scope);
+  if ([source, destination].some(path => profileTransfers.has(path) || closingProfiles.has(path))) throw new Error("A browser profile is still closing or moving. Try again shortly.");
+  profileTransfers.add(source); profileTransfers.add(destination);
+  try {
+    const affected = [...states.__perryBrowsers!.values()].filter(state => (state.scope === scope || profileDirectory(state.scope) === destination) && Boolean(state.promise || state.current));
+    if (affected.some(state => state.busy || state.ownerBusy)) throw new Error("Another browser action is still running. Wait for it to finish.");
+    if (!transfer && affected.some(state => state.scope !== scope)) throw new Error("This profile is open in another chat. Use it here to transfer its browser.");
+    for (const state of affected) {
+      const pending = state.promise;
+      state.controller = "owner"; state.private = true; state.epoch++; persistControl(state);
+      const open = await pending?.catch(() => null);
+      if (open?.child && state.source === "perry") {
+        await withBrowserView(state.scope, () => send(state.root ?? open, "Browser.close")).catch(() => {});
+        for (let attempt = 0; open.child.exitCode === null && open.child.signalCode === null && attempt < 40; attempt++) await delay(100);
+      }
+      await withBrowserView(state.scope, async () => closeBrowser());
+      const child = await pending?.then(tab => tab.child, () => null);
+      if (child) for (let attempt = 0; child.exitCode === null && child.signalCode === null && attempt < 40; attempt++) await delay(100);
+      if (child && child.exitCode === null && child.signalCode === null) throw new Error("This profile is still closing. Try again shortly.");
+    }
+    const folder = controlDirectory(scope); mkdirSync(folder, { recursive: true, mode: 0o700 });
+    writeFileSync(join(folder, "profile.json"), JSON.stringify({ id }), { mode: 0o600 });
+    selecting.controller = "owner"; selecting.private = true; selecting.epoch++; persistControl(selecting);
+  } finally { profileTransfers.delete(source); profileTransfers.delete(destination); }
+}
 export function identity(scope?: string): BrowserIdentity | null {
   const state = control(scope);
   return state.current ? { sessionId: state.id, tabId: state.current.targetId, revision: state.revision } : null;
@@ -138,7 +214,7 @@ export function saveBrowserControl(scope?: string) {
   persistControl(control(scope));
 }
 function persistControl(state: Control) {
-  const folder = profileDirectory(state.scope);
+  const folder = controlDirectory(state.scope);
   mkdirSync(folder, { recursive: true, mode: 0o700 });
   writeFileSync(/*turbopackIgnore: true*/ join(folder, "perry-control.json"), JSON.stringify({ controller: state.controller, private: state.private, ...(state.error ? { error: state.error } : {}) }), { mode: 0o600 });
 }
@@ -184,7 +260,9 @@ export function findBrowser(): string | null {
 }
 
 async function launch(): Promise<Tab> {
+  if (profileTransfers.has(profileDirectory(control().scope)) || closingProfiles.has(profileDirectory(control().scope))) throw new Error("This browser profile is closing or moving to another chat. Try again shortly.");
   const state = control();
+  if ([...states.__perryBrowsers!.values()].some(other => other !== state && profileDirectory(other.scope) === profileDirectory(state.scope) && Boolean(other.promise || other.current))) throw new Error("This profile is open in another chat. Open Browser profiles and use it here, or select a different profile.");
   const epoch = state.epoch;
   const ensureCurrent = () => { checkLease(); if (state.epoch !== epoch) throw new Error("Browser closed while it was starting."); };
   let child: ChildProcess | null = null;
@@ -462,17 +540,31 @@ export function closeBrowser() {
   const state = control();
   const current = state.promise;
   const root = state.root;
+  const owned = state.source === "perry", connections = [...state.connections.values()];
+  const profile = profileDirectory(state.scope);
+  if (owned && current) closingProfiles.add(profile);
   const cleanup = state.source === "chrome" ? [...state.connections.values()].flatMap(open => [
     send(open, "Emulation.clearDeviceMetricsOverride").catch(() => {}),
     send(open, "Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {}),
   ]) : [];
   state.promise = null; state.current = null; state.revision++; state.epoch++;
   state.ownerPointer = undefined;
-  for (const open of state.connections.values()) { if (open.idle) clearTimeout(open.idle); if (state.source !== "chrome") open.ws.close(); }
+  for (const open of connections) if (open.idle) clearTimeout(open.idle);
   state.connections.clear(); state.root = null; state.ownedTargets.clear(); state.source = "perry";
   state.downloads.clear(); state.dialog = null; state.upload = null; state.loading = false;
-  void Promise.allSettled(cleanup).then(() => root?.ws.close());
-  void current?.then((open) => { open.child?.kill(); }, () => {});
+  if (owned && current) void withBrowserView(state.scope, async () => {
+    try {
+      const open = await current.catch(() => null);
+      if (!open?.child) return;
+      await send(root ?? open, "Browser.close").catch(() => {});
+      for (let attempt = 0; open.child.exitCode === null && open.child.signalCode === null && attempt < 40; attempt++) await delay(100);
+      if (open.child.exitCode === null && open.child.signalCode === null) open.child.kill();
+    } finally {
+      for (const open of connections) open.ws.close();
+      root?.ws.close(); closingProfiles.delete(profile); retire(state);
+    }
+  }).catch(() => {});
+  else void Promise.allSettled(cleanup).then(() => root?.ws.close());
   retire(state);
 }
 

@@ -13,6 +13,7 @@ import { InfoTip } from "../common";
 import { Spinner } from "./work";
 import { BrowserImportDialog } from "./browser-import-dialog";
 import { BrowserPage } from "./browser-page";
+import { BrowserProfiles } from "./browser-profiles";
 import { useSession } from "@/lib/session";
 import { browserIdentity, browserState, importPreview, importProfile, importResult, type BrowserInput, type BrowserRequest, type BrowserState } from "@/lib/browser-protocol";
 
@@ -179,7 +180,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
             <DropdownMenuItem disabled={!paused} onClick={() => void act({ action: "viewport", identity: activeIdentity, width: 390, height: 844 })}>Phone viewport (390 × 844)</DropdownMenuItem>
           </>}
           {state?.importEnabled && <DropdownMenuItem onClick={() => setImportOpen(true)}>Import from browser</DropdownMenuItem>}
-          <DropdownMenuItem onClick={() => void openSettings()}>Connections</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void openSettings()}>Profiles & connections</DropdownMenuItem>
           {open && <DropdownMenuItem disabled={!paused} onClick={() => activeIdentity && void act({ action: "close", identity: activeIdentity })}>{state?.source === "chrome" ? "Disconnect Chrome" : "Close browser"}</DropdownMenuItem>}
           {onClose && <DropdownMenuItem onClick={onClose}>Return to chat</DropdownMenuItem>}
         </DropdownMenuContent>
@@ -211,7 +212,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
       {!open && state ? <div className="flex flex-col items-center px-6 py-14 text-center" data-browser-empty>
         <span className="grid size-11 place-items-center rounded-full bg-muted text-muted-foreground"><GlobeIcon className="size-5" /></span>
         <p className="mt-3 text-sm font-medium">Perry's browser</p>
-        <p className="mt-1 max-w-64 text-xs leading-relaxed text-muted-foreground">Perry browses here for this chat. Watch it work, or take over to sign in somewhere for it.</p>
+        <p className="mt-1 max-w-64 text-xs leading-relaxed text-muted-foreground">Sign in once and reuse your browser profile across chats. Watch Perry work, or take over to browse yourself.</p>
         <Button size="sm" className="mt-4" disabled={busy} onClick={() => void run(() => act({ action: "start" }))}>{busy ? "Opening…" : "Open browser"}</Button>
         {state.importEnabled && <Button size="sm" variant="ghost" className="mt-2" disabled={busy} onClick={() => void run(() => act({ action: "start", nativeWindow: false }))}>Open in panel only</Button>}
       </div> : visibleFrame && state ? <BrowserPage key={JSON.stringify(state.identity)} image={visibleFrame.image} imageRef={imageRef} title={currentTab?.title || "Browser"} paused={paused} viewport={state.viewport} onInput={manual} />
@@ -227,6 +228,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
       {state?.upload && paused && <label className="block border-t p-3">Choose a file for this page<Input type="file" className="mt-2 block max-w-full" onChange={(event) => { const file = event.target.files?.[0]; const identity = state.identity; if (!file || !identity) return; void run(async () => { const response = await fetch("/api/browser/upload", { method: "POST", headers: { "x-perry-key": dashboardKey, "x-perry-chat": conversationId, "x-browser-identity": JSON.stringify(identity), "x-file-name": encodeURIComponent(file.name) }, body: file }); const result: unknown = await response.json(); if (!response.ok) throw new Error(z.object({ error: z.string() }).parse(result).error); apply(browserState.parse(result)); }); }} /></label>}
       {!!state?.downloads.length && <div className="border-t p-3"><p className="font-medium">Downloads</p>{state.downloads.map((download) => <p key={download.id} className="break-words">{download.name} · {download.state === "completed" ? "Saved to this chat’s Files" : download.state}</p>)}</div>}
       {settings && <div className="space-y-3 border-t p-3">
+        <BrowserProfiles call={call} changed={value => apply(browserState.parse(value))} />
         <div className="flex items-center justify-between"><p className="font-medium">Connections</p><Button size="icon-sm" variant="ghost" aria-label="Close connections" onClick={() => setSettings(false)}><XIcon /></Button></div>
         {state?.identity && <label className="flex items-center gap-2 text-xs"><Checkbox checked={state.private} disabled={!paused} onCheckedChange={(checked) => activeIdentity && void act({ action: "privacy", identity: activeIdentity, private: checked })} /><span>Hide agent screenshots<InfoTip>Perry can still read page text after you resume.</InfoTip></span></label>}
         {!state?.importEnabled ? <p className="text-xs text-muted-foreground">Open Perry locally to connect your browser.</p> : <>

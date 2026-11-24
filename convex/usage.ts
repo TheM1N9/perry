@@ -128,10 +128,15 @@ async function runsSince(ctx: QueryCtx, since: number) {
  * Perry ran on this week: the pet warns only about those.
  */
 export const limits = query({
-  args: { key: v.string() },
+  args: { key: v.string(), conversationId: v.optional(v.id("conversations")), projectId: v.optional(v.id("projects")) },
   handler: async (ctx, args): Promise<{ engines: Array<{ kind: EngineKind; usage: EngineUsage }>; used: EngineKind[] }> => {
     assertDashboardKey(args.key);
-    const merged = usageByEngine(await liveRunners(ctx));
+    const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
+    const runners = await liveRunners(ctx);
+    const projectId = chat?.projectId ?? args.projectId;
+    const project = projectId ? await ctx.db.get(projectId) : null;
+    const runnerId = project?.workspace?.runnerId ?? project?.runnerId ?? chat?.codexRunnerId;
+    const merged = usageByEngine(runnerId ? runners.filter(runner => runner._id === runnerId) : runners);
     // The latest runs are enough to say which engines are in use, and keep this light: it reruns as each reply streams.
     const recent = await ctx.db.query("runs").withIndex("by_started", (q) => q.gte("startedAt", Date.now() - SHARE_MS)).order("desc").take(200);
     const used = new Set<EngineKind>();

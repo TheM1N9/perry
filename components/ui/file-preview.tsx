@@ -13,11 +13,26 @@ export function FilePreview({ item }: { item: { name: string; url: string; previ
   const [text, setText] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    setText(null); setFailed(false);
     if (item.preview !== "text" && item.preview !== "markdown") return;
-    let current = true;
-    fetch(item.url).then((response) => (response.ok ? response.text() : Promise.reject(new Error(String(response.status)))))
-      .then((body) => { if (current) setText(body.length > TEXT_LIMIT ? `${body.slice(0, TEXT_LIMIT)}\n…` : body); }, () => { if (current) setFailed(true); });
-    return () => { current = false; };
+    const controller = new AbortController();
+    void fetch(item.url, { headers: { Range: `bytes=0-${TEXT_LIMIT - 1}` }, signal: controller.signal }).then(async response => {
+      if (!response.ok || !response.body) throw new Error("File unavailable.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let content = "", length = 0;
+      try {
+        while (length < TEXT_LIMIT) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = value.subarray(0, TEXT_LIMIT - length);
+          length += chunk.length; content += decoder.decode(chunk, { stream: true });
+        }
+        content += decoder.decode();
+      } finally { await reader.cancel(); }
+      if (!controller.signal.aborted) setText(content + (length >= TEXT_LIMIT ? "\n[Preview shortened; download to read the full file.]" : ""));
+    }).catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    return () => controller.abort();
   }, [item.preview, item.url]);
   const none = (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl bg-muted/50 py-16 text-muted-foreground">

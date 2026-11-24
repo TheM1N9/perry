@@ -35,7 +35,7 @@ export const GUEST_TOOLS = ["remember", "recall", "read_memory", "forget", "tell
 
 /** Preparation writes its own plan/result and verified milestones only; MCP checks the linked task and goal. */
 export const PREPARATION_TOOLS = [
-  "brain_search", "brain_read", "brain_list", "brain_neighbors", "recall", "search_chats", "read_chat", "read_page",
+  "brain_search", "brain_read", "brain_list", "brain_neighbors", "recall", "search_chats", "read_chat", "read_chat_attachment", "read_page",
   "list_connectors", "find_action", "run_action", "internet_read", "internet_search", "internet_status", "status_report",
   "list_jobs", "list_engines", "list_todos", "library_list", "library_find", "list_meetings", "read_meeting_transcript",
   "set_plan", "finish_task", "update_goal",

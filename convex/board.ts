@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { pendingOwnerQuestions } from "./questions";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
@@ -10,6 +11,7 @@ import { APPROVAL_TTL_MS, BRAIN_TTL_MS } from "./approvals";
 import { STOPPED } from "./codex";
 import { QUIET } from "./jobs";
 import { boardLink } from "../lib/board-links";
+import { dependenciesOf, type TaskDependency } from "./tasks";
 
 /**
  * The Board (issue #363): what Perry is doing, read from what it already
@@ -45,6 +47,7 @@ export type BoardThread = {
   question?: string;
   /** A queued task's place in line: 1 is next. Tasks start oldest first. */
   inLine?: number;
+  dependencies?: TaskDependency[];
   /** When a schedule runs next, while it is on and runs by the clock. */
   nextAt?: number;
   projectId?: Id<"projects">;
@@ -102,6 +105,7 @@ export type FeedItem =
 
 export type ThreadView = {
   thread: BoardThread; plan?: Doc<"tasks">["plan"]; feed: FeedItem[];
+  task?: Doc<"tasks">;
   /** A parent's sub-agents, oldest first. */
   agents?: BoardThread[];
   /** A sub-agent's: the thread it belongs to, and what it has written so far (its output, once it is over). */
@@ -154,6 +158,8 @@ function loader(ctx: QueryCtx, now: number) {
   const turns = new Map<Id<"runs">, Promise<Doc<"codexTurns"> | null>>();
   let runners: Promise<Map<Id<"runners">, Doc<"runners">>> | undefined;
   let asking: Promise<Doc<"approvals">[]> | undefined;
+  let questions: Promise<Doc<"userQuestions">[]> | undefined;
+  const nativeQuestions = () => questions ??= pendingOwnerQuestions(ctx);
   const chat = (id: Id<"conversations"> | undefined) => {
     if (!id) return Promise.resolve(null);
     if (!chats.has(id)) chats.set(id, ctx.db.get(id));
@@ -187,6 +193,7 @@ function loader(ctx: QueryCtx, now: number) {
     if (run.status === "rejected") return { status: "failed", label: "Rejected" };
     if (run.status === "error") return run.error === STOPPED ? { status: "done", label: "Stopped" } : { status: "failed", label: "Failed" };
     if ((await pending()).some((row) => row.conversationId === run.conversationId)) return { status: "waiting", label: "Needs you" };
+    if ((await nativeQuestions()).some(row => row.conversationId === run.conversationId)) return { status: "waiting", label: "Needs you" };
     const turn = await turnOf(run._id);
     if (!turn) return now - run.startedAt > ORPHAN_MS ? { status: "failed", label: "Interrupted" } : { status: "working", label: "Working" };
     if (turn.status === "queued") return turn.waiting ? { status: "blocked", label: "Waiting for reset" } : { status: "queued", label: "Queued" };
@@ -202,6 +209,8 @@ function loader(ctx: QueryCtx, now: number) {
     const at = Math.max(run.startedAt, latest[0]?.startedAt ?? 0);
     const asking = (await pending()).find((row) => row.conversationId === run.conversationId);
     if (asking) return { label: "Waiting for you to approve", at: Math.max(at, asking.createdAt) };
+    const question = (await nativeQuestions()).find(row => row.conversationId === run.conversationId);
+    if (question) return { label: question.questions[0]?.question ?? "Waiting for your answer", at: Math.max(at, question.createdAt) };
     const span = latest.find((item) => item.kind !== "reasoning" && item.kind !== "plan");
     return { label: span ? describeStep(span, { done: span.status !== "running" }).label : "Thinking", at };
   }
@@ -242,13 +251,15 @@ function loader(ctx: QueryCtx, now: number) {
 
   async function taskThread(task: Doc<"tasks">): Promise<BoardThread> {
     const run = await latestRun(task.conversationId);
+    const dependencies = await dependenciesOf(ctx, task);
+    const pending = dependencies.filter(dependency => dependency.status !== "done");
     const active = task.plan.find((step) => step.status === "active")?.title;
     let state: { status: BoardStatus; label: string };
     let line: string | undefined;
     if (task.status === "queued") {
       const waiting = task.waiting && task.waiting.until > now;
-      state = waiting ? { status: "blocked", label: "Waiting for reset" } : { status: "queued", label: "Queued" };
-      line = waiting ? task.waiting!.why : undefined;
+      state = pending.length ? { status: "blocked", label: "Waiting on tasks" } : waiting ? { status: "blocked", label: "Waiting for reset" } : { status: "queued", label: "Queued" };
+      line = pending.length ? pending.map(item => `${item.title}${item.status === "failed" || item.status === "cancelled" || item.status === "missing" ? ` (${item.status})` : ""}`).join(", ") : waiting ? task.waiting!.why : undefined;
     } else if (task.status === "running") {
       state = run?.status === "running" ? await runState(run) : { status: "working", label: "Working" };
       if (state.status === "done" || state.status === "failed") state = { status: "working", label: "Working" };
@@ -278,7 +289,8 @@ function loader(ctx: QueryCtx, now: number) {
       ...(over ? { finishedAt: task.updatedAt } : {}),
       now: firstLine(line),
       ...(task.status === "blocked" && task.question ? { question: task.question } : {}),
-      ...await projectOf(task.conversationId, task.origin),
+      ...(task.projectId ? { projectId: task.projectId } : await projectOf(task.conversationId, task.origin)),
+      ...(dependencies.length ? { dependencies } : {}),
       ...(task.conversationId ? { chatId: task.conversationId } : {}),
       href: boardLink({ channel: "tasks", thread: `task:${task._id}` }),
     };
@@ -425,7 +437,7 @@ function loader(ctx: QueryCtx, now: number) {
     })));
   }
 
-  return { chat, turnOf, allRunners, pending, latestRun, holderOf, runState, replyOf, runThread, taskThread, jobThread, watchThread, goalThread, threadIdOf, agentThread, agentsIn };
+  return { chat, turnOf, allRunners, pending, nativeQuestions, latestRun, holderOf, runState, replyOf, runThread, taskThread, jobThread, watchThread, goalThread, threadIdOf, agentThread, agentsIn };
 }
 
 export const get = query({
@@ -449,8 +461,9 @@ export const get = query({
     const ended = (await ctx.db.query("tasks").withIndex("by_updated").order("desc").take(ENDED_TASKS + active.length))
       .filter((task) => !seen.has(task._id)).slice(0, ENDED_TASKS);
     // The line queued tasks wait in, oldest first, as tasks.tick starts them; one waiting for a reset is out of it.
-    const line = active.filter((task) => task.status === "queued" && !(task.waiting && task.waiting.until > now))
-      .sort((a, b) => a.createdAt - b.createdAt).map((task) => task._id);
+    const ready = await Promise.all(active.filter(task => task.status === "queued" && !(task.waiting && task.waiting.until > now))
+      .map(async task => (await dependenciesOf(ctx, task)).every(item => item.status === "done") ? task : null));
+    const line = ready.filter((task): task is Doc<"tasks"> => task !== null).sort((a, b) => a.createdAt - b.createdAt).map(task => task._id);
     for (const task of [...active, ...ended]) {
       const thread = await load.taskThread(task);
       if (line.includes(task._id)) thread.inLine = line.indexOf(task._id) + 1;
@@ -504,6 +517,10 @@ export const get = query({
     }
 
     const waiting: BoardWaiting[] = [];
+    for (const question of await load.nativeQuestions()) {
+      const thread = await load.threadIdOf(question.conversationId), chat = await load.chat(question.conversationId);
+      waiting.push({ id: `native-question:${question._id}`, kind: "question", text: question.questions.map(item => item.question).join("\n"), where: chat?.title, ...(thread ? { thread } : {}), href: thread ? boardLink({ thread }) : `/chat/${question.conversationId}`, at: question.createdAt });
+    }
     for (const task of active) {
       if (task.status === "blocked" && task.question) waiting.push({ id: `question:${task._id}`, kind: "question", text: task.question, where: task.title, thread: `task:${task._id}`, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }), at: task.updatedAt });
     }
@@ -580,6 +597,7 @@ export const thread = query({
     };
     const approvalsIn = async (conversationId: Id<"conversations"> | undefined) => {
       if (!conversationId) return;
+      for (const row of (await load.nativeQuestions()).filter(row => row.conversationId === conversationId)) feed.push({ kind: "question", id: `native-question:${row._id}`, at: row.createdAt, text: row.questions.map(item => item.question).join("\n"), href: `/chat/${conversationId}` });
       for (const row of (await load.pending()).filter((item) => item.conversationId === conversationId)) {
         feed.push({ kind: "approval", id: `approval:${row._id}`, at: row.createdAt, text: row.title, href: `/chat/${conversationId}` });
       }
@@ -614,7 +632,7 @@ export const thread = query({
       if (task.status === "blocked" && task.question) feed.push({ kind: "question", id: `${args.id}:question`, at: task.updatedAt, text: task.question, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }) });
       if (task.status === "done" && task.result) feed.push({ kind: "result", id: `${args.id}:result`, at: task.updatedAt, text: task.result });
       if (task.status === "failed") feed.push({ kind: "error", id: `${args.id}:error`, at: task.updatedAt, text: task.error ?? "It stopped without saying why.", ...await lastStep(runs.at(-1)) });
-      return withAgents(sorted(await load.taskThread(task), task.plan));
+      return withAgents({ ...sorted(await load.taskThread(task), task.plan), task });
     }
     if (kind === "job") {
       const id = ctx.db.normalizeId("jobs", raw);

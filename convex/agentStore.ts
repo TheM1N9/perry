@@ -18,6 +18,11 @@ export const createThread = internalMutation({
   handler: async (ctx, args): Promise<string> => await ctx.db.insert("agentThreads", { userId: args.userId, title: args.title }),
 });
 
+export const firstMessages = internalQuery({
+  args: { threadId: v.string() },
+  handler: async (ctx, args) => { const id = ctx.db.normalizeId("agentThreads", args.threadId); return id ? await ctx.db.query("agentMessages").withIndex("by_thread_order", q => q.eq("threadId", id)).order("asc").take(8) : []; },
+});
+
 /** Newest first. The cursor is the order of the last message returned, so new messages never shift a page. */
 export const listMessages = internalQuery({
   args: {
@@ -81,6 +86,20 @@ export const searchMessages = internalQuery({
     return await ctx.db.query("agentMessages")
       .withSearchIndex("search_text", (q) => q.search("text", args.text).eq("userId", args.userId))
       .take(Math.min(Math.max(args.limit ?? 10, 1), 1024));
+  },
+});
+
+export const searchThreads = internalQuery({
+  args: { text: v.string(), threadIds: v.array(v.string()) },
+  handler: async (ctx, args): Promise<StoredMessage[]> => {
+    const found: StoredMessage[] = [];
+    for (const threadId of args.threadIds) {
+      const id = ctx.db.normalizeId("agentThreads", threadId);
+      if (!id) continue;
+      const message = await ctx.db.query("agentMessages").withSearchIndex("search_text", q => q.search("text", args.text).eq("threadId", id)).first();
+      if (message) found.push(message);
+    }
+    return found;
   },
 });
 

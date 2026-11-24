@@ -4,6 +4,7 @@ import { randomUUID } from "@/lib/uuid";
 
 import { AgentRows, AgentStatus, agentsForWork } from "./agents";
 import { TurnError } from "./turn-error";
+import { NativeQuestions } from "./questions";
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +14,9 @@ import {
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { useAction, useConnection, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
+import { useAction, useConnection, useMutation, usePaginatedQuery, useQuery, useConvex } from "@/client/react";
+import { WriteOutcomeUnknownError } from "@/client/backend";
+import { useFileDrafts } from "./use-file-drafts";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Artifact } from "@/convex/interactive";
@@ -116,10 +119,11 @@ export function ChatScreen() {
   const router = useRouter();
   const params = useParams<{ id?: string }>()!;
   const paramId = (params.id ? decodeURIComponent(params.id) : null) as ChatId | null;
-  /** A chat made from /chat by its first message, until the address catches up. */
-  const [createdId, setCreatedId] = useState<ChatId | null>(null);
-  useEffect(() => setCreatedId(null), [paramId]);
-  const selectedId = paramId ?? createdId;
+  const search = useSearchParams()!;
+  const draftScope = paramId ?? `new:${search.get("project") ?? ""}`;
+  const selectedId = paramId;
+  const inProject = paramId ? null : search.get("project");
+  const newIn = useQuery(api.projects.get, inProject ? { key: dashboardKey, id: inProject } : "skip");
   // The panel beside the chat (panel/chat-panel.tsx): open or not, its tabs and its width, kept per chat.
   const panel = useChatPanel(selectedId ?? "new");
 
@@ -148,7 +152,7 @@ export function ChatScreen() {
   // them by the clock and would otherwise sit above the very reply it waited for.
   const messages = useMemo(() => [...stableMessages].sort((a, b) => Number(Boolean(a.pending)) - Number(Boolean(b.pending)) || a.createdAt - b.createdAt), [stableMessages]);
   const approvals = useQuery(api.approvals.pending, { key: dashboardKey });
-  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
+  const planLimits = useQuery(api.usage.limits, { key: dashboardKey, ...(selectedId ? { conversationId: selectedId } : newIn ? { projectId: newIn.id } : {}) });
   // The chat's runs without their steps: a fold reads its steps when it is open, the reply running its newest one.
   const workQuery = useQuery(api.dashboard.getChatRuns, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
   const artifacts = useQuery(api.interactive.list, selectedId && chat !== null ? { key: dashboardKey, conversationId: selectedId } : "skip");
@@ -162,6 +166,9 @@ export function ChatScreen() {
 
   const createChat = useMutation(api.dashboard.createChat);
   const sendChat = useMutation(api.dashboard.sendChat);
+  const backendClient = useConvex();
+  const retrySend = useRef(new Map<string, { signature: string; args: Parameters<typeof sendChat>[0]; files: WeakRef<File>[] }>());
+  const newChatRequest = useRef(new Map<string, string>());
   const { setPaused } = usePause();
   const stopChat = useMutation(api.dashboard.stopChat);
   const compactChat = useAction(api.dashboard.compactChat);
@@ -174,7 +181,7 @@ export function ChatScreen() {
   const setPinned = useMutation(api.dashboard.setChatPinned);
   const noteFromChat = useMutation(api.notes.fromChat);
   const jotNote = useMutation(api.notes.jot);
-  const modelOptions = useQuery(api.models.options, { key: dashboardKey });
+  const modelOptions = useQuery(api.models.options, { key: dashboardKey, ...(selectedId ? { conversationId: selectedId } : newIn ? { projectId: newIn.id } : {}) });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
   const defaultEngine = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
@@ -212,10 +219,10 @@ export function ChatScreen() {
   const [pending, setPending] = useState<Pending[]>([]);
   /** The /compact being waited on, to say when it is done. */
   const [compaction, setCompaction] = useState<Id<"codexTurns"> | null>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useFileDrafts(draftScope);
   const [uploading, setUploading] = useState<{ index: number; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
-  const submitting = useRef<{ id: ChatId | null; controller: AbortController } | null>(null);
+  const submitting = useRef<{ id: ChatId | null; scope: string; controller: AbortController } | null>(null);
   useEffect(() => () => submitting.current?.controller.abort(), []);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   useEffect(() => setEditing(null), [selectedId]);
@@ -237,11 +244,8 @@ export function ChatScreen() {
     if (!paramId) window.setTimeout(() => composer.current?.focus(), 0);
   }, [paramId]);
   // Needs you starts an answer here with ?draft=, which is taken in, then out of the address.
-  const search = useSearchParams()!;
   const handed = search.get("draft");
   // A new chat started inside a project (?project=) is in it from its first message.
-  const inProject = paramId ? null : search.get("project");
-  const newIn = useQuery(api.projects.get, inProject ? { key: dashboardKey, id: inProject } : "skip");
   useEffect(() => {
     if (!handed) return;
     setDraft(handed);
@@ -422,7 +426,8 @@ export function ChatScreen() {
   const engine: EngineKind | undefined = selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine;
   // Perry never picks an engine for the owner: with none for this chat and no default, it asks (below).
   const noEngine = defaultEngine === null && !engine && !chat?.contact && (!selectedId || chat !== undefined);
-  const model = (selectedId ? chat?.model : draftModel ?? lastPicks?.model) || currentModel(models ?? [], undefined, engine);
+  const candidateModel = selectedId ? chat?.model : draftModel ?? lastPicks?.model;
+  const model = (selectedId || models?.some(option => option.id === candidateModel && option.engine === engine) ? candidateModel : undefined) || currentModel(models ?? [], undefined, engine);
   // The thinking levels are the model's own; a level it does not take is kept but unused.
   const modelInfo = chatModel(models ?? [], model, engine);
   const efforts = modelInfo?.efforts ?? [];
@@ -524,7 +529,7 @@ export function ChatScreen() {
     }
     if (command === "/stop") {
       setDraft("");
-      if (submitting.current?.id === selectedId) submitting.current?.controller.abort("stop");
+      if (submitting.current?.scope === draftScope) submitting.current.controller.abort("stop");
       if (selectedId && waiting) await stopChat({ key: dashboardKey, id: selectedId });
       setNotice(selectedId && waiting ? "Stopping." : "Nothing is running.");
       return true;
@@ -580,28 +585,36 @@ export function ChatScreen() {
     if (!citations.length && message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
     if ((!message && files.length === 0) || busy || uploading || submitting.current) return;
-    const submission = { id: selectedId, controller: new AbortController() };
+    const submission = { id: selectedId, scope: draftScope, controller: new AbortController() };
     submitting.current = submission;
     const fresh = !selectedId;
     let id = selectedId;
     const sending = files;
+    const scope = draftScope;
+    const storageKey = `perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`;
+    const signature = JSON.stringify([message, mode, sending.map(file => [file.name, file.size, file.lastModified])]);
+    const previous = retrySend.current.get(scope);
+    const retry = previous?.signature === signature && previous.files.every((file, index) => file.deref() === sending[index]) ? previous.args : null;
+    if (retry) id = retry.id;
+    const requestId = retry?.requestId ?? randomUUID();
     let cleared = false;
     let sent: Pending | undefined;
     const uploaded: PendingAttachment[] = [];
     setBusy(true);
+    setDraft(""); draftControl.current?.writeCitations([]); setFiles([]); setError(""); setNotice("");
+    cleared = true;
     try {
-      const messageKey = sending.length ? randomUUID() : undefined;
+      const messageKey = sending.length ? requestId : undefined;
       if (!id) {
-        id = await createChat({ key: dashboardKey, ...(newIn ? { projectId: newIn.id } : {}) });
+        if (!newChatRequest.current.has(scope)) newChatRequest.current.set(scope, randomUUID());
+        if (newChatRequest.current.size > 8) newChatRequest.current.delete(newChatRequest.current.keys().next().value!);
+        id = await createChat({ key: dashboardKey, requestId: newChatRequest.current.get(scope), ...(newIn ? { projectId: newIn.id } : {}) });
         submission.id = id;
-        setCreatedId(id);
       }
-      setDraft(""); draftControl.current?.writeCitations([]); setFiles([]); setError(""); setNotice("");
-      cleared = true;
-      for (const [index, file] of sending.entries()) {
+      for (const [index, file] of (retry ? [] : sending).entries()) {
         setUploading({ index: index + 1, total: sending.length });
         const contentType = file.type || "application/octet-stream";
-        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file, undefined, submission.controller.signal), fileName: file.name, contentType, size: file.size });
+        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file, `${requestId}-${index}`, submission.controller.signal), fileName: file.name, contentType, size: file.size });
         uploaded.push({ id: attachmentId, url: URL.createObjectURL(file), fileName: file.name, contentType });
       }
       setUploading(null);
@@ -614,27 +627,46 @@ export function ChatScreen() {
       const entry = sent;
       setPending((items) => [...items, entry]);
       // A new chat takes what was picked before it existed; an existing one already has its own.
-      await sendChat({
+      const args = retry ?? {
         key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, mode,
+        requestId,
         ...(fresh ? { model, engine, effort: pickedEffort ?? "", access: draftAccess } : {}),
-      });
+      };
+      retrySend.current.set(scope, { signature, args, files: sending.map(file => new WeakRef(file)) });
+      if (retrySend.current.size > 8) retrySend.current.delete(retrySend.current.keys().next().value!);
+      try { await sendChat(args); }
+      catch (cause) {
+        if (!(cause instanceof WriteOutcomeUnknownError)) throw cause;
+        try { await sendChat(args); }
+        catch (second) {
+          if (!await backendClient.query(api.dashboard.sendReceipt, { key: dashboardKey, id, requestId }).catch(() => false)) throw second;
+        }
+      }
+      retrySend.current.delete(scope);
+      newChatRequest.current.delete(scope);
       // Changing the draft's storage key before a failed upload restores it would erase it.
-      if (!paramId && window.location.pathname === "/chat") router.replace(`/chat/${id}`);
+      if (!paramId && window.location.pathname === "/chat" && new URL(window.location.href).searchParams.get("project") === inProject) router.replace(`/chat/${id}`);
       // A send already crossing the network must acknowledge before Stop can cover it.
       if (submission.controller.signal.reason === "stop") await stopChat({ key: dashboardKey, id }).catch(fail);
       setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
       // Full access is chosen for a chat, never carried into the next new one.
-      if (fresh) setDraftAccess(undefined);
+      if (fresh && draftControl.current?.storageKey === storageKey) setDraftAccess(undefined);
     } catch (cause) {
       setUploading(null);
       setPending((items) => items.filter((item) => item !== sent));
       for (const attachment of uploaded) URL.revokeObjectURL(attachment.url);
       if (cleared) {
-        const newer = draftControl.current?.read() ?? "";
-        setDraft([text, newer].filter(Boolean).join("\n\n")); setFiles(items => [...sending, ...items]);
-        draftControl.current?.writeCitations([...citations, ...(draftControl.current?.citations() ?? [])]);
+        setFiles(items => [...sending, ...items]);
+        if (draftControl.current?.storageKey === storageKey) {
+          setDraft([text, draftControl.current.read()].filter(Boolean).join("\n\n"));
+          draftControl.current.writeCitations([...citations, ...draftControl.current.citations()]);
+        } else try {
+          sessionStorage.setItem(storageKey, [text, sessionStorage.getItem(storageKey)].filter(Boolean).join("\n\n"));
+          const saved = JSON.parse(sessionStorage.getItem(`${storageKey}.citations`) ?? "[]");
+          sessionStorage.setItem(`${storageKey}.citations`, JSON.stringify([...citations, ...(Array.isArray(saved) ? saved : [])]));
+        } catch {}
       }
-      setError(submission.controller.signal.aborted ? "Sending cancelled. Your message is back in the composer." : `Your message wasn't sent: ${errorText(cause)}`);
+      if (draftControl.current?.storageKey === storageKey) setError(submission.controller.signal.aborted ? "Sending cancelled. Check the chat before sending again." : cause instanceof WriteOutcomeUnknownError ? "Could not confirm delivery. Sending this same draft again safely checks the original send." : `Your message wasn't sent: ${errorText(cause)}`);
     } finally {
       setUploading(null);
       submitting.current = null;
@@ -691,8 +723,10 @@ export function ChatScreen() {
     if (selectedId) await setReaction({ key: dashboardKey, conversationId: selectedId, messageId: message.id as Id<"agentMessages">, emoji });
   });
   const stop = () => {
-    if (submitting.current?.id === selectedId) submitting.current?.controller.abort("stop");
-    if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail);
+    const submission = submitting.current?.scope === draftScope ? submitting.current : null;
+    submission?.controller.abort("stop");
+    const id = selectedId ?? submission?.id;
+    if (id) void stopChat({ key: dashboardKey, id }).catch(fail);
   };
   /** A queued message's words, into the composer to be changed; what was being written there comes back after. */
   const startQueueEdit = (item: UpNextItem & { queued: NonNullable<UpNextItem["queued"]> }) => {
@@ -907,6 +941,7 @@ export function ChatScreen() {
       </div>
 
       <div className="relative shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6">
+        {selectedId && <NativeQuestions conversationId={selectedId} />}
         {!atBottom && selectedId && (
           <div className="pointer-events-none absolute inset-x-0 -top-12 flex justify-center">
             <Button variant="outline" size="sm" className="pointer-events-auto rounded-full bg-background shadow-md" onClick={jumpToLatest}>

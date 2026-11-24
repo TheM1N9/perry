@@ -9,6 +9,8 @@ export async function browserStatus(scope: string, importEnabled: boolean): Prom
 async function statusInScope(scope: string, importEnabled: boolean): Promise<BrowserState> {
   const state = browser.browserControl(scope);
   const result: BrowserState = { importEnabled, source: state.source, nativeWindow: state.nativeWindow ?? process.env.PERRY_BROWSER_HEADED === "1", state: state.error ? "disconnected" : "closed", identity: browser.identity(scope), viewport: browser.browserViewport(), canGoBack: false, canGoForward: false, tabs: [], loading: state.loading, error: state.error, dialog: state.dialog, upload: state.upload !== null, private: state.private, downloads: [...state.downloads.values()].slice(-30) };
+  result.profileId = browser.browserProfileId(scope);
+  result.profileName = browser.browserProfiles(scope).find(profile => profile.id === result.profileId)?.name;
   if (!state.current) return result;
   try {
     result.tabs = (await browser.withBrowserView(scope, browser.hostTargets)).map(({ id, title, url }) => ({ id, title, url }));
@@ -50,6 +52,9 @@ export async function controlBrowser(scope: string, request: BrowserRequest, imp
 async function controlInScope(scope: string, request: BrowserRequest, importEnabled: boolean) {
   const state = browser.browserControl(scope);
   if (request.action === "status") return browserStatus(scope, importEnabled);
+  if (request.action === "browserProfiles") return { profiles: browser.browserProfiles(scope), selected: browser.browserProfileId(scope) };
+  if (request.action === "createProfile") return { id: await browser.saveBrowserProfile(scope, request.name) };
+  if (request.action === "selectProfile") { await browser.useBrowserProfile(scope, request.profileId, request.transfer); return browserStatus(scope, importEnabled); }
   if (state.ownerBusy && request.action !== "frame") throw new Error("Another browser action is still running. Wait for it to finish.");
   if (request.action === "connectChrome") {
     throw new Error("The browser now uses Perry's own profile. Use Import from browser to migrate your data.");

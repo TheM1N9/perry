@@ -18,7 +18,7 @@ import { CitationChips, type Citation } from "./citations";
 export const MAX_FILES = 10;
 export const MAX_BYTES = 50 * 1024 * 1024;
 
-export type DraftHandle = { read: () => string; write: (text: string) => void; citations: () => Citation[]; writeCitations: (citations: Citation[]) => void; cite: (text: string) => void };
+export type DraftHandle = { storageKey: string; read: () => string; write: (text: string) => void; citations: () => Citation[]; writeCitations: (citations: Citation[]) => void; cite: (text: string) => void };
 /** The composer's box (prompt-editor.tsx): focused, and written at the caret. */
 export type ComposerHandle = PromptHandle;
 
@@ -48,9 +48,9 @@ export function ComposerDraft({ ref, refreshSkills, storageKey, children }: {
     } catch { setCitationState([]); }
   }, [storageKey]);
   const [before, setBefore] = useState<string>();
-  useImperativeHandle(ref, () => ({ read: () => draft, write: setDraft, citations: () => citations, writeCitations: setCitations,
+  useImperativeHandle(ref, () => ({ storageKey, read: () => draft, write: setDraft, citations: () => citations, writeCitations: setCitations,
     cite: (text) => setCitations([...citations, { id: randomUUID(), text, comment: "" }]),
-  }), [draft, setDraft, citations, setCitations]);
+  }), [storageKey, draft, setDraft, citations, setCitations]);
   const mentioning = !draft.startsWith("/") && typingSkill(before ?? draft) !== null;
   useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
   return children({ draft, setDraft, citations, setCitations, before, setBefore });

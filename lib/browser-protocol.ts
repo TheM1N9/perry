@@ -11,6 +11,7 @@ export const browserInput = z.discriminatedUnion("type", [
 ]);
 export type BrowserInput = z.infer<typeof browserInput>;
 export const browserState = z.object({
+  profileId: z.string().optional(), profileName: z.string().optional(),
   importEnabled: z.boolean(),
   source: z.enum(["perry", "chrome"]).default("perry"),
   nativeWindow: z.boolean().default(false),
@@ -30,6 +31,9 @@ export const nativeImportChoices = z.object({ cookies: z.boolean(), passwords: z
 export type NativeImportChoices = z.infer<typeof nativeImportChoices>;
 export const nativeImportProfiles = z.array(z.object({ id: z.string(), browser: z.string(), label: z.string(), cookies: z.number(), passwords: z.number(), history: z.number(), extensions: z.number() }));
 export const browserRequest = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("browserProfiles") }),
+  z.object({ action: z.literal("createProfile"), name: z.string().trim().min(1).max(80) }),
+  z.object({ action: z.literal("selectProfile"), profileId: z.string().max(50), transfer: z.boolean() }),
   z.object({ action: z.literal("status") }),
   z.object({ action: z.literal("start"), nativeWindow: z.boolean().optional() }),
   z.object({ action: z.literal("connectChrome") }),

@@ -357,6 +357,8 @@ export default defineSchema({
   tasks: defineTable({
     title: v.string(),
     prompt: v.string(),
+    projectId: v.optional(v.id("projects")),
+    dependsOn: v.optional(v.array(v.id("tasks"))),
     status: v.union(
       v.literal("queued"),
       v.literal("running"),
@@ -835,7 +837,32 @@ export default defineSchema({
    * cannot, and what Perry remembers in it stays in it (memories.projectId).
    * See projects.ts.
    */
+  chatSends: defineTable({
+    conversationId: v.id("conversations"), requestId: v.string(), payload: v.string(), createdAt: v.number(),
+  }).index("by_request", ["conversationId", "requestId"]),
+
+  machineRequests: defineTable({
+    conversationId: v.id("conversations"), runnerId: v.id("runners"), requestId: v.string(), input: v.string(),
+    projectId: v.optional(v.id("projects")), cwd: v.optional(v.string()),
+    status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
+    result: v.optional(v.string()), error: v.optional(v.string()), createdAt: v.number(), updatedAt: v.number(),
+  }).index("by_runner", ["runnerId", "status"]).index("by_chat", ["conversationId", "createdAt"]).index("by_request", ["conversationId", "requestId"]),
+  terminalSessions: defineTable({
+    conversationId: v.id("conversations"), runnerId: v.id("runners"), sessionId: v.string(), cwd: v.string(),
+    output: v.string(), offset: v.number(), status: v.union(v.literal("running"), v.literal("exited")), updatedAt: v.number(),
+  }).index("by_chat", ["conversationId"]).index("by_runner", ["runnerId", "sessionId"]),
+
+  userQuestions: defineTable({
+    conversationId: v.id("conversations"), turnId: v.id("codexTurns"), nativeId: v.string(),
+    questions: v.array(v.object({ id: v.string(), header: v.string(), question: v.string(), options: v.array(v.object({ label: v.string(), description: v.string() })), multiple: v.optional(v.boolean()) })),
+    answers: v.optional(v.record(v.string(), v.array(v.string()))),
+    status: v.union(v.literal("pending"), v.literal("answered")), createdAt: v.number(),
+    }).index("by_turn", ["turnId", "nativeId"]).index("by_chat", ["conversationId", "status"]).index("by_status", ["status"]),
+
   projects: defineTable({
+    runnerId: v.optional(v.id("runners")),
+    workspaceRequestId: v.optional(v.id("machineRequests")),
+    workspace: v.optional(v.object({ runnerId: v.id("runners"), path: v.string(), mode: v.union(v.literal("folder"), v.literal("worktree")), repository: v.optional(v.string()), branch: v.optional(v.string()) })),
     name: v.string(),
     /** The owner's standing instructions for its chats: tone, format, audience, rules. */
     instructions: v.string(),
@@ -1017,6 +1044,7 @@ export default defineSchema({
   }).index("by_event", ["eventId"]),
 
   conversations: defineTable({
+    createRequestId: v.optional(v.string()),
     /** Idempotency key of the last atomic edit/resend. */
     lastRewindRequest: v.optional(v.string()),
     channel: vChannel,
@@ -1102,6 +1130,7 @@ export default defineSchema({
      */
     outbox: v.optional(v.array(v.object({ text: v.string(), at: v.number() }))),
   })
+    .index("by_create_request", ["createRequestId"])
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_channel_last", ["channel", "lastMessageAt"])
     .index("by_project", ["projectId", "lastMessageAt"])
@@ -1786,6 +1815,7 @@ export default defineSchema({
     finalizedAt: v.optional(v.number()),
   })
     .index("by_runner_status", ["runnerId", "status"])
+    .index("by_status", ["status"])
     .index("by_run", ["runId"])
     .index("by_conversation_status", ["conversationId", "status"])
     .index("by_reset_wait", ["waiting.until"]),
@@ -1929,5 +1959,5 @@ export default defineSchema({
     model: v.optional(v.string()),
   })
     .index("by_thread_order", ["threadId", "order"])
-    .searchIndex("search_text", { searchField: "text", filterFields: ["userId"] }),
+    .searchIndex("search_text", { searchField: "text", filterFields: ["userId", "threadId"] }),
 });

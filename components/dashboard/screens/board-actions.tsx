@@ -26,7 +26,8 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ActionButton, attempt } from "../common";
 import { ApprovalCard } from "../approval-card";
-import { GoalDialog, ScheduleDialog, TaskDialog, WatchDialog, type Editing } from "./work-forms";
+import { NativeQuestions } from "../chat/questions";
+import { GoalDialog, ScheduleDialog, TaskDialog, TaskDependenciesDialog, WatchDialog, type Editing } from "./work-forms";
 
 /*
  * Everything the Work page and Needs you could do, from the Board: making a task, schedule, goal or watch from its
@@ -70,17 +71,18 @@ function useConfirm() {
 const NEW: Record<string, string> = { tasks: "new task", jobs: "new schedule", goals: "new goal", watches: "new watch" };
 
 /** The header's actions for the open channel or tab. `compact`: the icon alone, for a narrow header. */
-export function ChannelActions({ channel, needsYou, notices, compact }: { channel?: string; needsYou: boolean; notices: Notice[]; compact: boolean }) {
+export function ChannelActions({ channel, needsYou, notices, compact, onCreated }: { channel?: string; needsYou: boolean; notices: Notice[]; compact: boolean; onCreated?: (id: Id<"tasks">) => void }) {
   const { dashboardKey } = useSession();
   const [making, setMaking] = useState<string | null>(null);
-  const work = useQuery(api.dashboard.getWork, channel === "tasks" ? { key: dashboardKey } : "skip");
+  const work = useQuery(api.dashboard.getWork, making === "tasks" ? { key: dashboardKey } : "skip");
   const jobs = useQuery(api.jobs.listForDashboard, channel === "jobs" ? { key: dashboardKey } : "skip");
   const wake = useQuery(api.wake.get, channel === "jobs" ? { key: dashboardKey } : "skip");
   const setWake = useMutation(api.wake.set);
   const checkNow = useAction(api.dashboard.checkMonitorsNow);
   const dismiss = useMutation(api.dashboard.dismissInbox);
   const now = useNow();
-  const label = channel ? NEW[channel] : undefined;
+  const creation = channel && NEW[channel] ? channel : "tasks";
+  const label = NEW[creation];
 
   const menu: ReactNode[] = [];
   if (channel === "jobs" && wake) {
@@ -113,11 +115,11 @@ export function ChannelActions({ channel, needsYou, notices, compact }: { channe
         </DropdownMenu>
       )}
       {label && (
-        <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-[12px]" aria-label={label} onClick={() => setMaking(channel!)} data-new={channel}>
+        <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-[12px]" aria-label={label} onClick={() => setMaking(creation)} data-new={creation}>
           <PlusIcon />{!compact && label}
         </Button>
       )}
-      {making === "tasks" && <TaskDialog open goals={work?.goals ?? []} onClose={() => setMaking(null)} />}
+      {making === "tasks" && work && <TaskDialog open goals={work.goals} tasks={work.tasks} projectId={channel?.startsWith("project:") ? channel.slice(8) as Id<"projects"> : undefined} onCreated={onCreated} onClose={() => setMaking(null)} />}
       {making === "jobs" && jobs && <ScheduleDialog editing={{}} timezone={jobs.timezone} onClose={() => setMaking(null)} />}
       {making === "goals" && <GoalDialog editing={{}} onClose={() => setMaking(null)} />}
       {making === "watches" && <WatchDialog editing={{}} onClose={() => setMaking(null)} />}
@@ -133,8 +135,9 @@ type Action = { label: string; href?: string; run?: () => Promise<unknown>; succ
  * A thread's actions, under its state: one primary, the rest in a menu, as the viewer has them; and above them,
  * what a kind adds (a schedule's timing and model, a watch's page). An approval waiting on it is answered here.
  */
-export function ThreadActions({ thread, question, approval, notice, shown = [], fields }: {
+export function ThreadActions({ thread, task, question, approval, notice, shown = [], fields }: {
   thread: BoardThread; question?: string; approval?: string; notice?: Notice;
+  task?: Doc<"tasks">;
   /** What the pane already says (its reason or result): an update that says the same is not said twice. */
   shown?: Array<string | undefined>;
   /** The pane's own key/value rows, which a kind's go after. */
@@ -165,7 +168,6 @@ export function ThreadActions({ thread, question, approval, notice, shown = [], 
   const deleteMonitor = useMutation(api.dashboard.deleteMonitor);
   const dismiss = useMutation(api.dashboard.dismissInbox);
 
-  const task = isTask ? work?.tasks.find((item) => item._id === id) : undefined;
   const goal = thread.kind === "goal" ? work?.goals.find((item) => item._id === id) : undefined;
   const monitor = thread.kind === "watch" ? work?.monitors.find((item) => item._id === id) : undefined;
   const job = isJob ? jobs?.jobs.find((item) => item.id === id) : undefined;
@@ -176,8 +178,9 @@ export function ThreadActions({ thread, question, approval, notice, shown = [], 
   const more: Action[] = [];
   const extra: ReactNode[] = [];
   if (isTask) {
-    const cancellable = task && (task.status === "running" || task.status === "blocked" || Boolean(task.initiative && task.status === "queued"));
+    const cancellable = task && (task.status === "running" || task.status === "blocked" || task.status === "queued");
     primary = chat;
+    if (task?.status === "queued") more.push({ label: "edit prerequisites", run: async () => setEditing(true) });
     if (task?.status === "blocked" && task.decision) {
       const version = task.decision.version;
       more.push({ label: "remind me in a day", run: () => snooze({ key: dashboardKey, id: task._id, version, until: Date.now() + 86_400_000 }), success: "Snoozed for a day." });
@@ -233,6 +236,7 @@ export function ThreadActions({ thread, question, approval, notice, shown = [], 
         : approvals && <p className="text-[12px] text-muted-foreground">That approval was answered or has expired.</p>)}
       {question && task?.status === "blocked" && <Answer task={task} />}
       {extra}
+      {thread.chatId && <NativeQuestions conversationId={thread.chatId} />}
       {(primary || more.length > 0) && (
         <div className="flex items-center gap-1.5">
           {primary && !question && !pending && <Act action={primary} primary />}
@@ -251,15 +255,16 @@ export function ThreadActions({ thread, question, approval, notice, shown = [], 
         </div>
       )}
       {dialog}
-      {editing && job && <ScheduleDialog editing={{ item: job }} timezone={jobs!.timezone} onClose={() => setEditing(false)} />}
-      {editing && monitor && <WatchDialog editing={{ item: monitor }} onClose={() => setEditing(false)} />}
-      {editing && goal && <GoalDialog editing={{ item: goal } as Editing<Doc<"goals">>} onClose={() => setEditing(false)} />}
+      {editing && task && work && <TaskDependenciesDialog key={task._id} task={task} tasks={work.tasks} dependencies={thread.dependencies ?? []} onClose={() => setEditing(false)} />}
+      {editing && job && <ScheduleDialog key={job.id} editing={{ item: job }} timezone={jobs!.timezone} onClose={() => setEditing(false)} />}
+      {editing && monitor && <WatchDialog key={monitor._id} editing={{ item: monitor }} onClose={() => setEditing(false)} />}
+      {editing && goal && <GoalDialog key={goal._id} editing={{ item: goal } as Editing<Doc<"goals">>} onClose={() => setEditing(false)} />}
     </>
   );
 }
 
 const MENU_ICON: Record<string, ReactNode> = {
-  change: <PencilIcon />, pause: <PauseIcon />, resume: <PlayIcon />, delete: <Trash2Icon />, "cancel task": <XIcon />, "dismiss update": <CheckIcon />,
+  change: <PencilIcon />, "edit prerequisites": <PencilIcon />, pause: <PauseIcon />, resume: <PlayIcon />, delete: <Trash2Icon />, "cancel task": <XIcon />, "dismiss update": <CheckIcon />,
 };
 
 function MenuAct({ action }: { action: Action }) {

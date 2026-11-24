@@ -5,6 +5,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { isPageLine } from "./memories";
 import { moveLines, removePage } from "./pages";
 import { titlesIn } from "./notes";
+import { ArgumentError } from "../server/validate";
 
 /**
  * Projects: folders of the owner's chats about one thing, such as a YouTube
@@ -65,6 +66,14 @@ const chatsIn = (ctx: QueryCtx, projectId: Id<"projects">) => ctx.db.query("conv
   .order("desc")
   .collect();
 
+export async function assertWorkspaceIdle(ctx: MutationCtx, chat: Chat): Promise<void> {
+  if ((chat.pendingTurns ?? 0) > 0) throw new ArgumentError("Finish or stop this chat's replies before changing its workspace.");
+  if (chat.projectId && (await ctx.db.get(chat.projectId))?.workspaceRequestId) throw new ArgumentError("Wait for this project's workspace to finish moving.");
+  for (const status of ["queued", "running"] as const) if (await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", chat._id).eq("status", status)).first()) throw new ArgumentError("Finish or stop this chat's work before changing its workspace.");
+  if ((await ctx.db.query("machineRequests").withIndex("by_chat", q => q.eq("conversationId", chat._id)).collect()).some(request => request.status === "queued" || request.status === "running")) throw new ArgumentError("Wait for this chat's computer operations before changing its workspace.");
+  if ((await ctx.db.query("terminalSessions").withIndex("by_chat", q => q.eq("conversationId", chat._id)).collect()).some(session => session.status === "running")) throw new ArgumentError("Close this chat's terminal before changing its workspace.");
+}
+
 /** The project a new job's or task's chat goes in: the one of the chat it was set up in. */
 export async function projectFrom(ctx: QueryCtx, origin: Id<"conversations"> | undefined): Promise<{ projectId?: Id<"projects"> }> {
   const chat = origin ? await ctx.db.get(origin) : null;
@@ -88,6 +97,7 @@ export const list = query({
 });
 
 export type ProjectView = {
+  workspace?: Doc<"projects">["workspace"];
   id: Id<"projects">;
   name: string;
   instructions: string;
@@ -113,6 +123,7 @@ export const get = query({
       id: project._id,
       name: project.name,
       instructions: project.instructions,
+      workspace: project.workspace,
       updatedAt: project.updatedAt,
       chats: (await chatsIn(ctx, project._id)).map((chat) => ({
         id: chat._id, title: titleOf(chat), lastMessageAt: chat.lastMessageAt, job: Boolean(chat.jobId), task: Boolean(chat.taskId),
@@ -177,7 +188,7 @@ export const remove = mutation({
     assertDashboardKey(args.key);
     if (!await ctx.db.get(args.id)) return { chats: 0, memories: 0, notes: 0 };
     const chats = await chatsIn(ctx, args.id);
-    for (const chat of chats) await ctx.db.patch(chat._id, { projectId: undefined });
+    for (const chat of chats) { await assertWorkspaceIdle(ctx, chat); await ctx.db.patch(chat._id, { projectId: undefined, resume: undefined, codexThreadId: undefined }); }
     // Its notes' lines go out with their notes, not with what Perry remembered in it.
     const memories = (await ctx.db.query("memories").withIndex("by_project", (q) => q.eq("projectId", args.id)).collect()).filter((memory) => !isPageLine(memory));
     for (const memory of memories) await ctx.db.delete(memory._id);
@@ -207,16 +218,20 @@ export const moveChat = mutation({
     assertDashboardKey(args.key);
     const chat = await ctx.db.get(args.id);
     if (!chat) throw new Error("Chat not found.");
+    if (chat.projectId === (args.projectId ?? undefined)) return null;
+    await assertWorkspaceIdle(ctx, chat);
     const memberships = await ctx.db.query("workspaceFiles").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).collect();
     if (args.projectId === null) {
-      if (chat.projectId) await ctx.db.patch(chat._id, { projectId: undefined });
+      if (chat.projectId) await ctx.db.patch(chat._id, { projectId: undefined, resume: undefined, codexThreadId: undefined });
       for (const row of memberships) await ctx.db.patch(row._id, { projectId: undefined });
       return null;
     }
     if (chat.contactId) throw new Error("Perry's chats with other people stay out of projects, so nothing of yours reaches them.");
     if (!canJoin(chat)) throw new Error("Your Telegram and WhatsApp chats are about everything, so they stay out of projects.");
-    if (!await ctx.db.get(args.projectId)) throw new Error("This project was deleted.");
-    await ctx.db.patch(chat._id, { projectId: args.projectId });
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("This project was deleted.");
+    if (project.workspaceRequestId) throw new ArgumentError("Wait for this project's workspace to finish moving.");
+    await ctx.db.patch(chat._id, { projectId: args.projectId, resume: undefined, codexThreadId: undefined, codexRunnerId: project.workspace?.runnerId ?? project.runnerId ?? chat.codexRunnerId });
     for (const row of memberships) await ctx.db.patch(row._id, { projectId: args.projectId });
     return null;
   },

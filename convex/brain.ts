@@ -68,7 +68,7 @@ async function runCommand(
   const engine = conversation.engine ?? (await ctx.runQuery(internal.installation.getDefaultEngine, {})) ?? undefined;
   const modelCommand = parseModelCommand(text);
   if (modelCommand) {
-    const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+    const models: ModelOption[] = await ctx.runQuery(internal.models.list, { conversationId: conversation._id });
     if (!modelCommand.name) return describeModels(models, conversation.model, engine);
     const { model, reply } = pickModel(models, modelCommand.name, conversation.effort, engine);
     if (model) await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: model.id, engine: model.engine });
@@ -77,7 +77,7 @@ async function runCommand(
 
   const thinkCommand = parseThinkCommand(text);
   if (thinkCommand) {
-    const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+    const models: ModelOption[] = await ctx.runQuery(internal.models.list, { conversationId: conversation._id });
     if (!thinkCommand.level) return describeEfforts(models, conversation.model, conversation.effort, engine);
     const picked = pickEffort(models, conversation.model, thinkCommand.level, engine);
     if (picked.ok) await ctx.runMutation(internal.conversations.setEffort, { id: conversation._id, effort: picked.effort });
@@ -131,7 +131,7 @@ async function runCommand(
         id: conversation._id,
       });
       const memoryCount = await ctx.runQuery(internal.memories.count, {});
-      const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+      const models: ModelOption[] = await ctx.runQuery(internal.models.list, { conversationId: conversation._id });
       const model = chatModel(models, conversation.model, engine);
       const effort = turnEffort(models, conversation.model, conversation.effort, engine);
       const unused = model && effortUnused(model, conversation.effort) ? ` (${conversation.effort} is not one ${model.name} takes)` : "";
@@ -305,7 +305,7 @@ async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">, 
     const choice: Choice | null = await ctx.runQuery(internal.routing.forChat, { id: conversation._id });
     if (choice) return { engine: choice.engine, model: choice.model, effort: choice.effort, access: conversation.access ?? "supervised" as const };
   }
-  const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+  const models: ModelOption[] = await ctx.runQuery(internal.models.list, { conversationId: conversation._id });
   const engine = job?.model && job.engine ? job.engine
     : conversation.engine ?? (await ctx.runQuery(internal.installation.getDefaultEngine, {})) ?? undefined;
   const model = currentModel(models, job?.model ?? conversation.model, engine);

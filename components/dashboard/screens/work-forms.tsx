@@ -17,6 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { TimePicker } from "@/components/ui/time-picker";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { TaskDependency } from "@/convex/tasks";
 
 /**
  * Making and changing schedules, goals and page watches on the Work page, so
@@ -139,17 +141,10 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
   const { saving, save } = useSave(onClose);
   const job = editing?.item;
   const builtin = Boolean(job?.builtin);
-  const [name, setName] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [when, setWhen] = useState<When>(readWhen());
-  const [note, setNote] = useState("none");
-  useEffect(() => {
-    if (!editing) return;
-    setName(editing.item?.name ?? "");
-    setPrompt(editing.item?.prompt ?? "");
-    setWhen(readWhen(editing.item));
-    setNote(editing.item?.noteId ?? "none");
-  }, [editing]);
+  const [name, setName] = useState(job?.name ?? "");
+  const [prompt, setPrompt] = useState(job?.prompt ?? "");
+  const [when, setWhen] = useState<When>(() => readWhen(job));
+  const [note, setNote] = useState(job?.noteId ?? "none");
   const noteItems = [{ value: "none", label: "No note" }, ...(notes ?? []).map((item) => ({ value: item.id as string, label: item.title }))];
   const change = (patch: Partial<When>) => setWhen((current) => ({ ...current, ...patch }));
   // A built-in job's prompt comes from Perry's code; only when it runs is the owner's to change.
@@ -220,18 +215,24 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
 // --- Tasks -------------------------------------------------------------------
 
 /** A background task handed to Perry: what to call it, what to do, and the goal it serves. */
-export function TaskDialog({ open, goals, onClose }: { open: boolean; goals: Doc<"goals">[]; onClose: () => void }) {
+export function TaskDialog({ open, goals, tasks = [], projectId, onCreated, onClose }: { open: boolean; goals: Doc<"goals">[]; tasks?: Doc<"tasks">[]; projectId?: Id<"projects">; onCreated?: (id: Id<"tasks">) => void; onClose: () => void }) {
   const { dashboardKey } = useSession();
   const queue = useMutation(api.tasks.queueFromDashboard);
   const { saving, save } = useSave(onClose);
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
   const [goal, setGoal] = useState("none");
-  useEffect(() => { if (open) { setTitle(""); setPrompt(""); setGoal("none"); } }, [open]);
+  const [project, setProject] = useState<string>(projectId ?? "none");
+  const [dependsOn, setDependsOn] = useState<Id<"tasks">[]>([]);
+  const projects = useQuery(api.projects.list, open ? { key: dashboardKey } : "skip");
+  useEffect(() => { if (open) { setTitle(""); setPrompt(""); setGoal("none"); setProject(projectId ?? "none"); setDependsOn([]); } }, [open, projectId]);
   const items = [{ value: "none", label: "None" }, ...goals.filter((item) => item.status !== "done").map((item) => ({ value: item._id, label: item.title }))];
   return (
     <FormDialog open={open} onClose={onClose} saving={saving} action="Create" title="New task"
-      onSave={() => void save(() => queue({ key: dashboardKey, title, prompt, ...(goal !== "none" ? { goalId: goal as Doc<"goals">["_id"] } : {}) }), "Queued. Perry starts when he is free.")}>
+      onSave={() => void save(async () => {
+        const id = await queue({ key: dashboardKey, title, prompt, ...(goal !== "none" ? { goalId: goal as Id<"goals"> } : {}), ...(project !== "none" ? { projectId: project as Id<"projects"> } : {}), ...(dependsOn.length ? { dependsOn } : {}) });
+        onCreated?.(id);
+      }, dependsOn.length ? "Queued. Perry starts after its prerequisites finish." : "Queued. Perry starts when he is free.")}>
       <Field>
         <FieldLabel htmlFor="task-title">Task</FieldLabel>
         <Input id="task-title" value={title} maxLength={160} placeholder="Compare three flats near work" autoFocus required onChange={(event) => setTitle(event.target.value)} />
@@ -242,8 +243,40 @@ export function TaskDialog({ open, goals, onClose }: { open: boolean; goals: Doc
           onChange={(event) => setPrompt(event.target.value)} />
       </Field>
       {items.length > 1 && <Choice id="task-goal" label="For a goal" value={goal} items={items} onChange={setGoal} />}
+      {!!projects?.length && <Choice id="task-project" label="Project" value={project} items={[{ value: "none", label: "No project" }, ...projects.map(item => ({ value: item.id, label: item.name }))]} onChange={setProject} />}
+      {!!tasks.length && <TaskDependencyPicker tasks={tasks.map(item => ({ id: item._id, title: item.title, status: item.status }))} value={dependsOn} onChange={setDependsOn} />}
     </FormDialog>
   );
+}
+
+function TaskDependencyPicker({ tasks, value, onChange }: { tasks: TaskDependency[]; value: Id<"tasks">[]; onChange: (ids: Id<"tasks">[]) => void }) {
+  const [search, setSearch] = useState("");
+  const filtered = tasks.filter(task => `${task.title} ${task.status}`.toLowerCase().includes(search.trim().toLowerCase()));
+  return <fieldset className="min-w-0 space-y-2" data-dependency-picker>
+    <legend className="text-sm font-medium">Wait for tasks{value.length ? ` (${value.length}/20)` : ""}</legend>
+    <p className="text-xs text-muted-foreground">Starts only after every selected task finishes successfully. Their results are passed to Perry.</p>
+    <Input type="search" aria-label="Find prerequisite tasks" placeholder="Find a task..." value={search} onChange={event => setSearch(event.target.value)} />
+    <div className="max-h-36 space-y-1 overflow-y-auto rounded-md border p-2">
+      {filtered.map(task => <label key={task.id} className="flex min-h-8 cursor-pointer items-center gap-3 rounded px-1 text-sm hover:bg-muted">
+        <Checkbox checked={value.includes(task.id)} disabled={!value.includes(task.id) && value.length >= 20} onCheckedChange={checked => onChange(checked ? [...value, task.id] : value.filter(id => id !== task.id))} />
+        <span className="min-w-0 flex-1 break-words">{task.title}</span><span className="shrink-0 text-xs text-muted-foreground">{task.status}</span>
+      </label>)}
+      {!filtered.length && <p className="p-1 text-xs text-muted-foreground">No matching tasks. Try a different name.</p>}
+    </div>
+  </fieldset>;
+}
+
+export function TaskDependenciesDialog({ task, tasks, dependencies, onClose }: { task: Doc<"tasks">; tasks: Doc<"tasks">[]; dependencies: TaskDependency[]; onClose: () => void }) {
+  const { dashboardKey } = useSession();
+  const update = useMutation(api.tasks.setDependenciesFromDashboard);
+  const { saving, save } = useSave(onClose);
+  const [selected, setSelected] = useState(task.dependsOn ?? []);
+  const options = new Map(dependencies.map(item => [item.id, item]));
+  for (const item of tasks) if (item._id !== task._id) options.set(item._id, { id: item._id, title: item.title, status: item.status });
+  return <FormDialog open title="Task prerequisites" description={task.title} onClose={onClose} saving={saving}
+    onSave={() => void save(() => update({ key: dashboardKey, id: task._id, dependsOn: selected }), "Prerequisites updated.")}>
+    <TaskDependencyPicker tasks={[...options.values()]} value={selected} onChange={setSelected} />
+  </FormDialog>;
 }
 
 // --- Goals -------------------------------------------------------------------
@@ -259,17 +292,10 @@ export function GoalDialog({ editing, onClose }: { editing: Editing<Doc<"goals">
   const saveGoal = useMutation(api.dashboard.saveGoal);
   const { saving, save } = useSave(onClose);
   const goal = editing?.item;
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [milestones, setMilestones] = useState("");
-  const [status, setStatus] = useState<Doc<"goals">["status"]>("active");
-  useEffect(() => {
-    if (!editing) return;
-    setTitle(editing.item?.title ?? "");
-    setDescription(editing.item?.description ?? "");
-    setMilestones((editing.item?.milestones ?? []).map((milestone) => milestone.title).join("\n"));
-    setStatus(editing.item?.status ?? "active");
-  }, [editing]);
+  const [title, setTitle] = useState(goal?.title ?? "");
+  const [description, setDescription] = useState(goal?.description ?? "");
+  const [milestones, setMilestones] = useState(() => (goal?.milestones ?? []).map((milestone) => milestone.title).join("\n"));
+  const [status, setStatus] = useState<Doc<"goals">["status"]>(goal?.status ?? "active");
   // A milestone kept by name keeps its tick.
   const done = new Set((goal?.milestones ?? []).filter((milestone) => milestone.done).map((milestone) => milestone.title.trim()));
   const list = milestones.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => ({ title: line, done: done.has(line) }));
@@ -311,19 +337,11 @@ export function WatchDialog({ editing, onClose }: { editing: Editing<Doc<"monito
   const saveMonitor = useMutation(api.dashboard.saveMonitor);
   const { saving, save } = useSave(onClose);
   const watch = editing?.item;
-  const [title, setTitle] = useState("");
-  const [url, setUrl] = useState("");
-  const [condition, setCondition] = useState<Doc<"monitors">["condition"]>("change");
-  const [value, setValue] = useState("");
-  const [interval, setInterval] = useState("60");
-  useEffect(() => {
-    if (!editing) return;
-    setTitle(editing.item?.title ?? "");
-    setUrl(editing.item?.url ?? "");
-    setCondition(editing.item?.condition ?? "change");
-    setValue(editing.item?.value ?? "");
-    setInterval(String(editing.item?.intervalMinutes ?? 60));
-  }, [editing]);
+  const [title, setTitle] = useState(watch?.title ?? "");
+  const [url, setUrl] = useState(watch?.url ?? "");
+  const [condition, setCondition] = useState<Doc<"monitors">["condition"]>(watch?.condition ?? "change");
+  const [value, setValue] = useState(watch?.value ?? "");
+  const [interval, setInterval] = useState(String(watch?.intervalMinutes ?? 60));
   const intervals = [...new Set([...INTERVALS, Number(interval)])].sort((a, b) => a - b).map((minutes) => ({ value: String(minutes), label: every(minutes) }));
 
   return (

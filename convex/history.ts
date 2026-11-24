@@ -2,7 +2,8 @@ import { listMessages, searchMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { internalAction } from "./_generated/server";
+import { internalAction, internalQuery } from "./_generated/server";
+import { open } from "node:fs/promises";
 
 /**
  * The agent's view of past conversations, on every channel: search them by
@@ -80,25 +81,66 @@ export const search = internalAction({
 });
 
 export const read = internalAction({
-  args: { chatId: v.string(), limit: v.optional(v.number()), from: v.optional(v.id("conversations")) },
+  args: { chatId: v.string(), limit: v.optional(v.number()), cursor: v.optional(v.string()), messageId: v.optional(v.string()), offset: v.optional(v.number()), from: v.optional(v.id("conversations")) },
   handler: async (ctx, args): Promise<{
     chat?: string;
     channel?: string;
-    messages: Array<{ role: string; date: string; text: string }>;
+    messages: Array<{ id: string; role: string; date: string; text: string; nextOffset?: number }>;
     note?: string;
+    cursor?: string;
   }> => {
     const chats: Chat[] = await ctx.runQuery(internal.conversations.list, {});
     const chat = chats.find((item) => item._id === args.chatId);
     if (!chat) return { messages: [], note: "No chat with that id. Ids come from search_chats." };
     if (!openFrom(chats, args.from, "everywhere")(chat)) return { messages: [], note: "This chat may not read that one: what is said in a project's chats stays in the project." };
+    if (args.messageId) {
+      const message = await ctx.runQuery(internal.history.message, { id: args.messageId, threadId: chat.threadId });
+      if (!message) return { messages: [], note: "No message with that id in this chat." };
+      const offset = Math.max(0, Math.floor(args.offset ?? 0)), end = offset + 32000, text = message.text ?? "";
+      return { chat: titleOf(chat), channel: chat.channel, messages: [{ id: message._id, role: message.message?.role ?? "unknown", date: day(message._creationTime), text: text.slice(offset, end), ...(end < text.length ? { nextOffset: end } : {}) }] };
+    }
     const page = await listMessages(ctx, {
       threadId: chat.threadId,
       excludeToolMessages: true,
-      paginationOpts: { cursor: null, numItems: Math.min(Math.max(args.limit ?? 20, 1), 50) },
+      paginationOpts: { cursor: args.cursor ?? null, numItems: Math.min(Math.max(args.limit ?? 20, 1), 50) },
     });
     const messages = page.page.reverse()
       .filter((item) => (item.message?.role === "user" || item.message?.role === "assistant") && item.text?.trim())
-      .map((item) => ({ role: item.message!.role, date: day(item._creationTime), text: item.text!.replace(MARKER, "").trim().slice(0, 4000) }));
-    return { chat: titleOf(chat), channel: chat.channel, messages, ...(page.isDone ? {} : { note: "Older messages exist; these are the most recent." }) };
+      .map((item) => ({ id: item._id, role: item.message!.role, date: day(item._creationTime), text: item.text!.slice(0, 16000), ...(item.text!.length > 16000 ? { nextOffset: 16000 } : {}) }));
+    return { chat: titleOf(chat), channel: chat.channel, messages, ...(page.isDone ? {} : { cursor: page.continueCursor, note: "Read the next older page with this cursor." }) };
+  },
+});
+
+export const message = internalQuery({
+  args: { id: v.string(), threadId: v.string() },
+  handler: async (ctx, args) => { const id = ctx.db.normalizeId("agentMessages", args.id); const row = id ? await ctx.db.get(id) : null; return row?.threadId === args.threadId ? row : null; },
+});
+export const attachmentRow = internalQuery({
+  args: { chatId: v.string(), messageKey: v.string(), fileName: v.string() },
+  handler: async (ctx, args) => {
+    const chatId = ctx.db.normalizeId("conversations", args.chatId); if (!chatId) return null;
+    const row = (await ctx.db.query("chatAttachments").withIndex("by_conversation", q => q.eq("conversationId", chatId)).collect()).find(row => row.messageKey === args.messageKey && row.fileName === args.fileName && !row.removedAt);
+    return row ? { ...row, url: row.storageId ? await ctx.storage.getUrl(row.storageId) : null } : null;
+  },
+});
+export const attachment = internalAction({
+  args: { chatId: v.string(), messageKey: v.string(), fileName: v.string(), offset: v.optional(v.number()), from: v.optional(v.id("conversations")) },
+  handler: async (ctx, args): Promise<{ fileName: string; contentType: string; base64: string; nextOffset?: number }> => {
+    const chats: Chat[] = await ctx.runQuery(internal.conversations.list, {}), chat = chats.find(chat => chat._id === args.chatId);
+    if (!chat || !openFrom(chats, args.from, "everywhere")(chat)) throw new Error("This chat may not read that file.");
+    const row = await ctx.runQuery(internal.history.attachmentRow, { chatId: args.chatId, messageKey: args.messageKey, fileName: args.fileName });
+    if (!row) throw new Error("This attachment is no longer available. Use the Files panel to find its name.");
+    const offset = Math.max(0, Math.floor(args.offset ?? 0)), length = 48000;
+    let bytes: Buffer, total = row.size;
+    if (row.storageId) {
+      const blob = await ctx.storage.get(row.storageId);
+      if (!blob) throw new Error("Attachment download failed.");
+      total = blob.size; bytes = Buffer.from(await blob.slice(offset, offset + length).arrayBuffer());
+    } else if (row.localPath) {
+      const file = await open(row.localPath, "r");
+      try { total = (await file.stat()).size; const buffer = Buffer.alloc(length); const result = await file.read(buffer, 0, length, offset); bytes = buffer.subarray(0, result.bytesRead); }
+      finally { await file.close(); }
+    } else throw new Error("This attachment has no readable file.");
+    return { fileName: row.fileName, contentType: row.contentType, base64: bytes.toString("base64"), ...(offset + bytes.length < total ? { nextOffset: offset + bytes.length } : {}) };
   },
 });

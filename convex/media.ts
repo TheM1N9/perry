@@ -3,6 +3,7 @@ import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
 import { index } from "./library";
+import { authenticate } from "./runner";
 
 /**
  * Local media: chat files that stay on the owner's machine, wherever the agent
@@ -49,14 +50,25 @@ export const forTurn = internalQuery({
     for (const id of args.attachmentIds as Id<"chatAttachments">[]) {
       const row = await ctx.db.get(id);
       if (!row || row.conversationId !== args.conversationId || row.removedAt) continue;
-      if (row.localPath) {
-        result.push({ localPath: row.localPath, fileName: row.fileName, contentType: row.contentType });
+      if (row.localPath && !row.storageId) {
+        result.push({ url: `/api/runner/files/${row._id}`, fileName: row.fileName, contentType: row.contentType });
         continue;
       }
       const url = row.storageId ? await ctx.storage.getUrl(row.storageId) : null;
       if (url) result.push({ url, fileName: row.fileName, contentType: row.contentType });
     }
     return result;
+  },
+});
+
+export const runnerAttachment = query({
+  args: { token: v.string(), id: v.id("chatAttachments") },
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const attachment = await ctx.db.get(args.id);
+    const chat = attachment ? await ctx.db.get(attachment.conversationId) : null;
+    if (!attachment || attachment.removedAt || !attachment.localPath || chat?.codexRunnerId !== runner._id) return null;
+    return { localPath: attachment.localPath, fileName: attachment.fileName, contentType: attachment.contentType };
   },
 });
 

@@ -21,6 +21,8 @@ import { policyOf, type Policy } from "./runner";
 import { turnHealth } from "./lib/turn-health";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
 import { pickPatch } from "./engines";
+import { chatRunner, engineModels } from "./models";
+import { ArgumentError } from "../server/validate";
 import { APPROVAL_TTL_MS, accessChanged } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
@@ -293,14 +295,20 @@ export const markChatSeen = mutation({
 
 export const createChat = mutation({
   /** projectId: started inside a project, the chat is in it from its first message. */
-  args: { key: vKey, projectId: v.optional(v.id("projects")) },
+  args: { key: vKey, projectId: v.optional(v.id("projects")), requestId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
+    if (args.requestId) {
+      if (args.requestId.length > 128) throw new Error("Invalid request id.");
+      const existing = await ctx.db.query("conversations").withIndex("by_create_request", q => q.eq("createRequestId", args.requestId)).first();
+      if (existing) return existing._id;
+    }
     if (args.projectId && !await ctx.db.get(args.projectId)) throw new Error("This project was deleted.");
     const threadId = await createThread(ctx, { userId: "web:dashboard", title: "New chat" });
     const engine = await defaultEngine(ctx);
     return await ctx.db.insert("conversations", {
       channel: WEB_CHANNEL,
+      ...(args.requestId ? { createRequestId: args.requestId } : {}),
       externalId: `session:${threadId}`,
       threadId,
       title: "New chat",
@@ -333,6 +341,7 @@ export const deleteChat = mutation({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const chat = webChat(await ctx.db.get(args.id));
+    if ((await ctx.db.query("terminalSessions").withIndex("by_chat", q => q.eq("conversationId", args.id)).collect()).some(session => session.status === "running")) throw new ArgumentError("Close this chat's terminal before deleting the chat.");
     const document = await ctx.db.query("notes").withIndex("by_live_chat", (q) => q.eq("liveChatId", args.id)).first();
     if (document) throw new Error("This chat belongs to a Riff document. Delete the document in Riff before deleting its editing chat.");
     if ((chat.pendingTurns ?? 0) > 0) {
@@ -368,6 +377,15 @@ export const deleteChat = mutation({
     await cancelTitle(ctx, args.id);
     for (const artifact of await ctx.db.query("interactiveAnswers").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(artifact._id);
     for (const source of await ctx.db.query("interactiveSources").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(source._id);
+    for (const receipt of await ctx.db.query("chatSends").withIndex("by_request", q => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(receipt._id);
+    for (const question of await ctx.db.query("userQuestions").withIndex("by_chat", q => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(question._id);
+    const computerRequests = await ctx.db.query("machineRequests").withIndex("by_chat", q => q.eq("conversationId", args.id)).collect();
+    if (computerRequests.some(request => request.status === "running")) throw new Error("Wait for this chat's computer operation to finish before deleting it.");
+    for (const request of computerRequests) {
+      if (request.projectId && (await ctx.db.get(request.projectId))?.workspaceRequestId === request._id) await ctx.db.patch(request.projectId, { workspaceRequestId: undefined });
+      await ctx.db.delete(request._id);
+    }
+    for (const terminal of await ctx.db.query("terminalSessions").withIndex("by_chat", q => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(terminal._id);
     await ctx.db.delete(args.id);
     await deleteThread(ctx, chat.threadId);
     return null;
@@ -451,8 +469,7 @@ export const searchChats = action({
     if (!needle) return [];
     const chats: Doc<"conversations">[] = await ctx.runQuery(internal.conversations.listDashboard, {});
     // Each channel's chats keep their messages under their own user id (agentStore.ts).
-    const users = [...new Set(chats.map((chat) => chat.channel === WEB_CHANNEL ? "web:dashboard" : `${chat.channel}:${chat.externalId}`))];
-    const messages = (await Promise.all(users.map((userId) => searchMessages(ctx, { userId, text: args.search.trim(), limit: 100 })))).flat();
+    const messages: import("./agentStore").StoredMessage[] = await ctx.runQuery(internal.agentStore.searchThreads, { text: args.search.trim(), threadIds: chats.map(chat => chat.threadId) });
     const snippets = new Map<string, string>(messages.map((message) => [message.threadId, message.text ?? ""]));
     return chats.filter((chat) =>
       titleOf(chat).toLocaleLowerCase().includes(needle) || snippets.has(chat.threadId),
@@ -948,6 +965,7 @@ export const sendChat = mutation({
     key: vKey,
     id: v.id("conversations"),
     text: v.string(),
+    requestId: v.optional(v.string()),
     attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
     messageKey: v.optional(v.string()),
     /** The model picked in the composer. Unset keeps the chat's current one. */
@@ -967,6 +985,15 @@ export const sendChat = mutation({
     const attachmentIds = args.attachmentIds ?? [];
     if (text.length === 0 && attachmentIds.length === 0) return null;
     const chat = ownerChat(await ctx.db.get(args.id));
+    const payload = JSON.stringify({ text, attachmentIds, messageKey: args.messageKey, mode: args.mode ?? "auto" });
+    if (args.requestId) {
+      if (args.requestId.length > 128) throw new Error("Invalid request id.");
+      const receipt = await ctx.db.query("chatSends").withIndex("by_request", q => q.eq("conversationId", args.id).eq("requestId", args.requestId!)).first();
+      if (receipt) {
+        if (receipt.payload !== payload) throw new Error("This send id already belongs to another message.");
+        return null;
+      }
+    }
     // What is written here would reach them as Perry's; the owner tells Perry what to say in their own chat.
     if (chat.contactId) throw new Error("This is Perry's chat with someone else. To have Perry tell them something, ask in your own chat.");
     // Paused, the message is not sent; it stays in the box for when he is back (pause.ts).
@@ -1000,6 +1027,7 @@ export const sendChat = mutation({
     });
 
     const preparingId = await ctx.runMutation(internal.codex.prepareTurn, { conversationId: chat._id, prompt, queue: args.mode === "queue" });
+    if (args.requestId) await ctx.db.insert("chatSends", { conversationId: chat._id, requestId: args.requestId, payload, createdAt: Date.now() });
 
     // Sent while a reply is running, this joins that reply (see codex.enqueueTurn).
     // Written in a Telegram or WhatsApp chat, it is that chat's turn, so the reply goes to the phone too.
@@ -1013,6 +1041,15 @@ export const sendChat = mutation({
       ...(web ? {} : { fromWeb: true }),
     });
     return null;
+  },
+});
+
+export const sendReceipt = query({
+  args: { key: vKey, id: v.id("conversations"), requestId: v.string() },
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    return Boolean(await ctx.db.query("chatSends").withIndex("by_request", q => q.eq("conversationId", args.id).eq("requestId", args.requestId)).first());
   },
 });
 
@@ -1146,7 +1183,10 @@ export const setChatModel = mutation({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     const chat = ownerChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)));
+    const picks = pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat));
+    const catalog = await engineModels(ctx, await chatRunner(ctx, chat));
+    if (args.model && catalog.length && !catalog.some(option => option.id === args.model && option.engine === (picks.engine ?? chat.engine))) throw new Error("This model is unavailable on this chat's computer. Refresh its model list.");
+    await ctx.db.patch(args.id, picks);
     return null;
   },
 });

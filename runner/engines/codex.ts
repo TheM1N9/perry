@@ -410,6 +410,12 @@ export class CodexEngine implements Engine {
     }
     const tracked = this.turns.get(params.threadId);
     const turn = tracked && !tracked.interrupted && (!tracked.turnId || !params.turnId || tracked.turnId === params.turnId) ? tracked : undefined;
+    if (method === "item/tool/requestUserInput") {
+      if (!turn?.sink.onQuestions || params.questions?.some((question: { isSecret?: boolean }) => question.isSecret)) { app.rejectRequest(request.id, "This turn cannot collect that input. Use the supported sign-in flow for secrets."); return; }
+      const answers = await turn.sink.onQuestions(String(params.itemId ?? request.id), (params.questions ?? []).map((question: { id: string; header: string; question: string; options?: Array<{ label: string; description: string }> }) => ({ ...question, options: question.options ?? [] })));
+      app.respond(request.id, { answers: Object.fromEntries(Object.entries(answers ?? {}).map(([id, answers]) => [id, { answers }])) });
+      return;
+    }
     const decisions = [
       { id: "accept", kind: "accept" as const, label: "Allow once" },
       { id: "acceptForSession", kind: "acceptForSession" as const, label: "Allow for this session" },
@@ -508,7 +514,7 @@ export class CodexEngine implements Engine {
     const machine = describeMachine();
     // The owner's OS and shell, so commands, paths and "open it" requests fit this machine.
     const home = [
-      `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`,
+      `Your own folder for files you make is ${input.projectId ? cwd : PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`,
       `Your skills folder is ${PATHS.skills}.`,
       ...(broken.length ? [`These skills failed to load, so they are not listed:\n${broken.map((line) => `- ${line}`).join("\n")}`] : []),
     ].join(" ") +
@@ -565,9 +571,15 @@ export class CodexEngine implements Engine {
     };
     const start = { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" };
     const spare = threadId ? null : await this.takeSpare(app, start);
-    const thread = threadId
-      ? await app.request<{ thread?: { id?: string } }>("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
-      : spare ? { thread: { id: spare } } : await app.request<{ thread?: { id?: string } }>("thread/start", start, 30_000);
+    let thread: { thread?: { id?: string } };
+    try {
+      thread = threadId
+        ? await app.request("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
+        : spare ? { thread: { id: spare } } : await app.request("thread/start", start, 30_000);
+    } catch (error) {
+      if (!threadId || !/not found|does not exist|no rollout|archived/i.test(message(error))) throw error;
+      return this.runTurn({ ...input, resumeCursor: undefined, history: await sink.onHistory?.() ?? history }, { ...sink, onSession: cursor => sink.onSession(cursor, threadId) });
+    }
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await sink.onSession(id);
@@ -635,7 +647,7 @@ export class CodexEngine implements Engine {
         ...(effort ? { effort } : {}),
         cwd,
         approvalPolicy: policy,
-        sandboxPolicy: sandboxPolicy(sandbox, guest ? [cwd] : [cwd, PATHS.files, PATHS.skills]),
+        sandboxPolicy: sandboxPolicy(sandbox, guest || input.projectId ? [cwd] : [cwd, PATHS.files, PATHS.skills]),
       }, 30_000);
       if (!started.turn?.id) throw new Error("Codex did not start a turn.");
       turnId = started.turn.id;

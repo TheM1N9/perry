@@ -85,6 +85,7 @@ import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
 import * as lib_workspace from "../convex/lib/workspace";
 import * as library from "../convex/library";
+import * as machines from "../convex/machines";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
 import * as meetings from "../convex/meetings";
@@ -97,6 +98,7 @@ import * as pause from "../convex/pause";
 import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
 import * as projects from "../convex/projects";
+import * as questions from "../convex/questions";
 import * as queue from "../convex/queue";
 import * as reactions from "../convex/reactions";
 import * as recovery from "../convex/recovery";
@@ -209,6 +211,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/whatsappFormat": lib_whatsappFormat,
   "lib/workspace": lib_workspace,
   "library": library,
+  "machines": machines,
   "mcp": mcp,
   "media": media,
   "meetings": meetings,
@@ -221,6 +224,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "persona": persona,
   "pet": pet,
   "projects": projects,
+  "questions": questions,
   "queue": queue,
   "reactions": reactions,
   "recovery": recovery,

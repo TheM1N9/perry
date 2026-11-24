@@ -72,7 +72,7 @@ const SEED_MODELS: EngineModel[] = [
  * Perry's own tools schedule things.
  */
 const DISALLOWED = [
-  "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "CronCreate", "CronDelete", "CronList", "ScheduleWakeup",
+  "EnterPlanMode", "ExitPlanMode", "CronCreate", "CronDelete", "CronList", "ScheduleWakeup",
   "RemoteTrigger", "PushNotification",
 ];
 /**
@@ -532,7 +532,7 @@ export class ClaudeEngine implements Engine {
 
     const machine = describeMachine();
     const home = [
-      `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`,
+      `Your own folder for files you make is ${input.projectId ? cwd : PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`,
       `Your skills folder is ${PATHS.skills}: each skill is a folder with a SKILL.md. When one fits the task, read its SKILL.md first and follow it.`,
     ].join(" ") +
       `\n\nThis machine runs ${machine.os}, and your commands run in ${machine.shell}; write commands, paths and quoting for that, and open files or apps with ${machine.open}.`;
@@ -605,7 +605,7 @@ export class ClaudeEngine implements Engine {
         options: guest ? { ...lockedDown(live), ...(resume ? { resume: cursor } : { sessionId: cursor }) } : {
           ...this.base(binary, (text) => { live.stderr = (live.stderr + text).slice(-4000); }),
           cwd,
-          additionalDirectories: [PATHS.files, PATHS.skills, PATHS.uploads],
+            additionalDirectories: input.projectId ? [] : [PATHS.files, PATHS.skills, PATHS.uploads],
           ...(resume ? { resume: cursor } : { sessionId: cursor }),
           ...(model ? { model } : {}),
           ...(effort ? { effort: effort as Options["effort"] } : {}),
@@ -623,6 +623,13 @@ export class ClaudeEngine implements Engine {
           disallowedTools: DISALLOWED,
           ...servers,
           canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
+            if (tool === "AskUserQuestion") {
+              const turn = live.turn;
+              if (!turn?.sink.onQuestions) return { behavior: "deny", message: "No turn is waiting for an answer." };
+              const questions = (toolInput.questions as Array<{ header: string; question: string; multiSelect?: boolean; options?: Array<{ label: string; description: string }> }> ?? []).map((question, index) => ({ id: String(index), header: question.header, question: question.question, options: question.options ?? [], multiple: Boolean(question.multiSelect) }));
+              const answers = await turn.sink.onQuestions(options.toolUseID, questions);
+              return answers ? { behavior: "allow", updatedInput: { ...toolInput, answers: Object.fromEntries(questions.map(question => [question.question, (answers[question.id] ?? []).join(", ")])) } } : { behavior: "deny", message: "The question was cancelled." };
+            }
             const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
             // The chat's access as it is now, not as the process started.
             if (live.access === "full") return allow;

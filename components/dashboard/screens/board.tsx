@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   CircleCheckIcon, CircleDashedIcon, CircleDotIcon, CircleIcon, CircleMinusIcon, CirclePauseIcon, CircleSlashIcon, CircleXIcon, ChevronDownIcon, ListFilterIcon,
-  ChevronRightIcon, XIcon, type LucideIcon,
+  ChevronRightIcon, SearchIcon, XIcon, type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useConnection, useQuery } from "@/client/react";
@@ -16,6 +16,7 @@ import { tickText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -23,7 +24,6 @@ import {
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProviderIcon } from "../provider-icon";
-import { useNeedsYouCount } from "../needs-you-count";
 import { Markdown } from "../chat/markdown";
 import { RunSteps } from "../chat/work";
 import { ApprovalCard } from "../approval-card";
@@ -140,7 +140,7 @@ const inTab = (status: BoardStatus, thread: BoardThread, tab: Tab, channel?: str
 
 // --- The address: view, channel, tab, open thread, computer ------------------------------------------------------
 
-type Place = { view: "tasks" | "activity"; channel: string | null; tab: Tab | null; thread: string | null; computer: string | null };
+type Place = { view: "tasks" | "activity"; channel: string | null; tab: Tab | null; thread: string | null; computer: string | null; q: string | null; sort: "priority" | "updated" | "oldest" | null };
 function useAddress() {
   const params = useSearchParams()!;
   const pathname = usePathname()!;
@@ -151,11 +151,13 @@ function useAddress() {
     tab: (TABS as readonly string[]).includes(params.get("tab") ?? "") ? params.get("tab") as Tab : "open",
     thread: params.get("thread"),
     computer: params.get("computer"),
+    q: params.get("q"),
+    sort: params.get("sort") === "updated" ? "updated" : params.get("sort") === "oldest" ? "oldest" : "priority",
   };
   const href = useCallback((next: Partial<Place>) => {
     const query = new URLSearchParams(params);
     for (const [name, value] of Object.entries(next)) {
-      if (value && !(name === "view" && value === "tasks") && !(name === "tab" && value === "open")) query.set(name, value);
+      if (value && !(name === "view" && value === "tasks") && !(name === "tab" && value === "open") && !(name === "sort" && value === "priority")) query.set(name, value);
       else query.delete(name);
     }
     const search = query.toString();
@@ -228,7 +230,7 @@ export function Board() {
   const { unseen, mark } = useSeen(board?.threads);
 
   const channels = useMemo(() => {
-    const projects = (board?.projects ?? []).filter((project) => board?.threads.some((thread) => thread.projectId === project.id))
+    const projects = (board?.projects ?? [])
       .map((project): Channel => ({ id: `project:${project.id}`, name: slug(project.name), group: "projects", has: (thread) => thread.projectId === project.id }));
     return [...KIND_CHANNELS, ...projects];
   }, [board]);
@@ -240,8 +242,6 @@ export function Board() {
   const notices = useMemo(() => (inbox ?? []).filter((item): item is Notice => item.kind !== "question"), [inbox]);
   const noticeFor = useMemo(() => new Map(notices.flatMap((item) => { const thread = noticeThread(item); return thread ? [[thread, item] as const] : []; })), [notices]);
   const strays = useMemo(() => notices.filter((item) => !noticeThread(item) || !board?.threads.some((thread) => thread.id === noticeThread(item))), [notices, board]);
-  // The one number the Board shows: what waits on you, counted as the sidebar's badge counts it (needs-you-count.tsx).
-  const needsYou = useNeedsYouCount();
 
   const dialog = useRef<HTMLDivElement>(null);
   // Over the board, focus moves into the open thread, so the keyboard starts where the eye is.
@@ -261,11 +261,12 @@ export function Board() {
       <main id="content" tabIndex={-1} inert={Boolean(pane && !wide) || undefined} className="@container flex min-w-0 flex-1 flex-col outline-none">
         <Header place={place} channel={channel} board={board} wide={wide} nav={menu}
           actions={<>
-            <ChannelActions channel={channel?.id} needsYou={place.view === "tasks" && place.tab === "needs you"} notices={notices} compact={!wide} />
+            <ChannelActions channel={channel?.id} needsYou={place.view === "tasks" && place.tab === "needs you"} notices={notices} compact={!wide} onCreated={id => place.go({ view: "tasks", channel: "tasks", tab: "all", thread: `task:${id}`, q: null, computer: null })} />
             <BoardPause active={busy} compact={!wide} />
           </>} />
+        <SearchWork place={place} />
         {place.view === "tasks"
-          ? <Tasks board={board} place={place} channel={channel} waitingFor={waitingFor} loose={loose} noticeFor={noticeFor} strays={strays} needsYou={needsYou} unseen={unseen} />
+          ? <Tasks board={board} place={place} channel={channel} waitingFor={waitingFor} loose={loose} noticeFor={noticeFor} strays={strays} unseen={unseen} />
           : <Activity board={board} place={place} channel={channel} />}
       </main>
       {pane && wide && <aside aria-label="Thread" className="flex w-[min(440px,36vw)] shrink-0 flex-col border-l">{pane}</aside>}
@@ -275,6 +276,36 @@ export function Board() {
 }
 
 const HEADER = "flex h-12 shrink-0 items-center gap-2 border-b px-4";
+
+const searchText = (query: string | null, text: string) => {
+  if (!query?.trim()) return true;
+  const lower = text.toLocaleLowerCase();
+  return query.trim().toLocaleLowerCase().split(/\s+/).every(word => lower.includes(word));
+};
+const matchesSearch = (thread: BoardThread, query: string | null, projects: BoardView["projects"] = []) => !query?.trim() || searchText(query,
+  [thread.title, thread.ask, thread.now, thread.label, thread.kind, thread.holder?.engine, thread.holder?.model, thread.holder?.machine, projects.find(project => project.id === thread.projectId)?.name].filter(Boolean).join(" "));
+
+function SearchWork({ place }: { place: ReturnType<typeof useAddress> }) {
+  const [draft, setDraft] = useState(place.q ?? "");
+  useEffect(() => { setDraft(new URL(window.location.href).searchParams.get("q") ?? ""); }, [place.q]);
+  const search = (value: string) => { setDraft(value); window.history.replaceState(null, "", place.href({ q: value || null })); };
+  return <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2" data-board-search>
+    <InputGroup className="h-9 max-w-xl flex-1">
+      <InputGroupAddon><SearchIcon aria-hidden /></InputGroupAddon>
+      <InputGroupInput type="search" aria-label="Search board" placeholder="Search tasks, chats, or agents..." value={draft} maxLength={200} onChange={event => search(event.target.value)}
+        onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); search(""); } }} />
+      {place.q && <InputGroupAddon align="inline-end"><InputGroupButton aria-label="Clear board search" size="icon-xs" onClick={() => search("")}><XIcon /></InputGroupButton></InputGroupAddon>}
+    </InputGroup>
+    {place.view === "tasks" && <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="shrink-0 text-xs" aria-label="Sort board" />}><ListFilterIcon />Sort</DropdownMenuTrigger>
+      <DropdownMenuContent align="end"><DropdownMenuRadioGroup value={place.sort ?? "priority"} onValueChange={value => place.go({ sort: value as Place["sort"] })}>
+        <DropdownMenuRadioItem value="priority">Needs you first</DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="updated">Recently updated</DropdownMenuRadioItem>
+        <DropdownMenuRadioItem value="oldest">Oldest first</DropdownMenuRadioItem>
+      </DropdownMenuRadioGroup></DropdownMenuContent>
+    </DropdownMenu>}
+  </div>;
+}
 
 /** The views and channels, as the viewer's left column has them. On a narrow screen it is the title's menu. */
 function Nav({ board, channels, place, unseen }: {
@@ -347,7 +378,7 @@ function Header({ place, channel, board, wide, nav, actions }: { place: ReturnTy
   const connection = useConnection();
   const title = channel ? `#${channel.name}` : place.view === "tasks" ? ALL_WORK : place.view;
   // A word on the order, where the view has one: the channel lists keep the board's own.
-  const gloss = place.view === "activity" ? "the latest across every channel" : channel ? undefined : "needs you first";
+  const gloss = place.view === "activity" ? "the latest across every channel" : place.sort === "updated" ? "recently updated" : place.sort === "oldest" ? "oldest first" : channel ? undefined : "needs you first";
   const machines = board?.machines ?? [];
   return (
     <header className={HEADER}>
@@ -390,12 +421,12 @@ function Header({ place, channel, board, wide, nav, actions }: { place: ReturnTy
 /** Whether a thread passes the computer filter: what holds it now, or held it last. */
 const onComputer = (thread: BoardThread, computer: string | null) => !computer || thread.holder?.machine === computer;
 
-function Tasks({ board, place, channel, waitingFor, loose, noticeFor, strays, needsYou, unseen }: {
+function Tasks({ board, place, channel, waitingFor, loose, noticeFor, strays, unseen }: {
   board?: BoardView; place: ReturnType<typeof useAddress>; channel?: Channel; waitingFor: Map<string, BoardWaiting>; loose: BoardWaiting[];
-  noticeFor: Map<string, Notice>; strays: Notice[]; needsYou?: number; unseen: (thread: BoardThread) => boolean;
+  noticeFor: Map<string, Notice>; strays: Notice[]; unseen: (thread: BoardThread) => boolean;
 }) {
   const [shown, setShown] = useState(PAGE);
-  useEffect(() => setShown(PAGE), [place.channel, place.tab, place.computer]);
+  useEffect(() => setShown(PAGE), [place.channel, place.tab, place.computer, place.q, place.sort]);
   // Sub-agents are listed under the thread that started them, never on their own.
   const agentsOf = useMemo(() => {
     const map = new Map<string, BoardThread[]>();
@@ -403,26 +434,38 @@ function Tasks({ board, place, channel, waitingFor, loose, noticeFor, strays, ne
     for (const list of map.values()) list.sort((a, b) => a.startedAt - b.startedAt);
     return map;
   }, [board]);
-  const matches = (thread: BoardThread) => inTab(standing(thread, waitingFor.get(thread.id)), thread, place.tab, channel?.id, noticeFor.get(thread.id));
+  const matching = useMemo(() => new Set(board?.threads.filter(thread => matchesSearch(thread, place.q, board.projects)).map(thread => thread.id)), [board, place.q]);
+  const matches = (thread: BoardThread, tab = place.tab) => inTab(standing(thread, waitingFor.get(thread.id)), thread, tab, channel?.id, noticeFor.get(thread.id))
+    && onComputer(thread, place.computer) && matching.has(thread.id);
   // Opened or closed by hand; otherwise a parent is open while one of its agents runs, or one is the thread open.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const expanded = (thread: BoardThread) => toggled[thread.id]
-    ?? Boolean(agentsOf.get(thread.id)?.some((agent) => agent.status === "working" || agent.id === place.thread));
+    ?? Boolean(agentsOf.get(thread.id)?.some((agent) => agent.status === "working" || agent.id === place.thread || Boolean(place.q?.trim()) && matches(agent)));
   const toggle = (thread: BoardThread) => setToggled((current) => ({
     ...Object.fromEntries(Object.entries(current).filter(([id]) => agentsOf.has(id))), [thread.id]: !expanded(thread),
   }));
-  const threads = (board?.threads ?? []).filter((thread) => !thread.parent && (!channel || channel.has(thread))
-    && (matches(thread) || Boolean(agentsOf.get(thread.id)?.some(matches))) && onComputer(thread, place.computer))
+  const scoped = (board?.threads ?? []).filter(thread => !thread.parent && (!channel || channel.has(thread)));
+  const threads = scoped.filter(thread => matches(thread) || Boolean(agentsOf.get(thread.id)?.some(agent => matches(agent))))
     // What needs the owner leads, whatever the order its threads came in.
-    .sort((a, b) => Number(Boolean(waitingFor.get(b.id))) - Number(Boolean(waitingFor.get(a.id))));
-  const looseShown = !channel && !place.computer && (place.tab === "open" || place.tab === "needs you" || place.tab === "all") ? loose : [];
-  const straysShown = !channel && !place.computer && (place.tab === "needs you" || place.tab === "all") ? strays : [];
+    .sort((a, b) => place.sort === "updated" ? b.updatedAt - a.updatedAt : place.sort === "oldest" ? a.startedAt - b.startedAt : Number(Boolean(waitingFor.get(b.id))) - Number(Boolean(waitingFor.get(a.id))));
+  const matchingLoose = !channel && !place.computer ? loose.filter(item => searchText(place.q, `${item.text} ${item.where ?? ""}`)) : [];
+  const matchingStrays = !channel && !place.computer ? strays.filter(item => searchText(place.q, `${item.title} ${item.text}`)) : [];
+  const looseShown = place.tab === "open" || place.tab === "needs you" || place.tab === "all" ? matchingLoose : [];
+  const straysShown = place.tab === "needs you" || place.tab === "all" ? matchingStrays : [];
+  const counts = Object.fromEntries(TABS.map(tab => [tab, scoped.filter(thread => matches(thread, tab) || agentsOf.get(thread.id)?.some(agent => matches(agent, tab))).length
+    + (["open", "needs you", "all"].includes(tab) ? matchingLoose.length : 0) + (["needs you", "all"].includes(tab) ? matchingStrays.length : 0)]));
   // On a phone the tabs scroll sideways: the one chosen is kept in view, not left past the edge.
   const tabs = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const nav = tabs.current;
     const active = nav?.querySelector<HTMLElement>("[aria-current=page]");
-    if (nav && active && (active.offsetLeft < nav.scrollLeft || active.offsetLeft + active.offsetWidth > nav.scrollLeft + nav.clientWidth)) nav.scrollLeft = active.offsetLeft - 16;
+    if (!nav || !active) return;
+    const reveal = () => active.scrollIntoView({ block: "nearest", inline: "nearest" });
+    reveal();
+    const observer = new ResizeObserver(reveal);
+    observer.observe(nav);
+    nav.querySelectorAll("a").forEach(link => observer.observe(link));
+    return () => observer.disconnect();
   }, [place.tab]);
   const fresh = useArrivals(board ? [...looseShown.map((item) => item.id), ...straysShown.map((item) => `${item.kind}:${item.id}`), ...threads.map((thread) => thread.id)] : undefined);
   return (
@@ -433,7 +476,7 @@ function Tasks({ board, place, channel, waitingFor, loose, noticeFor, strays, ne
           <Link key={tab} href={place.href({ tab })} scroll={false} aria-current={place.tab === tab ? "page" : undefined}
             className={cn("flex shrink-0 items-baseline gap-1 border-b border-transparent pb-1.5 whitespace-nowrap outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
               place.tab === tab ? "border-foreground text-foreground" : "text-muted-foreground")}>
-            {tab}{tab === "needs you" && needsYou ? <span className="nums font-mono text-[11px] text-warning" data-needs-you-tab>{needsYou}</span> : null}
+            {tab}{board && counts[tab] > 0 && <span className={cn("nums font-mono text-[11px]", tab === "needs you" && "text-warning")} data-needs-you-tab={tab === "needs you" ? "" : undefined}>{counts[tab]}</span>}
           </Link>
         ))}
         {/* A scrolled row drops its end padding; this keeps the last tab inset from the edge as the first is. */}
@@ -441,7 +484,11 @@ function Tasks({ board, place, channel, waitingFor, loose, noticeFor, strays, ne
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5">
         {!board && <div className="space-y-3 px-4 py-2" role="status" aria-label="Loading">{[0, 1, 2, 3].map((index) => <Skeleton key={index} className="h-9" />)}</div>}
-        {board && threads.length + looseShown.length === 0 && <p className="px-4 py-3 text-muted-foreground" data-empty>nothing here</p>}
+        {board && threads.length + looseShown.length + straysShown.length === 0 && <div className="space-y-1 px-4 py-6 text-muted-foreground" data-empty>
+          <p>{place.q?.trim() ? "No work matches your search." : "No work in this view."}</p>
+          {place.q?.trim() ? <Link href={place.href({ q: null })} className="text-foreground underline underline-offset-4">Clear search</Link>
+            : place.tab !== "all" ? <Link href={place.href({ tab: "all" })} className="text-foreground underline underline-offset-4">View all work</Link> : <p className="text-xs">Create a task above to give Perry something to work on.</p>}
+        </div>}
         <ul aria-label="Threads" className="max-w-[54rem]" data-rows>
           {looseShown.map((item) => <WaitingRow key={item.id} item={item} href={place.href({ thread: item.id })} selected={place.thread === item.id} fresh={fresh(item.id)} />)}
           {threads.slice(0, shown).map((thread) => (
@@ -610,9 +657,10 @@ function Activity({ board, place, channel }: { board?: BoardView; place: ReturnT
       const thread = event.thread ? threads.get(event.thread) : undefined;
       if (channel && !(thread && channel.has(thread))) return false;
       if (place.computer && (event.machine ?? thread?.holder?.machine) !== place.computer) return false;
+      if (!searchText(place.q, `${event.text ?? ""} ${event.agent?.title ?? ""} ${thread ? [thread.title, thread.ask, thread.now, thread.holder?.engine, thread.holder?.model, thread.holder?.machine].filter(Boolean).join(" ") : ""}`)) return false;
       return true;
     }).sort((a, b) => a.at - b.at).slice(-ACTIVITY);
-  }, [board, threads, channel, place.computer]);
+  }, [board, threads, channel, place.computer, place.q]);
   const scroller = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
   // The newest is at the bottom, as the viewer has it: start there, and stay there while you are.
@@ -627,7 +675,6 @@ function Activity({ board, place, channel }: { board?: BoardView; place: ReturnT
       <div className="flex-1" />
       {!board && <div className="space-y-3 p-4" role="status" aria-label="Loading">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-12" />)}</div>}
       {board && entries.length === 0 && <p className="px-4 py-3 text-muted-foreground" data-empty>nothing here</p>}
-      {entries.length > 0 && <Divider>today</Divider>}
       <ol aria-label="Activity" aria-live="polite" aria-relevant="additions" className="pb-3" data-activity>
         {entries.map((event) => {
           const thread = event.thread ? threads.get(event.thread) : undefined;
@@ -640,6 +687,7 @@ function Activity({ board, place, channel }: { board?: BoardView; place: ReturnT
             : event.verb === "approval" ? event.text : thread?.now ?? (event.text !== thread?.title ? event.text : undefined);
           return (
             <li key={event.id} data-entry={event.thread ?? event.id} data-event={event.verb} className={cn(fresh(event.id) && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 motion-safe:ease-out")}>
+              {(event === entries[0] || dayOf(entries[entries.indexOf(event) - 1].at) !== dayOf(event.at)) && <Divider>{dayOf(event.at)}</Divider>}
               <Message who={by} at={event.at} where={thread ? channelName(thread, board!.projects) : undefined} href={target} engine={by === "perry" ? undefined : thread?.holder?.engine}>
                 <p className="truncate">{thread?.title ?? event.text}</p>
                 <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground" data-line>
@@ -694,8 +742,7 @@ function Pane({ id, close, projects, notice, onSeen, overlay, place }: {
   const { dashboardKey } = useSession();
   const view = useQuery(api.board.thread, { key: dashboardKey, id });
   const thread = view?.thread;
-  const work = useQuery(api.dashboard.getWork, id.startsWith("task:") ? { key: dashboardKey } : "skip");
-  const task = work?.tasks.find((item) => `task:${item._id}` === id);
+  const task = view?.task;
   useEffect(() => { if (thread) onSeen(thread); }, [thread, onSeen]);
   const closer = (
     <Button variant="ghost" size="icon-sm" className="-mr-1.5 text-muted-foreground" aria-label="Close" render={<Link href={close} scroll={false} />}><XIcon /></Button>
@@ -737,8 +784,12 @@ function Pane({ id, close, projects, notice, onSeen, overlay, place }: {
           {thread.holder && status === "working" && !ongoing(thread) && <span className="text-muted-foreground" data-holder>· by <span className="font-mono">{holderWords(thread.holder)}</span> · <Ticking since={thread.startedAt} className="font-mono" /></span>}
           {thread.holder && !going(thread.status) && thread.finishedAt !== undefined && <span className="text-muted-foreground" data-holder>· <span className="font-mono">{holderWords(thread.holder)}</span> · took <span className="font-mono">{span(thread.finishedAt - thread.startedAt)}</span></span>}
         </p>
-        <ThreadActions thread={thread} question={asking?.kind === "question" ? asking.text : undefined} approval={asking?.kind === "approval" ? asking.id : undefined} notice={notice} shown={[error?.text, result?.text]}
+        <ThreadActions thread={thread} task={task} question={asking?.kind === "question" ? asking.text : undefined} approval={asking?.kind === "approval" ? asking.id : undefined} notice={notice} shown={[error?.text, result?.text]}
           fields={<>
+            {!!thread.dependencies?.length && <Field label="waits for"><ul className="space-y-1" data-task-dependencies>{thread.dependencies.map(dependency => <li key={dependency.id} className="flex items-baseline gap-2">
+              {dependency.status === "missing" ? <span>{dependency.title}</span> : <Link href={place(`task:${dependency.id}`)} scroll={false} className="min-w-0 flex-1 truncate underline underline-offset-4">{dependency.title}</Link>}
+              <span className={cn("shrink-0 text-muted-foreground", (dependency.status === "failed" || dependency.status === "cancelled" || dependency.status === "missing") && "text-warning")}>{dependency.status}</span>
+            </li>)}</ul></Field>}
             {error && <Field label="reason"><span className="whitespace-pre-wrap">{error.text}</span></Field>}
             {error?.step && <Field label="last step"><span data-last-step>{error.step}</span></Field>}
             {result && !error && <Field label={result.reply ? "reply" : "result"}><Clamp><div className="text-[13px] [&_.prose-chat]:text-[13px]"><Markdown text={result.text} /></div></Clamp></Field>}
