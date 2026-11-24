@@ -86,6 +86,8 @@ pickers follow the chat/project computer. Disconnecting a runner clears its loca
 session cursors. Fresh sessions retain opening requirements and recent history,
 with explicit links to omitted pages; `read_chat` pages long messages, and
 `read_chat_attachment` retrieves historical attachments in chunks.
+For recorded tool/command steps, pass `runId` and `activityCursor`; page older
+conversation messages with `cursor` and no `runId`.
 
 Codex native questions and Claude's AskUserQuestion appear in chat and the Board.
 Answers are recorded in portable history. Search retrieves a match per thread,
@@ -130,6 +132,10 @@ commits, profile cookie retention across close/transfer/legacy promotion, delaye
 send failures across navigation, queued work across computer changes and portable
 history. Desktop screenshots were inspected and no browser runtime errors were
 reported. The Board regression also checked 390 px phone layouts.
+
+Integration with main's private sub-agent handoff changes was checked separately:
+all 76 Board checks, 26 task-handoff checks and 8 history/access/pagination checks
+passed, along with production build and typecheck.
 
 One earlier failed run left the ignored disposable directory
 `node_modules/.workspace-e2e-C3TgCv` after a Windows file lock prevented its cleanup.

@@ -101,6 +101,7 @@ async function resume(ctx: MutationCtx): Promise<{ changed: boolean; missed: Mis
   if (!install?.paused) return { changed: false, missed: await missedRuns(ctx) };
   await ctx.db.patch(install._id, { paused: undefined });
   await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
+  await ctx.scheduler.runAfter(0, internal.tasks.resumeHandoffs, {});
   return { changed: true, missed: await missedRuns(ctx) };
 }
 

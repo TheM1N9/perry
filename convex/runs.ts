@@ -3,6 +3,7 @@ import { turnErrorCode } from "../lib/turn-errors";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { vRoute, vUsage, vTurnErrorCode } from "./schema";
+import { settleHandoffs } from "./tasks";
 
 /** When a chat's last run that ended well started, or null. */
 export const lastOk = internalQuery({
@@ -108,6 +109,7 @@ export const finish = internalMutation({
   handler: async (ctx, { id, ...rest }) => {
     const error = rest.error ? hide(rest.error, await savedValues(ctx)).slice(0, 2000) : undefined;
     await ctx.db.patch(id, { ...rest, error, errorCode: rest.status === "error" ? turnErrorCode(rest) : undefined, finishedAt: Date.now() });
+    await settleHandoffs(ctx, id, rest.status === "ok");
     return null;
   },
 });

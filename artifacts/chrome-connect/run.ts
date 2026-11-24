@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { z } from "zod";
 const output = resolve(process.argv[2] ?? "artifacts/chrome-connect/results"); mkdirSync(output, { recursive: true });
 const scratch = mkdtempSync(join(tmpdir(), "perry-chrome-connect-"));
 process.env.PERRY_HOME = join(scratch, "perry");
@@ -80,7 +81,7 @@ try {
   await owner({ action: "navigate", identity: identity(), url: `${site}/account` });
   const snapshot = await web.withBrowserView(chat, web.snapshot);
   check("existing signed-in session reused without cookie copying", snapshot.text.includes("SIGNED IN"));
-  const shot = await owner({ action: "frame", identity: identity() }) as { image: string };
+  const shot = z.object({ image: z.string() }).parse(await owner({ action: "frame", identity: identity() }));
   writeFileSync(join(output, "signed-in.jpg"), Buffer.from(shot.image, "base64"));
   check("live view captures the same authenticated tab", Buffer.from(shot.image, "base64").length > 1000);
   check("agent cannot run while owner controls", await web.withAgentBrowser(chat, undefined, web.snapshot).then(() => false, () => true));

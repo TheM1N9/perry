@@ -13,7 +13,9 @@ calling a paid engine. Each run writes result.json to its supplied output folder
 - Origin chat stays selected even when another chat is active; deleted origin
   falls back to the owner's main messaging channel, then web dashboard.
 - Guest registration is refused and guest destinations cannot receive results.
-- Busy origin queues a separate turn; full queue or pause leaves no partial event
+- Busy origin steers the running turn, retaining hidden/outside provenance even
+  if the engine queues it instead; worker text must never authorize outward writes.
+  Full queue or pause leaves no partial event
   and the same event can be retried once admission succeeds.
 - Queued preparation survives restart; completion includes the result's actual
   text, its path, worker name and reporting question with outside provenance.

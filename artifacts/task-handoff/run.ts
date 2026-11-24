@@ -32,9 +32,15 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 //   6. Two tasks ending together lose one, or their handovers run at once in
 //      the parent chat.
 //   7. A Telegram chat's task is answered somewhere else, or twice.
-//   8. With no engine able to take the handover, it is lost, or the owner is
-//      told more than once; it is never marked answered.
-//   9. A task queued from the Work page (no parent chat) stops reaching the owner.
+//   8. With no engine able to take the handover, the raw child report is sent
+//      to the owner instead of waiting for Perry, or is lost when deferred.
+//   9. A task queued from the Work page (no parent chat) bypasses Perry.
+//  10. A final reply does not close the task, gets truncated at 4000 characters,
+//      or loses the task's verification claims; an empty final closes it falsely.
+//  11. Transcript access leaks a run from a different chat or project.
+//  12. Simultaneous sibling results still create separate relay turns.
+//  13. Hidden/outside flags are lost when a result joins a turn or falls back to the queue.
+//  14. A deferred report cannot reach Perry after the owner returns to its chat.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/task-handoff/run.ts <outDir>");
@@ -84,7 +90,7 @@ const p = await perry({
 });
 const { KEY, BASE, call, check, notes, until, rows, getChat, messagesOf, turnsOf } = p;
 
-type Task = { _id: string; title: string; status: string; origin?: string; conversationId?: string; turns?: number; reported?: string };
+type Task = { _id: string; title: string; status: string; origin?: string; conversationId?: string; turns?: number; reported?: string; decision?: { version: string } };
 const tasks = () => rows("tasks") as unknown as Task[];
 const taskNamed = (title: string) => tasks().find((task) => task.title === title);
 const handoffsOf = (taskId: string) => rows("taskHandoffs").filter((row) => row.taskId === taskId);
@@ -130,6 +136,29 @@ try {
   check("handoverReadsAsOutside", Boolean(handoverTurn && handoverTurn.outsideAt !== undefined), handoverTurn && { outsideAt: handoverTurn.outsideAt, hidden: handoverTurn.hidden });
   check("handoverAnswered", handoffsOf(done._id).length === 1 && handoffsOf(done._id)[0]!.state === "answered" && handoffsOf(done._id)[0]!.tries === 1);
 
+  // Final replies close tasks directly; keep their words and verification beyond the old 4 KB cap.
+  const AUTO = "Automatic final result";
+  const finalResult = "Created summary.md. I opened and checked every PDF.\n" + "Evidence read back. ".repeat(270) + "END-OF-RESULT";
+  await call("dashboard:sendChat", { key: KEY, id: chat, text: queue(AUTO, `Complete the summary.\nRESULT ${finalResult}`) });
+  await until(() => taskNamed(AUTO)?.status === "done", "the final reply to close its task", 120);
+  const auto = taskNamed(AUTO)!;
+  await settled(chat, auto._id);
+  check("finalReplyClosesWithoutFinishTool", auto.turns === 1 && rows("tasks").find(row => row._id === auto._id)?.result === finalResult);
+  const autoHandoff = turnsOf(chat).find(turn => String(turn.prompt).includes(finalResult));
+  check("verbatimResultBeyondFourKB", Boolean(autoHandoff) && String(autoHandoff?.prompt).includes("END-OF-RESULT") && !String(autoHandoff?.prompt).includes("not a check you saw"));
+  const transcript = await call<any>("history:read", { chatId: auto.conversationId, from: chat });
+  check("parentCanReadTaskTranscript", transcript.messages.some((message: any) => message.text === finalResult) && transcript.activity.runs.length > 0);
+  const runId = transcript.activity.runs[0].id;
+  const steps = await call<any>("history:read", { chatId: auto.conversationId, from: chat, runId });
+  check("parentCanInspectActualSteps", Array.isArray(steps.activity.steps));
+  const wrongRun = await call<any>("history:read", { chatId: chat, from: chat, runId });
+  check("runCannotLeakAcrossChats", !wrongRun.activity.steps && Boolean(wrongRun.activity.note));
+  const EMPTY = "Empty final result";
+  await call("dashboard:sendChat", { key: KEY, id: chat, text: queue(EMPTY, "Complete the summary. EMPTY-RESULT") });
+  await until(() => taskNamed(EMPTY)?.status === "done", "an empty final to be corrected", 120);
+  await settled(chat, taskNamed(EMPTY)!._id);
+  check("emptyFinalGetsOneCorrection", taskNamed(EMPTY)?.turns === 2 && String(rows("tasks").find(row => row._id === taskNamed(EMPTY)!._id)?.result).includes("Recovered complete result"));
+
   // --- 4. Said twice? The task finishes again the same way, from a message in its own chat -------
   const taskChat = done.conversationId!;
   await call("dashboard:sendChat", { key: KEY, id: taskChat, text: `TOOL finish_task ${JSON.stringify({ taskId: done._id, outcome: "done", summary: "Wrote summary.md in the notes folder." })}` });
@@ -139,8 +168,9 @@ try {
   await until(async () => !(await getChat(taskChat)).isRunning, "the task chat's second extra turn", 60);
   await sleep(6_000);
   const afterRepeat = await messagesOf(chat);
-  check("neverSaidTwice", handoffsOf(done._id).length === 1 && fromTask(afterRepeat).length === 1 && raw(afterRepeat, DONE).length === 0 && notices(DONE).length === 0,
-    { handoffs: handoffsOf(done._id).length, answers: fromTask(afterRepeat).length });
+  const repeatedAnswers = fromTask(afterRepeat).filter(message => message.text.includes("Wrote summary.md in the notes folder."));
+  check("neverSaidTwice", handoffsOf(done._id).length === 1 && repeatedAnswers.length === 1 && raw(afterRepeat, DONE).length === 0 && notices(DONE).length === 0,
+    { handoffs: handoffsOf(done._id).length, answers: repeatedAnswers.length });
   check("noExtraTaskTurns", (taskNamed(DONE)!.turns ?? 0) === done.turns && taskNamed(DONE)!.status === "done", { before: done.turns, after: taskNamed(DONE)!.turns });
 
   // --- 5. Blocked: the question through Perry; the owner's answer resumes it once ----------------
@@ -152,7 +182,7 @@ try {
   const asked = await messagesOf(chat);
   check("questionThroughPerry", fromTask(asked).some((message) => message.text.includes("the 12th or the 19th")) && raw(asked, BLOCKED).length === 0 && notices(BLOCKED).length === 0);
   // The owner answers Perry; Perry passes it on with resume_task (here, as the fake, by the tool itself).
-  await call("dashboard:sendChat", { key: KEY, id: chat, text: `TOOL resume_task ${JSON.stringify({ taskId: blocked._id, answer: "the 19th" })}` });
+  await call("dashboard:sendChat", { key: KEY, id: chat, text: `TOOL resume_task ${JSON.stringify({ taskId: blocked._id, answer: "the 19th", decisionVersion: blocked.decision?.version })}` });
   await until(() => taskNamed(BLOCKED)?.status === "done", "the resumed task to finish", 120);
   await settled(chat, blocked._id);
   const resumed = taskNamed(BLOCKED)!;
@@ -172,14 +202,20 @@ try {
   const overlap = handoverTurns.some((turn, index) => index > 0 && (turn.startedAt ?? turn.createdAt) < (handoverTurns[index - 1]!.finishedAt ?? Infinity));
   check("bothComeBackOnce", fromTask(both).filter((message) => message.text.includes("Sorted 120 photos")).length === 1 && fromTask(both).filter((message) => message.text.includes("Moved 40 old files")).length === 1);
   check("handoversNeverOverlap", !overlap, handoverTurns.map((turn) => ({ started: turn.startedAt, finished: turn.finishedAt })));
+  const siblings = [...handoffsOf(taskNamed(ONE)!._id), ...handoffsOf(taskNamed(TWO)!._id)];
+  check("siblingsShareOneDelivery", siblings.length === 2 && siblings[0]!.runId === siblings[1]!.runId, siblings.map(row => ({ runId: row.runId, state: row.state })));
 
-  // --- 9. Queued from the Work page: no parent chat, so the owner hears it as it is ---------------
-  // (Telegram paired below; first the web-only owner, who reads it on the Work page: nothing is lost, no handover is made.)
+  // --- 9. Queued from Work: a missing parent still routes to Perry, never straight to the owner --
   const WORKPAGE = "Check the backups";
   await call("tasks:queueFromDashboard", { key: KEY, title: WORKPAGE, prompt: "Check last night's backups.\nFINISH done All three backups are there." });
   await until(() => taskNamed(WORKPAGE)?.status === "done", "the Work page task", 120);
-  await sleep(3_000);
-  check("workPageTaskHasNoHandover", handoffsOf(taskNamed(WORKPAGE)!._id).length === 0 && Boolean(taskNamed(WORKPAGE)!.reported));
+  await until(() => handoffsOf(taskNamed(WORKPAGE)!._id).length === 1, "the Work page result to reach Perry", 30);
+  const workPageHandoff = handoffsOf(taskNamed(WORKPAGE)!._id)[0]!;
+  await settled(String(workPageHandoff.conversationId), taskNamed(WORKPAGE)!._id);
+  const workPageMessages = await messagesOf(String(workPageHandoff.conversationId));
+  check("workPageTaskGoesThroughPerry", handoffsOf(taskNamed(WORKPAGE)!._id)[0]!.state === "answered"
+    && fromTask(workPageMessages).some(message => message.text.includes("All three backups are there."))
+    && raw(workPageMessages, WORKPAGE).length === 0 && notices(WORKPAGE).length === 0);
 
   // --- 7. A Telegram chat's task is answered on Telegram, once ------------------------------------
   const { code } = await call<{ code: string }>("installation:startPairing");
@@ -200,7 +236,7 @@ try {
   check("telegramNoWebCopy", (await messagesOf(chat)).every((message) => !message.text.includes("hotel-march")));
   notes.telegramChat = telegramChat;
 
-  // --- 8. No engine can take the handover: kept, tried, then the owner gets the notice once ---------
+  // --- 8. No engine can take the handover: retained for Perry, with no raw report to the owner ------
   // The task finishes, then the fake's plan is used up: every turn after it, the handover's included, hits the limit.
   const LIMITED = "Draft the invite";
   const before8 = phone().length;
@@ -209,17 +245,24 @@ try {
   const limited = taskNamed(LIMITED)!;
   await until(() => handoffsOf(limited._id).length === 1, "its handover", 30);
   await sleep(10_000);
-  check("keptWhileNoEngine", handoffsOf(limited._id)[0]!.state === "pending");
-  await until(() => handoffsOf(limited._id)[0]!.state !== "pending", "the handover to fall back", 300);
+  check("eventDrivenDeferral", handoffsOf(limited._id)[0]!.state === "waiting");
+  await until(() => handoffsOf(limited._id)[0]!.state === "waiting", "the handover to wait for Perry", 60);
   await sleep(5_000);
   const fell = handoffsOf(limited._id)[0]!;
   const lastWeb = await messagesOf(chat);
   notes.fallback = { state: fell.state, tries: fell.tries, phone: phone().slice(before8).map((message) => message.text.slice(0, 200)),
     sent: notices(LIMITED).map((row) => ({ channel: row.channel, text: String(row.text).slice(0, 200) })),
     web: lastWeb.filter((message) => /invite|broke|limit/i.test(message.text)).map((message) => ({ role: message.role, text: message.text.slice(0, 200) })) };
-  check("fallsBackOnce", fell.state === "fallback" && fell.tries === 3 && notices(LIMITED).length === 1
-    && lastWeb.filter((message) => message.role === "assistant" && message.text.includes("Drafted invite.md")).length === 1 && !fromTask(lastWeb).some((message) => message.text.includes("Drafted invite.md")));
+  check("failedRelayNeverSendsRawReport", fell.state === "waiting" && fell.tries === 3 && notices(LIMITED).length === 0
+    && !lastWeb.some(message => message.role === "assistant" && message.text.includes("Drafted invite.md"))
+    && !phone().slice(before8).some(message => message.text.includes("Drafted invite.md")));
   rmSync(join(fakeHome, "grok-limited"), { force: true });
+  await call("dashboard:sendChat", { key: KEY, id: chat, text: "Continue from the saved task results." });
+  await until(() => handoffsOf(limited._id)[0]!.state === "answered", "the deferred report to reach Perry", 120);
+  await settled(chat, limited._id);
+  const recoveredMessages = await messagesOf(chat);
+  check("deferredReportReturnsOnlyThroughPerry", handoffsOf(limited._id).length === 1 && notices(LIMITED).length === 0
+    && fromTask(recoveredMessages).filter(message => message.text.includes("Drafted invite.md")).length === 1);
   ok = true;
 } catch (error) {
   notes.stoppedAt = String(error);
