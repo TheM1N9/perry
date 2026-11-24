@@ -5,6 +5,7 @@ import { internalMutation, internalQuery, mutation, query, type MutationCtx, typ
 import { assertDashboardKey } from "./lib/auth";
 import { describeMissed, PAUSED_ERROR, type MissedRun } from "./lib/commands";
 import { stopTurns } from "./codex";
+import { discardPending } from "./phoneInbox";
 import { vPauseSource } from "./schema";
 
 /**
@@ -76,7 +77,7 @@ async function pause(ctx: MutationCtx, by: Source): Promise<{ changed: boolean; 
       for (const turn of turns) if (status !== "error" || turn.retrying) busy.add(turn.conversationId);
     }
   }
-  let stopped = 0;
+  let stopped = await discardPending(ctx);
   for (const id of busy) {
     const count = await stopTurns(ctx, id);
     stopped += count;

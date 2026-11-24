@@ -1932,7 +1932,7 @@ export const checkMonitorsNow = action({
  * error, and a watch that fired. Each stays until it is dealt with or dismissed.
  */
 export type InboxItem =
-  | { kind: "delivery"; id: Id<"sent">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
+  | { kind: "delivery"; id: Id<"sent"> | Id<"codexTurns"> | Id<"scheduledFailures"> | Id<"whatsappInbox"> | Id<"whatsappOutbox">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
   | { kind: "question"; id: Id<"tasks">; title: string; text: string; at: number }
   | { kind: "task-failed"; id: Id<"tasks">; title: string; text: string; at: number }
   | { kind: "job-error"; id: Id<"jobs">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
@@ -1950,6 +1950,18 @@ export const getInbox = query({
         if (row.batchId !== row._id) continue;
         items.push({ kind: "delivery", id: row._id, title: `${row.channel === "telegram" ? "Telegram" : row.channel === "whatsapp" ? "WhatsApp" : "Dashboard"} notification ${state === "uncertain" ? "unconfirmed" : "failed"}`, text: `${row.deliveryError ?? "Check the destination before sending again."}\n\nMessage: ${row.deliveryText ?? row.text}`, at: row.reservedAt ?? row.createdAt, ...(row.origin ? { chatId: row.origin } : {}) });
       }
+    }
+    for (const turn of await ctx.db.query("codexTurns").withIndex("by_delivery_error", q => q.gt("deliveryError", "")).take(100)) {
+      if (!turn.deliverySeenAt && turn.deliveryError) items.push({ kind: "delivery", id: turn._id, title: "WhatsApp reply needs attention", text: turn.deliveryError, at: turn.outgoingQueuedAt ?? turn.createdAt, chatId: turn.conversationId });
+    }
+    for (const row of await ctx.db.query("scheduledFailures").withIndex("by_created").order("desc").take(100)) {
+      if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: `Scheduled work ${row.state}`, text: `${row.functionName} (${row.scheduleId}). Inspect the existing task and server log before retrying; an uncertain action may already have happened.`, at: row.createdAt });
+    }
+    for (const row of await ctx.db.query("whatsappInbox").withIndex("by_state", q => q.eq("state", "failed")).order("desc").take(100)) {
+      if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: "WhatsApp input could not be accepted", text: row.error ?? "Intake failed after five attempts. Resend this message after checking the connection.", at: row.createdAt });
+    }
+    for (const state of ["failed", "uncertain"] as const) for (const row of await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", state)).order("desc").take(100)) {
+      if ((row.kind === "text" || row.kind === "file") && !row.turnId && !row.notificationId && !row.seenAt) items.push({ kind: "delivery", id: row._id, title: `WhatsApp send ${state}`, text: row.error ?? "Check WhatsApp before sending again.", at: row.createdAt });
     }
     for (const task of await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "blocked")).collect()) {
       if (task.question) items.push({ kind: "question", id: task._id, title: task.title, text: task.question, at: task.updatedAt });
@@ -1992,8 +2004,12 @@ export const dismissInbox = mutation({
     const now = Date.now();
     for (const item of args.items) {
       if (item.kind === "delivery") {
-        const id = ctx.db.normalizeId("sent", item.id);
-        if (id && await ctx.db.get(id)) await ctx.db.patch(id, { seenAt: now });
+        for (const table of ["sent", "scheduledFailures", "whatsappInbox", "whatsappOutbox"] as const) {
+          const id = ctx.db.normalizeId(table, item.id);
+          if (id && await ctx.db.get(id)) await ctx.db.patch(id, { seenAt: now });
+        }
+        const turnId = ctx.db.normalizeId("codexTurns", item.id);
+        if (turnId && await ctx.db.get(turnId)) await ctx.db.patch(turnId, { deliverySeenAt: now });
       } else if (item.kind === "task-failed") {
         const id = ctx.db.normalizeId("tasks", item.id);
         if (id) await ctx.db.patch(id, { seenAt: now });

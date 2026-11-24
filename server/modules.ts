@@ -97,6 +97,7 @@ import * as pages from "../convex/pages";
 import * as pause from "../convex/pause";
 import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
+import * as phoneInbox from "../convex/phoneInbox";
 import * as projects from "../convex/projects";
 import * as questions from "../convex/questions";
 import * as queue from "../convex/queue";
@@ -123,6 +124,7 @@ import * as vault from "../convex/vault";
 import * as wake from "../convex/wake";
 import * as web from "../convex/web";
 import * as whatsapp from "../convex/whatsapp";
+import * as whatsappInbox from "../convex/whatsappInbox";
 import * as work from "../convex/work";
 import * as workers from "../convex/workers";
 import * as workspace from "../convex/workspace";
@@ -223,6 +225,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "pause": pause,
   "persona": persona,
   "pet": pet,
+  "phoneInbox": phoneInbox,
   "projects": projects,
   "questions": questions,
   "queue": queue,
@@ -249,6 +252,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "wake": wake,
   "web": web,
   "whatsapp": whatsapp,
+  "whatsappInbox": whatsappInbox,
   "work": work,
   "workers": workers,
   "workspace": workspace,

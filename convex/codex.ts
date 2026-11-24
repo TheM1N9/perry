@@ -1,6 +1,8 @@
 import { deliverTurnInOrder } from "./lib/turn-delivery";
+import { createHash, randomBytes } from "node:crypto";
 import { ArgumentError } from "../server/validate";
 import { REACTION_ONLY } from "./reactions";
+import { discardPending } from "./phoneInbox";
 import { deleteStream, snapshotStream, streamBody, streamState } from "./lib/turn-stream";
 import { turnErrorCode, turnErrorDetail, turnErrorText } from "../lib/turn-errors";
 import { ConvexError, v, type Infer } from "convex/values";
@@ -27,7 +29,7 @@ import { assertQueueRoom, byQueuePosition, queuePosition, steerable, waitingCoun
 import { summarize } from "./lib/activity";
 import { HANDOFF_INSTRUCTIONS, handoffHistory, moveChat, resetWaitFor, retryable } from "./routing";
 import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
-import { vAccess, vCodexModel, vEngine, vGuestMessage, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage, vTurnErrorCode } from "./schema";
+import { vAccess, vCodexModel, vEngine, vGuestMessage, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage, vTurnErrorCode, vFileDelivery } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isInteractiveInput } from "../lib/interactive";
 import { citedMemories } from "../lib/reply-text";
@@ -285,7 +287,7 @@ export const enqueueTurn = internalMutation({
       createdAt: preparing?.createdAt ?? Date.now(),
     };
     if (running?.status === "running" && isSteering(args.policy, running, engine)) {
-      if (args.outside) await ctx.db.patch(running._id, { outsideAt: Date.now() });
+      if (args.outside || args.attachments?.length) await ctx.db.patch(running._id, { outsideAt: running.outsideAt ?? Date.now() });
       // The running turn already carries recalled memory; a steer adds only the message.
       const { recalled: _recalled, recallDigest: _digest, projectDigest: _project, flush: _flush, checkpoint: _checkpoint, guest: _guest, guestMessage: _message, ...steer } = message;
       const id = await ctx.db.insert("codexSteers", { ...steer, ...(args.outside ? { outsideAt: Date.now() } : {}), turnId: running._id, runnerId: running.runnerId!, status: "pending" });
@@ -299,7 +301,7 @@ export const enqueueTurn = internalMutation({
       throw new ConvexError(failure);
     }
     // A memory checkpoint or flush saves what the chat said so far: when the chat read something from outside, so did it (#136).
-    const outside = args.outside || ((args.checkpoint || args.flush) && await readOutside(ctx, args.conversationId));
+    const outside = args.outside || Boolean(args.attachments?.length) || ((args.checkpoint || args.flush) && await readOutside(ctx, args.conversationId));
     const waiting = conversation.channel === "web" && !conversation.contactId && !conversation.jobId && !conversation.taskId && !args.checkpoint && !args.flush
       ? await resetWaitFor(ctx, engine) : undefined;
     const ready = { ...message, runnerId, status: "queued" as const, ...(waiting ? { waiting } : {}), ...(outside ? { outsideAt: Date.now() } : {}) };
@@ -504,7 +506,7 @@ export const requestStop = internalMutation({
 
 /** /stop for one chat, and Pause Perry for every chat (pause.ts). How many turns it stopped. */
 export async function stopTurns(ctx: MutationCtx, conversationId: Id<"conversations">): Promise<number> {
-  let stopped = 0;
+  let stopped = await discardPending(ctx, conversationId);
   for (const status of ["running", "queued", "error"] as const) {
     const turns = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", conversationId).eq("status", status))
@@ -514,6 +516,7 @@ export async function stopTurns(ctx: MutationCtx, conversationId: Id<"conversati
       if (status === "error" && (!job.retrying || job.finalizedAt !== undefined)) continue;
       // A /compact is not a reply, and Codex finishes it quickly on its own.
       if (job.kind === "compact") continue;
+      await ctx.runMutation(internal.approvals.cancelForTurn, { turnId: job._id });
       if (status === "running") {
         await ctx.db.patch(job._id, { stopRequested: true });
         // A message sent into the reply stops with it, but stays in the chat.
@@ -623,12 +626,14 @@ export const claimTurn = mutation({
     const now = Date.now();
     // The chat's session, when it is on this turn's engine; a chat moved to another engine since starts one.
     const resumeCursor = resumeOf(conversation, engine)?.cursor;
-    await ctx.db.patch(job._id, { status: "running", startedAt: now, lastHeartbeatAt: now, unresponsiveAt: undefined, sessionCursor: resumeCursor });
+    const mcpGrant = randomBytes(32).toString("hex");
+    await ctx.db.patch(job._id, { status: "running", startedAt: now, lastHeartbeatAt: now, unresponsiveAt: undefined, sessionCursor: resumeCursor, mcpGrantHash: createHash("sha256").update(mcpGrant).digest("hex") });
     if (!job.hidden && !job.reactionEvent && !job.checkpoint && !job.flush && !job.guest && !job.webReaction) {
       await ctx.runMutation(internal.reactions.reactWeb, { turnId: job._id, emoji: "👀" });
     }
     return {
       ...job,
+      mcpGrant,
       ...(conversation.projectId ? { projectId: conversation.projectId, cwd: project?.workspace?.path } : {}),
       history: job.history ?? (resumeCursor ? undefined : await historyOf(ctx, conversation)),
       ...(job.resetResumes ? { prompt: `Continue the previous request after the usage reset. Use the recorded progress and do not repeat completed actions.\n\nOriginal owner request:\n${job.prompt}` } : {}),
@@ -1010,6 +1015,7 @@ export const finishTurn = mutation({
     const job = await ctx.db.get(args.id);
     if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
     // Stop owns the terminal outcome even if the engine races it with a success/error.
+    await ctx.runMutation(internal.approvals.cancelForTurn, { turnId: job._id });
     if (job.stopRequested) { args.stopped = true; args.error = undefined; args.errorCode = undefined; }
     const finishedAt = Date.now();
     // share_file may already have attached files to this turn.
@@ -1063,7 +1069,9 @@ export const finishTurn = mutation({
     const interrupted = Boolean(cleanError || args.stopped) && !args.response?.trim();
     const retained = interrupted ? progress?.trim() ? progress : await previousResponse(ctx, job) ?? args.response : args.response;
     const cited = citedMemories(retained);
-    const reactionOnly = !cleanError && !args.stopped && !mediaKey && Boolean(job.reactionAt || job.reactionEvent)
+    const conversation = await ctx.db.get(job.conversationId);
+    const reactionOnly = !cleanError && !args.stopped && !mediaKey && !conversation?.jobId && !conversation?.taskId
+      && !job.flush && !job.checkpoint && job.kind !== "compact"
       && cited.text?.trim() === REACTION_ONLY;
     if (cited.text?.trim() === REACTION_ONLY) cited.text = undefined;
     // Finished with nothing to show is not a reply: the chat says so, instead of keeping the owner's message alone.
@@ -1180,6 +1188,7 @@ export const retryOn = internalMutation({
 });
 
 const vTurnFile = v.object({
+  delivery: v.optional(vFileDelivery),
   storageId: v.optional(v.id("_storage")),
   localPath: v.optional(v.string()),
   fileName: v.string(),
@@ -1198,7 +1207,7 @@ export const turnFiles = internalQuery({
       .collect();
     // A file deleted from the Library is not sent.
     return rows.filter((row) => !row.removedAt).map((row) => ({
-      storageId: row.storageId, localPath: row.localPath, fileName: row.fileName, contentType: row.contentType, size: row.size,
+      storageId: row.storageId, localPath: row.localPath, fileName: row.fileName, contentType: row.contentType, size: row.size, delivery: row.delivery,
     }));
   },
 });
@@ -1421,6 +1430,10 @@ export const finalizeTurn = internalAction({
     const reply = job.stopped && conversation.channel !== "web" ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
     // Each step is recorded once done, so recovery can retry this safely (see recovery.ts).
     const done = (step: "reportedAt" | "savedAt" | "deliveredAt") => ctx.runMutation(internal.codex.markStep, { id: args.id, step });
+    const tellHere = async (text: string) => {
+      if (conversation.channel === "whatsapp") await ctx.runMutation(internal.whatsapp.queueTurn, { turnId: args.id, to: conversation.externalId, text, files: [] });
+      else { await tell(ctx, conversation, text); await done("deliveredAt"); }
+    };
     const userId = conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`;
     // A memory checkpoint leaves nothing in the chat, whatever came of it.
     if (job.checkpoint) {
@@ -1437,9 +1450,7 @@ export const finalizeTurn = internalAction({
         await done("savedAt");
       }
       if (conversation.channel !== "web" && job.error && !job.deliveredAt) {
-        await tell(ctx, conversation, `Fresh start, but this chat was not summarised into memory first: ${job.error}`)
-          .catch((error) => console.error(`Could not report the flush: ${String(error)}`));
-        await done("deliveredAt");
+        await tellHere(`Fresh start, but this chat was not summarised into memory first: ${job.error}`);
       }
       await ctx.runMutation(internal.codex.markFinalized, args);
       return null;
@@ -1448,9 +1459,7 @@ export const finalizeTurn = internalAction({
     // Telegram is told, like any command.
     if (job.kind === "compact") {
       if (conversation.channel !== "web" && !job.deliveredAt) {
-        await tell(ctx, conversation, job.error ? `Could not compact: ${job.error}` : COMPACTED)
-          .catch((error) => console.error(`Could not report compaction: ${String(error)}`));
-        await done("deliveredAt");
+        await tellHere( job.error ? `Could not compact: ${job.error}` : COMPACTED);
       }
       await ctx.runMutation(internal.codex.markFinalized, args);
       return null;
@@ -1507,8 +1516,8 @@ export const finalizeTurn = internalAction({
       await done("deliveredAt");
     }
     if (conversation.channel === "whatsapp" && !job.deliveredAt && guest) {
-      if (guestAnswer) await ctx.runMutation(internal.whatsapp.send, { to: conversation.externalId, text: guestAnswer });
-      await done("deliveredAt");
+      if (guestAnswer) await ctx.runMutation(internal.whatsapp.queueTurn, { turnId: args.id, to: conversation.externalId, text: guestAnswer, files: [] });
+      else await done("deliveredAt");
     }
     if (conversation.channel === "telegram" && !job.deliveredAt && !guest) {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
@@ -1535,14 +1544,7 @@ export const finalizeTurn = internalAction({
       const answer = job.error
         ? `${job.response ? `${job.response}\n\n` : ""}${turnErrorText(job)}`
         : reply || (files.length ? "" : "No reply came back.");
-      if (answer) await ctx.runMutation(internal.whatsapp.send, { to: conversation.externalId, text: answer });
-      for (const file of files) {
-        await ctx.runMutation(internal.whatsapp.sendFile, {
-          to: conversation.externalId, fileName: file.fileName, contentType: file.contentType,
-          ...(file.storageId ? { storageId: file.storageId } : {}), ...(file.localPath ? { localPath: file.localPath } : {}),
-        });
-      }
-      await done("deliveredAt");
+      await ctx.runMutation(internal.whatsapp.queueTurn, { turnId: args.id, to: conversation.externalId, text: answer, files: files.map(file => ({ fileName: file.fileName, contentType: file.contentType, delivery: file.delivery, ...(file.storageId ? { storageId: file.storageId } : {}), ...(file.localPath ? { localPath: file.localPath } : {}) })) });
     }
     await ctx.runMutation(internal.codex.markFinalized, args);
     return null;
@@ -1592,17 +1594,14 @@ export const markOutside = internalMutation({
 });
 
 /**
- * Whether standing changes need no fresh owner response: the turn read nothing from outside, or the
- * owner has written since it did (a message that joined it, a steer). The
- * owner's next message is a new turn, so their go-ahead always counts.
+ * Standing changes retain outside provenance for the rest of this turn.
+ * A separate owner turn starts fresh; a generic acknowledgement is not an approval.
  */
 export const outwardAllowed = internalQuery({
   args: { turnId: v.id("codexTurns") },
   handler: async (ctx, args): Promise<boolean> => {
     const turn = await ctx.db.get(args.turnId);
-    if (!turn || turn.outsideAt === undefined) return true;
-    const steers = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id).eq("status", "applied")).collect();
-    return steers.some((steer) => !steer.hidden && steer.outsideAt === undefined && !isInteractiveInput(steer.prompt) && (steer.appliedAt ?? 0) > turn.outsideAt!);
+    return Boolean(turn && turn.outsideAt === undefined);
   },
 });
 
@@ -1615,43 +1614,43 @@ export const internetMayRead = internalQuery({
   },
 });
 
+export const preparingMayRun = internalQuery({
+  args: { turnId: v.id("codexTurns") },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.turnId);
+    return Boolean(turn?.preparing && turn.status === "queued" && !turn.stopRequested && !turn.stopped && !await pausedAt(ctx));
+  },
+});
+
 /**
  * Which of the runner's running turns a call to Perry's tools belongs to. The
  * runner runs several chats' turns at once, so a call names its chat: Codex
  * sends its thread (and, from a subagent, its session) in every tool call, and
  * the other engines send the chat (X-Perry-Chat, runner/engine.ts toolsOfChat).
- * With one turn running, legacy calls without identity use that turn. Explicit
- * stale or conflicting identities are never rebound. An unidentified call among
- * several turns is `unknown`; only initialize/tools/list may proceed.
+ * A fresh grant pins every call to one claimed turn. Native session/chat metadata
+ * can narrow that identity but can never select a different turn.
  */
 export const mcpAccess = internalQuery({
-  args: { token: v.string(), threads: v.optional(v.array(v.string())), chat: v.optional(v.string()) },
+  args: { token: v.string(), threads: v.optional(v.array(v.string())), chat: v.optional(v.string()), turn: v.optional(v.string()), grant: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations">; guest: boolean; initiativeTaskId?: Id<"tasks">; heartbeat?: boolean; unknown?: true; paused?: true; stopped?: true } | null> => {
     const runner = await authenticate(ctx, args.token).catch(() => null);
     if (!runner) return null;
-    const running = await ctx.db.query("codexTurns")
-      .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
-      .take(20);
-    const turns = (await Promise.all(running.map(async (job) => ({ job, conversation: await ctx.db.get(job.conversationId) }))))
-      .filter((turn): turn is { job: Doc<"codexTurns">; conversation: Doc<"conversations"> } => turn.conversation !== null);
-    const matches = turns.filter(({ job, conversation }) => {
-      const cursor = job.sessionCursor ?? resumeOf(conversation, job.engine)?.cursor;
-      return cursor !== undefined && args.threads?.includes(cursor);
-    });
-    const chat = turns.find(({ conversation }) => conversation._id === args.chat);
-    const conflict = matches.length > 1 || args.chat !== undefined && (!chat || matches.some(match => match !== chat));
-    const named = conflict ? undefined : matches[0] ?? chat;
-    // Legacy callers may omit identity. An explicit stale identity never falls through to a sibling.
-    const identified = Boolean(args.threads?.length || args.chat !== undefined);
-    const only = !identified && turns.length === 1 ? turns[0] : undefined;
-    const turn = named ?? only ?? turns[0];
-    if (!turn) return null;
-    const { job, conversation } = turn;
+    const grantId = args.turn ? ctx.db.normalizeId("codexTurns", args.turn) : null;
+    const granted = grantId ? await ctx.db.get(grantId) : null;
+    if (!granted || granted.runnerId !== runner._id || granted.status !== "running" || !args.grant
+      || granted.mcpGrantHash !== createHash("sha256").update(args.grant).digest("hex")) return null;
+    const job = granted;
+    const conversation = await ctx.db.get(job.conversationId);
+    if (!conversation) return null;
+    const cursor = job.sessionCursor ?? resumeOf(conversation, job.engine)?.cursor;
+    const unknown = args.chat !== undefined && args.chat !== conversation._id
+      || Boolean(args.threads?.length && (!cursor || !args.threads.includes(cursor)));
     const task = conversation.taskId ? await ctx.db.get(conversation.taskId) : null;
     const schedule = conversation.jobId ? await ctx.db.get(conversation.jobId) : null;
     const goalInactive = task?.initiative && task.goalId && (await ctx.db.get(task.goalId))?.status !== "active";
     return {
-      ...(named || only ? {} : { unknown: true as const }),
+      ...(unknown ? { unknown: true as const } : {}),
       // Paused, a turn still winding down acts on nothing more (mcp.ts).
       ...(await pausedAt(ctx) ? { paused: true as const } : {}),
       ...(job.stopRequested || job.stopped || goalInactive ? { stopped: true as const } : {}),
@@ -1662,9 +1661,7 @@ export const mcpAccess = internalQuery({
       ...(job.preparation && task?.initiative ? { initiativeTaskId: task._id } : {}),
       ...(schedule?.builtin === "heartbeat" ? { heartbeat: true } : {}),
       conversationId: conversation._id,
-      // A chat with someone else gets only the guest tools (mcp.ts); when it cannot be told which chat is asking and
-      // one of those is running, so does the caller, rather than risk handing it the owner's.
-      guest: Boolean(conversation.contactId) || (!named && !only && turns.some((item) => item.conversation.contactId)),
+      guest: Boolean(conversation.contactId),
     };
   },
 });

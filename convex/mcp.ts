@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
+import { busyResponse, requestBytes, requestSlot, RequestLimitError } from "../server/request-limits";
 import { z } from "zod";
 import { internal } from "./_generated/api";
-import { httpAction } from "./_generated/server";
+import { httpAction, type ActionCtx } from "./_generated/server";
 import { describeError, errorText } from "./lib/errors";
 import { PAUSED_ERROR } from "./lib/commands";
 import { GUEST_TOOLS as GUEST_TOOL_NAMES, PREPARATION_TOOLS } from "./lib/engines";
@@ -70,6 +71,7 @@ const SHARE_FILE = {
   inputSchema: z.object({
     path: z.string().min(3).optional().describe("Absolute path to the file on this computer."),
     id: z.string().min(3).optional().describe("A Library item's id, from library_find or library_list, instead of a path."),
+    delivery: z.object({ caption: z.string().max(1024).optional(), replyTo: z.string().max(200).optional(), voiceNote: z.boolean().optional() }).optional().describe("WhatsApp file delivery: a caption, the original message id to quote, or voiceNote for validated Opus Ogg audio. Convert other audio to Opus Ogg before requesting a voice note."),
   }),
 };
 
@@ -180,12 +182,25 @@ function codexThreads(message: RpcMessage): string[] {
 }
 
 export const handle = httpAction(async (ctx, request) => {
+  const release = requestSlot("mcp");
+  if (!release) return busyResponse();
+  try { return await handleRpc(ctx, request); }
+  catch (error) {
+    if (error instanceof RequestLimitError) return json({ error: error.message }, error.status);
+    throw error;
+  } finally { release(); }
+});
+
+async function handleRpc(ctx: ActionCtx, request: Request): Promise<Response> {
   const token = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const credentials = { token: token ?? "", turn: request.headers.get("x-perry-turn") ?? "", grant: request.headers.get("x-perry-grant") ?? "" };
+  if (!token || !await ctx.runQuery(internal.codex.mcpAccess, credentials)) return json({ error: "This tool session has expired. Restart the runner if it needs updating." }, 401);
   let message: RpcMessage | null = null;
-  try { message = await request.json() as RpcMessage; }
+  const bytes = await requestBytes(request, 2 * 1024 * 1024);
+  try { message = JSON.parse(new TextDecoder().decode(bytes)) as RpcMessage; }
   catch {}
   const chat = request.headers.get("x-perry-chat") ?? undefined;
-  const access = token ? await ctx.runQuery(internal.codex.mcpAccess, { token, threads: message ? codexThreads(message) : [], ...(chat ? { chat } : {}) }) : null;
+  const access = await ctx.runQuery(internal.codex.mcpAccess, { ...credentials, threads: message ? codexThreads(message) : [], ...(chat ? { chat } : {}) });
   if (!access) return json({ error: "No Codex turn is running for this runner." }, 401);
   if (!message) return fail(null, -32700, "Parse error");
   if (message.id === undefined || message.id === null) return new Response(null, { status: 202 });
@@ -235,8 +250,8 @@ export const handle = httpAction(async (ctx, request) => {
         try {
           if (!parsed.data.path && !parsed.data.id) return reply(message.id, { isError: true, content: [{ type: "text", text: "Give the file's absolute path, or a Library item's id." }] });
           const shared = parsed.data.id
-            ? await ctx.runMutation(internal.media.shareFromLibrary, { turnId: access.turnId, id: parsed.data.id })
-            : await ctx.runMutation(internal.media.shareFromTurn, { turnId: access.turnId, path: parsed.data.path! });
+            ? await ctx.runMutation(internal.media.shareFromLibrary, { turnId: access.turnId, id: parsed.data.id, delivery: parsed.data.delivery })
+            : await ctx.runMutation(internal.media.shareFromTurn, { turnId: access.turnId, path: parsed.data.path!, delivery: parsed.data.delivery });
           return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ attached: true, delivery: "pending", note: "Attached to this turn. Delivery to a messaging app happens after the turn finishes and is not confirmed yet. Do not claim the file has been sent.", ...shared }) }] });
         } catch (error) {
           return toolError(message.id, error);
@@ -294,6 +309,7 @@ export const handle = httpAction(async (ctx, request) => {
         }
       }
       // Whether the turn read something from outside before this call: what it writes is from outside (issue #136).
+      if (READS_OUTSIDE.has(name) || name === "read_chat" || name === "read_chat_attachment") await ctx.runMutation(internal.codex.markOutside, { turnId: access.turnId });
       const outside = !(await ctx.runQuery(internal.codex.outwardAllowed, { turnId: access.turnId }));
       const acting = standing(name, input);
       if (acting && outside) {
@@ -314,7 +330,7 @@ export const handle = httpAction(async (ctx, request) => {
         const internet = name === "internet_read" || name === "internet_search" || name === "internet_scroll";
         const cancellable = internet || name === "browser" || name === "upload_files";
         const timer = cancellable ? setInterval(() => void check(), 500) : undefined;
-        const signal = AbortSignal.any([request.signal, controller.signal]);
+        const signal = AbortSignal.any([request.signal, controller.signal, AbortSignal.timeout(11 * 60_000)]);
         const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId, turnId: access.turnId, outside, readOnly: bounded, signal } };
         let output: unknown;
         try {
@@ -346,4 +362,4 @@ export const handle = httpAction(async (ctx, request) => {
     default:
       return fail(message.id, -32601, `Method not found: ${message.method}`);
   }
-});
+}

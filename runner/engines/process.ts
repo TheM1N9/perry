@@ -1,4 +1,5 @@
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { killTree } from "../../lib/kill-tree";
 
 /** One argument as cmd.exe reads it: quoted when it has spaces or characters cmd would act on. */
 const cmdArg = (arg: string) => /[\s"&|<>^()%!]/.test(arg) ? `"${arg.replace(/"/g, '""')}"` : arg;
@@ -21,16 +22,7 @@ export function spawnEngine(command: string, args: string[], env?: NodeJS.Proces
 }
 
 /** End a process and everything it started: asked to on macOS and Linux (SIGTERM), or at once (SIGKILL, and always on Windows). */
-export function killTree(child: { pid?: number; kill(signal?: NodeJS.Signals): boolean }, signal: NodeJS.Signals = "SIGTERM") {
-  if (!child.pid) return;
-  try {
-    if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
-    else process.kill(-child.pid, signal);
-  } catch {
-    // Already gone, or not a group leader after all.
-    try { child.kill(signal); } catch {}
-  }
-}
+export { killTree } from "../../lib/kill-tree";
 
 /**
  * The command that starts an engine's CLI: its usual name, or what an

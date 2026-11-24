@@ -321,10 +321,11 @@ export const whatsappOutcome = internalMutation({
   args: { id: v.id("sent") },
   handler: async (ctx, args) => {
     const receipt = await ctx.db.get(args.id);
-    if (!receipt || !["sending", "failed"].includes(receipt.deliveryState ?? "") || receipt.queuedAt === undefined) return;
+    if (!receipt || !["sending", "failed", "uncertain"].includes(receipt.deliveryState ?? "") || receipt.queuedAt === undefined) return;
     const outbox = await ctx.db.query("whatsappOutbox").withIndex("by_notification", q => q.eq("notificationId", args.id)).collect();
     if (!outbox.length) return;
-    const failed = outbox.filter(row => row.state === "failed");
+    const uncertain = outbox.some(row => row.state === "uncertain");
+    const failed = outbox.filter(row => row.state === "failed" || row.state === "uncertain");
     if (!failed.length && outbox.some(row => row.state !== "sent")) return;
     const error = failed.length ? failed.map(row => row.file ? `Could not send ${row.file.fileName}.` : "Could not send the job report on WhatsApp.").join("\n") : undefined;
     const sentAt = outbox.some(row => row.state === "sent") ? receipt.sentAt ?? Date.now() : undefined;
@@ -334,11 +335,11 @@ export const whatsappOutcome = internalMutation({
     }
     const rows = await ctx.db.query("sent").withIndex("by_batch", q => q.eq("batchId", receipt._id)).collect();
     for (const row of rows) {
-      await ctx.db.patch(row._id, { deliveryState: error ? "failed" : "delivered", deliveryError: error, ...(sentAt ? { sentAt } : {}) });
+      await ctx.db.patch(row._id, { deliveryState: uncertain ? "uncertain" : error ? "failed" : "delivered", deliveryError: uncertain ? "WhatsApp has not confirmed this send. Check the destination before sending again." : error, ...(sentAt ? { sentAt } : {}) });
       await recordFileOutcome(ctx, row, error);
     }
     const owner = await ctx.db.query("installation").first();
-    if (error && owner?.claimedAt && owner.whatsappOwner === outbox[0].to) await queueText(ctx, outbox[0].to, error);
+    if (error && !uncertain && owner?.claimedAt && owner.whatsappOwner === outbox[0].to) await queueText(ctx, outbox[0].to, error);
   },
 });
 

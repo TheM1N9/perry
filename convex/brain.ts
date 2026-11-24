@@ -633,6 +633,10 @@ export const handleTurn = internalAction({
         const messageKey = crypto.randomUUID();
         for (const item of args.storedMedia) {
           attachmentIds.push(await ctx.runMutation(internal.media.attachStored, { conversationId: conversation._id, messageKey, ...item }));
+          if (!guest && channel === "whatsapp" && args.preparingId && item.fileName === "voice-note.ogg" && item.contentType.startsWith("audio/")) {
+            const result = await ctx.runAction(internal.speech.whatsappVoice, { turnId: args.preparingId as Id<"codexTurns">, storageId: item.storageId });
+            prompt = `${prompt}\n\n${result.text ? `Voice note transcript (automatic; verify names and numbers):\n${result.text}` : `Voice transcription unavailable: ${result.error ?? "No speech was recognized."} The playable original is attached. Do not claim to have heard it.`}`;
+          }
         }
         prompt = `${prompt}
 
