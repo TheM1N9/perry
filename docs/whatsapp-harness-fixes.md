@@ -95,3 +95,9 @@ pnpm exec bun artifacts/whatsapp/run.ts <temporary-output-directory>
 The additional fault scenarios used temporary extensions of those fixtures, separate SQLite homes, fake channel transports and fake engine responses. This ledger retains the tested inputs, outcomes and counts. Existing project tests and artifacts were preserved. No real WhatsApp sends, connected-account writes, paid model calls, live credential changes or live-service restarts were used for verification. Real-provider reconnection and live calling were not tested.
 
 Cleanup of `artifacts/.whatsapp-harness-check/`, the two task-created `perry-wa-auth-check-*` homes, one abandoned `perry-phone-bursts-*` home and the two `.harness-*.log` files was attempted after validating the target paths. Automatic approval review rejected the deletion command with “blocked by policy.” These disposable files remain; the rejection was not bypassed.
+
+### Pre-merge CI fixture compatibility
+
+Existing E2E fixtures now claim native turn grants when calling MCP and bind chat approvals to an active turn. The upload rejection probe uses the shared transfer limit plus one byte. Guest replays explicitly dispatch committed intake while their scheduler is stopped, and the owner reaction replay flushes the quiet-window buffer. The file-delivery replay verifies that an ambiguous send is not retried and a late receipt resolves its reserved message ID.
+
+Local reruns passed all 18 job-file delivery cases, seven Scroll cases, 28 security replay checks, 15 guest-file cases, ten guest-reaction cases and 20 inherited-access cases. Existing orphan-task, worker-webhook, streaming, file-rendering, client and Telegram lifecycle replays also passed, along with `pnpm test` and all nine smoke checks. These are existing regression suites adapted to the changed contracts; no new unit tests were added.
