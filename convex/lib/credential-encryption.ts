@@ -3,7 +3,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 /** Local backend only. No key or credential is ever included in an error. */
 export const CREDENTIAL_PREFIX = "perry:credential:";
 const VERSION = `${CREDENTIAL_PREFIX}v1:`;
-export type CredentialTable = "vault" | "secrets";
+export type CredentialTable = "vault" | "secrets" | "whatsappAuth";
 
 export function credentialKey(): Buffer {
   const encoded = process.env.PERRY_CREDENTIAL_KEY;

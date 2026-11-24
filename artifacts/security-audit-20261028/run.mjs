@@ -8,6 +8,7 @@ import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { NextRequest } from 'next/server.js';
+import { FILE_TRANSFER_LIMIT } from '../../lib/media-limits.ts';
 
 const out = resolve(import.meta.dirname);
 const scratch = mkdtempSync(join(tmpdir(), 'perry-security-audit-'));
@@ -184,7 +185,7 @@ try {
   });
   await check('Oversized declared uploads do not consume their one-use capability', async () => {
     const upload = (await owner('dashboard:generateUploadUrl')).body.value;
-    const request = new NextRequest(base + upload, { method: 'POST', headers: { 'content-length': String(50 * 1024 * 1024 + 1) }, body: 'tiny' });
+    const request = new NextRequest(base + upload, { method: 'POST', headers: { 'content-length': String(FILE_TRANSFER_LIMIT + 1) }, body: 'tiny' });
     assert.equal((await uploadRoute.POST(request)).status, 413);
     const response = await fetch(base + upload, { method: 'POST', body: 'small accepted upload' });
     assert.equal(response.status, 200);
@@ -237,16 +238,18 @@ try {
     assert(bytes <= 64 * 1024);
     return { protectionPassed: true, bufferedBytes: bytes, maximumBytes: 64 * 1024 };
   });
+  const approvalTurnId = await rt.exclusive(() => rt.store.insert('codexTurns', { conversationId: chatId, runnerId, engine: 'codex', status: 'queued', prompt: 'synthetic approval audit', createdAt: Date.now() }));
+  assert((await post('codex:claimTurn', { token: runnerToken, id: approvalTurnId })).body.value);
   await check('File approval rules reject traversal and unverified paths', async () => {
     const ruleId = await rt.exclusive(() => rt.store.insert('approvalRules', { runnerId, kind: 'file', pathPrefix: 'C:\\audit\\allowed', uses: 0, createdAt: Date.now() }));
-    const escaped = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'synthetic edit only', paths: ['C:\\audit\\allowed\\..\\outside.txt'], pathsVerified: true, conversationId: chatId });
+    const escaped = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'synthetic edit only', paths: ['C:\\audit\\allowed\\..\\outside.txt'], pathsVerified: true, conversationId: chatId, turnId: approvalTurnId });
     assert.equal(escaped.body.value.next, 'ask');
     const row = await rt.exclusive(() => rt.store.get(escaped.body.value.id)); assert.notEqual(row.decidedBy, 'rule');
-    const unverified = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'legacy unresolved path', paths: ['C:\\audit\\allowed\\ok.txt'], conversationId: chatId });
+    const unverified = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'legacy unresolved path', paths: ['C:\\audit\\allowed\\ok.txt'], conversationId: chatId, turnId: approvalTurnId });
     assert.equal(unverified.body.value.next, 'ask');
-    const verified = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'resolved path', paths: ['C:\\audit\\allowed\\ok.txt'], pathsVerified: true, conversationId: chatId });
+    const verified = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'resolved path', paths: ['C:\\audit\\allowed\\ok.txt'], pathsVerified: true, conversationId: chatId, turnId: approvalTurnId });
     assert.equal(verified.body.value.next, 'run');
-    const sibling = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'sibling control', paths: ['C:\\audit\\allowed-sibling\\x'], conversationId: chatId });
+    const sibling = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'sibling control', paths: ['C:\\audit\\allowed-sibling\\x'], conversationId: chatId, turnId: approvalTurnId });
     assert.equal(sibling.body.value.next, 'ask');
     await rt.exclusive(() => rt.store.delete(ruleId));
     return { protectionPassed: true, traversalDecision: row.status, unverifiedDecision: 'ask', verifiedDecision: 'run', siblingControl: 'ask', fileWritesPerformed: false };
@@ -299,7 +302,7 @@ try {
     return { protectionPassed: true, committedWrites: 1, transportAttempts: sent, reportedOutcome: 'unknown' };
   });
   await check('Concurrent owner approval decisions have one winner', async () => {
-    const asked = (await post('approvals:request', { token: runnerToken, kind: 'command', title: 'echo synthetic', conversationId: chatId })).body.value;
+    const asked = (await post('approvals:request', { token: runnerToken, kind: 'command', title: 'echo synthetic', conversationId: chatId, turnId: approvalTurnId })).body.value;
     const results = await Promise.all([true, false].map(approved => owner('approvals:decide', { id: asked.id, approved })));
     assert.deepEqual(results.map(r => r.body.value).toSorted(), [false, true]);
     return { protectionPassed: true, winners: results.filter(r => r.body.value).length };
@@ -311,6 +314,7 @@ try {
     assert.deepEqual(results.map(r => r.body.value.ok).toSorted(), [false, true]);
     return { protectionPassed: true, winners: results.filter(r => r.body.value.ok).length };
   });
+  await post('codex:finishTurn', { token: runnerToken, id: approvalTurnId, response: 'Synthetic approval audit completed.' });
   await check('Atomic runner turn claim has one winner', async () => {
     const turnId = await rt.exclusive(() => rt.store.insert('codexTurns', { conversationId: chatId, runnerId, engine: 'codex', status: 'queued', prompt: 'synthetic', instructions: '', createdAt: Date.now() - 10000 }));
     const results = await Promise.all([1, 2].map(() => post('codex:claimTurn', { token: runnerToken, id: turnId })));

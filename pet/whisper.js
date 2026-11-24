@@ -46,7 +46,8 @@ export function warmUp(modelsDir) {
 export async function transcribe(modelsDir, samples, progress, options = {}) {
   const whisper = await load(modelsDir, progress, options.model ?? MODEL);
   listening = null;
-  const { text } = await whisper(samples, { language: options.language ?? LANGUAGE, task: "transcribe" });
+  const language = options.language ?? LANGUAGE;
+  const { text } = await whisper(samples, { ...(language === "auto" ? {} : { language }), task: "transcribe" });
   // Whisper names silence and noise rather than leaving them out.
   return text.replace(/\[(BLANK_AUDIO|MUSIC|NOISE|SILENCE)\]|\((silence|music|noise)\)/gi, "").trim();
 }

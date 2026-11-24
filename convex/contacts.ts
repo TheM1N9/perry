@@ -210,9 +210,39 @@ export const record = internalMutation({
 /** A chat's turn for a message someone else sent: who wrote it, then what. */
 const said = (from: { name?: string; handle: string; owner?: boolean }, text: string) => `[${speaker(from)}]: ${text}`;
 
+export const acceptInbound = internalMutation({
+  args: {
+    channel: vMessenger, chatId: v.string(), kind: vKind, chatName: v.optional(v.string()), from: vSender, text: v.string(), addressed: v.boolean(),
+    files: v.optional(v.array(vStoredFile)), message: v.optional(vGuestMessage), tagged: v.optional(v.boolean()), receiptId: v.optional(v.id("whatsappInbox")),
+  },
+  returns: v.object({ kept: v.boolean() }),
+  handler: async (ctx, args): Promise<{ kept: boolean }> => {
+    const receipt = args.receiptId ? await ctx.db.get(args.receiptId) : null;
+    if (receipt?.acceptedAt !== undefined) return { kept: false };
+    const { message: key, tagged, receiptId: _receipt, ...message } = args;
+    const outcome: { action: "turn" | "asked" | "ignore"; contactId?: Id<"contacts">; context?: string; files?: StoredFile[]; kept: boolean } = await ctx.runMutation(internal.contacts.record, message);
+    if (outcome.action === "turn" && outcome.contactId) {
+      const reactable = key && (args.kind === "person" || tagged === true) ? key : undefined;
+      const title = `${APP[args.channel]} · ${args.kind === "group" ? args.chatName ?? "a group" : args.from.name ?? args.from.handle}`;
+      const existing = await ctx.runQuery(internal.conversations.getByExternalId, { channel: args.channel, externalId: args.chatId });
+      const threadId = existing?.threadId ?? await ctx.runMutation(internal.agentStore.createThread, { userId: `${args.channel}:${args.chatId}`, title });
+      const conversationId = await ctx.runMutation(internal.conversations.create, { channel: args.channel, externalId: args.chatId, threadId, title, contactId: outcome.contactId });
+      const preparingId = await ctx.runMutation(internal.codex.prepareTurn, { conversationId, prompt: said(args.from, args.text) });
+      await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
+        channel: args.channel, externalId: args.chatId, text: said(args.from, args.text), title, preparingId,
+        guest: outcome.contactId, ...(outcome.context ? { guestContext: outcome.context } : {}),
+        ...(outcome.files?.length ? { storedMedia: outcome.files } : {}), ...(reactable ? { guestMessage: reactable } : {}),
+      });
+    }
+    if (receipt) await ctx.db.patch(receipt._id, { acceptedAt: Date.now() });
+    return { kept: outcome.kept };
+  },
+});
+
 export const inbound = internalAction({
   args: {
     channel: vMessenger, chatId: v.string(), kind: vKind, chatName: v.optional(v.string()),
+    receiptId: v.optional(v.id("whatsappInbox")),
     from: vSender, text: v.string(), addressed: v.boolean(),
     /** Files that came with a WhatsApp message, downloaded already (server/whatsapp.ts, only where they are kept). */
     media: v.optional(v.array(v.object({ base64: v.string(), fileName: v.string(), contentType: v.string() }))),
@@ -256,19 +286,8 @@ export const inbound = internalAction({
     }
     const text = [message.text, ...notes].filter(Boolean).join("\n");
     if (!text) return null;
-    const outcome: { action: string; contactId?: Id<"contacts">; context?: string; files?: StoredFile[]; kept: boolean } =
-      await ctx.runMutation(internal.contacts.record, { ...message, text, ...(files.length ? { files } : {}) });
-    if (!outcome.kept) for (const file of files) await ctx.storage.delete(file.storageId).catch(() => {});
-    if (outcome.action !== "turn" || !outcome.contactId) return null;
-    // A person's message is theirs to Perry; in a busy group, only one that tags Perry is reacted to.
-    const reactable = key && (args.kind === "person" || tagged === true) ? key : undefined;
-    await ctx.runAction(internal.brain.handleTurn, {
-      channel: args.channel, externalId: args.chatId, text: said(args.from, text),
-      title: `${APP[args.channel]} · ${args.kind === "group" ? args.chatName ?? "a group" : args.from.name ?? args.from.handle}`,
-      guest: outcome.contactId, ...(outcome.context ? { guestContext: outcome.context } : {}),
-      ...(outcome.files?.length ? { storedMedia: outcome.files } : {}),
-      ...(reactable ? { guestMessage: reactable } : {}),
-    });
+    const outcome = await ctx.runMutation(internal.contacts.acceptInbound, { ...message, text, message: key, tagged, ...(files.length ? { files } : {}) });
+    if (!outcome.kept) for (const file of files) await ctx.storage.delete(file.storageId);
     return null;
   },
 });

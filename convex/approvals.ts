@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { answerCallback, editButtons, sendButtons, type Buttons } from "./lib/telegram";
+import { answerCallback, chunkMessage, editButtons, sendButtons, sendMessage, type Buttons } from "./lib/telegram";
 import { escapeHtml } from "./lib/telegramFormat";
 import { authenticate, policyOf, type Policy } from "./runner";
 import { targetOf, type Target } from "./channels";
@@ -167,6 +167,7 @@ export const request = mutation({
     /** Codex's proposed exec-policy amendment: a command prefix it would allow from now on. */
     amendment: v.optional(v.array(v.string())),
     conversationId: v.optional(v.id("conversations")),
+    turnId: v.optional(v.id("codexTurns")),
   },
   returns: v.object({
     id: v.id("approvals"),
@@ -175,16 +176,21 @@ export const request = mutation({
   handler: async (ctx, args): Promise<{ id: Id<"approvals">; next: "run" | "review" | "ask" }> => {
     const runner = await authenticate(ctx, args.token);
     const now = Date.now();
+    if (args.title.length > 64_000 || (args.detail?.length ?? 0) > 64_000 || (args.paths?.length ?? 0) > 500) throw new Error("Split this request into smaller operations.");
+    if (args.conversationId && !args.turnId) throw new Error("A computer approval must name its active turn. Update the runner.");
+    const turn = args.turnId ? await ctx.db.get(args.turnId) : null;
+    if (args.turnId && (!turn || turn.runnerId !== runner._id || turn.conversationId !== args.conversationId || turn.status !== "running" || turn.stopRequested || turn.stopped)) throw new Error("This turn has ended or was stopped.");
     if (args.kind === "permission" && (!args.detail || args.detail.length > 800)) throw new Error("The complete computer permission scope must fit in the approval details.");
     const request: Request = { kind: args.kind, title: args.title, cwd: args.cwd, paths: args.paths, cwdVerified: args.cwdVerified, pathsVerified: args.pathsVerified };
     const row = {
       runnerId: runner._id,
       conversationId: args.conversationId,
+      turnId: args.turnId,
       kind: args.kind,
-      title: args.title.slice(0, 4000),
-      detail: args.detail?.slice(0, 4000),
+      title: args.title,
+      detail: args.detail,
       cwd: args.cwd,
-      paths: args.paths?.slice(0, 50),
+      paths: args.paths,
       alwaysAllow: alwaysAllowFor(request, args.amendment),
       createdAt: now,
     };
@@ -248,7 +254,7 @@ export const reviewed = mutation({
   handler: async (ctx, args): Promise<boolean> => {
     const runner = await authenticate(ctx, args.token);
     const row = await ctx.db.get(args.id);
-    if (row?.runnerId !== runner._id || row.status !== "reviewing" || row.kind === "tool" || row.kind === "permission") return false;
+    if (row?.runnerId !== runner._id || row.status !== "reviewing" || row.kind === "tool" || row.kind === "permission" || !await activeRequest(ctx, row)) return false;
     const review = { verdict: args.verdict, reason: args.reason.slice(0, 1000), model: args.model, ms: args.ms };
     // The owner may have changed the chat's access while the reviewer looked: Full access runs it, Ask asks.
     const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
@@ -273,7 +279,7 @@ export const decision = query({
   handler: async (ctx, args) => {
     const runner = await authenticate(ctx, args.token);
     const row = await ctx.db.get(args.id);
-    return row?.runnerId === runner._id ? row.status : null;
+    return row?.runnerId === runner._id ? await activeRequest(ctx, row) ? row.status : "expired" : null;
   },
 });
 
@@ -283,6 +289,7 @@ export const decision = query({
  * the outcome, whichever side answered.
  */
 async function settleRow(ctx: MutationCtx, row: Doc<"approvals">, answer: { approved: boolean; by: Person; always?: boolean; followUp?: boolean }) {
+  if (!await activeRequest(ctx, row)) answer = { approved: false, by: "timeout", followUp: false };
   const now = Date.now();
   const offer = answer.approved && answer.always && answer.by !== "timeout" ? row.alwaysAllow : undefined;
   const ruleId = offer
@@ -327,7 +334,7 @@ export async function accessChanged(ctx: MutationCtx, conversationId: Id<"conver
   const pending = await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).take(200);
   const now = Date.now();
   for (const row of pending) {
-    if (row.conversationId !== conversationId || row.kind === "tool") continue;
+    if (row.conversationId !== conversationId || row.kind === "tool" || !await activeRequest(ctx, row)) continue;
     await ctx.db.patch(row._id, { status: "auto", decidedBy: "trust", decidedAt: now });
     if (row.telegramMessageId) await ctx.scheduler.runAfter(0, internal.approvals.showOutcomeOnTelegram, { id: row._id });
   }
@@ -335,6 +342,12 @@ export async function accessChanged(ctx: MutationCtx, conversationId: Id<"conver
 
 const answerable = (row: Doc<"approvals">) =>
   row.status === "pending" && row.createdAt >= Date.now() - ttlOf(row);
+
+async function activeRequest(ctx: QueryCtx, row: Pick<Doc<"approvals">, "turnId" | "runnerId" | "conversationId" | "kind">): Promise<boolean> {
+  if (!row.turnId) return !row.conversationId || ["brain", "contact", "message"].includes(row.kind);
+  const turn = await ctx.db.get(row.turnId);
+  return Boolean(turn && turn.status === "running" && !turn.stopRequested && !turn.stopped && turn.runnerId === row.runnerId && turn.conversationId === row.conversationId);
+}
 
 /** The runner records an answer given in its terminal, or a timeout. */
 export const settle = mutation({
@@ -365,15 +378,17 @@ export const settle = mutation({
  * tool waits for the answer (decisionOf).
  */
 export const askForBrowser = internalMutation({
-  args: { conversationId: v.optional(v.id("conversations")), title: v.string(), detail: v.optional(v.string()) },
+  args: { conversationId: v.optional(v.id("conversations")), turnId: v.optional(v.id("codexTurns")), title: v.string(), detail: v.optional(v.string()), explicit: v.optional(v.boolean()) },
   returns: v.object({ id: v.id("approvals"), status: v.string() }),
   handler: async (ctx, args) => {
     const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
     const runnerId = chat?.codexRunnerId ?? (await ctx.db.query("runners").first())?._id;
     if (!runnerId) throw new Error("No computer is connected to ask on.");
     const now = Date.now();
-    const row = { runnerId, conversationId: args.conversationId, kind: "browser" as const, title: args.title.slice(0, 500), detail: args.detail?.slice(0, 1000), createdAt: now };
-    if (chat?.access === "full") {
+    if (args.title.length > 64_000 || (args.detail?.length ?? 0) > 64_000) throw new Error("Split this operation into smaller reviewable steps.");
+    const row = { runnerId, conversationId: args.conversationId, turnId: args.turnId, kind: args.explicit ? "tool" as const : "browser" as const, title: args.title, detail: args.detail, createdAt: now };
+    if (!args.turnId || !await activeRequest(ctx, row)) throw new Error("This operation requires its active turn.");
+    if (chat?.access === "full" && !args.explicit) {
       const id = await ctx.db.insert("approvals", { ...row, status: "auto", decidedBy: "trust", decidedAt: now });
       return { id, status: "auto" };
     }
@@ -390,7 +405,7 @@ export const decisionOf = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row) return "declined";
-    if (row.status === "pending" && row.createdAt < Date.now() - APPROVAL_TTL_MS) {
+    if (!await activeRequest(ctx, row) || row.status === "pending" && row.createdAt < Date.now() - APPROVAL_TTL_MS) {
       await settleRow(ctx, row, { approved: false, by: "timeout" });
       return "expired";
     }
@@ -404,7 +419,19 @@ export const cancelBrowser = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
-    if (row?.kind === "browser" && row.status === "pending") await settleRow(ctx, row, { approved: false, by: "timeout", followUp: false });
+    if (row && (row.kind === "browser" || row.kind === "tool") && row.status === "pending") await settleRow(ctx, row, { approved: false, by: "timeout", followUp: false });
+    return null;
+  },
+});
+
+export const cancelForTurn = internalMutation({
+  args: { turnId: v.id("codexTurns") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    for (const status of ["pending", "reviewing"] as const) {
+      const rows = await ctx.db.query("approvals").withIndex("by_status", q => q.eq("status", status)).collect();
+      for (const row of rows) if (row.turnId === args.turnId) await settleRow(ctx, row, { approved: false, by: "timeout", followUp: false });
+    }
     return null;
   },
 });
@@ -519,9 +546,9 @@ export const view = internalQuery({
 function promptText(row: View): string {
   return [
     `${row.runner} wants to ${ASK[row.kind]}${row.chat ? ` (${row.chat})` : ""}:`,
-    row.title.slice(0, 1500),
+    row.title,
     row.cwd ? `in ${row.cwd}` : null,
-    row.detail ? row.detail.slice(0, 800) : null,
+    row.detail ? row.detail : null,
     row.review ? `Reviewer: ${row.review.verdict}. ${row.review.reason}` : null,
     row.alwaysAllow ? `Always allow saves a rule for ${describeRule(row.alwaysAllow, row.cwd)}.` : null,
   ].filter(Boolean).join("\n\n");
@@ -531,9 +558,9 @@ function promptText(row: View): string {
 function promptHtml(row: View, outcome?: string): string {
   return [
     `🔐 <b>${escapeHtml(row.runner)} wants to ${ASK[row.kind]}</b>${row.chat ? ` · <i>${escapeHtml(row.chat)}</i>` : ""}`,
-    `<pre>${escapeHtml(row.title.slice(0, 1500))}</pre>`,
+    `<pre>${escapeHtml(row.title)}</pre>`,
     row.cwd ? `📁 <code>${escapeHtml(row.cwd)}</code>` : null,
-    row.detail ? escapeHtml(row.detail.slice(0, 800)) : null,
+    row.detail ? escapeHtml(row.detail) : null,
     row.review ? `<i>Reviewer: ${escapeHtml(row.review.verdict)}. ${escapeHtml(row.review.reason)}</i>` : null,
     row.alwaysAllow && !outcome ? `<i>Always allow saves a rule for ${escapeHtml(describeRule(row.alwaysAllow, row.cwd))}.</i>` : null,
     outcome ? `<b>${escapeHtml(outcome)}</b>` : null,
@@ -578,7 +605,9 @@ export const promptOnTelegram = internalAction({
     if (target?.channel !== "telegram" || target.externalId !== install.ownerExternalId) return null;
     try {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-      const messageId = await sendButtons(token, install.ownerExternalId, promptText(row), buttonsFor(row), promptHtml(row));
+      const chunks = chunkMessage(promptText(row), 3000);
+      for (const chunk of chunks.slice(0, -1)) await sendMessage(token, install.ownerExternalId, chunk);
+      const messageId = await sendButtons(token, install.ownerExternalId, chunks.at(-1)!, buttonsFor(row), chunks.length === 1 ? promptHtml(row) : undefined);
       await ctx.runMutation(internal.approvals.promptSent, { id: args.id, chatId: install.ownerExternalId, messageId });
     } catch (error) {
       console.error(`could not ask on Telegram: ${String(error)}`);
@@ -609,7 +638,8 @@ export const showOutcomeOnTelegram = internalAction({
     if (!row?.telegramChatId || !row.telegramMessageId || row.status === "pending") return null;
     try {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-      await editButtons(token, row.telegramChatId, row.telegramMessageId, `${promptText(row)}\n\n${outcomeText(row)}`, [], promptHtml(row, outcomeText(row)));
+      const chunks = chunkMessage(promptText(row), 3000);
+      await editButtons(token, row.telegramChatId, row.telegramMessageId, `${chunks.at(-1)}\n\n${outcomeText(row)}`, [], chunks.length === 1 ? promptHtml(row, outcomeText(row)) : undefined);
     } catch (error) {
       console.error(`could not update the Telegram prompt: ${String(error)}`);
     }
@@ -663,13 +693,13 @@ export const promptOnWhatsApp = internalAction({
     const fence = "```";
     const ask = [
       `🔐 **${row.runner} wants to ${ASK[row.kind]}**${row.chat ? ` · _${row.chat}_` : ""}`,
-      `${fence}\n${row.title.slice(0, 1500)}\n${fence}`,
+      `${fence}\n${row.title}\n${fence}`,
       row.cwd ? `📁 \`${row.cwd}\`` : null,
-      row.detail ? row.detail.slice(0, 800) : null,
+      row.detail ? row.detail : null,
       row.review ? `_Reviewer: ${row.review.verdict}. ${row.review.reason}_` : null,
-      `Reply **1** to approve, **2** to decline${row.alwaysAllow ? `, **3** to always allow (${describeRule(row.alwaysAllow, row.cwd)})` : ""}.`,
+      `Request **${row._id.slice(-8)}**. Reply **approve ${row._id.slice(-8)}** or **decline ${row._id.slice(-8)}**${row.alwaysAllow ? `, or **always ${row._id.slice(-8)}** (${describeRule(row.alwaysAllow, row.cwd)})` : ""}.`,
     ].filter(Boolean).join("\n\n");
-    if (await ctx.runMutation(internal.whatsapp.send, { to: target.externalId, text: ask })) {
+    if (await ctx.runMutation(internal.whatsapp.send, { to: target.externalId, text: ask, approvalId: args.id })) {
       await ctx.runMutation(internal.approvals.askedOnWhatsApp, { id: args.id, chatId: target.externalId });
     }
     return null;
@@ -691,16 +721,33 @@ export const askedOnWhatsApp = internalMutation({
  * is not an answer and goes to the assistant. Returns what to tell the owner.
  */
 export const answerFromWhatsApp = internalMutation({
-  args: { chatId: v.string(), text: v.string() },
+  args: { chatId: v.string(), text: v.string(), replyTo: v.optional(v.string()) },
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, args): Promise<string | null> => {
     const word = args.text.trim().toLowerCase().replace(/[.!]+$/, "");
     const choices: Record<string, "y" | "n" | "a"> = { "1": "y", yes: "y", y: "y", approve: "y", "2": "n", no: "n", n: "n", decline: "n", "3": "a", always: "a" };
-    const choice = choices[word];
+    const [verb, code, ...extra] = word.split(/\s+/);
+    const choice = choices[verb];
     if (!choice) return null;
-    const waiting = (await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).order("desc").take(50))
-      .find((row) => row.whatsappChatId === args.chatId);
-    if (!waiting) return null;
+    if (extra.length) return null;
+    const quoted = args.replyTo ? await ctx.db.query("whatsappOutbox").withIndex("by_message", q => q.eq("messageId", args.replyTo)).unique() : null;
+    if (args.replyTo && (!quoted?.approvalId || quoted.to !== args.chatId)) return null;
+    const pending = (await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).order("desc").collect())
+      .filter(row => row.whatsappChatId === args.chatId && (!code || row._id.endsWith(code)) && (!quoted?.approvalId || row._id === quoted.approvalId));
+    const current = [];
+    let active = 0;
+    let waitingDelivery = false;
+    for (const row of pending) if (answerable(row) && await activeRequest(ctx, row)) {
+      active++;
+      const prompts = await ctx.db.query("whatsappOutbox").withIndex("by_approval", q => q.eq("approvalId", row._id)).collect();
+      if (prompts.length && prompts.every(prompt => prompt.state === "sent")) current.push(row);
+      else waitingDelivery = true;
+    }
+    if (active > 1) return "Several requests are waiting. Reply approve or decline followed by the request code. Nothing was approved.";
+    if (!current.length && waitingDelivery) return "The complete request is still arriving. Wait for all its parts; nothing was approved.";
+    if (!current.length) return code ? "That request is no longer active. Nothing was approved." : null;
+    if (current.length !== 1) return "Several requests are waiting. Reply approve or decline followed by the request code. Nothing was approved.";
+    const waiting = current[0];
     if (!answerable(waiting)) {
       await settleRow(ctx, waiting, { approved: false, by: "timeout" });
       return "That request had expired, so it was declined.";

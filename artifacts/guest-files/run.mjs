@@ -152,6 +152,11 @@ const contact = (channel, externalId, kind, name, status = "allowed") => insert(
 const conversationOf = async (channel, externalId) => await runtime.exclusive(() => runtime.store.query("conversations").withIndex("by_channel_external", (q) => q.eq("channel", channel).eq("externalId", externalId)).first());
 /** The turns a chat has waiting, claimed as the runner claims them. */
 async function claimAll(channel, externalId) {
+  const admitted = sql.prepare("SELECT id, args FROM _scheduled WHERE name = 'brain:handleTurn' AND state = 'pending' ORDER BY runAt, createdAt, rowid").all();
+  for (const row of admitted) {
+    sql.prepare("DELETE FROM _scheduled WHERE id = ?").run(row.id);
+    await call("brain:handleTurn", JSON.parse(row.args));
+  }
   const conversation = await conversationOf(channel, externalId);
   if (!conversation) return [];
   const turns = await runtime.exclusive(() => runtime.store.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", conversation._id).eq("status", "queued")).collect());

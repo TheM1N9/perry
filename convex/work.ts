@@ -474,6 +474,9 @@ export const snapshot = internalQuery({
 
     return {
       nextDecisionCursor: page.isDone ? undefined : page.continueCursor,
+      scheduledFailures: await ctx.db.query("scheduledFailures").withIndex("by_created").order("desc").take(20),
+      whatsappFailures: await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", "failed")).order("desc").take(20),
+      whatsappInboxFailures: await ctx.db.query("whatsappInbox").withIndex("by_state", q => q.eq("state", "failed")).order("desc").take(20),
       tasks: tasks.map((t) => ({
         id: t._id,
         chatId: t.conversationId,

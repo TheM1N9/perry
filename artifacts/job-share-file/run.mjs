@@ -63,15 +63,18 @@ const run = async ({ channel = "whatsapp", files = ["s01.png", "s02.png", "s03.p
   const job = await get(created.id);
   await takeScheduled("brain:handleTurn");
   const turn = (await all("codexTurns")).find(row => row.conversationId === job.conversationId);
-  assert.ok(await call("codex:claimTurn", { token, id: turn._id }));
+  const claimed = await call("codex:claimTurn", { token, id: turn._id });
+  assert.ok(claimed);
   for (const file of files) {
     const path = join(scratch, file);
     if (!file.startsWith("missing")) writeFileSync(path, `synthetic:${file}`);
     const response = await runtime.runHttp("/mcp", new Request(`http://synthetic/mcp?turn=${turn._id}`, {
-      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-perry-chat": job.conversationId },
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-perry-chat": job.conversationId, "x-perry-turn": turn._id, "x-perry-grant": claimed.mcpGrant },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "share_file", arguments: { path } } }),
     }));
     const answer = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(answer));
+    assert.equal(answer.error, undefined, JSON.stringify(answer));
     assert.equal(answer.result?.isError, undefined, JSON.stringify(answer));
     const shared = JSON.parse(answer.result.content[0].text);
     assert.equal(shared.delivery, "pending");
@@ -266,7 +269,7 @@ try {
     assert.match((await get(r.jobId)).lastError, /Could not send/);
     await patch(installation, { whatsappOwner: OWNER });
   });
-  await check("real WhatsApp outbox retries before later slides and tears down its connection", async () => {
+  await check("real WhatsApp outbox preserves ambiguous sends, accepts late receipts and tears down its connection", async () => {
     for (const row of await all("whatsappOutbox")) await runtime.exclusive(() => runtime.store.delete(row._id));
     const r = await run({ files: ["wire01.png", "wire02.png", "wire03.png"] });
     process.env.PERRY_WHATSAPP_DRIVER = fileURLToPath(new URL("./whatsapp-driver.mjs", import.meta.url));
@@ -279,14 +282,22 @@ try {
     try {
       const deadline = Date.now() + 20_000;
       while ((await get(r.receipt._id)).deliveryState === "sending" && Date.now() < deadline) await delay(25);
+      assert.equal((await get(r.receipt._id)).deliveryState, "uncertain");
+      const remainingDeadline = Date.now() + 10_000;
+      while ((await pendingFor(r.receipt._id)).some(row => row.state === "pending" || row.state === "sending") && Date.now() < remainingDeadline) await delay(25);
+      assert.deepEqual(driver.attempts.filter(row => row.name !== "text").map(row => row.name), ["wire01.png", "wire02.png", "wire03.png"], "an ambiguous wire result must not resend the file");
+      const ambiguous = (await pendingFor(r.receipt._id)).find(row => row.file?.fileName === "wire02.png");
+      assert.equal(ambiguous.state, "uncertain");
+      driver.sockets.at(-1).ev.emit("messages.update", [{ key: { id: ambiguous.messageId, remoteJid: OWNER }, update: { status: 3 } }]);
+      const receiptDeadline = Date.now() + 10_000;
+      while ((await get(r.receipt._id)).deliveryState !== "delivered" && Date.now() < receiptDeadline) await delay(25);
       assert.equal((await get(r.receipt._id)).deliveryState, "delivered");
-      assert.deepEqual(driver.attempts.filter(row => row.name !== "text").map(row => row.name), ["wire01.png", "wire02.png", "wire02.png", "wire03.png"]);
       const missing = await run({ files: ["wire01.png", "missing-wire.png", "wire03.png"] });
       const failureDeadline = Date.now() + 20_000;
       while ((await pendingFor(missing.receipt._id)).some(row => row.state === "pending") && Date.now() < failureDeadline) await delay(25);
       assert.equal((await get(missing.receipt._id)).deliveryState, "failed");
       assert.match((await get(missing.jobId)).lastError, /missing-wire.png/);
-      assert.deepEqual(driver.attempts.filter(row => row.name !== "text").map(row => row.name), ["wire01.png", "wire02.png", "wire02.png", "wire03.png", "wire01.png", "wire03.png"]);
+      assert.deepEqual(driver.attempts.filter(row => row.name !== "text").map(row => row.name), ["wire01.png", "wire02.png", "wire03.png", "wire01.png", "wire03.png"]);
       const emptyDeadline = Date.now() + 10_000;
       while ((await call("whatsapp:pending")).length && Date.now() < emptyDeadline) await delay(25);
       const beforeRevocation = driver.attempts.length;

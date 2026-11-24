@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { backend } from "@/server/index";
+import { FILE_TRANSFER_LIMIT } from "@/lib/media-limits";
 import { busyResponse, requestBytes, requestOriginAllowed, requestSlot, RequestLimitError } from "@/server/request-limits";
 
 /** Upload a file to an address from generateUploadUrl; answers `{ storageId }`, as Convex's upload URLs did. */
@@ -11,7 +12,7 @@ export async function POST(request: NextRequest) {
   const release = requestSlot("upload");
   if (!release) return busyResponse();
   try {
-    const blob = new Blob([await requestBytes(request, 50 * 1024 * 1024)], { type: request.headers.get("content-type") ?? "" });
+    const blob = new Blob([await requestBytes(request, FILE_TRANSFER_LIMIT)], { type: request.headers.get("content-type") ?? "" });
     const storageId = await runtime.acceptUpload(ticket, blob);
     if (!storageId) return Response.json({ error: "This upload address has expired or was already used." }, { status: 403 });
     return Response.json({ storageId });

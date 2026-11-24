@@ -43,7 +43,7 @@ function client(apiKey: string | null): Composio {
         "at composio.dev, then save it under Apps & skills → Connectors.",
     );
   }
-  return new Composio({ apiKey });
+  return new InternetClient(apiKey);
 }
 
 async function session(apiKey: string | null, toolkits?: string[]) {
@@ -601,7 +601,7 @@ export const search = internalAction({
 
 /** Bounded preparation calls fail closed unless provider metadata identifies the exact operation as read-only. */
 export const execute = internalAction({
-  args: { slug: v.string(), args: v.optional(v.any()), readOnly: v.optional(v.boolean()) },
+  args: { slug: v.string(), args: v.optional(v.any()), accountId: v.optional(v.string()), readOnly: v.optional(v.boolean()), turnId: v.optional(v.id("codexTurns")), conversationId: v.optional(v.id("conversations")) },
   handler: async (
     ctx,
     input,
@@ -624,25 +624,49 @@ export const execute = internalAction({
       stage = "tool_metadata";
       // Resolve metadata from the SDK, never infer the toolkit from a slug prefix.
       const tool = await composio.tools.getRawComposioToolBySlug(input.slug).catch(() => null);
-      if (input.readOnly && (!tool || tool.slug !== input.slug || !tool.tags?.includes("readOnlyHint")
-        || tool.tags.some(tag => ["createHint", "updateHint", "destructiveHint"].includes(tag)))) {
+      const verifiedRead = tool?.slug === input.slug && tool.tags?.includes("readOnlyHint")
+        && !tool.tags.some(tag => ["createHint", "updateHint", "destructiveHint"].includes(tag));
+      if (input.readOnly && !verifiedRead) {
         return { ok: false, error: "This operation is not verified as read-only. Prepare a proposal for the owner instead; missing, conflicting or unavailable tool metadata cannot authorize execution." };
       }
       // Router helper tools may not have standalone metadata. They still execute,
       // but without an exact account we do not infer or persist account health.
       const toolkit = tool?.toolkit?.slug;
+      if (!toolkit) return { ok: false, error: "No verified toolkit metadata for this operation. Use find_action to select a standalone app tool." };
       stage = "session";
       const s = await session(apiKey);
       if (toolkit) {
         stage = "account_selection";
-        const state = await s.toolkits({ toolkits: [toolkit] });
-        const account = state.items.find((item) => item.slug === toolkit)?.connection?.connectedAccount;
+        const accounts = [];
+        let cursor: string | undefined;
+        do {
+          const page = await composio.connectedAccounts.list({ userIds: [USER_ID], toolkitSlugs: [toolkit], limit: 100, ...(cursor ? { cursor } : {}) });
+          accounts.push(...page.items);
+          cursor = page.nextCursor ?? undefined;
+        } while (cursor && accounts.length < 500);
+        const accountless = tool?.isNoAuth === true && !accounts.length && !cursor && !input.accountId;
+        if (!accountless && !input.accountId && (accounts.length !== 1 || cursor)) return { ok: false, error: "Select an explicit connected account id with list_connectors. Perry will not guess between accounts." };
+        const account = accounts.find(item => input.accountId ? item.id === input.accountId : true);
+        if (!account && !accountless) return { ok: false, error: "That connected account does not belong to this owner and toolkit." };
         if (account) selected = { accountId: account.id, toolkit };
         if (account && ["EXPIRED", "REVOKED"].includes(account.status)) {
           await ctx.runMutation(internal.connectorHealth.observe, { ...selected!, startedAt, expired: true }).catch(() => null);
           return { ok: false, error: reconnectMessage };
         }
       }
+      if (!input.turnId || !await ctx.runQuery(internal.codex.internetMayRead, { turnId: input.turnId })) return { ok: false, error: "This operation requires an active turn." };
+      if (!verifiedRead) {
+        const detail = JSON.stringify({ accountId: selected?.accountId, arguments: input.args ?? {} });
+        const asked = await ctx.runMutation(internal.approvals.askForBrowser, { conversationId: input.conversationId, turnId: input.turnId, title: `Run ${input.slug}`, detail, explicit: true });
+        let status = asked.status;
+        while (status === "pending") {
+          if (!await ctx.runQuery(internal.codex.internetMayRead, { turnId: input.turnId })) { await ctx.runMutation(internal.approvals.cancelBrowser, { id: asked.id }); return { ok: false, error: "This operation was stopped." }; }
+          await new Promise(resolve => setTimeout(resolve, 500));
+          status = await ctx.runMutation(internal.approvals.decisionOf, { id: asked.id });
+        }
+        if (status !== "approved" && status !== "auto") return { ok: false, error: "The owner declined or did not approve this operation." };
+      }
+      if (!await ctx.runQuery(internal.codex.internetMayRead, { turnId: input.turnId })) return { ok: false, error: "This operation was stopped before execution." };
       // Standalone app tools use the native account-specific execution API.
       // The router's `account` option returns HTTP 400/code 4300 on projects
       // without multi-account selection. Native execution pins the account

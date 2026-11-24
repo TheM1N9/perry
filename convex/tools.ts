@@ -1205,7 +1205,6 @@ const read_page = createTool({
 });
 
 /** A step that buys, pays, sends, posts, books or deletes: asked of the owner first. */
-const RISKY = /\b(buy|pay|purchase|place (your |my )?order|order now|checkout|check out|subscribe|donate|send|post|publish|tweet|share|reply|submit|confirm|transfer|delete|remove|cancel (my |your )?(order|subscription|account)|book|reserve|sign up|register|apply)\b/i;
 const APPROVAL_POLL_MS = 1_000;
 
 /** A browser step's result, with the id of a picture of the page when one was taken. */
@@ -1261,7 +1260,7 @@ const browser = createTool({
       };
       await active();
       const asked: { id: Id<"approvals">; status: string } = await ctx.runMutation(internal.approvals.askForBrowser, {
-        title, detail, ...(ctx.conversationId ? { conversationId: ctx.conversationId as Id<"conversations"> } : {}),
+        title, detail, turnId: ctx.turnId as Id<"codexTurns"> | undefined, ...(ctx.conversationId ? { conversationId: ctx.conversationId as Id<"conversations"> } : {}),
       });
       let status = asked.status;
       try {
@@ -1306,7 +1305,7 @@ const browser = createTool({
         case "click": {
           const ref = needRef();
           const element = await web.describe(ref);
-          if (RISKY.test(element.label) && !(await allowed(`Click “${element.label}”`, `on ${element.url}`))) return declined;
+          if (!(await allowed(`Click “${element.label}”`, `on ${element.url}`))) return declined;
           return await page(web.click(ref));
         }
         case "type": {
@@ -1314,13 +1313,12 @@ const browser = createTool({
           if (input.text === undefined) return { error: "type needs text." };
           const element = await web.describe(ref);
           if (element.password) return { error: "That is a password box: use sign_in with a saved login, so the password never passes through you." };
-          // Pressing Enter sends the form, which is its button's step: a search is fine, "Send" or "Pay" is asked.
-          const sends = input.submit && !element.search && RISKY.test(element.submitLabel ?? element.label);
-          if (sends && !(await allowed(`Type into “${element.label}” and press ${element.submitLabel ? `“${element.submitLabel}”` : "Enter"}`, `“${input.text.slice(0, 300)}” on ${element.url}`))) return declined;
+          if (!(await allowed(`Type into ${element.label}${input.submit ? " and submit" : ""}`, `${input.text}\nOn ${element.url}`))) return declined;
           return await page(web.type(ref, input.text, input.submit === true));
         }
         case "choose": {
           if (!input.option) return { error: "choose needs option." };
+          if (!(await allowed(`Choose ${input.option}`, `in ${needRef()}`))) return declined;
           return await page(web.choose(needRef(), input.option));
         }
         case "sign_in": {
@@ -1360,8 +1358,9 @@ const list_connectors = createTool({
   inputSchema: z.object({}),
   execute: async (
     ctx,
-  ): Promise<{ configured: boolean; connectors: Connector[]; error?: string }> => {
-    return await ctx.runAction(internal.composio.connectors, {});
+  ): Promise<{ configured: boolean; connectors: Connector[]; accounts: import("./composio").ConnectedAccount[]; error?: string; accountError?: string }> => {
+    const [connectors, accounts] = await Promise.all([ctx.runAction(internal.composio.connectors, {}), ctx.runAction(internal.composio.accounts, {})]);
+    return { ...connectors, accounts: accounts.accounts, ...(accounts.error ? { accountError: accounts.error } : {}) };
   },
 });
 
@@ -1403,6 +1402,7 @@ const run_action = createTool({
     "the owner's explicit go-ahead in chat first. Reading does not.",
   inputSchema: z.object({
     slug: z.string().min(1).describe("Exact action slug from find_action."),
+    accountId: z.string().optional().describe("Exact connected account id from list_connectors. Required when this app has multiple accounts. A missing file on one account does not prove it is private or unavailable on another."),
     args: z
       .record(z.string(), z.unknown())
       .optional()
@@ -1414,8 +1414,11 @@ const run_action = createTool({
   ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
     return await ctx.runAction(internal.composio.execute, {
       slug: input.slug,
+      accountId: input.accountId,
       args: input.args ?? {},
       readOnly: ctx.readOnly,
+      turnId: ctx.turnId as Id<"codexTurns"> | undefined,
+      conversationId: ctx.conversationId as Id<"conversations"> | undefined,
     });
   },
 });
@@ -1565,6 +1568,7 @@ const queue_task = createTool({
     if (checked.error) return { error: checked.error };
     const taskId: Id<"tasks"> = await ctx.runMutation(internal.tasks.queue, {
       title: input.title, prompt: input.prompt, ...(goal ? { goalId: goal._id } : {}), ...(ctx.conversationId ? { origin: ctx.conversationId } : {}),
+      sourceTurnId: ctx.turnId,
       ...(checked.pick ? { pick: checked.pick } : {}),
       ...(input.dependsOn?.length ? { dependsOn: input.dependsOn as Id<"tasks">[] } : {}),
     });

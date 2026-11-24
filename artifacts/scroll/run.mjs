@@ -89,8 +89,9 @@ const patch = (id, doc) => runtime.exclusive(() => runtime.store.patch(id, doc))
 const all = table => runtime.exclusive(() => runtime.store.query(table).collect());
 const token = "synthetic-scroll-runner";
 let rpc = 0;
+let activeTurn;
 const rawMcp = async (method, params = {}) => {
-  const response = await runtime.runHttp("/mcp", new Request("http://perry.test/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: ++rpc, method, params }) }));
+  const response = await runtime.runHttp("/mcp", new Request("http://perry.test/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-perry-turn": activeTurn._id, "x-perry-grant": activeTurn.mcpGrant }, body: JSON.stringify({ jsonrpc: "2.0", id: ++rpc, method, params }) }));
   return await response.json();
 };
 const mcp = async (method, params = {}) => {
@@ -115,7 +116,10 @@ try {
   await insert("installation", { defaultEngine: "codex", defaultAccess: "supervised", onboarding: "skipped", claimedAt: at, createdAt: at });
   const runner = await insert("runners", { name: "Synthetic runner", token, createdAt: at, lastSeenAt: at, engines: [{ kind: "codex", installed: true, signedIn: true, auth: {}, models: [], updatedAt: at }] });
   const owner = await insert("conversations", { channel: "web", externalId: "scroll-owner", threadId: "scroll-owner-thread", createdAt: at });
-  const ownerTurn = await insert("codexTurns", { runnerId: runner, conversationId: owner, status: "running", prompt: "What is the internet saying about AI hiring?", engine: "codex", createdAt: at });
+  const ownerTurn = await insert("codexTurns", { runnerId: runner, conversationId: owner, status: "queued", prompt: "What is the internet saying about AI hiring?", engine: "codex", createdAt: at });
+  const ownerClaim = await call("codex:claimTurn", { token, id: ownerTurn });
+  assert.ok(ownerClaim);
+  activeTurn = ownerClaim;
   const topic = "AI hiring";
   const free = { topic, window: "24h", searches: ["AI hiring", "AI recruiter"], subreddits: ["cscareerquestions"], platforms: ["hackernews", "reddit"] };
 
@@ -128,7 +132,9 @@ try {
     await patch(ownerTurn, { status: "done", finishedAt: Date.now() });
     const contact = await insert("contacts", { channel: "telegram", externalId: "5550", kind: "person", name: "Sam", status: "allowed", createdAt: at, updatedAt: at });
     const guest = await insert("conversations", { channel: "telegram", externalId: "5550", threadId: "scroll-guest-thread", contactId: contact, createdAt: at });
-    const guestTurn = await insert("codexTurns", { runnerId: runner, conversationId: guest, status: "running", prompt: "what's new on AI hiring?", engine: "codex", createdAt: at });
+    const guestTurn = await insert("codexTurns", { runnerId: runner, conversationId: guest, status: "queued", prompt: "what's new on AI hiring?", engine: "codex", createdAt: at });
+    activeTurn = await call("codex:claimTurn", { token, id: guestTurn });
+    assert.ok(activeTurn);
     const guestTools = (await mcp("tools/list")).tools.map(item => item.name);
     assert.ok(!guestTools.includes("internet_scroll"), "a chat with someone else does not get it");
     try {
@@ -138,6 +144,7 @@ try {
     } finally {
       await patch(guestTurn, { status: "done", finishedAt: Date.now() });
       await patch(ownerTurn, { status: "running", finishedAt: undefined });
+      activeTurn = ownerClaim;
     }
   });
 
@@ -247,7 +254,9 @@ try {
   await check("a daily scroll job runs the tool in its own turn and, with nothing new, delivers nothing", async () => {
     // The owner asks for it in a new message: a turn that read posts may not set up a job on its own (issue #136).
     await patch(ownerTurn, { status: "done", finishedAt: Date.now() });
-    const askTurn = await insert("codexTurns", { runnerId: runner, conversationId: owner, status: "running", prompt: "Make that a daily 9am digest, only when there is something new.", engine: "codex", createdAt: Date.now() });
+    const askTurn = await insert("codexTurns", { runnerId: runner, conversationId: owner, status: "queued", prompt: "Make that a daily 9am digest, only when there is something new.", engine: "codex", createdAt: Date.now() });
+    activeTurn = await call("codex:claimTurn", { token, id: askTurn });
+    assert.ok(activeTurn);
     const prompt = "Use the scroll skill. Run internet_scroll on the topic 'AI hiring' for the last 24h with the searches 'AI hiring' and 'AI recruiter' and the subreddit cscareerquestions. Write the digest. Only tell me if something new cleared the bar.";
     const made = (await tool("create_job", { name: "AI hiring scroll", schedule: "0 9 * * *", prompt })).value;
     assert.ok(made.id, JSON.stringify(made));
@@ -265,6 +274,7 @@ try {
     assert.equal(queued.length, 1);
     const claimed = await call("codex:claimTurn", { token, id: queued[0]._id });
     assert.ok(claimed);
+    activeTurn = claimed;
     assert.match(claimed.prompt, /internet_scroll on the topic 'AI hiring'/);
     assert.match(claimed.prompt, /reply with exactly NOTHING/);
     const run = (await scroll({ ...free, platforms: ["hackernews", "reddit"] })).value.result;
