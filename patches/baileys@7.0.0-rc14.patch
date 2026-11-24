@@ -1,0 +1,41 @@
+diff --git a/lib/Utils/messages-media.js b/lib/Utils/messages-media.js
+index a3d2fa6bae6af021a4a50b4270584fed08623f34..017c1b3eaf0909ba080d595f73985cd902c92e26 100644
+--- a/lib/Utils/messages-media.js
++++ b/lib/Utils/messages-media.js
+@@ -5,7 +5,7 @@ import { once } from 'events';
+ import { createReadStream, createWriteStream, promises as fs, WriteStream } from 'fs';
+ import { tmpdir } from 'os';
+ import { join } from 'path';
+-import { Readable, Transform } from 'stream';
++import { Readable, Transform, addAbortSignal, pipeline } from 'stream';
+ import { URL } from 'url';
+ import { proto } from '../../WAProto/index.js';
+ import { DEFAULT_ORIGIN, MEDIA_HKDF_KEY_MAPPING, MEDIA_PATH_MAP } from '../Defaults/index.js';
+@@ -297,6 +297,7 @@ export async function generateThumbnail(file, mediaType, options) {
+ export const getHttpStream = async (url, options = {}) => {
+     const response = await fetch(url.toString(), {
+         dispatcher: options.dispatcher,
++        signal: options.signal,
+         method: 'GET',
+         headers: options.headers
+     });
+@@ -304,7 +305,8 @@ export const getHttpStream = async (url, options = {}) => {
+         throw new Boom(`Failed to fetch stream from ${url}`, { statusCode: response.status, data: { url } });
+     }
+     // @ts-ignore Node18+ Readable.fromWeb exists
+-    return response.body instanceof Readable ? response.body : Readable.fromWeb(response.body);
++    const stream = response.body instanceof Readable ? response.body : Readable.fromWeb(response.body);
++    return options.signal ? addAbortSignal(options.signal, stream) : stream;
+ };
+ export const encryptedStream = async (media, mediaType, { logger, saveOriginalFileIfRequired, opts } = {}) => {
+     const { stream, type } = await getStream(media, opts);
+@@ -512,7 +514,8 @@ export const downloadEncryptedContent = async (downloadUrl, { cipherKey, iv }, {
+             }
+         }
+     });
+-    return fetched.pipe(output, { end: true });
++    pipeline(fetched, output, error => { if (error) output.destroy(error); });
++    return output;
+ };
+ export function extensionForMediaMessage(message) {
+     const getExtension = (mimetype) => mimetype.split(';')[0]?.split('/')[1];

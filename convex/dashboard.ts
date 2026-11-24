@@ -1945,22 +1945,22 @@ export const getInbox = query({
     assertDashboardKey(args.key);
     const items: InboxItem[] = [];
     for (const state of ["failed", "uncertain"] as const) {
-      const deliveries = await ctx.db.query("sent").withIndex("by_delivery", q => q.eq("deliveryState", state)).order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100);
+      const deliveries = await ctx.db.query("sent").withIndex("by_delivery", q => q.eq("deliveryState", state)).order("desc").filter(q => q.and(q.eq(q.field("seenAt"), undefined), q.eq(q.field("batchId"), q.field("_id")))).take(100);
       for (const row of deliveries) {
         if (row.batchId !== row._id) continue;
         items.push({ kind: "delivery", id: row._id, title: `${row.channel === "telegram" ? "Telegram" : row.channel === "whatsapp" ? "WhatsApp" : "Dashboard"} notification ${state === "uncertain" ? "unconfirmed" : "failed"}`, text: `${row.deliveryError ?? "Check the destination before sending again."}\n\nMessage: ${row.deliveryText ?? row.text}`, at: row.reservedAt ?? row.createdAt, ...(row.origin ? { chatId: row.origin } : {}) });
       }
     }
-    for (const turn of await ctx.db.query("codexTurns").withIndex("by_delivery_error", q => q.gt("deliveryError", "")).take(100)) {
+    for (const turn of await ctx.db.query("codexTurns").withIndex("by_delivery_error", q => q.gt("deliveryError", "")).filter(q => q.eq(q.field("deliverySeenAt"), undefined)).take(100)) {
       if (!turn.deliverySeenAt && turn.deliveryError) items.push({ kind: "delivery", id: turn._id, title: "WhatsApp reply needs attention", text: turn.deliveryError, at: turn.outgoingQueuedAt ?? turn.createdAt, chatId: turn.conversationId });
     }
-    for (const row of await ctx.db.query("scheduledFailures").withIndex("by_created").order("desc").take(100)) {
+    for (const row of await ctx.db.query("scheduledFailures").withIndex("by_created").order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100)) {
       if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: `Scheduled work ${row.state}`, text: `${row.functionName} (${row.scheduleId}). Inspect the existing task and server log before retrying; an uncertain action may already have happened.`, at: row.createdAt });
     }
-    for (const row of await ctx.db.query("whatsappInbox").withIndex("by_state", q => q.eq("state", "failed")).order("desc").take(100)) {
+    for (const row of await ctx.db.query("whatsappInbox").withIndex("by_state", q => q.eq("state", "failed")).order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100)) {
       if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: "WhatsApp input could not be accepted", text: row.error ?? "Intake failed after five attempts. Resend this message after checking the connection.", at: row.createdAt });
     }
-    for (const state of ["failed", "uncertain"] as const) for (const row of await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", state)).order("desc").take(100)) {
+    for (const state of ["failed", "uncertain"] as const) for (const row of await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", state)).order("desc").filter(q => q.and(q.or(q.eq(q.field("kind"), "text"), q.eq(q.field("kind"), "file")), q.eq(q.field("turnId"), undefined), q.eq(q.field("notificationId"), undefined), q.eq(q.field("seenAt"), undefined))).take(100)) {
       if ((row.kind === "text" || row.kind === "file") && !row.turnId && !row.notificationId && !row.seenAt) items.push({ kind: "delivery", id: row._id, title: `WhatsApp send ${state}`, text: row.error ?? "Check WhatsApp before sending again.", at: row.createdAt });
     }
     for (const task of await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "blocked")).collect()) {

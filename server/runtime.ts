@@ -83,10 +83,14 @@ export class Runtime {
     sql.exec(`CREATE TABLE IF NOT EXISTS _scheduled (id TEXT PRIMARY KEY, name TEXT NOT NULL, args TEXT NOT NULL, runAt REAL NOT NULL, createdAt REAL NOT NULL)`);
     sql.exec(`CREATE INDEX IF NOT EXISTS _scheduled_by_time ON _scheduled (runAt)`);
     if (!(sql.prepare("PRAGMA table_info(_scheduled)").all() as Array<{ name: string }>).some(column => column.name === "state")) sql.exec("ALTER TABLE _scheduled ADD COLUMN state TEXT NOT NULL DEFAULT 'pending'");
-    for (const row of sql.prepare("SELECT id, name FROM _scheduled WHERE state = 'running'").all() as Array<{ id: string; name: string }>) {
-      sql.prepare("UPDATE _scheduled SET state = 'uncertain' WHERE id = ?").run(row.id);
-      this.store.insert("scheduledFailures", { scheduleId: row.id, functionName: row.name, state: "uncertain", createdAt: Date.now() });
-    }
+    sql.exec("BEGIN IMMEDIATE");
+    try {
+      for (const row of sql.prepare("SELECT id, name FROM _scheduled WHERE state = 'running'").all() as Array<{ id: string; name: string }>) {
+        sql.prepare("UPDATE _scheduled SET state = 'uncertain' WHERE id = ?").run(row.id);
+        this.store.insert("scheduledFailures", { scheduleId: row.id, functionName: row.name, state: "uncertain", createdAt: Date.now() });
+      }
+      sql.exec("COMMIT");
+    } catch (error) { sql.exec("ROLLBACK"); throw error; }
     sql.exec(`CREATE TABLE IF NOT EXISTS _storage (id TEXT PRIMARY KEY, contentType TEXT, size INTEGER NOT NULL, sha256 TEXT NOT NULL, createdAt REAL NOT NULL)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS _file_deletions (id TEXT PRIMARY KEY, createdAt REAL NOT NULL)`);
     sql.exec(`CREATE INDEX IF NOT EXISTS _file_deletions_by_time ON _file_deletions (createdAt)`);
@@ -328,10 +332,14 @@ export class Runtime {
 
   private failedSchedule(row: { id: string; name: string }, state: "failed" | "uncertain") {
     return this.exclusive(() => {
-      this.sql.prepare("UPDATE _scheduled SET state = ? WHERE id = ?").run(state, row.id);
-      this.store.insert("scheduledFailures", { scheduleId: row.id, functionName: row.name, state, createdAt: Date.now() });
-      for (const old of this.sql.prepare("SELECT _id FROM doc_scheduledFailures ORDER BY _creationTime DESC LIMIT -1 OFFSET 1000").all() as Array<{ _id: string }>) this.store.delete(old._id);
-      this.sql.exec("DELETE FROM _scheduled WHERE state IN ('failed','uncertain') AND id NOT IN (SELECT id FROM _scheduled WHERE state IN ('failed','uncertain') ORDER BY createdAt DESC LIMIT 1000)");
+      this.sql.exec("BEGIN IMMEDIATE");
+      try {
+        this.sql.prepare("UPDATE _scheduled SET state = ? WHERE id = ?").run(state, row.id);
+        this.store.insert("scheduledFailures", { scheduleId: row.id, functionName: row.name, state, createdAt: Date.now() });
+        for (const old of this.sql.prepare("SELECT _id FROM doc_scheduledFailures ORDER BY _creationTime DESC LIMIT -1 OFFSET 1000").all() as Array<{ _id: string }>) this.store.delete(old._id);
+        this.sql.exec("DELETE FROM _scheduled WHERE state IN ('failed','uncertain') AND id NOT IN (SELECT id FROM _scheduled WHERE state IN ('failed','uncertain') ORDER BY createdAt DESC LIMIT 1000)");
+        this.sql.exec("COMMIT");
+      } catch (error) { this.sql.exec("ROLLBACK"); throw error; }
       this.events.emit("change", ["scheduledFailures"]);
     });
   }
@@ -366,12 +374,18 @@ export class Runtime {
         }
         // A crash after claim has an uncertain outcome; never blindly replay external side effects.
         if (!await this.exclusive(() => !this.stopped && Number(this.sql.prepare("UPDATE _scheduled SET state = 'running' WHERE id = ? AND state = 'pending'").run(row.id).changes) > 0)) continue;
-        const run = this.call(row.name, args, { internal: true }).then(() => this.exclusive(remove)).catch(async (error) => {
+        const run = this.call(row.name, args, { internal: true }).then(async () => {
+          try { await this.exclusive(remove); }
+          catch (error) {
+            console.error(`Scheduled ${row.name} completed, but its queue record could not be removed: ${String(error)}`);
+            await this.failedSchedule(row, "uncertain");
+          }
+        }, async (error) => {
           console.error(`Scheduled ${row.name} failed: ${error instanceof Error ? error.stack : String(error)}`);
-          await this.failedSchedule(row, "failed");
+          await this.failedSchedule(row, "uncertain");
         });
         this.running.add(run);
-        void run.finally(() => this.running.delete(run));
+        void run.finally(() => this.running.delete(run)).catch(error => console.error(`Scheduled ${row.name} outcome could not be journaled: ${String(error)}`));
       }
       const next = await this.exclusive(() => (this.sql.prepare("SELECT MIN(runAt) AS next FROM _scheduled WHERE state = 'pending'").get() as { next: number | null }).next);
       if (!this.stopped) {

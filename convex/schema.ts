@@ -1643,7 +1643,7 @@ export default defineSchema({
     state: v.union(v.literal("pending"), v.literal("done"), v.literal("failed")),
     createdAt: v.number(), nextAt: v.number(), attempts: v.number(),
     acceptedAt: v.optional(v.number()), error: v.optional(v.string()),
-  }).index("by_key", ["key"]).index("by_state", ["state", "createdAt"]),
+    }).index("by_key", ["key"]).index("by_state", ["state", "createdAt"]).index("by_account_state", ["account", "state", "createdAt"]),
 
   whatsappProtocol: defineTable({
     key: v.string(), value: v.string(), createdAt: v.number(),

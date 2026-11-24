@@ -62,8 +62,7 @@ export const enqueue = internalMutation({
 export const next = internalMutation({
   args: { account: v.string() },
   handler: async (ctx, args) => {
-    const pending = await ctx.db.query("whatsappInbox").withIndex("by_state", q => q.eq("state", "pending")).take(100);
-    const row = pending.find(item => item.account === args.account);
+    const row = await ctx.db.query("whatsappInbox").withIndex("by_account_state", q => q.eq("account", args.account).eq("state", "pending")).first();
     if (!row || row.nextAt > Date.now()) return null;
     if (row.acceptedAt !== undefined) { await ctx.db.patch(row._id, { state: "done", payload: undefined }); return null; }
     let decoded: { key?: unknown; payload?: unknown };

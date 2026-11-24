@@ -11,6 +11,11 @@ overrides:
   sharp: '>=0.35.5'
   source-map-js: '>=1.2.2'
 
+patchedDependencies:
+  baileys@7.0.0-rc14:
+    hash: dd6fda9e49ee32d339a61a78e1870771d58bf7d6e24c179e210449a75b824f0b
+    path: patches/baileys@7.0.0-rc14.patch
+
 importers:
 
   .:
@@ -77,7 +82,7 @@ importers:
         version: 0.21.31
       baileys:
         specifier: 7.0.0-rc14
-        version: 7.0.0-rc14(sharp@0.35.5(@types/node@22.20.4))
+        version: 7.0.0-rc14(patch_hash=dd6fda9e49ee32d339a61a78e1870771d58bf7d6e24c179e210449a75b824f0b)(sharp@0.35.5(@types/node@22.20.4))
       chrono-node:
         specifier: 2.10.1
         version: 2.10.1
@@ -4515,7 +4520,7 @@ snapshots:
 
   bail@2.0.2: {}
 
-  baileys@7.0.0-rc14(sharp@0.35.5(@types/node@22.20.4)):
+  baileys@7.0.0-rc14(patch_hash=dd6fda9e49ee32d339a61a78e1870771d58bf7d6e24c179e210449a75b824f0b)(sharp@0.35.5(@types/node@22.20.4)):
     dependencies:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4

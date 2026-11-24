@@ -735,12 +735,15 @@ export const answerFromWhatsApp = internalMutation({
     const pending = (await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).order("desc").collect())
       .filter(row => row.whatsappChatId === args.chatId && (!code || row._id.endsWith(code)) && (!quoted?.approvalId || row._id === quoted.approvalId));
     const current = [];
+    let active = 0;
     let waitingDelivery = false;
     for (const row of pending) if (answerable(row) && await activeRequest(ctx, row)) {
+      active++;
       const prompts = await ctx.db.query("whatsappOutbox").withIndex("by_approval", q => q.eq("approvalId", row._id)).collect();
       if (prompts.length && prompts.every(prompt => prompt.state === "sent")) current.push(row);
       else waitingDelivery = true;
     }
+    if (active > 1) return "Several requests are waiting. Reply approve or decline followed by the request code. Nothing was approved.";
     if (!current.length && waitingDelivery) return "The complete request is still arriving. Wait for all its parts; nothing was approved.";
     if (!current.length) return code ? "That request is no longer active. Nothing was approved." : null;
     if (current.length !== 1) return "Several requests are waiting. Reply approve or decline followed by the request code. Nothing was approved.";

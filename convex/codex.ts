@@ -290,7 +290,7 @@ export const enqueueTurn = internalMutation({
       if (args.outside || args.attachments?.length) await ctx.db.patch(running._id, { outsideAt: running.outsideAt ?? Date.now() });
       // The running turn already carries recalled memory; a steer adds only the message.
       const { recalled: _recalled, recallDigest: _digest, projectDigest: _project, flush: _flush, checkpoint: _checkpoint, guest: _guest, guestMessage: _message, ...steer } = message;
-      const id = await ctx.db.insert("codexSteers", { ...steer, ...(args.outside ? { outsideAt: Date.now() } : {}), turnId: running._id, runnerId: running.runnerId!, status: "pending" });
+      const id = await ctx.db.insert("codexSteers", { ...steer, ...(args.outside || args.attachments?.length ? { outsideAt: Date.now() } : {}), turnId: running._id, runnerId: running.runnerId!, status: "pending" });
       if (preparing) await ctx.db.delete(preparing._id);
       if (!preparing) await takeFromOutbox(ctx, conversation, args.prompt);
       return id;

@@ -216,12 +216,28 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
   const report = (status: string, extra: object = {}) =>
     runtime.runMutation("whatsapp:report", { status, ...extra }, internal).catch((error) => console.error(`[perry] WhatsApp: could not report ${status}: ${String(error)}`));
   const link = async (): Promise<Link> => (await runtime.runQuery("whatsapp:link", {}, internal)).value as Link;
-  const recovered = Promise.all([runtime.runMutation("whatsapp:recoverSending", {}, internal), runtime.runMutation("whatsappInbox:recover", {}, internal)]);
+  const recovered = (async () => {
+    let failures = 0;
+    while (!stop.signal.aborted) {
+      try {
+        await runtime.runMutation("whatsapp:recoverSending", {}, internal);
+        await runtime.runMutation("whatsappInbox:recover", {}, internal);
+        return true;
+      } catch (error) {
+        console.error(`[perry] WhatsApp recovery: ${String(error)}`);
+        await sleep(Math.min(30_000, 1000 * 2 ** Math.min(failures++, 5)), stop.signal);
+      }
+    }
+    return false;
+  })();
+  let cleanupPending = false;
   const forgetAuth = async () => {
+    cleanupPending = true;
     const target = resolve(AUTH_DIR);
     if (!target.startsWith(resolve(HOME) + sep)) throw new Error("Invalid WhatsApp authentication directory.");
     await clearWhatsAppAuth(runtime);
     rmSync(target, { recursive: true, force: true });
+    cleanupPending = false;
   };
 
   let socket: Socket | null = null;
@@ -260,6 +276,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     const sendingMode = mode;
     const isCurrent = () => socket === current && connected && !stop.signal.aborted;
     flushing = (async () => {
+      if (!await recovered || stop.signal.aborted) return;
       for (;;) {
         const rows = (await runtime.runQuery("whatsapp:pending", {}, internal)).value as Outgoing[];
         if (!rows.length || !isCurrent()) break;
@@ -269,7 +286,6 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
           let error: string | undefined;
           let attempted = false, accepted = false;
           const send = async (content: object) => {
-            await recovered;
             const messageId = await runtime.runMutation("whatsapp:reserveMessageId", { id: row._id }, internal) as string | null;
             if (!messageId) throw new Error("This message was revoked before sending.");
             let quoted: object | undefined;
@@ -400,7 +416,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     // Who wrote it: the owner, linked as them and writing from their phone; else the sender, by number when WhatsApp gives it.
     const sender = key.fromMe ? bare(current.user?.id) : bare(group ? key.participantAlt ?? key.participant : key.remoteJidAlt ?? remote);
     const name = group ? await groupName(remote, current) : undefined;
-    if (socket !== current || stop.signal.aborted) return;
+    if (socket !== current || stop.signal.aborted) throw new Error("WhatsApp disconnected before contact message acceptance.");
     await runtime.runAction("whatsapp:receiveOther", {
       ...(receiptId ? { receiptId } : {}),
       chatId,
@@ -498,7 +514,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
       const current = socket;
       if (!connected || !current || !account) { await sleep(500, stop.signal); continue; }
       try {
-        await recovered;
+        if (!await recovered || stop.signal.aborted) break;
         const row = await runtime.runMutation("whatsappInbox:next", { account }, internal) as { _id: string; messageId: string; payload?: string; mode: "self" | "separate" } | null;
         if (!row) { await sleep(250, stop.signal); continue; }
         let error: string | undefined;
@@ -519,12 +535,20 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     while (!stop.signal.aborted) {
       const wanted = await link().catch(() => null);
       if (stop.signal.aborted) break;
-      if (!wanted?.wanted) {
+      if (!wanted?.wanted || cleanupPending) {
         linkingSince = null;
         // Not linked, or unlinked from the dashboard: forget the device, then wait to be asked.
         if (socket) { await socket.logout().catch(() => {}); socket.end(); socket = null; connected = false; }
         groupNames.clear(); sentIds.clear(); seen.clear(); account = "";
-        if (wanted && !wanted.wanted) await forgetAuth();
+        if (cleanupPending || wanted && !wanted.wanted) {
+          try { await forgetAuth(); }
+          catch (error) {
+            console.error(`[perry] WhatsApp credential cleanup: ${String(error)}`);
+            await report("disconnected", { error: "Could not clear the previous WhatsApp credentials. Retrying before opening another connection." });
+            await sleep(Math.min(30_000, 1000 * 2 ** Math.min(failures++, 5)), stop.signal);
+            continue;
+          }
+        }
         await sleep(3_000, stop.signal);
         continue;
       }
@@ -739,6 +763,6 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
     seen.clear();
     groupNames.clear();
     socket?.end();
-    await Promise.allSettled([loop, inboundLoop, ...incoming, ...(flushing ? [flushing] : [])]);
+    await Promise.allSettled([loop, inboundLoop, recovered, ...incoming, ...(flushing ? [flushing] : [])]);
   };
 }

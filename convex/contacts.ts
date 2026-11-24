@@ -223,9 +223,13 @@ export const acceptInbound = internalMutation({
     const outcome: { action: "turn" | "asked" | "ignore"; contactId?: Id<"contacts">; context?: string; files?: StoredFile[]; kept: boolean } = await ctx.runMutation(internal.contacts.record, message);
     if (outcome.action === "turn" && outcome.contactId) {
       const reactable = key && (args.kind === "person" || tagged === true) ? key : undefined;
+      const title = `${APP[args.channel]} · ${args.kind === "group" ? args.chatName ?? "a group" : args.from.name ?? args.from.handle}`;
+      const existing = await ctx.runQuery(internal.conversations.getByExternalId, { channel: args.channel, externalId: args.chatId });
+      const threadId = existing?.threadId ?? await ctx.runMutation(internal.agentStore.createThread, { userId: `${args.channel}:${args.chatId}`, title });
+      const conversationId = await ctx.runMutation(internal.conversations.create, { channel: args.channel, externalId: args.chatId, threadId, title, contactId: outcome.contactId });
+      const preparingId = await ctx.runMutation(internal.codex.prepareTurn, { conversationId, prompt: said(args.from, args.text) });
       await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
-        channel: args.channel, externalId: args.chatId, text: said(args.from, args.text),
-        title: `${APP[args.channel]} · ${args.kind === "group" ? args.chatName ?? "a group" : args.from.name ?? args.from.handle}`,
+        channel: args.channel, externalId: args.chatId, text: said(args.from, args.text), title, preparingId,
         guest: outcome.contactId, ...(outcome.context ? { guestContext: outcome.context } : {}),
         ...(outcome.files?.length ? { storedMedia: outcome.files } : {}), ...(reactable ? { guestMessage: reactable } : {}),
       });

@@ -644,9 +644,10 @@ export const execute = internalAction({
           accounts.push(...page.items);
           cursor = page.nextCursor ?? undefined;
         } while (cursor && accounts.length < 500);
-        if (!input.accountId && (accounts.length !== 1 || cursor)) return { ok: false, error: "Select an explicit connected account id with list_connectors. Perry will not guess between accounts." };
+        const accountless = tool?.isNoAuth === true && !accounts.length && !cursor && !input.accountId;
+        if (!accountless && !input.accountId && (accounts.length !== 1 || cursor)) return { ok: false, error: "Select an explicit connected account id with list_connectors. Perry will not guess between accounts." };
         const account = accounts.find(item => input.accountId ? item.id === input.accountId : true);
-        if (!account) return { ok: false, error: "That connected account does not belong to this owner and toolkit." };
+        if (!account && !accountless) return { ok: false, error: "That connected account does not belong to this owner and toolkit." };
         if (account) selected = { accountId: account.id, toolkit };
         if (account && ["EXPIRED", "REVOKED"].includes(account.status)) {
           await ctx.runMutation(internal.connectorHealth.observe, { ...selected!, startedAt, expired: true }).catch(() => null);

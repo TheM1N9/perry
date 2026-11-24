@@ -327,15 +327,18 @@ export const whatsappOutcome = internalMutation({
     const uncertain = outbox.some(row => row.state === "uncertain");
     const failed = outbox.filter(row => row.state === "failed" || row.state === "uncertain");
     if (!failed.length && outbox.some(row => row.state !== "sent")) return;
-    const error = failed.length ? failed.map(row => row.file ? `Could not send ${row.file.fileName}.` : "Could not send the job report on WhatsApp.").join("\n") : undefined;
+    const error = failed.length ? failed.map(row => row.state === "uncertain"
+      ? `WhatsApp has not confirmed ${row.file?.fileName ?? "the job report"}. Check the destination before sending again.`
+      : row.file ? `Could not send ${row.file.fileName}.` : "Could not send the job report on WhatsApp.").join("\n") : undefined;
+    const state = uncertain ? "uncertain" : error ? "failed" : "delivered";
     const sentAt = outbox.some(row => row.state === "sent") ? receipt.sentAt ?? Date.now() : undefined;
-    if (error === receipt.deliveryError && receipt.deliveryState === "failed") {
+    if (error === receipt.deliveryError && receipt.deliveryState === state) {
       if (sentAt && !receipt.sentAt) await ctx.db.patch(receipt._id, { sentAt });
       return;
     }
     const rows = await ctx.db.query("sent").withIndex("by_batch", q => q.eq("batchId", receipt._id)).collect();
     for (const row of rows) {
-      await ctx.db.patch(row._id, { deliveryState: uncertain ? "uncertain" : error ? "failed" : "delivered", deliveryError: uncertain ? "WhatsApp has not confirmed this send. Check the destination before sending again." : error, ...(sentAt ? { sentAt } : {}) });
+      await ctx.db.patch(row._id, { deliveryState: state, deliveryError: error, ...(sentAt ? { sentAt } : {}) });
       await recordFileOutcome(ctx, row, error);
     }
     const owner = await ctx.db.query("installation").first();
