@@ -17,6 +17,11 @@ Never use the owner's browser profile, desktop, credentials, or a live model.
 - Owner input queued before a tab/chat change lands in the new page; unmount
   leaves scroll/keyboard work alive. Note separately if not reproduced here.
 - Browser close/restart while launch is pending leaks a child/browser session.
+- A cold browser takes more than 15 seconds to expose its first tab. A bounded
+  readiness deadline must admit a delayed real Chrome startup while still
+  honoring Stop, profile transfer and close during launch.
+- A missing executable, exited process or signal termination consumes the whole
+  startup deadline instead of failing promptly with repair guidance.
 - Repeated tab closure/downloads retain connections/history indefinitely.
 - Cancellation leaves approval polling, CDP command timers or load listeners
   alive; teardown must run on normal completion, errors and abort.
