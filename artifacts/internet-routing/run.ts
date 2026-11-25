@@ -9,7 +9,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,10 +54,26 @@ process.env.PERRY_WEB_TEST_SITE = `127.0.0.1:${address.port}`;
 const { executeInternet, requestSchema, capabilities, diagnostics } = await import("../../convex/lib/internet");
 const { fetchPublic, fetchPage } = await import("../../convex/web");
 const browser = await import("../../convex/lib/browser");
+// Linux startup failures can be a missing library, sandbox denial, signal exit,
+// or an unresponsive DevTools endpoint. Preserve the native error in the CI
+// artifact before the temporary home is removed; never disable the sandbox.
+const nativeBrowser = browser.findBrowser();
+const browserStderr = join(home, "browser-stderr.log");
+if (process.platform === "linux" && nativeBrowser) {
+  const wrapper = join(home, "browser-with-diagnostics.sh");
+  writeFileSync(wrapper, '#!/bin/sh\nexec "$PERRY_E2E_BROWSER_EXECUTABLE" "$@" 2>"$PERRY_E2E_BROWSER_STDERR"\n', { mode: 0o700 });
+  process.env.PERRY_E2E_BROWSER_EXECUTABLE = nativeBrowser;
+  process.env.PERRY_E2E_BROWSER_STDERR = browserStderr;
+  process.env.PERRY_BROWSER_PATH = wrapper;
+}
 const results: Array<{ name: string; passed: boolean; detail?: unknown }> = [];
 async function check(name: string, run: () => unknown | Promise<unknown>) {
   try { const detail = await run(); results.push({ name, passed: true, detail }); console.log(`ok ${name}`); }
-  catch (error) { results.push({ name, passed: false, detail: error instanceof Error ? error.message : String(error) }); console.error(`FAIL ${name}: ${error}`); }
+  catch (error) {
+    const startup = name === "public browser fallback is isolated and cannot post" && existsSync(browserStderr) ? readFileSync(browserStderr, "utf8").slice(-8_000) : "";
+    const detail = `${error instanceof Error ? error.message : String(error)}${startup ? `\nBrowser startup (${nativeBrowser}):\n${startup}` : ""}`;
+    results.push({ name, passed: false, detail }); console.error(`FAIL ${name}: ${detail}`);
+  }
 }
 const fixtures = new Map<string, { status?: number; body: string; contentType?: string; retryAfter?: string; link?: string }>();
 const requested: string[] = [];
