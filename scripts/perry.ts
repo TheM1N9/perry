@@ -34,6 +34,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync
 import { homedir, hostname } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Readable } from "node:stream";
 import { z } from "zod";
 import { standing, type UpdateRequest, type UpdateResult } from "../convex/lib/checkout";
 import { reachableAddresses } from "../convex/lib/devices";
@@ -47,6 +48,55 @@ const NEXT_CLI = join(REPO, "node_modules", "next", "dist", "bin", "next");
 const BUILD_ID = join(REPO, ".next", "BUILD_ID");
 
 const say = (text = "") => console.log(text);
+
+/** Only server/api.ts's sanitized diagnostic may leave a background dashboard's stderr. */
+export function forwardApiErrors(input: Readable, write: (line: string) => void): () => void {
+  const buffer = Buffer.alloc(256);
+  let length = 0;
+  let dropping = false;
+  let closed = false;
+  const line = () => {
+    if (!dropping) {
+      const text = buffer.toString("utf8", 0, length).replace(/\r$/, "");
+      if (/^\[perry\] [A-Za-z0-9_:./-]{1,120} failed \((?:Error|TypeError|RangeError|SyntaxError|AbortError|TimeoutError|InternalError)\)\.$/.test(text)) write(text);
+    }
+    buffer.fill(0);
+    length = 0;
+    dropping = false;
+  };
+  const data = (chunk: Buffer) => {
+    for (let start = 0; start < chunk.length;) {
+      const newline = chunk.indexOf(10, start);
+      const end = newline < 0 ? chunk.length : newline;
+      if (!dropping && length + end - start <= buffer.length) {
+        chunk.copy(buffer, length, start, end);
+        length += end - start;
+      } else {
+        dropping = true;
+        buffer.fill(0);
+        length = 0;
+      }
+      start = end + 1;
+      if (newline >= 0) line();
+    }
+  };
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    input.off("data", data);
+    input.off("end", end);
+    input.off("close", close);
+    input.off("error", close);
+    buffer.fill(0);
+    length = 0;
+  };
+  const end = () => { line(); close(); };
+  input.on("data", data);
+  input.once("end", end);
+  input.once("close", close);
+  input.once("error", close);
+  return close;
+}
 
 // --- Small helpers ---------------------------------------------------------
 
@@ -296,6 +346,9 @@ async function runForeground(background = false) {
     child.proc = proc;
     const prefix = (chunk: Buffer) => chunk.toString("utf8").split(/\r?\n/).filter((line) => line.trim()).map((line) => `${stamp()} [${child.name}] ${line}\n`).join("");
     // Runner output includes private chat titles, command arguments and approvals. Detailed output is explicit: perry run.
+    const stopDiagnostics = background && child.name === "dashboard" && proc.stderr
+      ? forwardApiErrors(proc.stderr, (line) => process.stdout.write(`${stamp()} [dashboard] ${line}\n`))
+      : () => {};
     let warned = false;
     proc.stdout?.on("data", (chunk: Buffer) => { if (!background) process.stdout.write(prefix(chunk)); });
     proc.stderr?.on("data", (chunk: Buffer) => {
@@ -307,6 +360,7 @@ async function runForeground(background = false) {
     });
     proc.on("error", (error) => process.stdout.write(`${stamp()} [${child.name}] could not start: ${error.message}\n`));
     proc.on("close", (code) => {
+      stopDiagnostics();
       if (stopping || paused) return;
       // One that ran a while and then died starts again at once; one that keeps dying backs off, to 5 minutes.
       child.failures = Date.now() - child.startedAt > 60_000 ? 0 : child.failures + 1;

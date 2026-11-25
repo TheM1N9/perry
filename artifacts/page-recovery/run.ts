@@ -14,7 +14,7 @@ const app = await perry({ name: "page-recovery", outDir: output, engine: "codex"
 const { BASE, KEY, check, notes } = app;
 const title = "Recovery fixture note", content = "Confirmed data survives recovery.";
 let connected: any, page: any, browser: Awaited<ReturnType<typeof app.openBrowser>> | undefined;
-let fault: { path: string; status: number; error: string } | undefined;
+let fault: { path: string; status: number; error: string; remaining?: number } | undefined;
 const requests: Array<{ path: string; fault?: number }> = [];
 const writes: Array<{ path: string; tables: string[] }> = [];
 const retries: Array<{ name: string; before: number; after: number; elapsedMs: number; status: number }> = [];
@@ -43,6 +43,7 @@ try {
   await app.until(() => fetch(`${BASE}/api/backend/http/health`).then(r => r.ok), "production server");
   await app.call("dashboard:skipOnboarding", { key: KEY });
   const noteId = await app.call("notes:create", { key: KEY, title, content });
+  const chatId = await app.call<string>("dashboard:createChat", { key: KEY });
   notes.build = readFileSync(join(REPO, ".next/BUILD_ID"), "utf8").trim();
   if (serve) {
     writeFileSync(join(output, "fixture.json"), JSON.stringify({ base: BASE, key: KEY }));
@@ -59,8 +60,9 @@ try {
     page = connected.contexts()[0].pages().find((item: any) => item.url().startsWith(BASE));
     assert.ok(page);
     await page.route("**/api/backend/call", async (route: any) => {
-      const path = route.request().postDataJSON().path, injected = fault?.path === path ? fault : undefined;
+      const path = route.request().postDataJSON().path, injected = fault && fault.path === path && (fault.remaining === undefined || fault.remaining > 0) ? fault : undefined;
       requests.push({ path, ...(injected ? { fault: injected.status } : {}) });
+      if (injected?.remaining !== undefined) injected.remaining--;
       if (injected) return route.fulfill({ status: injected.status, contentType: "application/json", body: JSON.stringify({ error: injected.error }) });
       return route.continue();
     });
@@ -75,9 +77,46 @@ try {
     };
     page.on("response", record);
     try {
+      for (const status of [500, 502, 503, 504]) {
+        const before = count("notes:list");
+        fault = { path: "notes:list", status, error: "Synthetic temporary server failure", remaining: 1 };
+        await gotoBrain(); await noteLink().waitFor({ timeout: 5_000 });
+        assert.equal(await boundary().count(), 0);
+        assert.equal(count("notes:list") - before, 2);
+        check(`transientRead${status}RecoversWithoutBoundary`, true);
+      }
+      const beforeShell = count("dashboard:listChats");
+      fault = { path: "dashboard:listChats", status: 500, error: "Synthetic temporary shared-shell failure", remaining: 1 };
+      const shellRecovered = page.waitForResponse((reply: any) => reply.url().endsWith("/api/backend/call") && reply.request().postDataJSON()?.path === "dashboard:listChats" && reply.status() === 200, { timeout: 5_000 });
+      await gotoBrain(); await shellRecovered; await noteLink().waitFor();
+      assert.equal(await boundary().count(), 0);
+      assert.equal(count("dashboard:listChats") - beforeShell, 2);
+      check("transientSharedReadKeepsDashboardUsable", true);
+
+      const beforeChat = count("dashboard:getChatMessages");
+      fault = { path: "dashboard:getChatMessages", status: 500, error: "Synthetic temporary chat-history failure", remaining: 1 };
+      const chatRecovered = page.waitForResponse((reply: any) => reply.url().endsWith("/api/backend/call") && reply.request().postDataJSON()?.path === "dashboard:getChatMessages" && reply.status() === 200, { timeout: 5_000 });
+      await page.goto(`${BASE}/chat/${chatId}`); await chatRecovered; await page.locator("#composer").waitFor();
+      assert.equal(await boundary().count(), 0);
+      assert.equal(count("dashboard:getChatMessages") - beforeChat, 2);
+      check("transientChatHistoryReadRestoresComposerWithoutBoundary", true);
+
+      fault = { path: "notes:list", status: 500, error: "Synthetic failure before navigation" };
+      const beforeLeave = count("notes:list");
+      await gotoBrain();
+      await app.until(() => count("notes:list") > beforeLeave, "first failed read before navigation", 5);
+      await library().click(); await page.getByRole("heading", { name: "Library", exact: true }).waitFor();
+      const afterLeave = count("notes:list");
+      await page.waitForTimeout(1_200);
+      assert.equal(count("notes:list"), afterLeave);
+      check("navigationCancelsPendingReadBackoff", true);
+
       for (const name of ["immediatePageRetryFetchesOnce", "repeatedPageRetryFetchesOnce"]) {
+        const beforeFailure = count("notes:list");
         fault = { path: "notes:list", status: 500, error: "Synthetic page query failure" };
         await gotoBrain(); await boundary().waitFor();
+        assert.equal(count("notes:list") - beforeFailure, 3);
+        check(`${name}StopsAfterThreeFailedReads`, true);
         assert.ok(await library().isVisible()); check(`${name}KeepsSidebar`, true);
         await recover("notes:list", name);
       }
@@ -91,7 +130,9 @@ try {
       check("healthyClientNavigationClearsNativeBoundary", true);
 
       fault = { path: "notes:list", status: 404, error: "No public query named notes:list" };
+      const beforeMissing = count("notes:list");
       await gotoBrain(); await boundary().waitFor();
+      assert.equal(count("notes:list") - beforeMissing, 1);
       assert.ok(await page.getByText("Perry's server is running older code than this page. Restart Perry with perry update, then reload.", { exact: true }).isVisible());
       check("unknownFunctionExplainsServerUpdate", true);
       await recover("notes:list", "updatedServerPageRetriesImmediately");
@@ -123,16 +164,29 @@ try {
       assert.equal(await noteLink().count(), 0);
       check("wrongReplacementKeyIsRefusedWithoutUnlocking", true);
       const beforeUnlock = count("dashboard:getStatus");
+      fault = { path: "dashboard:getStatus", status: 500, error: "Synthetic temporary unlock failure", remaining: 1 };
       await page.getByLabel("Dashboard key", { exact: true }).fill(KEY);
       await page.getByRole("button", { name: "Continue", exact: true }).click();
       await noteLink().waitFor();
       assert.ok(count("dashboard:getStatus") > beforeUnlock);
       assert.equal(await page.evaluate(() => localStorage.getItem("perry.dashboard.key")), KEY);
       check("correctReplacementKeyFetchesAndRestoresContent", true);
+      assert.equal(fault.remaining, 0);
+      assert.ok(count("dashboard:getStatus") - beforeUnlock >= 2);
+      check("unlockQueryRecoversFromTransientServerFailure", true);
+
+      fault = { path: "notes:create", status: 500, error: "Synthetic failed owner write" };
+      const beforeWrite = count("notes:create");
+      await page.getByRole("button", { name: "New page", exact: true }).click();
+      await page.getByText("Couldn't make it: Synthetic failed owner write", { exact: true }).waitFor();
+      await page.waitForTimeout(1_500);
+      assert.equal(count("notes:create") - beforeWrite, 1);
+      check("failedOwnerMutationIsNeverAutomaticallyReplayed", true);
+      fault = undefined;
       await Promise.all([...pendingResponses]);
       notes.responseWrites = writes;
-      assert.ok(writes.every(write => write.path === "jobs:setTimezone"), JSON.stringify(writes));
-      assert.ok(!requests.some(request => /^(?:notes:(?!list)|dashboard:(?:sendChat|createChat))/.test(request.path)), JSON.stringify(requests));
+      assert.ok(writes.every(write => write.path === "jobs:setTimezone" || write.path === "dashboard:markChatSeen"), JSON.stringify(writes));
+      assert.ok(!requests.some(request => /^(?:notes:(?!list|create)|dashboard:(?:sendChat|createChat))/.test(request.path)), JSON.stringify(requests));
       const finalNotes = await app.call<Array<{ id: string; title: string; preview: string }>>("notes:list", { key: KEY });
       const fixtureNotes = finalNotes.filter(note => note.title === title);
       assert.equal(fixtureNotes.length, 1); assert.equal(fixtureNotes[0].id, noteId);

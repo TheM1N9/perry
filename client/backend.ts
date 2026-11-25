@@ -21,6 +21,9 @@ export class BackendError extends Error {
   }
 }
 
+const retryableReadError = (error: unknown): error is BackendError => error instanceof BackendError
+  && [500, 502, 503, 504].includes(error.status) && !/dashboard key|DASHBOARD_KEY/i.test(error.message);
+
 /** The server may have committed a write whose acknowledgement never arrived. */
 export class WriteOutcomeUnknownError extends BackendError {
   readonly outcome = "unknown";
@@ -42,6 +45,7 @@ type Subscription = {
   controller?: AbortController;
   retry?: ReturnType<typeof setTimeout>;
   retryDelay?: number;
+  serverFailures?: number;
   retryAt?: number;
   again: boolean;
   idleAt?: number;
@@ -139,8 +143,9 @@ export class BackendClient {
     for (let attempt = 0; ; attempt++) {
       try { return await this.call<T>(ref, stableArgs, { timeoutMs: Math.max(1, until - Date.now()) }); }
       catch (error) {
-        if (!(error instanceof BackendError) || error.status !== 429 || (!read && !error.admission) || attempt >= 2) throw error;
-        const delay = error.retryAfterMs ?? 1000;
+        const serverRetry = read && retryableReadError(error);
+        if (!(error instanceof BackendError) || (!serverRetry && (error.status !== 429 || (!read && !error.admission))) || attempt >= 2) throw error;
+        const delay = error.retryAfterMs ?? (serverRetry ? 500 * 2 ** attempt : 1000);
         if (this.closed || Date.now() + delay >= until) throw error;
         await new Promise<void>((resolve, reject) => {
           const done = () => { clearTimeout(timer); this.lifetime.signal.removeEventListener("abort", abort); resolve(); };
@@ -224,6 +229,7 @@ export class BackendClient {
     clearTimeout(sub.retry);
     sub.retry = undefined;
     sub.retryAt = undefined;
+    sub.serverFailures = undefined;
     this.refreshPending?.due.delete(sub);
     sub.again = false;
     sub.controller?.abort();
@@ -296,6 +302,7 @@ export class BackendClient {
       clearTimeout(sub.retry);
       sub.retry = undefined;
       sub.retryAt = undefined;
+      sub.serverFailures = undefined;
       this.refreshPending?.due.delete(sub);
       sub.controller?.abort();
       sub.again = false;
@@ -369,6 +376,7 @@ export class BackendClient {
           sub.reads = result.reads ?? null;
           sub.error = undefined;
           sub.retryDelay = undefined;
+          sub.serverFailures = undefined;
           sub.loaded = true;
           if (changed) sub.value = result.value;
           sub.retainedBytes = retainedChatBytes(sub.name, sub.args, result.value);
@@ -376,9 +384,12 @@ export class BackendClient {
         } catch (error) {
           if (revision !== sub.revision || this.closed) continue;
           if (controller.signal.aborted) continue;
-          if ((error instanceof Error && error.name === "TimeoutError" || error instanceof BackendError && error.status === 429) && sub.listeners.size) {
-            const delay = error instanceof BackendError && error.retryAfterMs !== undefined ? error.retryAfterMs : sub.retryDelay ?? 500;
+          const serverRetry = retryableReadError(error) && (sub.serverFailures ?? 0) < 2;
+          if ((error instanceof Error && error.name === "TimeoutError" || error instanceof BackendError && error.status === 429 || serverRetry) && sub.listeners.size) {
+            const delay = error instanceof BackendError && error.retryAfterMs !== undefined ? error.retryAfterMs
+              : serverRetry ? 500 * 2 ** (sub.serverFailures ?? 0) : sub.retryDelay ?? 500;
             if (!Number.isFinite(delay)) { sub.error = error; sub.loaded = true; this.notify(sub); break; }
+            if (serverRetry) sub.serverFailures = (sub.serverFailures ?? 0) + 1;
             sub.retryDelay = Math.min(delay * 2, 10_000);
             sub.retryAt = Date.now() + delay;
             sub.again = false;
