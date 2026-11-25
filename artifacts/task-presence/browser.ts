@@ -59,7 +59,10 @@ try {
   assert.equal(await update().count(), 0); assert.equal(task(idle).status, "running");
   assert.equal(await pane().getByRole("link", { name: "open chat", exact: true }).getAttribute("href"), `/chat/${task(idle).conversationId}`);
   await pane().getByRole("button", { name: "More", exact: true }).click();
-  assert.ok(await page.getByRole("menuitem", { name: "cancel task", exact: true }).isVisible()); await page.keyboard.press("Escape");
+  const cancelTask = page.getByRole("menuitem", { name: "cancel task", exact: true });
+  await cancelTask.waitFor({ state: "visible", timeout: 5_000 });
+  await page.keyboard.press("Escape");
+  await cancelTask.waitFor({ state: "hidden", timeout: 5_000 });
   check("unfinishedTaskHasReviewAndCancellationWithoutUnusableSteering", true);
   await open(live); await pane().getByText("working", { exact: true }).waitFor(); await update().waitFor();
   assert.equal(await row(live).getAttribute("data-status"), "working");
