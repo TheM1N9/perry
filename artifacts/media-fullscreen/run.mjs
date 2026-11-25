@@ -1,4 +1,4 @@
-// Native capability baseline only; failure inventory is in docs/verification-desktop-media.md.
+// Native capability baseline only; failure inventory is in docs/regression-checks.md.
 import { createServer } from 'node:http';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';

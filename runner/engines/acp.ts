@@ -530,7 +530,9 @@ ${line}`.slice(-4000); this.onText(line); });
   private async session(conn: Connection, input: TurnInput, sink: TurnSink): Promise<Session> {
     const { resumeCursor: cursor, cwd, tools } = input;
     const loaded = cursor ? conn.sessions.get(cursor) : undefined;
-    if (loaded) return loaded;
+    // Session transports retain MCP credentials. Reload before rotating the turn grant.
+    if (loaded && loaded.turn) throw new Error("This session is already running.");
+    if (loaded) conn.sessions.delete(loaded.id);
     await this.prepareSession(cwd, tools);
     const mcpServers = this.mcpServers(conn, tools);
     const capabilities = conn.init.agentCapabilities;
@@ -546,6 +548,8 @@ ${line}`.slice(-4000); this.onText(line); });
         if (this.isAuthError(error) || conn.closed) throw error;
         this.warn(`${this.label} could not resume this chat's session (${message(error)}); starting a new one.`);
         const fresh = await this.newSession(conn, cwd, mcpServers);
+        const history = await sink.onHistory?.();
+        if (history) input.history = history;
         await sink.onSession(fresh.id, cursor);
         return fresh;
       }
@@ -923,8 +927,8 @@ ${line}`.slice(-4000); this.onText(line); });
   }
 
   /**
-   * The agent asks before acting. At Full access, and for Perry's own tools,
-   * it is allowed once here; otherwise the runner decides with the chat's
+   * The agent asks before acting. At Full access it is allowed once here;
+   * otherwise the runner decides with the chat's
    * access, and the answer is the agent's own option id. A stopped turn
    * answers "cancelled", as ACP asks.
    */
@@ -941,14 +945,15 @@ ${line}`.slice(-4000); this.onText(line); });
     const known = turn.tools.get(request.toolCall.toolCallId);
     const call = { ...known, ...Object.fromEntries(Object.entries(request.toolCall).filter(([, value]) => value !== undefined && value !== null)) } as ToolCall;
     const allowOnce = pick("accept");
-    if ((turn.access === "full" || this.perryTool(call)) && allowOnce) return selected(allowOnce);
+    if (turn.access === "full" && allowOnce) return selected(allowOnce);
     const normalized = this.toRequest(turn, call, options);
     turn.asking += 1;
-    let cancel: (() => void) | undefined;
+    let onAbort: (() => void) | undefined;
     try {
       const stopped = new Promise<null>((done) => {
-        cancel = () => done(null);
-        turn.stop.signal.addEventListener("abort", cancel, { once: true });
+        onAbort = () => done(null);
+        turn.stop.signal.addEventListener("abort", onAbort, { once: true });
+        if (turn.stop.signal.aborted) onAbort();
       });
       const chosen = await Promise.race([turn.sink.onRequest(normalized), stopped]);
       if (chosen === null || turn.stop.signal.aborted) return cancelled;
@@ -960,7 +965,7 @@ ${line}`.slice(-4000); this.onText(line); });
       turn.declined.add(call.toolCallId);
       return decline();
     } finally {
-      if (cancel) turn.stop.signal.removeEventListener("abort", cancel);
+      if (onAbort) turn.stop.signal.removeEventListener("abort", onAbort);
       turn.asking -= 1;
       turn.lastActivity = Date.now();
     }

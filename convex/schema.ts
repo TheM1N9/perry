@@ -61,6 +61,8 @@ export const vTurnAttachment = v.object({
   fileName: v.string(),
   contentType: v.string(),
 });
+
+export const vFileDelivery = v.object({ caption: v.optional(v.string()), replyTo: v.optional(v.string()), voiceNote: v.optional(v.boolean()) });
 /**
  * An event that starts a job (jobs.ts, server/triggers.ts): one Composio sends
  * from a connected app (a new email, a pull request), by the trigger instance
@@ -355,6 +357,7 @@ export default defineSchema({
    * without anyone having to scroll back through chat.
    */
   tasks: defineTable({
+    requestKey: v.optional(v.string()),
     title: v.string(),
     prompt: v.string(),
     projectId: v.optional(v.id("projects")),
@@ -445,6 +448,7 @@ export default defineSchema({
     .index("by_conversation", ["conversationId"])
     .index("by_initiative", ["initiative.key"])
     .index("by_goal", ["goalId"])
+    .index("by_request", ["requestKey"])
     .index("by_updated", ["updatedAt"]),
 
   /**
@@ -1161,6 +1165,7 @@ export default defineSchema({
     originPath: v.optional(v.string()),
     /** Authenticated producer, kept even when a step/message is copied to another chat. */
     originRunnerId: v.optional(v.id("runners")),
+    delivery: v.optional(vFileDelivery),
     /** Upload staged for editing this immutable message revision. */
     editOf: v.optional(v.id("agentMessages")),
     position: v.optional(v.number()),
@@ -1644,24 +1649,51 @@ export default defineSchema({
    * process (server/whatsapp.ts), which sends these in order as they appear,
    * so a reply written while it reconnects goes when it is back.
    */
+  scheduledFailures: defineTable({
+    seenAt: v.optional(v.number()),
+    scheduleId: v.string(), functionName: v.string(), state: v.union(v.literal("failed"), v.literal("uncertain")), createdAt: v.number(),
+  }).index("by_created", ["createdAt"]),
+
+  whatsappInbox: defineTable({
+    seenAt: v.optional(v.number()),
+    key: v.string(), account: v.string(), remote: v.string(), messageId: v.string(),
+    mode: v.union(v.literal("self"), v.literal("separate")), payload: v.optional(v.string()),
+    state: v.union(v.literal("pending"), v.literal("done"), v.literal("failed")),
+    createdAt: v.number(), nextAt: v.number(), attempts: v.number(),
+    acceptedAt: v.optional(v.number()), error: v.optional(v.string()),
+    }).index("by_key", ["key"]).index("by_state", ["state", "createdAt"]).index("by_account_state", ["account", "state", "createdAt"]),
+
+  whatsappProtocol: defineTable({
+    key: v.string(), value: v.string(), createdAt: v.number(),
+  }).index("by_key", ["key"]).index("by_created", ["createdAt"]),
+
   whatsappOutbox: defineTable({
+    seenAt: v.optional(v.number()),
+    approvalId: v.optional(v.id("approvals")),
+    turnId: v.optional(v.id("codexTurns")),
+    messageId: v.optional(v.string()),
+    deliveredAt: v.optional(v.number()),
+    readAt: v.optional(v.number()),
     notificationId: v.optional(v.id("sent")),
     to: v.string(),
-    kind: v.union(v.literal("text"), v.literal("typing"), v.literal("file"), v.literal("reaction")),
+    kind: v.union(v.literal("text"), v.literal("typing"), v.literal("file"), v.literal("reaction"), v.literal("album")),
+    album: v.optional(v.object({ images: v.number(), videos: v.number() })),
+    albumParentId: v.optional(v.id("whatsappOutbox")),
     text: v.optional(v.string()),
     reaction: v.optional(v.object({ id: v.string(), fromMe: v.boolean(), remoteJid: v.optional(v.string()), participant: v.optional(v.string()), emoji: v.string() })),
     /** A file to send: in Perry's storage, or on this machine. */
-    file: v.optional(v.object({ storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string() })),
-    state: v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
+    file: v.optional(v.object({ delivery: v.optional(vFileDelivery), storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string() })),
+    state: v.union(v.literal("pending"), v.literal("sending"), v.literal("sent"), v.literal("failed"), v.literal("uncertain")),
     createdAt: v.number(),
     sentAt: v.optional(v.number()),
     attempts: v.number(),
     error: v.optional(v.string()),
-  }).index("by_state", ["state", "createdAt"]).index("by_notification", ["notificationId"]),
+  }).index("by_state", ["state", "createdAt"]).index("by_notification", ["notificationId"]).index("by_turn", ["turnId"]).index("by_message", ["messageId"]).index("by_approval", ["approvalId"]),
 
   /** What a runner asked the owner before acting on their machine. See approvals.ts. */
   approvals: defineTable({
     runnerId: v.id("runners"),
+    turnId: v.optional(v.id("codexTurns")),
     conversationId: v.optional(v.id("conversations")),
     /**
      * "browser": a step in Perry's own browser that buys, sends or posts (lib/browser.ts, tools.ts).
@@ -1736,9 +1768,14 @@ export default defineSchema({
 
   /** Subscription turns are queued for the owner's outbound local runner. */
   codexTurns: defineTable({
+    deliverySeenAt: v.optional(v.number()),
+    deliveryNoticeAt: v.optional(v.number()),
+    outgoingQueuedAt: v.optional(v.number()),
+    deliveryError: v.optional(v.string()),
+    mcpGrantHash: v.optional(v.string()),
     /** This turn's native session, retained if the chat switches engines while it runs. */
     sessionCursor: v.optional(v.string()),
-    /** Accepted web send awaiting brain preparation. It already owns its queue position and can be stopped/removed. */
+    /** Accepted owner send awaiting brain preparation. It already owns its queue position and can be stopped/removed. */
     preparing: v.optional(v.boolean()),
     /** Only this reply may receive the follow-up. Unset means a separate turn. */
     steerTarget: v.optional(v.id("codexTurns")),
@@ -1818,6 +1855,7 @@ export default defineSchema({
     deliveredAt: v.optional(v.number()),
     reactionAt: v.optional(v.number()),
     reactionEvent: v.optional(v.boolean()),
+    /** An intentional NO_REPLY, including owner turns without a reaction. */
     reactionOnly: v.optional(v.boolean()),
     webReaction: v.optional(v.string()),
     /** When a finalize last started, so the recovery sweep does not run a second one beside it. */
@@ -1843,6 +1881,7 @@ export default defineSchema({
     finishedAt: v.optional(v.number()),
     finalizedAt: v.optional(v.number()),
   })
+    .index("by_delivery_error", ["deliveryError"])
     .index("by_runner_status", ["runnerId", "status"])
     .index("by_status", ["status"])
     .index("by_run", ["runId"])
@@ -1965,6 +2004,14 @@ export default defineSchema({
   }).index("by_message", ["channel", "externalId", "messageId"])
     .index("by_chat", ["channel", "externalId", "createdAt"])
     .index("by_created", ["createdAt"]),
+
+  /** Owner phone messages waiting for a quiet window, with a durable, replaceable flush. */
+  phoneInbox: defineTable({
+    messageIds: v.optional(v.array(v.string())),
+    outside: v.optional(v.boolean()),
+    conversationId: v.id("conversations"), parts: v.array(v.string()), title: v.optional(v.string()),
+    firstAt: v.number(), dueAt: v.number(), scheduledId: v.optional(v.id("_scheduled_functions")),
+  }).index("by_conversation", ["conversationId"]),
 
   telegramReceipts: defineTable({
     botId: v.string(), updateId: v.number(), acceptedAt: v.number(),

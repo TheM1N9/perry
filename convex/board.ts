@@ -7,7 +7,7 @@ import { describeStep } from "./lib/activity";
 import { ENGINES, type EngineKind } from "./lib/engines";
 import { turnHealth } from "./lib/turn-health";
 import { citedMemories } from "../lib/reply-text";
-import { APPROVAL_TTL_MS, BRAIN_TTL_MS } from "./approvals";
+import { BRAIN_TTL_MS, isPendingForOwner } from "./approvals";
 import { STOPPED } from "./codex";
 import { QUIET } from "./jobs";
 import { boardLink } from "../lib/board-links";
@@ -182,7 +182,10 @@ function loader(ctx: QueryCtx, now: number) {
   const pending = () => asking ??= ctx.db.query("approvals")
     .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", now - BRAIN_TTL_MS))
     .collect()
-    .then((rows) => rows.filter((row) => row.createdAt > now - (row.kind === "brain" ? BRAIN_TTL_MS : APPROVAL_TTL_MS)));
+    .then(async (rows) => {
+      const valid = await Promise.all(rows.map(row => isPendingForOwner(ctx, row)));
+      return rows.filter((_row, index) => valid[index]);
+    });
   const latestRun = (conversationId: Id<"conversations"> | undefined) => conversationId
     ? ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", conversationId)).order("desc").first()
     : Promise.resolve(null);

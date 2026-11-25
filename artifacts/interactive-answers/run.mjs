@@ -2,7 +2,7 @@
 // PERRY_PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node artifacts/interactive-answers/run.mjs <output-dir>
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir, platform, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -42,6 +42,7 @@ const provider = createServer(async (req, res) => {
   const path = req.url.split("?")[0];
   res.setHeader("content-type", "application/json");
   const send = value => res.end(JSON.stringify(value));
+  if (path === "/api/v3.1/connected_accounts") return send({ items: [{ id: "ca-fixture", status: "ACTIVE", status_reason: null, toolkit: { slug: "gmail" }, auth_config: { id: "ac-fixture", is_composio_managed: true, is_disabled: false }, is_disabled: false, created_at: "2026-10-01", updated_at: "2026-10-01", data: {} }], next_cursor: null, total_pages: 1 });
   if (path === "/api/v3.1/tools/GMAIL_SEND_EMAIL") return send({ slug: "GMAIL_SEND_EMAIL", name: "Synthetic send", toolkit: { slug: "gmail", name: "Gmail", logo: "https://example.com/gmail.svg" }, tags: ["createHint"], input_parameters: { type: "object", properties: {} }, output_parameters: { type: "object", properties: {} }, no_auth: false });
   if (path === "/api/v3.1/tool_router/session") return send({ session_id: "fixture-session", config: { user_id: "owner", execute: {}, search: {}, preload: { tools: [] } }, config_version: 1, mcp: { type: "http", url: "http://fixture.invalid/mcp" } });
   if (path.endsWith("/toolkits")) return send({ items: [{ slug: "gmail", name: "Gmail", is_no_auth: false, connected_account: { id: "ca-fixture", status: "ACTIVE", auth_config: { id: "ac-fixture", auth_scheme: "OAUTH2", is_composio_managed: true } } }], next_cursor: null, total_pages: 1 });
@@ -50,15 +51,18 @@ const provider = createServer(async (req, res) => {
 });
 await new Promise(done => provider.listen(0, "127.0.0.1", done));
 const env = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(port), PERRY_INTERACTIVE_ANSWERS: "1", DASHBOARD_KEY: key, PERRY_ENGINE: "codex", PERRY_WEB_TEST_SITE: siteHost, TELEGRAM_BOT_TOKEN: "", COMPOSIO_API_KEY: "synthetic-e2e-key", COMPOSIO_BASE_URL: `http://127.0.0.1:${provider.address().port}`, NODE_ENV: "production", HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1" };
+env.PERRY_EMBED_MODEL = "connector-fixture";
+env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(join(repo, "artifacts/connector-details/preload.mjs")).href}`;
 let server;
 let serverLog = "";
 let browser;
 let chat;
 let turnId;
+let mcpGrant;
 let rpc = 0;
 const browserDiagnostics = [];
 async function start(flag = "1") {
-  server = spawn(process.execPath, [join(repo, "node_modules/next/dist/bin/next"), "start", "-p", String(port)], { cwd: repo, env: { ...env, PERRY_INTERACTIVE_ANSWERS: flag }, stdio: ["ignore", "pipe", "pipe"] });
+  server = spawn(process.execPath, [join(repo, "node_modules/next/dist/bin/next"), "start", "-p", String(port)], { cwd: repo, env: { ...env, PERRY_INTERACTIVE_ANSWERS: flag }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
   server.stdout.on("data", (chunk) => { serverLog += chunk; });
   server.stderr.on("data", (chunk) => { serverLog += chunk; });
   await until(() => fetch(`${base}/api/backend/http/health`).then((r) => r.ok), "server start", 90);
@@ -79,7 +83,7 @@ async function call(path, args = {}, admin = true) {
   return body.value;
 }
 async function mcp(name, args) {
-  const response = await fetch(`${base}/api/backend/http/mcp`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-perry-chat": chat }, body: JSON.stringify({ jsonrpc: "2.0", id: ++rpc, method: "tools/call", params: { name, arguments: args } }) });
+  const response = await fetch(`${base}/api/backend/http/mcp`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-perry-chat": chat, "x-perry-turn": turnId, "x-perry-grant": mcpGrant }, body: JSON.stringify({ jsonrpc: "2.0", id: ++rpc, method: "tools/call", params: { name, arguments: args } }) });
   const body = await response.json();
   if (body.error || body.result?.isError) throw new Error(body.error?.message ?? body.result.content[0].text);
   return JSON.parse(body.result.content[0].text);
@@ -91,7 +95,8 @@ async function claim(text) {
   let turn;
   await until(async () => { turn = (await call("codex:queuedTurns", { token })).find((t) => t.conversationId === chat); return Boolean(turn); }, "queued fixture turn", 90);
   turnId = turn._id;
-  assert.ok(await call("codex:claimTurn", { token, id: turnId }));
+  const claimed = await call("codex:claimTurn", { token, id: turnId });
+  assert.ok(claimed?.mcpGrant); mcpGrant = claimed.mcpGrant;
 }
 const definition = {
   schemaVersion: 1, title: "AI subscription cost comparison", summary: "Illustrative prices for testing only. Change usage to compare local monthly totals; these are not verified current subscription prices.",
@@ -198,7 +203,7 @@ try {
   await until(async () => (await analyticsCard.innerText()).includes("No numeric values to plot."), "empty data filter");
   check("filters handle empty results without invented values", true);
   const longReviewValue = `review-start-${"x".repeat(1100)}-review-end`;
-  const operation = { slug: "GMAIL_SEND_EMAIL", requestId: "outside-read-synthetic-send", args: { to: "nobody@example.invalid", subject: "Synthetic only", body: longReviewValue } };
+  const operation = { slug: "GMAIL_SEND_EMAIL", accountId: "ca-fixture", requestId: "outside-read-synthetic-send", args: { to: "nobody@example.invalid", subject: "Synthetic only", body: longReviewValue } };
   const waiting = mcp("run_action", operation);
   void waiting.catch(() => {});
   let operationApproval;
@@ -212,7 +217,7 @@ try {
   check("one dashboard approval continues the exact operation after reads", (await waiting).result?.ok && accountWrites === 1);
   await page.reload();
   check("reloaded unchanged operation retries never prompt or send twice", (await mcp("run_action", operation)).result?.ok && accountWrites === 1 && !(await call("approvals:pending", { key }, false)).some(row => row.id === operationApproval.id));
-  const approval = await call("approvals:request", { token, kind: "write", title: "Fixture proposed publish (never executed)", conversationId: chat });
+  const approval = await call("approvals:request", { token, kind: "write", title: "Fixture proposed publish (never executed)", conversationId: chat, turnId });
   if (approval.next === "review") await call("approvals:reviewed", { token, id: approval.id, verdict: "caution", reason: "Fixture consequential action" });
   assert.notEqual(approval.next, "run");
   await call("approvals:decide", { key, id: approval.id, approved: false });
@@ -330,6 +335,7 @@ try {
 
   // Finish the fixture runner turn; stopped turns cannot write more code.
   await call("dashboard:stopChat", { key, id: chat });
+  await assert.rejects(() => mcp("interactive_create", { requestId: "stopped-native-grant", definition }));
   const revisionBeforeStop = (await list())[0].revision;
   await assert.rejects(() => call("interactive:revise", { conversationId: chat, turnId, id: created.id, expectedRevision: revisionBeforeStop, requestId: "late-stopped", definition: JSON.stringify(definition) }));
   check("canceled generation cannot replace the last good draft", true);
@@ -355,7 +361,7 @@ try {
   let next;
   await until(async () => { next = (await call("codex:queuedTurns", { token })).find((t) => t.conversationId === chat); return Boolean(next); }, "draft follow-up queued", 90);
   check("follow-up carries target id/revision and starts under outside-read gate", next.prompt.includes(created.id) && Boolean(next.outsideAt));
-  await call("codex:claimTurn", { token, id: next._id });
+  const nextClaim = await call("codex:claimTurn", { token, id: next._id }); assert.ok(nextClaim?.mcpGrant); mcpGrant = nextClaim.mcpGrant;
   await call("codex:finishTurn", { token, id: next._id, response: "Fixture follow-up draft ready." });
   await until(async () => !(await call("dashboard:getChat", { key, id: chat })).isRunning, "follow-up finished");
   await claim("Owner fixture asks for another local draft, without a source read.");
@@ -366,7 +372,7 @@ try {
   await until(async () => { steer = (await call("codex:pendingSteers", { token })).find((row) => row.turnId === turnId); return Boolean(steer); }, "draft steer");
   await call("codex:ackSteer", { token, id: steer._id, applied: true });
   check("applied artifact follow-up cannot count as approval to act outward", await call("codex:outwardAllowed", { turnId }) === false);
-  const steerWrite = mcp("run_action", { slug: "GMAIL_SEND_EMAIL", requestId: "interactive-steer-cannot-approve", args: { to: "nobody@example.invalid" } });
+  const steerWrite = mcp("run_action", { slug: "GMAIL_SEND_EMAIL", accountId: "ca-fixture", requestId: "interactive-steer-cannot-approve", args: { to: "nobody@example.invalid" } });
   void steerWrite.catch(() => {});
   let steerApproval;
   await until(async () => { steerApproval = (await call("approvals:pending", { key }, false)).find(row => row.title === "Run GMAIL_SEND_EMAIL"); return Boolean(steerApproval); }, "interactive answer still waits for external approval");
@@ -375,7 +381,7 @@ try {
   check("declined connected operation cannot dispatch after interactive answers", !(await steerWrite).result?.ok && accountWrites === 1);
   await call("dashboard:setChatAccess", { key, id: chat, access: "full" }, false);
   loseProviderAcknowledgement = true;
-  const uncertainOperation = { slug: "GMAIL_SEND_EMAIL", args: { to: "nobody@example.invalid", subject: "Synthetic lost acknowledgement" } };
+  const uncertainOperation = { slug: "GMAIL_SEND_EMAIL", accountId: "ca-fixture", args: { to: "nobody@example.invalid", subject: "Synthetic lost acknowledgement" } };
   const uncertain = await mcp("run_action", uncertainOperation);
   loseProviderAcknowledgement = false;
   check("Full-access lost acknowledgement returns a durable generated recovery id", uncertain.result?.state === "unknown" && Boolean(uncertain.result.requestId) && accountWrites === 2);
@@ -414,6 +420,7 @@ try {
   await stop();
   await new Promise((done) => site.close(done));
   await new Promise((done) => provider.close(done));
-  writeFileSync(join(output, "result.json"), JSON.stringify({ ranAt: new Date().toISOString(), platform: platform(), pass: checks.every((check) => check.pass), checks, browserDiagnostics: browserDiagnostics.slice(-20), limitations: ["Fixture data, no real connector account calls", "Simulated runner reports, no LLM-selection behavior evaluated", `Chrome runtime on ${platform()} only; other platforms not exercised in this run`], home }, null, 2));
+  rmSync(home, { recursive: true, force: true });
+  writeFileSync(join(output, "result.json"), JSON.stringify({ ranAt: new Date().toISOString(), platform: platform(), pass: checks.every((check) => check.pass), checks, browserDiagnostics: browserDiagnostics.slice(-20), limitations: ["Fixture data, no real connector account calls", "Simulated runner reports, no LLM-selection behavior evaluated", `Chrome runtime on ${platform()} only; other platforms not exercised in this run`], homeRemoved: !existsSync(home) }, null, 2));
   writeFileSync(join(output, "server.log"), serverLog);
 }

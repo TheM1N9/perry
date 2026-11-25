@@ -240,7 +240,7 @@ export const receive = internalMutation({
         return null;
       }
     }
-    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
+    await ctx.runMutation(internal.phoneInbox.receive, {
       channel: "telegram",
       externalId: args.chatId,
       text: args.text,

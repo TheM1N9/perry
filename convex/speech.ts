@@ -2,8 +2,38 @@
 
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { transcribeWhatsAppVoice } from "../server/whatsapp-voice";
 import { assertDashboardKey } from "./lib/auth";
+
+export const whatsappVoice = internalAction({
+  args: { turnId: v.id("codexTurns"), storageId: v.id("_storage") },
+  handler: async (ctx, args): Promise<{ text?: string; error?: string }> => {
+    const controller = new AbortController();
+    let checking = false;
+    const check = async () => {
+      if (checking || controller.signal.aborted) return;
+      checking = true;
+      try { if (!await ctx.runQuery(internal.codex.preparingMayRun, { turnId: args.turnId })) controller.abort(); }
+      catch { controller.abort(); }
+      finally { checking = false; }
+    };
+    await check();
+    controller.signal.throwIfAborted();
+    const timer = setInterval(() => void check(), 500);
+    try {
+      const audio = await ctx.storage.get(args.storageId);
+      if (!audio) throw new Error("The original voice note is no longer available.");
+      const settings = (await ctx.runQuery(internal.installation.get, {}))?.meetingSpeech;
+      const text = await transcribeWhatsAppVoice(Buffer.from(await audio.arrayBuffer()), controller.signal, { language: settings?.language ?? "auto", model: process.env.PERRY_VOICE_MODEL ?? `onnx-community/whisper-${settings?.model ?? "small"}` });
+      controller.signal.throwIfAborted();
+      return { text };
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("This voice request was stopped.");
+      return { error: error instanceof Error ? error.message : "Local voice transcription is unavailable; the original note remains attached." };
+    } finally { clearInterval(timer); }
+  },
+});
 
 export const context = internalQuery({
   args: { id: v.id("meetings"), device: v.optional(v.id("petDevices")), seq: v.number() },

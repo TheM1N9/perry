@@ -551,35 +551,36 @@ export const handleTurn = internalAction({
     const channel = args.channel as Channel;
     // What the web app keeps track of while it waits: its own chats, and what it sent into a messaging app's.
     const web = channel === "web" || args.fromWeb === true;
-    let conversation = await loadConversation(
-      ctx,
-      channel,
-      args.externalId,
-      args.title,
-      args.guest,
-    );
-    const guest = args.guest ?? conversation.contactId;
-    // Someone else's chat takes only their messages, as contacts.ts passes them on: never the owner's commands or web app.
-    if (conversation.contactId && !args.guest) {
-      console.warn(`[perry] a message for ${conversation.title ?? "a chat with someone else"} that did not come from them was dropped`);
-      return null;
-    }
-    // The owner wrote: what Perry sent them on its own is not being ignored (notify.ts).
-    if (!guest && !conversation.jobId && !conversation.taskId && !args.hidden) {
-      await ctx.runMutation(internal.installation.ownerWrote, {});
-      await ctx.runMutation(internal.tasks.resumeHandoffs, { conversationId: conversation._id });
-    }
-    const telegramToken = channel === "telegram"
-      ? await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" })
-      : null;
-    // A plain reply in a messaging app, outside a turn: a command's answer, or a failure.
-    const say = async (text: string) => {
-      if (channel === "telegram") await sendMessage(telegramToken, args.externalId, text);
-      else if (channel === "whatsapp") await ctx.runMutation(internal.whatsapp.send, { to: args.externalId, text });
-    };
-
+    let conversation: Doc<"conversations"> | undefined;
     let delegated = false;
     try {
+      conversation = await loadConversation(
+        ctx,
+        channel,
+        args.externalId,
+        args.title,
+        args.guest,
+      );
+      const guest = args.guest ?? conversation.contactId;
+      // Someone else's chat takes only their messages, as contacts.ts passes them on: never the owner's commands or web app.
+      if (conversation.contactId && !args.guest) {
+        console.warn(`[perry] a message for ${conversation.title ?? "a chat with someone else"} that did not come from them was dropped`);
+        return null;
+      }
+      // The owner wrote: what Perry sent them on its own is not being ignored (notify.ts).
+      if (!guest && !conversation.jobId && !conversation.taskId && !args.hidden) {
+        await ctx.runMutation(internal.installation.ownerWrote, {});
+        await ctx.runMutation(internal.tasks.resumeHandoffs, { conversationId: conversation._id });
+      }
+      const telegramToken = channel === "telegram"
+        ? await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" })
+        : null;
+      // A plain reply in a messaging app, outside a turn: a command's answer, or a failure.
+      const say = async (text: string) => {
+        if (channel === "telegram") await sendMessage(telegramToken, args.externalId, text);
+        else if (channel === "whatsapp") await ctx.runMutation(internal.whatsapp.send, { to: args.externalId, text });
+      };
+
       const command = !guest && channel !== "web" && !args.fromWeb && args.text.startsWith("/") && !args.telegramMedia?.length && !args.storedMedia?.length;
       // Paused (pause.ts): a schedule's or task's turn on its way is held for the owner; a message from the phone is
       // answered that Perry is paused, the owner's with how to resume; commands still work, /resume among them.
@@ -633,6 +634,10 @@ export const handleTurn = internalAction({
         const messageKey = crypto.randomUUID();
         for (const item of args.storedMedia) {
           attachmentIds.push(await ctx.runMutation(internal.media.attachStored, { conversationId: conversation._id, messageKey, ...item }));
+          if (!guest && channel === "whatsapp" && args.preparingId && item.fileName === "voice-note.ogg" && item.contentType.startsWith("audio/")) {
+            const result = await ctx.runAction(internal.speech.whatsappVoice, { turnId: args.preparingId as Id<"codexTurns">, storageId: item.storageId });
+            prompt = `${prompt}\n\n${result.text ? `Voice note transcript (automatic; verify names and numbers):\n${result.text}` : `Voice transcription unavailable: ${result.error ?? "No speech was recognized."} The playable original is attached. Do not claim to have heard it.`}`;
+          }
         }
         prompt = `${prompt}
 
@@ -755,7 +760,7 @@ export const handleTurn = internalAction({
       });
       return null;
     } finally {
-      if (web && !delegated && !args.preparingId) {
+      if (web && !delegated && !args.preparingId && conversation) {
         await ctx.runMutation(internal.conversations.finishWebTurn, { id: conversation._id, prompt: args.text });
       }
     }

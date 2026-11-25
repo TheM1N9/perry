@@ -48,10 +48,18 @@ const TG_GROUP = "-1001234";
 const chatOf = async (channel, externalId) => (await all("conversations")).find(row => row.channel === channel && row.externalId === externalId);
 const turnsOf = async conversationId => (await all("codexTurns")).filter(row => row.conversationId === conversationId).sort((a, b) => a.createdAt - b.createdAt);
 const scheduledTurns = () => sql.prepare("SELECT args FROM _scheduled WHERE name = 'brain:handleTurn'").all().map(row => JSON.parse(row.args));
+const dispatchAccepted = async () => {
+  const rows = sql.prepare("SELECT id, args FROM _scheduled WHERE name = 'brain:handleTurn' AND state = 'pending' ORDER BY runAt, createdAt, rowid").all();
+  for (const row of rows) {
+    sql.prepare("DELETE FROM _scheduled WHERE id = ?").run(row.id);
+    await call("brain:handleTurn", JSON.parse(row.args));
+  }
+};
 const reactionsTo = to => all("whatsappOutbox").then(rows => rows.filter(row => row.kind === "reaction" && row.to === to));
 const telegramReactions = () => telegram.filter(item => item.method === "setMessageReaction");
 /** The newest turn in a chat, claimed by the runner as it would be: running, so it may react. */
 const claimLatest = async (channel, externalId) => {
+  await dispatchAccepted();
   const chat = await chatOf(channel, externalId);
   assert.ok(chat, `a chat with ${externalId} must exist`);
   const queued = (await turnsOf(chat._id)).filter(turn => turn.status === "queued");
@@ -62,11 +70,14 @@ const claimLatest = async (channel, externalId) => {
 };
 const finish = id => patch(id, { status: "done", finishedAt: Date.now(), finalizedAt: Date.now() });
 const react = (turnId, emoji, messageId) => call("reactions:react", { turnId, emoji, ...(messageId ? { messageId } : {}) });
-const groupMessage = (id, text, extra = {}) => call("whatsapp:receiveOther", {
-  chatId: GROUP, group: true, groupName: "Synthetic group", from: MEMBER, fromName: "Datta", fromOwner: false,
-  mentionsLinked: false, repliesToLinked: false, text,
-  message: { id, fromMe: false, remoteJid: GROUP, participant: MEMBER }, ...extra,
-});
+const groupMessage = async (id, text, extra = {}) => {
+  await call("whatsapp:receiveOther", {
+    chatId: GROUP, group: true, groupName: "Synthetic group", from: MEMBER, fromName: "Datta", fromOwner: false,
+    mentionsLinked: false, repliesToLinked: false, text,
+    message: { id, fromMe: false, remoteJid: GROUP, participant: MEMBER }, ...extra,
+  });
+  await dispatchAccepted();
+};
 const check = async (name, run) => {
   try { await run(); report.cases.push({ name, passed: true }); }
   catch (error) { report.cases.push({ name, passed: false, error: String(error?.stack ?? error) }); }
@@ -213,9 +224,12 @@ try {
 
   await check("the owner's own WhatsApp chat still reacts to the owner's message", async () => {
     await call("whatsapp:receive", { chatId: OWNER, text: "check my calendar", messageId: "OWNER-1", fromMe: false, remoteJid: OWNER });
+    const flush = sql.prepare("SELECT id, args FROM _scheduled WHERE name = 'phoneInbox:flush' AND state = 'pending' ORDER BY runAt LIMIT 1").get();
+    assert.ok(flush, "the owner's message enters the quiet-window buffer");
+    sql.prepare("DELETE FROM _scheduled WHERE id = ?").run(flush.id);
+    await call("phoneInbox:flush", { ...JSON.parse(flush.args), now: true });
     const args = scheduledTurns().find(item => item.externalId === OWNER);
     assert.ok(args, "the owner's message schedules a turn");
-    await call("brain:handleTurn", args);
     const turn = await claimLatest("whatsapp", OWNER);
     assert.equal(turn.guestMessage, undefined);
     assert.equal((await react(turn._id, "👀")).status, "queued");

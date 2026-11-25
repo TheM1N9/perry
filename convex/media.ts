@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { vFileDelivery } from "./schema";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
@@ -114,11 +115,12 @@ export const localAttachment = query({
 
 /** Codex's share_file: show a file from the owner's machine in the reply to this turn. A look is the pet's picture of the screen (look_at_screen). */
 export const shareFromTurn = internalMutation({
-  args: { turnId: v.id("codexTurns"), path: v.string(), look: v.optional(v.boolean()) },
+  args: { turnId: v.id("codexTurns"), path: v.string(), look: v.optional(v.boolean()), delivery: v.optional(vFileDelivery) },
   returns: v.object({ fileName: v.string(), contentType: v.string() }),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.turnId);
-    if (!job) throw new Error("This turn is gone.");
+    if (!job || job.status !== "running" || job.stopRequested || job.stopped) throw new Error("This turn has ended or was stopped.");
+    if ((args.delivery?.caption?.length ?? 0) > 1024) throw new Error("A WhatsApp caption must fit in 1024 characters.");
     if (!ABSOLUTE_PATH.test(args.path)) throw new Error("Give the file's absolute path.");
     const described = describePath(args.path);
     const mediaKey = `codex-${job._id}`;
@@ -131,11 +133,14 @@ export const shareFromTurn = internalMutation({
         messageKey: mediaKey,
         localPath: args.path,
         ...described,
+        delivery: args.delivery,
         size: 0,
         createdAt: Date.now(),
       });
       await index(ctx, id, args.look ? { how: "look", from: "pet", by: "perry" } : {});
     }
+    const attached = existing.find(row => row.localPath === args.path);
+    if (attached && args.delivery) await ctx.db.patch(attached._id, { delivery: args.delivery });
     await ctx.db.patch(job._id, { mediaKey });
     return described;
   },
@@ -143,11 +148,12 @@ export const shareFromTurn = internalMutation({
 
 /** share_file with a Library item's id: the item's file, wherever it is, shown in the reply to this turn. */
 export const shareFromLibrary = internalMutation({
-  args: { turnId: v.id("codexTurns"), id: v.string() },
+  args: { turnId: v.id("codexTurns"), id: v.string(), delivery: v.optional(vFileDelivery) },
   returns: v.object({ fileName: v.string(), contentType: v.string() }),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.turnId);
-    if (!job) throw new Error("This turn is gone.");
+    if (!job || job.status !== "running" || job.stopRequested || job.stopped) throw new Error("This turn has ended or was stopped.");
+    if ((args.delivery?.caption?.length ?? 0) > 1024) throw new Error("A WhatsApp caption must fit in 1024 characters.");
     const chat = await ctx.db.get(job.conversationId);
     if (!chat || chat.contactId) throw new Error("A chat with someone else has no Library.");
     const itemId = ctx.db.normalizeId("library", args.id);
@@ -166,11 +172,14 @@ export const shareFromLibrary = internalMutation({
         ...(item.storageId ? { storageId: item.storageId } : { localPath: item.localPath }),
         fileName: item.name,
         contentType: item.contentType,
+        delivery: args.delivery,
         size: item.size,
         createdAt: Date.now(),
       });
       await index(ctx, attachmentId);
     }
+    const attached = existing.find(row => (item.localPath && row.localPath === item.localPath) || (item.storageId && row.storageId === item.storageId));
+    if (attached && args.delivery) await ctx.db.patch(attached._id, { delivery: args.delivery });
     await ctx.db.patch(job._id, { mediaKey });
     return { fileName: item.name, contentType: item.contentType };
   },

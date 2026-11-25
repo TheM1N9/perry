@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { deflateSync } from "node:zlib";
 import { FAKE_AGENT, REPO, perry, redact, sleep, type Row } from "../engine-acp/harness";
 import { GUEST_TOOLS } from "../../convex/lib/engines";
@@ -146,6 +147,8 @@ const p = await perry({
     };
   },
   env: {
+    PERRY_EMBED_MODEL: "choose-engine-fixture",
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(join(REPO, "artifacts/choose-engine/embedding.mjs")).href}`,
     TELEGRAM_BOT_TOKEN: "123456:library-e2e",
     TELEGRAM_API_BASE: `http://127.0.0.1:${(tgServer.address() as { port: number }).port}`,
     PERRY_WHATSAPP_DRIVER: join(REPO, "artifacts", "whatsapp", "fake-driver.mjs"),
@@ -688,15 +691,19 @@ try {
     && library().filter((row) => row.name === "voice-note.ogg" && row.from === "telegram").length === 1, { sendBack, files: lastReply?.attachments.map((file) => file.fileName) });
 
   // A chat with someone else: a turn of theirs is running; the MCP server gives it no Library and no way to share one.
-  const runner = rows("runners")[0]._id;
+  const guestToken = "library-synthetic-guest-runner";
+  const runner = seed("runners", { token: guestToken, name: "Synthetic guest boundary runner", createdAt: Date.now(), lastSeenAt: Date.now(), engines: [{ kind: "codex", installed: true, signedIn: true, auth: {}, models: [], updatedAt: Date.now() }] });
   const guestRun = seed("runs", { conversationId: guestChat, prompt: "hi", status: "running", startedAt: Date.now() });
-  const guestTurn = seed("codexTurns", { runnerId: runner, conversationId: guestChat, runId: guestRun, engine: "codex", prompt: "hi", instructions: "", guest: true, status: "running", createdAt: Date.now() });
-  const mcp = async (body: object) => await (await fetch(`${BASE}/api/backend/http/mcp`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-perry-chat": guestChat }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...body }) })).json() as any;
+  const guestTurn = seed("codexTurns", { runnerId: runner, conversationId: guestChat, runId: guestRun, engine: "codex", prompt: "hi", instructions: "", guest: true, status: "queued", createdAt: Date.now() });
+  const guestClaim = await call<{ mcpGrant: string } | null>("codex:claimTurn", { token: guestToken, id: guestTurn });
+  if (!guestClaim?.mcpGrant) throw new Error("Synthetic guest turn could not be claimed");
+  const mcp = async (body: object) => await (await fetch(`${BASE}/api/backend/http/mcp`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${guestToken}`, "x-perry-chat": guestChat, "x-perry-turn": guestTurn, "x-perry-grant": guestClaim.mcpGrant }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...body }) })).json() as any;
   const guestList = await mcp({ method: "tools/list" });
   const guestFind = await mcp({ method: "tools/call", params: { name: "library_find", arguments: { query: "receipt" } } });
   const guestShare = await mcp({ method: "tools/call", params: { name: "share_file", arguments: { id: tgVoiceId } } });
   sql(`DELETE FROM "doc_codexTurns" WHERE _id = ?`, [guestTurn]);
   sql(`DELETE FROM "doc_runs" WHERE _id = ?`, [guestRun]);
+  sql(`DELETE FROM "doc_runners" WHERE _id = ?`, [runner]);
   const guestNames = (guestList.result?.tools ?? []).map((item: any) => item.name);
   check("guestHasNoLibrary", guestNames.length > 0 && !guestNames.some((name: string) => /library|share_file/.test(name)) && !GUEST_TOOLS.some((name) => /library/.test(name))
     && /Unknown tool/.test(JSON.stringify(guestFind)) && /Unknown tool/.test(JSON.stringify(guestShare)) && !attachmentsOf(guestChat).some((row) => row.messageKey.startsWith("codex-")),

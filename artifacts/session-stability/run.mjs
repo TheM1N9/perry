@@ -1,4 +1,4 @@
-// Read docs/verification-session-stability.md before changing this integration soak.
+// Read docs/regression-checks.md before changing this integration soak.
 import assert from 'node:assert/strict';
 import { spawn,spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';

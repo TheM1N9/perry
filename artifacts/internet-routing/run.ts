@@ -167,16 +167,21 @@ const { default: http } = await import("../../convex/http");
 const sql = new DatabaseSync(join(home, "perry.sqlite"));
 // Convex's public types omit TableDefinition.export(), which Perry's runtime uses (as in server/index.ts).
 const runtime = new Runtime(sql, schema as never, modules, { storageDir: join(home, "storage"), http: http as never });
-const runner = runtime.store.insert("runners", { token: "internet-e2e-runner", name: "Fixture runner", revoked: false, autoApprove: false, createdAt: Date.now() });
-const conversation = runtime.store.insert("conversations", { channel: "web", externalId: "e2e", threadId: "e2e-thread", createdAt: Date.now() });
-const turn = runtime.store.insert("codexTurns", { runnerId: runner, conversationId: conversation, status: "running", prompt: "Read public sources", engine: "codex", createdAt: Date.now() });
+await runtime.stop();
+const runner = runtime.store.insert("runners", { token: "internet-e2e-runner", name: "Fixture runner", revoked: false, autoApprove: false, createdAt: Date.now(), engines: [{ kind: "codex", installed: true, signedIn: true, auth: {}, models: [], updatedAt: Date.now() }] });
+const threadId = await runtime.runMutation("agentStore:createThread", {}, { internal: true });
+const conversation = runtime.store.insert("conversations", { channel: "web", externalId: "e2e", threadId, createdAt: Date.now() });
+const runId = runtime.store.insert("runs", { conversationId: conversation, prompt: "Read public sources", status: "running", startedAt: Date.now() });
+let turn = runtime.store.insert("codexTurns", { runnerId: runner, conversationId: conversation, runId, status: "queued", prompt: "Read public sources", instructions: "Synthetic permission boundary fixture only.", engine: "codex", createdAt: Date.now() });
+let claim = z.object({ mcpGrant: z.string() }).parse(await runtime.runMutation("codex:claimTurn", { token: "internet-e2e-runner", id: turn }, { internal: true }));
 const login = runtime.store.insert("vault", { label: "Synthetic login", url: "https://example.com", value: "fixture-login-value", createdAt: Date.now(), updatedAt: Date.now() });
 let id = 0;
-const approvalRows = () => runtime.store.all("approvals").map(row => z.object({ _id: z.string(), status: z.string(), decidedBy: z.string().optional(), connectedAction: z.object({ requestId: z.string(), state: z.string() }).passthrough().optional() }).parse(row));
+const approvalRows = () => runtime.store.all("approvals").map(row => z.object({ _id: z.string(), turnId: z.string().optional(), status: z.string(), decidedBy: z.string().optional(), connectedAction: z.object({ requestId: z.string(), state: z.string(), turnId: z.string() }).passthrough().optional() }).parse(row));
 async function mcp(name: string, args: object) {
-  const response = await runtime.runHttp("/mcp", new Request("http://perry.test/mcp", { method: "POST", headers: { authorization: "Bearer internet-e2e-runner", "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }) }));
-  const body = await response.json() as { result?: { content?: Array<{ text: string }> }; error?: unknown };
+  const response = await runtime.runHttp("/mcp", new Request("http://perry.test/mcp", { method: "POST", headers: { authorization: "Bearer internet-e2e-runner", "content-type": "application/json", "x-perry-turn": turn, "x-perry-grant": claim.mcpGrant }, body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }) }));
+  const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> }; error?: unknown };
   assert.ok(!body.error, JSON.stringify(body));
+  if (body.result?.isError) return { refused: true, error: body.result.content?.[0]?.text ?? "Tool refused" };
   return JSON.parse(body.result?.content?.[0]?.text ?? "null") as { untrusted?: string; result?: Awaited<ReturnType<typeof executeInternet>> & { ok?: boolean; state?: string; requestId?: string }; error?: string; refused?: boolean; stored?: boolean; id?: string; value?: string };
 }
 let accountStatus = "ACTIVE";
@@ -195,7 +200,7 @@ const provider = createServer(async (req, res) => {
   res.setHeader("content-type", "application/json");
   const send = (value: unknown) => res.end(JSON.stringify(value));
   if (providerStatus) { res.statusCode = providerStatus; res.setHeader("retry-after", "60"); return send({ error: { message: "Fixture provider refused this read" } }); }
-  if (path === "/api/v3.1/connected_accounts") return send({ items: [{ id: "ca-fixture", status: accountStatus, status_reason: null, toolkit: { slug: "youtube" }, auth_config: { id: "ac-fixture", is_composio_managed: true, is_disabled: false }, is_disabled: false, created_at: "2026-10-01", updated_at: "2026-10-01", data: { access_token: "fixture-private-token" } }], next_cursor: accountsTruncated ? "another-page" : null, total_pages: accountsTruncated ? 4 : 1 });
+  if (path === "/api/v3.1/connected_accounts") return send({ items: [{ id: selectedAccountId, status: accountStatus, status_reason: null, toolkit: { slug: "youtube" }, auth_config: { id: "ac-fixture", is_composio_managed: true, is_disabled: false }, is_disabled: false, created_at: "2026-10-01", updated_at: "2026-10-01", data: { access_token: "fixture-private-token" } }], next_cursor: accountsTruncated ? "another-page" : null, total_pages: accountsTruncated ? 4 : 1 });
   if (path === "/api/v3.1/tool_router/session") return send({ session_id: "fixture-session", config: { user_id: "owner", execute: {}, search: {}, preload: { tools: [] } }, config_version: 1, mcp: { type: "http", url: "http://fixture.invalid/mcp" } });
   if (path === "/api/v3.1/tools/YOUTUBE_GET_VIDEO") return send({ slug: "YOUTUBE_GET_VIDEO", name: "Fixture read", input_parameters: { type: "object", properties: { issue_number: { type: "integer" } } }, output_parameters: { type: "object", properties: {} }, no_auth: false });
   if (path === "/api/v3.1/tools/YOUTUBE_CREATE_VIDEO") {
@@ -237,7 +242,7 @@ try {
     assert.equal(preference.stored, false);
   });
   await check("browser confirmation remains pending until the owner decides", async () => {
-    const request = await runtime.runMutation("approvals:askForBrowser", { conversationId: conversation, title: "Send fixture message", detail: "Synthetic action only" }, { internal: true }) as { id: string; status: string };
+    const request = await runtime.runMutation("approvals:askForBrowser", { conversationId: conversation, turnId: turn, title: "Send fixture message", detail: "Synthetic action only" }, { internal: true }) as { id: string; status: string };
     assert.equal(request.status, "pending");
     runtime.store.patch(request.id, { status: "declined", decidedBy: "dashboard", decidedAt: Date.now() });
     assert.equal(await runtime.runMutation("approvals:decisionOf", { id: request.id }, { internal: true }), "declined");
@@ -339,6 +344,7 @@ try {
     }
     assert.equal(providerCalls.filter((c) => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, beforeWrite, "A supervised write must wait before entering the provider");
     assert.ok(approval, "Exact operation must be reviewable before execution");
+    assert.equal(approval.turnId, turn); assert.equal(approval.connectedAction?.turnId, turn);
     await runtime.runMutation("approvals:decide", { key: "internet-e2e-dashboard", id: approval._id, approved: true });
     const continuation = await pending;
     assert.notEqual(continuation.refused, true);
@@ -379,10 +385,10 @@ try {
     assert.ok(first.result?.requestId, "Full-access unknown outcomes must return the generated recovery id");
     const retryAction = { ...action, requestId: first.result.requestId };
     runtime.store.patch(turn, { status: "done" });
-    const recoveryTurn = runtime.store.insert("codexTurns", { runnerId: runner, conversationId: conversation, status: "running", prompt: "Check the earlier unknown operation without repeating it", engine: "codex", createdAt: Date.now() });
+    const recoveryRun = runtime.store.insert("runs", { conversationId: conversation, prompt: "Check the earlier unknown operation without repeating it", status: "running", startedAt: Date.now() });
+    turn = runtime.store.insert("codexTurns", { runnerId: runner, conversationId: conversation, runId: recoveryRun, status: "queued", prompt: "Check the earlier unknown operation without repeating it", instructions: "Synthetic recovery fixture only.", engine: "codex", createdAt: Date.now() });
+    claim = z.object({ mcpGrant: z.string() }).parse(await runtime.runMutation("codex:claimTurn", { token: "internet-e2e-runner", id: turn }, { internal: true }));
     const retry = await mcp("run_action", retryAction);
-    runtime.store.patch(recoveryTurn, { status: "done" });
-    runtime.store.patch(turn, { status: "running" });
     assert.equal(retry.result?.state, "unknown");
     assert.equal(executions(), before + 1);
     const row = approvalRows().find(row => row.connectedAction?.requestId === retryAction.requestId);
@@ -406,11 +412,14 @@ try {
       if (condition === "stop") runtime.store.patch(turn, { stopRequested: true });
       else runtime.store.patch(install._id, { paused: { at: Date.now(), by: "web" } });
       release();
-      const result = await pending;
-      assert.equal(result.result?.state, "stopped");
-      runtime.store.patch(turn, { stopRequested: false });
-      runtime.store.patch(install._id, { paused: undefined });
-      writeMetadataGate = undefined;
+      try {
+        const result = await pending;
+        assert.equal(result.result?.state, "stopped");
+      } finally {
+        runtime.store.patch(turn, { stopRequested: false });
+        runtime.store.patch(install._id, { paused: undefined });
+        writeMetadataGate = undefined;
+      }
     }
     runtime.store.patch(conversation, { access: "supervised" });
     assert.equal(providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, before);
@@ -429,10 +438,10 @@ try {
     const owner = { claimedAt: Date.now(), ownerChannel: "telegram", ownerExternalId: "fixture-owner" };
     if (install) runtime.store.patch(install._id, owner); else runtime.store.insert("installation", owner);
     const phone = await runtime.runMutation("approvals:answerFromTelegram", { senderId: "fixture-owner", data: `ap:${row._id}:y` }, { internal: true });
-    assert.match(String(phone), /complete operation.*dashboard/i);
+    assert.match(String(phone), /complete (operation.*dashboard|request.*nothing was approved)/i);
     assert.equal(runtime.store.all("approvals").find(item => item._id === row._id)?.status, "pending");
     runtime.store.patch(row._id, { whatsappChatId: "fixture-phone" });
-    assert.match(String(await runtime.runMutation("approvals:answerFromWhatsApp", { chatId: "fixture-phone", text: "1" }, { internal: true })), /complete operation.*dashboard/i);
+    assert.match(String(await runtime.runMutation("approvals:answerFromWhatsApp", { chatId: "fixture-phone", text: "1" }, { internal: true })), /complete (operation.*dashboard|request.*nothing was approved)/i);
     await runtime.runMutation("approvals:decide", { key: "internet-e2e-dashboard", id: row._id, approved: false });
     assert.equal((await pending).result?.ok, false);
     assert.equal(providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, before);
@@ -441,7 +450,8 @@ try {
     const before = providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length;
     for (const condition of ["expiry", "stop"]) {
       const requestId = `pending-${condition}`;
-      const pending = mcp("run_action", { slug: "YOUTUBE_CREATE_VIDEO", requestId, args: { title: "Must remain unexecuted" } }).catch(() => null);
+      const action = { slug: "YOUTUBE_CREATE_VIDEO", requestId, args: { title: "Must remain unexecuted" } };
+      const pending = mcp("run_action", action).catch(() => null);
       let row;
       for (let attempt = 0; attempt < 100; attempt++) {
         row = approvalRows().find(row => row.connectedAction?.requestId === requestId);
@@ -449,11 +459,25 @@ try {
         await new Promise(done => setTimeout(done, 30));
       }
       assert.ok(row);
-      if (condition === "expiry") runtime.store.patch(row._id, { createdAt: Date.now() - 11 * 60_000 });
-      else runtime.store.patch(turn, { stopRequested: true });
+      if (condition === "expiry") {
+        runtime.store.patch(row._id, { createdAt: Date.now() - 11 * 60_000 });
+      } else {
+        assert.equal(row.turnId, turn); assert.equal(row.connectedAction?.turnId, turn);
+        assert.ok((await runtime.runQuery("approvals:active", { key: "internet-e2e-dashboard", id: row._id })).value);
+        const countBefore = (await runtime.runQuery("approvals:pendingCount", { key: "internet-e2e-dashboard" })).value as number;
+        const beforeBoard = z.object({ waiting: z.array(z.object({ id: z.string() })) }).parse((await runtime.runQuery("board:get", { key: "internet-e2e-dashboard" })).value);
+        assert.ok(beforeBoard.waiting.some(item => item.id === `approval:${row._id}`));
+        await runtime.runMutation("dashboard:stopChat", { key: "internet-e2e-dashboard", id: conversation });
+        assert.equal((await runtime.runQuery("approvals:active", { key: "internet-e2e-dashboard", id: row._id })).value, null);
+        assert.equal((await runtime.runQuery("approvals:pendingCount", { key: "internet-e2e-dashboard" })).value, countBefore - 1);
+        const afterBoard = z.object({ waiting: z.array(z.object({ id: z.string() })) }).parse((await runtime.runQuery("board:get", { key: "internet-e2e-dashboard" })).value);
+        assert.ok(!afterBoard.waiting.some(item => item.id === `approval:${row._id}`));
+        assert.equal(await runtime.runMutation("approvals:decide", { key: "internet-e2e-dashboard", id: row._id, approved: true }), false);
+        const refused = await runtime.runMutation("approvals:claimConnected", { id: row._id, turnId: turn }, { internal: true }) as { state: string };
+        assert.equal(refused.state, "stopped");
+      }
       await pending;
       assert.equal(approvalRows().find(item => item._id === row._id)?.status, "expired");
-      runtime.store.patch(turn, { stopRequested: false });
     }
     assert.equal(providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, before);
   });

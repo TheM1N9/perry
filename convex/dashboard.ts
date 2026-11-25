@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { streamState } from "./lib/turn-stream";
 import { turnErrorCode, type TurnFailure, type TurnErrorCode } from "../lib/turn-errors";
 import { hide, savedValues } from "./vault";
@@ -1987,13 +1988,15 @@ export const checkMonitorsNow = action({
  * plan blocked on a question, work that failed, a scheduled job's news or
  * error, and a watch that fired. Each stays until it is dealt with or dismissed.
  */
-export type InboxItem =
-  | { kind: "delivery"; id: Id<"sent">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
+const deliveryRevision = (...content: unknown[]) => createHash("sha256").update(JSON.stringify(content)).digest("hex");
+
+export type InboxItem = { revision?: string } & (
+  | { kind: "delivery"; id: Id<"sent"> | Id<"codexTurns"> | Id<"scheduledFailures"> | Id<"whatsappInbox"> | Id<"whatsappOutbox">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
   | { kind: "question"; id: Id<"tasks">; title: string; text: string; at: number }
   | { kind: "task-failed"; id: Id<"tasks">; title: string; text: string; at: number }
   | { kind: "job-error"; id: Id<"jobs">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
   | { kind: "job-result"; id: Id<"jobs">; title: string; text: string; at: number; chatId: Id<"conversations"> }
-  | { kind: "watch"; id: Id<"monitors">; title: string; text: string; at: number; url: string };
+  | { kind: "watch"; id: Id<"monitors">; title: string; text: string; at: number; url: string });
 
 export const getInbox = query({
   args: { key: vKey },
@@ -2001,11 +2004,23 @@ export const getInbox = query({
     assertDashboardKey(args.key);
     const items: InboxItem[] = [];
     for (const state of ["failed", "uncertain"] as const) {
-      const deliveries = await ctx.db.query("sent").withIndex("by_delivery", q => q.eq("deliveryState", state)).order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100);
+      const deliveries = await ctx.db.query("sent").withIndex("by_delivery", q => q.eq("deliveryState", state)).order("desc").filter(q => q.and(q.eq(q.field("seenAt"), undefined), q.eq(q.field("batchId"), q.field("_id")))).take(100);
       for (const row of deliveries) {
         if (row.batchId !== row._id) continue;
-        items.push({ kind: "delivery", id: row._id, title: `${row.channel === "telegram" ? "Telegram" : row.channel === "whatsapp" ? "WhatsApp" : "Dashboard"} notification ${state === "uncertain" ? "unconfirmed" : "failed"}`, text: `${row.deliveryError ?? "Check the destination before sending again."}\n\nMessage: ${row.deliveryText ?? row.text}`, at: row.reservedAt ?? row.createdAt, ...(row.origin ? { chatId: row.origin } : {}) });
+        items.push({ kind: "delivery", id: row._id, title: `${row.channel === "telegram" ? "Telegram" : row.channel === "whatsapp" ? "WhatsApp" : "Dashboard"} notification ${state === "uncertain" ? "unconfirmed" : "failed"}`, text: `${row.deliveryError ?? "Check the destination before sending again."}\n\nMessage: ${row.deliveryText ?? row.text}`, at: row.reservedAt ?? row.createdAt, revision: deliveryRevision(row.deliveryState, row.deliveryError, row.deliveryText ?? row.text), ...(row.origin ? { chatId: row.origin } : {}) });
       }
+    }
+    for (const turn of await ctx.db.query("codexTurns").withIndex("by_delivery_error", q => q.gt("deliveryError", "")).filter(q => q.eq(q.field("deliverySeenAt"), undefined)).take(100)) {
+      if (!turn.deliverySeenAt && turn.deliveryError) items.push({ kind: "delivery", id: turn._id, title: "WhatsApp reply needs attention", text: turn.deliveryError, at: turn.outgoingQueuedAt ?? turn.createdAt, revision: deliveryRevision(turn.deliveryError), chatId: turn.conversationId });
+    }
+    for (const row of await ctx.db.query("scheduledFailures").withIndex("by_created").order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100)) {
+      if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: `Scheduled work ${row.state}`, text: `${row.functionName} (${row.scheduleId}). Inspect the existing task and server log before retrying; an uncertain action may already have happened.`, at: row.createdAt, revision: deliveryRevision(row.state, row.functionName, row.scheduleId) });
+    }
+    for (const row of await ctx.db.query("whatsappInbox").withIndex("by_state", q => q.eq("state", "failed")).order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100)) {
+      if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: "WhatsApp input could not be accepted", text: row.error ?? "Intake failed after five attempts. Resend this message after checking the connection.", at: row.createdAt, revision: deliveryRevision(row.state, row.error) });
+    }
+    for (const state of ["failed", "uncertain"] as const) for (const row of await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", state)).order("desc").filter(q => q.and(q.or(q.eq(q.field("kind"), "text"), q.eq(q.field("kind"), "file")), q.eq(q.field("turnId"), undefined), q.eq(q.field("notificationId"), undefined), q.eq(q.field("seenAt"), undefined))).take(100)) {
+      if ((row.kind === "text" || row.kind === "file") && !row.turnId && !row.notificationId && !row.seenAt) items.push({ kind: "delivery", id: row._id, title: `WhatsApp send ${state}`, text: row.error ?? "Check WhatsApp before sending again.", at: row.createdAt, revision: deliveryRevision(row.state, row.error, row.text, row.file) });
     }
     for (const task of await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "blocked")).collect()) {
       if (task.question && (task.decision?.snoozedUntil ?? 0) <= Date.now()) items.push({ kind: "question", id: task._id, title: task.title, text: task.question, at: task.updatedAt });
@@ -2042,6 +2057,8 @@ export const dismissInbox = mutation({
       id: v.string(),
       /** The event actually displayed, so an old acknowledgment cannot clear newer news. */
       at: v.optional(v.number()),
+      /** Omitted by older clients; current clients acknowledge the exact warning content. */
+      revision: v.optional(v.string()),
     })),
   },
   returns: v.null(),
@@ -2052,7 +2069,21 @@ export const dismissInbox = mutation({
       if (item.kind === "delivery") {
         const id = ctx.db.normalizeId("sent", item.id);
         const row = id ? await ctx.db.get(id) : null;
-        if (row && (item.at === undefined || item.at === (row.reservedAt ?? row.createdAt))) await ctx.db.patch(row._id, { seenAt: item.at ?? now });
+        if (row && (item.at === undefined || item.at === (row.reservedAt ?? row.createdAt))
+          && (item.revision === undefined || item.revision === deliveryRevision(row.deliveryState, row.deliveryError, row.deliveryText ?? row.text))) await ctx.db.patch(row._id, { seenAt: item.at ?? now });
+        for (const table of ["scheduledFailures", "whatsappInbox", "whatsappOutbox"] as const) {
+          const sourceId = ctx.db.normalizeId(table, item.id);
+          const source = sourceId ? await ctx.db.get(sourceId) : null;
+          if (!source) continue;
+          const revision = "scheduleId" in source ? deliveryRevision(source.state, source.functionName, source.scheduleId)
+            : "remote" in source ? deliveryRevision(source.state, source.error)
+              : deliveryRevision(source.state, source.error, source.text, source.file);
+          if ((item.at === undefined || item.at === source.createdAt) && (item.revision === undefined || item.revision === revision)) await ctx.db.patch(source._id, { seenAt: item.at ?? now });
+        }
+        const turnId = ctx.db.normalizeId("codexTurns", item.id);
+        const turn = turnId ? await ctx.db.get(turnId) : null;
+        if (turn && (item.at === undefined || item.at === (turn.outgoingQueuedAt ?? turn.createdAt))
+          && (item.revision === undefined || item.revision === deliveryRevision(turn.deliveryError))) await ctx.db.patch(turn._id, { deliverySeenAt: item.at ?? now });
       } else if (item.kind === "task-failed") {
         const id = ctx.db.normalizeId("tasks", item.id);
         const task = id ? await ctx.db.get(id) : null;

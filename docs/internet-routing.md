@@ -1,5 +1,9 @@
 # Internet reads and search
 
+## Approval integration failure inventory
+
+Written before the merge regression checks: a connected operation's durable request must bind the same top-level active turn used by phone/computer approvals; a stopped, finished or replaced turn must not remain in pending/selected/count/Board attention or enter execution. Pending operations, changed scopes and lost acknowledgments must retain their existing one-execution contract. Explicit account selection and read-only metadata must survive the merge, SDK retries must stay disabled, and account execution must recheck its live turn before dispatch. Scoped WhatsApp approval replies must remain bound to their request and delivery receipt; large connected scopes still require complete dashboard review. Brain/contact proposals without a live execution turn remain valid under their existing expiry rules. These cases use maintained fake-provider/Runtime/MCP journeys, never a live account.
+
 Audit of Perry at `9b00cdb` for #265:
 
 | Existing capability | What it actually supports | Gap |

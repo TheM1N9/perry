@@ -1,4 +1,4 @@
-// Failure inventory: docs/verification-unattended-work.md. No model or real account is called.
+// Failure inventory: docs/regression-checks.md. No model or real account is called.
 // pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/unattended-work/run.mjs <outDir>
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -123,12 +123,13 @@ const claimTask = async id => {
   await call('brain:handleTurn', JSON.parse(pending.args));
   const turn = (await rows('codexTurns')).find(row => row.conversationId === chat._id && row.status === 'queued');
   assert.ok(turn);
-  assert.ok(await call('codex:claimTurn', { token, id: turn._id }));
-  return await get(turn._id);
+  const claimed = await call('codex:claimTurn', { token, id: turn._id });
+  assert.ok(claimed?.mcpGrant);
+  return { ...await get(turn._id), mcpGrant: claimed.mcpGrant };
 };
 const tool = async (turn, name, args) => {
   const response = await runtime.runHttp('/mcp', new Request(`http://synthetic/mcp?turn=${turn._id}`, {
-    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-perry-chat': turn.conversationId },
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-perry-chat': turn.conversationId, 'x-perry-turn': turn._id, 'x-perry-grant': turn.mcpGrant },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
   }));
   return await response.json();
@@ -458,11 +459,106 @@ try {
     assert.ok(!explanation.includes(remotePath));
   });
   await check('ordinary WhatsApp reply refuses an unreadable remote file with actionable feedback', async () => {
+    const key = process.env.DASHBOARD_KEY;
+    for (const row of await call('whatsapp:pending')) await call('whatsapp:sent', { id: row._id });
     const before = new Set((await rows('whatsappOutbox')).map(row => row._id));
-    await remoteReply('whatsapp');
+    const { turn } = await remoteReply('whatsapp');
     const attempts = (await rows('whatsappOutbox')).filter(row => !before.has(row._id));
-    assert.ok(!attempts.some(row => row.kind === 'file'), 'unreadable remote origin was queued as a local file');
-    assert.ok(attempts.some(row => row.text?.includes('private-server-copy.txt') && row.text.includes('source machine must upload a copy')));
+    const file = attempts.find(row => row.kind === 'file');
+    assert.ok(file, 'ordinary replies retain the immutable delivery journal');
+    assert.equal(file.file.localPath, undefined); assert.equal(file.file.storageId, undefined);
+    process.env.PERRY_WHATSAPP_DRIVER = fileURLToPath(new URL('../job-share-file/whatsapp-driver.mjs', import.meta.url));
+    const driver = await import('../job-share-file/whatsapp-driver.mjs');
+    const { runWhatsApp } = await import('../../server/whatsapp.ts');
+    const sentBefore = driver.attempts.length, listeners = runtime.events.listenerCount('change');
+    const stop = runWhatsApp(runtime);
+    try {
+      const deadline = Date.now() + 15_000;
+      while (['pending', 'sending'].includes((await get(file._id)).state) && Date.now() < deadline) await delay(25);
+      assert.equal((await get(file._id)).state, 'failed');
+      assert.ok(driver.attempts.slice(sentBefore).every(row => row.name === 'text'), 'no destination file may receive the server canary');
+      const finished = await get(turn._id);
+      assert.match(finished.deliveryError, /private-server-copy\.txt.*not on this computer|source machine must upload a copy/);
+      assert.ok(!finished.deliveryError.includes(remotePath));
+      const notice = (await call('dashboard:getInbox', { key })).find(row => row.kind === 'delivery' && row.id === turn._id);
+      assert.ok(notice, 'deferred failure remains visible on Board Updates');
+      assert.match(notice.revision, /^[a-f0-9]{64}$/);
+      const second = await insert('whatsappOutbox', { to: '100@s.whatsapp.net', kind: 'file', turnId: turn._id,
+        file: { fileName: 'second-failure.txt', contentType: 'text/plain' }, state: 'sending', createdAt: Date.now(), attempts: 0 });
+      await call('whatsapp:sent', { id: second, error: 'Synthetic second file failure', permanent: true });
+      const changed = (await call('dashboard:getInbox', { key })).find(row => row.id === turn._id);
+      assert.equal(changed.at, notice.at);
+      assert.notEqual(changed.revision, notice.revision);
+      assert.match(changed.text, /second-failure/);
+      await call('dashboard:dismissInbox', { key, items: [{ kind: notice.kind, id: notice.id, at: notice.at, revision: notice.revision }] });
+      assert.ok((await call('dashboard:getInbox', { key })).some(row => row.id === turn._id), 'stale warning A must not dismiss warning B at the same timestamp');
+      await call('dashboard:dismissInbox', { key, items: [{ kind: changed.kind, id: changed.id, at: changed.at - 1, revision: changed.revision }] });
+      assert.ok((await call('dashboard:getInbox', { key })).some(row => row.id === turn._id));
+      await call('dashboard:dismissInbox', { key, items: [{ kind: changed.kind, id: changed.id, at: changed.at, revision: changed.revision }] });
+      assert.ok(!(await call('dashboard:getInbox', { key })).some(row => row.id === turn._id));
+      assert.match((await get(turn._id)).deliveryError, /second-failure/, 'acknowledgment keeps warning history');
+    } finally { await stop(); }
+    assert.equal(runtime.events.listenerCount('change'), listeners);
+  });
+  await check('notification warning revisions fence same-time aggregate changes and retain history', async () => {
+    const key = process.env.DASHBOARD_KEY;
+    const { receipt } = await remoteResult('whatsapp', true);
+    const pending = (await rows('whatsappOutbox')).filter(row => row.notificationId === receipt._id);
+    assert.equal(pending.length, 2);
+    await call('whatsapp:sent', { id: pending[0]._id, error: 'Synthetic report failure', permanent: true });
+    const first = (await call('dashboard:getInbox', { key })).find(row => row.id === receipt._id);
+    assert.ok(first?.revision);
+    await call('whatsapp:sent', { id: pending[1]._id, error: 'Synthetic attachment failure', permanent: true });
+    const second = (await call('dashboard:getInbox', { key })).find(row => row.id === receipt._id);
+    assert.equal(second.at, first.at);
+    assert.notEqual(second.revision, first.revision);
+    await call('dashboard:dismissInbox', { key, items: [{ kind: first.kind, id: first.id, at: first.at, revision: first.revision }] });
+    assert.ok((await call('dashboard:getInbox', { key })).some(row => row.id === receipt._id));
+    await patch(receipt._id, { deliveryText: 'Updated synthetic notification body' });
+    const bodyChanged = (await call('dashboard:getInbox', { key })).find(row => row.id === receipt._id);
+    assert.notEqual(bodyChanged.revision, second.revision);
+    await call('dashboard:dismissInbox', { key, items: [{ kind: second.kind, id: second.id, at: second.at, revision: second.revision }] });
+    assert.ok((await call('dashboard:getInbox', { key })).some(row => row.id === receipt._id));
+    await call('dashboard:dismissInbox', { key, items: [{ kind: bodyChanged.kind, id: bodyChanged.id, at: bodyChanged.at, revision: bodyChanged.revision }] });
+    assert.ok(!(await call('dashboard:getInbox', { key })).some(row => row.id === receipt._id));
+    assert.match((await get(receipt._id)).deliveryError, /Could not send/, 'aggregate history survives dismissal');
+    const lateFile = await insert('whatsappOutbox', { to: '100@s.whatsapp.net', kind: 'file', notificationId: receipt._id, file: { fileName: 'late-warning.txt', contentType: 'text/plain' }, state: 'sending', createdAt: Date.now(), attempts: 0 });
+    await call('whatsapp:sent', { id: lateFile, error: 'Synthetic acknowledgment lost', uncertain: true });
+    const renewed = (await call('dashboard:getInbox', { key })).find(row => row.id === receipt._id);
+    assert.ok(renewed, 'a new aggregate warning reappears after the previous warning was acknowledged');
+    assert.equal(renewed.at, bodyChanged.at);
+    assert.notEqual(renewed.revision, bodyChanged.revision);
+    assert.match(renewed.title, /unconfirmed/);
+    await call('dashboard:dismissInbox', { key, items: [{ kind: bodyChanged.kind, id: bodyChanged.id, at: bodyChanged.at, revision: bodyChanged.revision }] });
+    assert.ok((await call('dashboard:getInbox', { key })).some(row => row.id === receipt._id));
+    await call('dashboard:dismissInbox', { key, items: [{ kind: renewed.kind, id: renewed.id, at: renewed.at, revision: renewed.revision }] });
+    assert.ok(!(await call('dashboard:getInbox', { key })).some(row => row.id === receipt._id));
+  });
+  await check('remaining delivery sources reject stale revisions and keep older-client acknowledgments compatible', async () => {
+    const key = process.env.DASHBOARD_KEY;
+    const at = Date.now();
+    const examples = [
+      ['scheduledFailures', { scheduleId: 'synthetic-warning', functionName: 'fixture:delivery', state: 'failed', createdAt: at }, { state: 'uncertain' }],
+      ['whatsappInbox', { key: 'synthetic-warning', account: 'fixture', remote: '100@s.whatsapp.net', messageId: 'fixture-warning', mode: 'separate', state: 'failed', createdAt: at, nextAt: at, attempts: 5, error: 'Synthetic intake failure A' }, { error: 'Synthetic intake failure B' }],
+      ['whatsappOutbox', { to: '100@s.whatsapp.net', kind: 'text', text: 'Synthetic owner notification', state: 'failed', createdAt: at, attempts: 3, error: 'Synthetic send failure A' }, { state: 'uncertain', error: 'Synthetic send failure B' }],
+    ];
+    for (const [table, source, changed] of examples) {
+      const id = await insert(table, source);
+      const first = (await call('dashboard:getInbox', { key })).find(row => row.id === id);
+      assert.match(first.revision, /^[a-f0-9]{64}$/);
+      await patch(id, changed);
+      const second = (await call('dashboard:getInbox', { key })).find(row => row.id === id);
+      assert.equal(second.at, first.at);
+      assert.notEqual(second.revision, first.revision);
+      await call('dashboard:dismissInbox', { key, items: [{ kind: first.kind, id, at: first.at, revision: first.revision }] });
+      assert.ok((await call('dashboard:getInbox', { key })).some(row => row.id === id), table);
+      await call('dashboard:dismissInbox', { key, items: [{ kind: second.kind, id, at: second.at, revision: second.revision }] });
+      assert.ok(!(await call('dashboard:getInbox', { key })).some(row => row.id === id), table);
+      assert.ok(await get(id), 'history remains persisted');
+      await patch(id, { seenAt: undefined });
+      await call('dashboard:dismissInbox', { key, items: [{ kind: second.kind, id, at: second.at }] });
+      assert.ok(!(await call('dashboard:getInbox', { key })).some(row => row.id === id), 'an older client may still acknowledge without a revision');
+    }
   });
   await check('ordinary Telegram reply delivers the remote stored snapshot once', async () => {
     const before = report.telegram.length;

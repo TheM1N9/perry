@@ -1,5 +1,7 @@
 # Interactive answers (issue #282)
 
+Merge-regression inventory before fixture migration: every claimed turn must use its own fresh MCP grant and stopped/finished grants must stay refused; synthetic connector discovery must provide the native selected account metadata; operation approval, concurrent retries and lost acknowledgments must still send at most once. Keep the existing real browser draft, Stop/resume, exact interactive-question, sandbox and persistence invariants. Use only the isolated fake provider and normal home/browser teardown.
+
 ## Decision
 
 Extend Perry's chat renderer, MCP tools, SQLite documents and query subscriptions.

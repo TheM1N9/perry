@@ -39,14 +39,14 @@ import { encryptCredential, decryptCredential } from "./lib/credential-encryptio
  */
 const USER_ID = "owner";
 
-function client(apiKey: string | null, singleAttempt = false): Composio {
+function client(apiKey: string | null): Composio {
   if (!apiKey) {
     throw new Error(
       "COMPOSIO_API_KEY is not set, so no accounts are connected. Get a key " +
         "at composio.dev, then save it under Apps & skills → Connectors.",
     );
   }
-  return singleAttempt ? new InternetClient(apiKey) : new Composio({ apiKey });
+  return new InternetClient(apiKey);
 }
 
 async function session(apiKey: string | null, toolkits?: string[]) {
@@ -604,7 +604,7 @@ export const search = internalAction({
 
 /** Bounded preparation calls fail closed unless provider metadata identifies the exact operation as read-only. */
 export const execute = internalAction({
-  args: { slug: v.string(), args: v.optional(v.any()), readOnly: v.optional(v.boolean()), conversationId: v.optional(v.id("conversations")), turnId: v.optional(v.id("codexTurns")), requestId: v.optional(v.string()) },
+  args: { slug: v.string(), args: v.optional(v.any()), accountId: v.optional(v.string()), readOnly: v.optional(v.boolean()), conversationId: v.optional(v.id("conversations")), turnId: v.optional(v.id("codexTurns")), requestId: v.optional(v.string()) },
   handler: async (
     ctx,
     input,
@@ -624,9 +624,10 @@ export const execute = internalAction({
       return { ok: false, error: `${diagnostic.reason} ${diagnostic.repair}`, diagnostic };
     };
     try {
+      if (!input.turnId || !await ctx.runQuery(internal.codex.internetMayRead, { turnId: input.turnId })) return { ok: false, error: "This operation requires an active turn." };
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
       // A lost acknowledgement must never cause the SDK to repeat an account write.
-      const composio = client(apiKey, true);
+      const composio = client(apiKey);
       stage = "tool_metadata";
       // Resolve metadata from the SDK, never infer the toolkit from a slug prefix.
       const tool = await composio.tools.getRawComposioToolBySlug(input.slug).catch(() => null);
@@ -638,12 +639,22 @@ export const execute = internalAction({
       // Router helper tools may not have standalone metadata. They still execute,
       // but without an exact account we do not infer or persist account health.
       const toolkit = tool?.toolkit?.slug;
+      if (!toolkit) return { ok: false, error: "No verified toolkit metadata for this operation. Use find_action to select a standalone app tool." };
       stage = "session";
       const s = await session(apiKey);
       if (toolkit) {
         stage = "account_selection";
-        const state = await s.toolkits({ toolkits: [toolkit] });
-        const account = state.items.find((item) => item.slug === toolkit)?.connection?.connectedAccount;
+        const accounts = [];
+        let cursor: string | undefined;
+        do {
+          const page = await composio.connectedAccounts.list({ userIds: [USER_ID], toolkitSlugs: [toolkit], limit: 100, ...(cursor ? { cursor } : {}) });
+          accounts.push(...page.items);
+          cursor = page.nextCursor ?? undefined;
+        } while (cursor && accounts.length < 500);
+        const accountless = tool?.isNoAuth === true && !accounts.length && !cursor && !input.accountId;
+        if (!accountless && !input.accountId && (accounts.length !== 1 || cursor)) return { ok: false, error: "Select an explicit connected account id with list_connectors. Perry will not guess between accounts." };
+        const account = accounts.find(item => input.accountId ? item.id === input.accountId : true);
+        if (!account && !accountless) return { ok: false, error: "That connected account does not belong to this owner and toolkit." };
         if (account) selected = { accountId: account.id, toolkit };
         if (account && ["EXPIRED", "REVOKED"].includes(account.status)) {
           await ctx.runMutation(internal.connectorHealth.observe, { ...selected!, startedAt, expired: true }).catch(() => null);
@@ -662,6 +673,10 @@ export const execute = internalAction({
         if (claim.state === "done") return claim.result ? { ...JSON.parse(decryptCredential("secrets", claim.result)), requestId } : { ok: true, state: "done", requestId, error: "This operation already completed. Its response is no longer retained; inspect the destination account for the outcome. It was not repeated." };
         if (claim.state !== "claimed") return { ok: false, state: claim.state, requestId, ...(claim.state === "pending" ? { approvalId: id } : {}), error: claim.state === "pending" ? "Waiting for the owner to review this exact operation." : ["executing", "unknown"].includes(claim.state) ? "This operation entered execution and will not be repeated. Check the destination account before preparing a new operation; its outcome may be unknown." : "The operation was declined, expired or stopped. Tell the owner where things stand." };
         claimed = id;
+      }
+      if (!await ctx.runQuery(internal.codex.internetMayRead, { turnId: input.turnId })) {
+        if (claimed) await ctx.runMutation(internal.approvals.finishConnected, { id: claimed });
+        return { ok: false, error: "This operation was stopped before execution." };
       }
       // Standalone app tools use the native account-specific execution API.
       // The router's `account` option returns HTTP 400/code 4300 on projects
@@ -690,6 +705,10 @@ export const execute = internalAction({
       return { ...output, ...(requestId ? { requestId } : {}) };
     } catch (error) {
       if (claimed) await ctx.runMutation(internal.approvals.finishConnected, { id: claimed }).catch(() => null);
+      if (!claimed && input.turnId) {
+        const active = await ctx.runQuery(internal.codex.internetMayRead, { turnId: input.turnId }).catch(() => null);
+        if (active === false) return { ok: false, state: "stopped", error: "This operation was stopped before execution. No account operation was dispatched." };
+      }
       const failure = await failed(error);
       return claimed ? { ...failure, state: "unknown", requestId, error: `${failure.error} The operation entered execution and will not be repeated. Check the destination account before preparing another operation.` } : failure;
     }

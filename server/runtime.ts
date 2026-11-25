@@ -82,6 +82,15 @@ export class Runtime {
     this.store = new Store(sql, tables);
     sql.exec(`CREATE TABLE IF NOT EXISTS _scheduled (id TEXT PRIMARY KEY, name TEXT NOT NULL, args TEXT NOT NULL, runAt REAL NOT NULL, createdAt REAL NOT NULL)`);
     sql.exec(`CREATE INDEX IF NOT EXISTS _scheduled_by_time ON _scheduled (runAt)`);
+    if (!(sql.prepare("PRAGMA table_info(_scheduled)").all() as Array<{ name: string }>).some(column => column.name === "state")) sql.exec("ALTER TABLE _scheduled ADD COLUMN state TEXT NOT NULL DEFAULT 'pending'");
+    sql.exec("BEGIN IMMEDIATE");
+    try {
+      for (const row of sql.prepare("SELECT id, name FROM _scheduled WHERE state = 'running'").all() as Array<{ id: string; name: string }>) {
+        sql.prepare("UPDATE _scheduled SET state = 'uncertain' WHERE id = ?").run(row.id);
+        this.store.insert("scheduledFailures", { scheduleId: row.id, functionName: row.name, state: "uncertain", createdAt: Date.now() });
+      }
+      sql.exec("COMMIT");
+    } catch (error) { sql.exec("ROLLBACK"); throw error; }
     sql.exec(`CREATE TABLE IF NOT EXISTS _storage (id TEXT PRIMARY KEY, contentType TEXT, size INTEGER NOT NULL, sha256 TEXT NOT NULL, createdAt REAL NOT NULL)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS _file_deletions (id TEXT PRIMARY KEY, createdAt REAL NOT NULL)`);
     sql.exec(`CREATE INDEX IF NOT EXISTS _file_deletions_by_time ON _file_deletions (createdAt)`);
@@ -321,20 +330,34 @@ export class Runtime {
     return this.ticking;
   }
 
+  private failedSchedule(row: { id: string; name: string }, state: "failed" | "uncertain") {
+    return this.exclusive(() => {
+      this.sql.exec("BEGIN IMMEDIATE");
+      try {
+        this.sql.prepare("UPDATE _scheduled SET state = ? WHERE id = ?").run(state, row.id);
+        this.store.insert("scheduledFailures", { scheduleId: row.id, functionName: row.name, state, createdAt: Date.now() });
+        for (const old of this.sql.prepare("SELECT _id FROM doc_scheduledFailures ORDER BY _creationTime DESC LIMIT -1 OFFSET 1000").all() as Array<{ _id: string }>) this.store.delete(old._id);
+        this.sql.exec("DELETE FROM _scheduled WHERE state IN ('failed','uncertain') AND id NOT IN (SELECT id FROM _scheduled WHERE state IN ('failed','uncertain') ORDER BY createdAt DESC LIMIT 1000)");
+        this.sql.exec("COMMIT");
+      } catch (error) { this.sql.exec("ROLLBACK"); throw error; }
+      this.events.emit("change", ["scheduledFailures"]);
+    });
+  }
+
   private async drainScheduled() {
     const cancelled = Symbol("Scheduled call cancelled");
     try {
       // The sweeper must never see tombstones in another mutation's open transaction.
       await this.exclusive(() => this.collectDeletedFiles());
-      const due = await this.exclusive(() => this.sql.prepare("SELECT id, name, args FROM _scheduled WHERE runAt <= ? ORDER BY runAt LIMIT 100").all(Date.now()) as Array<{ id: string; name: string; args: string }>);
+      const due = await this.exclusive(() => this.sql.prepare("SELECT id, name, args FROM _scheduled WHERE state = 'pending' AND runAt <= ? ORDER BY runAt LIMIT 100").all(Date.now()) as Array<{ id: string; name: string; args: string }>);
       for (const row of due) {
         if (this.stopped) return;
         const def = this.registry.get(row.name);
         const args = JSON.parse(row.args);
         const remove = () => Number(this.sql.prepare("DELETE FROM _scheduled WHERE id = ?").run(row.id).changes) > 0;
         if (!def) {
-          console.error(`Scheduled function ${row.name} no longer exists; dropping it.`);
-          await this.exclusive(remove);
+          console.error(`Scheduled function ${row.name} no longer exists.`);
+          await this.failedSchedule(row, "failed");
           continue;
         }
         if (def.kind === "mutation") {
@@ -345,19 +368,26 @@ export class Runtime {
           } }).catch((error) => {
             if (error === cancelled) return;
             console.error(`Scheduled ${row.name} failed: ${error instanceof Error ? error.stack : String(error)}`);
-            return this.exclusive(remove);
+            return this.failedSchedule(row, "failed");
           });
           continue;
         }
-        // Actions run at most once, alongside each other, as in Convex.
-        if (!await this.exclusive(() => !this.stopped && remove())) continue;
-        const run = this.call(row.name, args, { internal: true }).catch((error) => {
+        // A crash after claim has an uncertain outcome; never blindly replay external side effects.
+        if (!await this.exclusive(() => !this.stopped && Number(this.sql.prepare("UPDATE _scheduled SET state = 'running' WHERE id = ? AND state = 'pending'").run(row.id).changes) > 0)) continue;
+        const run = this.call(row.name, args, { internal: true }).then(async () => {
+          try { await this.exclusive(remove); }
+          catch (error) {
+            console.error(`Scheduled ${row.name} completed, but its queue record could not be removed: ${String(error)}`);
+            await this.failedSchedule(row, "uncertain");
+          }
+        }, async (error) => {
           console.error(`Scheduled ${row.name} failed: ${error instanceof Error ? error.stack : String(error)}`);
+          await this.failedSchedule(row, "uncertain");
         });
         this.running.add(run);
-        void run.finally(() => this.running.delete(run));
+        void run.finally(() => this.running.delete(run)).catch(error => console.error(`Scheduled ${row.name} outcome could not be journaled: ${String(error)}`));
       }
-      const next = await this.exclusive(() => (this.sql.prepare("SELECT MIN(runAt) AS next FROM _scheduled").get() as { next: number | null }).next);
+      const next = await this.exclusive(() => (this.sql.prepare("SELECT MIN(runAt) AS next FROM _scheduled WHERE state = 'pending'").get() as { next: number | null }).next);
       if (!this.stopped) {
         const wait = next === null ? 60_000 : Math.max(0, Math.min(next - Date.now(), 60_000));
         if (this.timer) clearTimeout(this.timer);
@@ -505,6 +535,17 @@ export class Runtime {
   // --- Small persistent values, for the server's own bookkeeping ------------------
 
   kv = {
+    setMany: (entries: Array<[string, string | null]>) => this.exclusive(() => {
+      this.sql.exec("BEGIN IMMEDIATE");
+      try {
+        for (const [key, value] of entries) {
+          if (value === null) this.sql.prepare("DELETE FROM _kv WHERE key = ?").run(key);
+          else this.sql.prepare("INSERT INTO _kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+        }
+        this.sql.exec("COMMIT");
+      } catch (error) { this.sql.exec("ROLLBACK"); throw error; }
+    }),
+    deletePrefix: (prefix: string) => this.exclusive(() => { this.sql.prepare("DELETE FROM _kv WHERE substr(key, 1, ?) = ?").run(prefix.length, prefix); }),
     get: (key: string) => this.exclusive(() => (this.sql.prepare("SELECT value FROM _kv WHERE key = ?").get(key) as { value: string } | undefined)?.value ?? null),
     set: (key: string, value: string) => this.exclusive(() => { this.sql.prepare("INSERT INTO _kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value); }),
   };

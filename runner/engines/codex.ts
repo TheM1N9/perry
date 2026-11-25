@@ -573,6 +573,9 @@ export class CodexEngine implements Engine {
     const spare = threadId ? null : await this.takeSpare(app, start);
     let thread: { thread?: { id?: string } };
     try {
+      if (threadId && tools) await app.request("thread/unsubscribe", { threadId }, 30_000).catch(error => {
+        if (!/not found|not loaded|no active|unknown thread/i.test(message(error))) throw error;
+      });
       thread = threadId
         ? await app.request("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
         : spare ? { thread: { id: spare } } : await app.request("thread/start", start, 30_000);
@@ -586,7 +589,7 @@ export class CodexEngine implements Engine {
     const untold = threadId ? await this.updateInstructions(app, id, current) : null;
     if (!threadId) gave(id, current);
     // The next new chat is most likely started the same way (the same instructions, access and folder): have its thread ready.
-    if (!threadId && !history) this.keepSpare(app, start);
+    if (!threadId && !history && !tools) this.keepSpare(app, start);
     // What changed that could not go into the thread's history on its own goes ahead of the message instead.
     const turnInput = [
       ...(untold ? [{ type: "text", text: `<perry-instructions>\n${untold}\n</perry-instructions>`, text_elements: [] }] : []),

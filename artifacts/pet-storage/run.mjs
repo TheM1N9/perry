@@ -1,5 +1,5 @@
 // Production PetScreen with synthetic bridge and browser Storage boundary failures.
-// Failure inventory: docs/verification-desktop-media.md, Pet storage failure inventory.
+// Failure inventory: docs/regression-checks.md, Pet storage.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';

@@ -50,7 +50,7 @@ export function MarkUpdateRead({ notice, className }: { notice: Notice; classNam
   const { dashboardKey } = useSession();
   const dismiss = useMutation(api.dashboard.dismissInbox);
   return <ActionButton variant="outline" size="sm" className={className} aria-label={`Mark read: ${notice.title}`}
-    action={() => dismiss({ key: dashboardKey, items: [{ kind: notice.kind, id: notice.id, at: notice.at }] })}
+    action={() => dismiss({ key: dashboardKey, items: [{ kind: notice.kind, id: notice.id, at: notice.at, revision: notice.revision }] })}
     success="Marked read. History is kept.">Mark read</ActionButton>;
 }
 
@@ -111,7 +111,7 @@ export function ChannelActions({ channel, updates, notices, compact, onCreated }
     menu.push(<DropdownMenuItem key="check" onClick={() => void attempt(() => checkNow({ key: dashboardKey }), { success: "Checked every watch that was due." })}><RefreshCwIcon />Check due watches now</DropdownMenuItem>);
   }
   if (updates && notices.length > 0) {
-    menu.push(<DropdownMenuItem key="dismiss" onClick={() => void attempt(() => dismiss({ key: dashboardKey, items: notices.map(({ kind, id, at }) => ({ kind, id, at })) }), { success: "Updates marked read. History is kept." })}><CheckIcon />Mark {notices.length === 1 ? "this update" : `these ${notices.length} updates`} read</DropdownMenuItem>);
+    menu.push(<DropdownMenuItem key="dismiss" onClick={() => void attempt(() => dismiss({ key: dashboardKey, items: notices.map(({ kind, id, at, revision }) => ({ kind, id, at, revision })) }), { success: "Updates marked read. History is kept." })}><CheckIcon />Mark {notices.length === 1 ? "this update" : `these ${notices.length} updates`} read</DropdownMenuItem>);
   }
 
   return (

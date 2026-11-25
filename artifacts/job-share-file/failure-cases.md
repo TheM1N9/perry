@@ -22,6 +22,8 @@ Failure inventory, written before the regression and implementation:
 - Missing, removed, oversized, unreadable or API-rejected files silently count as sent.
 - A WhatsApp enqueue is mistaken for transport acknowledgement.
 - A transient failure becomes permanent too soon or a permanent failure stays successful.
+- A wire send with an ambiguous result is blindly resent; a late receipt cannot resolve its reserved protocol ID.
+- A claimed turn's MCP grant is omitted or reused for another turn, so delivery scenarios never reach the tool.
 - Partial failure discards later files, claims all files were shared, or fails to update the job report.
 - A late older run overwrites a newer run's report.
 - A stopped or quiet run unexpectedly sends files, or a file-only run sends nothing.

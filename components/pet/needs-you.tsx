@@ -85,7 +85,7 @@ export function PetNeedsYou({ now, onChat, open }: {
                 <p className={cn("mt-0.5 line-clamp-3 text-xs text-pretty whitespace-pre-line", item.kind === "task-failed" || item.kind === "job-error" ? "text-destructive" : "text-foreground/80")}>{item.text}</p>
                 <div className="mt-1.5 flex gap-1">
                   <Button variant="outline" size="sm" className="px-3" onClick={act.run}>{act.label}</Button>
-                  <Button variant="ghost" size="sm" className="px-3 font-normal text-muted-foreground" onClick={() => void dismiss({ key, items: [{ kind: item.kind, id: item.id, at: item.at }] }).catch(cause => toast.error(errorText(cause)))}>Mark read</Button>
+                  <Button variant="ghost" size="sm" className="px-3 font-normal text-muted-foreground" onClick={() => void dismiss({ key, items: [{ kind: item.kind, id: item.id, at: item.at, revision: item.revision }] }).catch(cause => toast.error(errorText(cause)))}>Mark read</Button>
                 </div>
               </li>
             );

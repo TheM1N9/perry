@@ -57,11 +57,14 @@ const call = async (path: string, args: object = {}) => (await rt.call(path, arg
 function check(name: string, passed: boolean) { checks[name] = passed; console.log(`${passed ? "PASS" : "FAIL"} ${name}`); }
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 async function until(test: () => boolean | Promise<boolean>, ms = 6_000) { const end = Date.now() + ms; while (!await test()) { if (Date.now() >= end) throw new Error("Fixture condition timed out"); await sleep(50); } }
+const sessions = new Map<string, { turn: string; mcpGrant: string }>();
 async function session(name: string) {
   const chat = await call("dashboard:createChat", { key }); chats.push(chat);
   const runId = await call("runs:start", { conversationId: chat, prompt: name });
   const turn = await call("codex:enqueueTurn", { conversationId: chat, runId, engine: "codex", prompt: name, instructions: "Fixture only", policy: "queue" });
-  if (!await call("codex:claimTurn", { token, id: turn })) throw new Error("Claim failed");
+  const claimed = await call("codex:claimTurn", { token, id: turn });
+  if (!claimed?.mcpGrant) throw new Error("Claim failed");
+  sessions.set(chat, { turn, mcpGrant: claimed.mcpGrant });
   await call("codex:setResume", { token, id: turn, cursor: `native-${name}` });
   return { chat, turn };
 }
@@ -69,10 +72,12 @@ const evaluate = async (chat: string, expression: string) => (await browser.with
 const identity = (chat: string) => browser.identity(chat)!;
 const owner = (chat: string, request: any) => controlBrowser(chat, request, false);
 async function mcp(chat: string, args: object, signal?: AbortSignal) {
-  const response = await rt.runHttp("/mcp", new Request("http://fixture.local/mcp", { method: "POST", signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-perry-chat": chat }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "browser", arguments: args } }) }));
+  const claimed = sessions.get(chat);
+  if (!claimed) throw new Error("No claimed tool session for this chat");
+  const response = await rt.runHttp("/mcp", new Request("http://fixture.local/mcp", { method: "POST", signal, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-perry-chat": chat, "x-perry-turn": claimed.turn, "x-perry-grant": claimed.mcpGrant }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "browser", arguments: args } }) }));
   const rpc = await response.json() as any;
   const result = rpc.result?.content?.find((part: any) => part.type === "text")?.text;
-  const parsed = result ? JSON.parse(result) : rpc;
+  const parsed = rpc.result?.isError ? { error: result } : result ? JSON.parse(result) : rpc;
   return parsed.untrusted ? parsed.result : parsed;
 }
   await rt.exclusive(() => {
@@ -122,7 +127,12 @@ async function mcp(chat: string, args: object, signal?: AbortSignal) {
   const stale = await mcp(main.chat, { action: "click", identity: first.identity, ref: oldRef });
   evidence.staleClick = { clicked: await evaluate(main.chat, "window.clicked || null"), firstIdentity: first.identity, secondIdentity: second.identity, result: stale };
   check("fresh look invalidates old element references", Boolean(stale.error) && evidence.staleClick.clicked === null);
-  const freshClick = await mcp(main.chat, { action: "click", identity: second.identity, ref: second.elements.find((item: any) => item.label === "First").ref });
+  const freshRequest = mcp(main.chat, { action: "click", identity: second.identity, ref: second.elements.find((item: any) => item.label === "First").ref });
+  await until(async () => (await db.query("approvals").collect()).some(row => row.conversationId === main.chat && row.status === "pending"));
+  const firstApproval = (await db.query("approvals").collect()).find(row => row.conversationId === main.chat && row.status === "pending")!;
+  check("every agent click waits for exact owner approval before changing the page", firstApproval.turnId === main.turn && await evaluate(main.chat, "window.clicked || null") === null);
+  if (!await call("approvals:decide", { key, id: firstApproval._id, approved: true })) throw new Error("Synthetic owner click approval was refused");
+  const freshClick = await freshRequest;
   check("fresh references still click the intended control", !freshClick.error && await evaluate(main.chat, "window.clicked") === "one");
   const latest = await mcp(main.chat, { action: "look" });
   const waiting = mcp(main.chat, { action: "click", identity: latest.identity, ref: latest.elements.find((item: any) => item.label === "Send").ref });

@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { FILE_TRANSFER_LIMIT } from "../lib/media-limits";
 import { turnErrorCode, type TurnErrorCode } from "../lib/turn-errors";
 import { MachineHost, projectDirectory } from "./machine-host";
 import { createSteerDelivery, steerRunningTurn, type SteerDelivery } from "./task-steering";
@@ -48,8 +51,8 @@ import { createReplyStream, streamFlushMs } from "./stream-reply";
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFile, writeFile, mkdir, rm, stat } from "node:fs/promises";
 import { hostname, platform } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { approvalPath } from "./approval-path";
@@ -87,7 +90,7 @@ const CHECKIN_MS = 30_000;
 /** Matches APPROVAL_TTL_MS in convex/approvals.ts: an unanswered request is declined. */
 const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 /** Shared files past this stay on the machine rather than go to Convex for Telegram. */
-const SHARED_UPLOAD_LIMIT = 200 * 1024 * 1024;
+const SHARED_UPLOAD_LIMIT = FILE_TRANSFER_LIMIT;
 /**
  * The turn watchdog, for a turn that is stuck rather than long: one quiet (no
  * words, no step, no approval waiting) for TURN_IDLE_MS, or running past
@@ -530,7 +533,7 @@ async function main() {
    * policy, and says whether to run it, have the reviewer look, or ask.
    * `conversationId` is the chat that asked, whose access decides.
    */
-  const approve = async (request: Request, conversationId?: Id<"conversations">, engine?: EngineKind): Promise<boolean> => {
+  const approve = async (request: Request, conversationId?: Id<"conversations">, engine?: EngineKind, turnId?: Id<"codexTurns">): Promise<boolean> => {
     const cwd = request.cwd ? approvalPath(request.cwd) : undefined;
     const paths = request.paths?.map(path => approvalPath(path, request.cwd ? cwd : workdir));
     const pathsVerified = Boolean(paths?.length && paths.every(path => path !== undefined));
@@ -545,6 +548,7 @@ async function main() {
       pathsVerified,
       amendment: request.amendment,
       conversationId,
+      turnId,
     });
     if (next === "run") {
       console.log(`${cyan("  allowed")} ${request.what}`);
@@ -621,7 +625,7 @@ async function main() {
    * the answer is the id of the engine's own option to allow once or decline,
    * never one that allows for the rest of the session.
    */
-  const answer = async (request: EngineRequest, conversationId: Id<"conversations">, engine: EngineKind): Promise<string> => {
+  const answer = async (request: EngineRequest, conversationId: Id<"conversations">, engine: EngineKind, turnId: Id<"codexTurns">): Promise<string> => {
     const { detail } = request;
     if (request.type === "exec_command_approval") {
       const command = detail.command ?? "command";
@@ -631,7 +635,7 @@ async function main() {
         detail: detail.reason ?? null,
         cwd: detail.cwd,
         amendment: detail.proposedPrefix,
-      }, conversationId, engine);
+      }, conversationId, engine, turnId);
       return optionOf(request, approved ? "accept" : "decline");
     }
     if (request.type === "file_change_approval") {
@@ -644,7 +648,7 @@ async function main() {
         detail: [detail.reason, listed].filter(Boolean).join("\n") || null,
         paths,
         evidence: changes.map((change) => change.diff ?? "").join("\n").slice(0, 6000) || undefined,
-      }, conversationId, engine);
+      }, conversationId, engine, turnId);
       return optionOf(request, approved ? "accept" : "decline");
     }
     if (request.type === "tool_user_input") {
@@ -652,7 +656,7 @@ async function main() {
         kind: "tool",
         what: `Confirm request from ${detail.server ?? "an external tool"}`,
         detail: detail.message ?? "This tool is waiting for your confirmation.",
-      }, conversationId, engine);
+      }, conversationId, engine, turnId);
       return optionOf(request, approved ? "accept" : "decline");
     }
     if (request.type === "permission_approval") {
@@ -666,7 +670,7 @@ async function main() {
         what: "Grant additional computer access for this turn",
         detail: [scope, reason].filter(Boolean).join("\n\n"),
         cwd: detail.cwd,
-      }, conversationId, engine);
+      }, conversationId, engine, turnId);
       return optionOf(request, approved ? "accept" : "decline");
     }
     return optionOf(request, "decline");
@@ -782,8 +786,7 @@ async function main() {
 
   // Generated images and shared files stay where they are on this machine, and
   // web chats serve them from there. Telegram needs the bytes, so for a
-  // Telegram chat both are uploaded to Convex too. Past Telegram's 50 MB the
-  // chat gets a download link instead, so the upload stops somewhere sensible.
+  // Telegram chat both are uploaded to the backend too.
   // Keep a backend copy so files remain reachable from other computers.
   const keepMedia = async (turnId: Id<"codexTurns">, channel: "web" | "telegram" | "whatsapp", images: GeneratedImage[] = []) => {
     const media: NonNullable<TurnRecord["media"]> = [];
@@ -815,27 +818,26 @@ async function main() {
   // uploads folder first, so the engine reads every attachment from this disk.
   const localise = async (attachments: NonNullable<Doc<"codexTurns">["attachments"]> = []) => Promise.all(attachments.map(async (attachment) => {
     if (!attachment.url) return attachment;
+    let localPath: string | undefined;
     try {
-      const response = await fetch(client.resolve(attachment.url), { signal: AbortSignal.timeout(90_000), ...(attachment.url.startsWith("/api/runner/files/") ? { headers: { authorization: `Bearer ${token}` } } : {}) });
+      const signal = AbortSignal.timeout(90_000);
+      const response = await fetch(client.resolve(attachment.url), { signal, ...(attachment.url.startsWith("/api/runner/files/") ? { headers: { authorization: `Bearer ${token}` } } : {}) });
       if (!response.ok) throw new Error(`download failed (${response.status})`);
-      if (Number(response.headers.get("content-length")) > 64 * 1024 ** 2) throw new Error("Attachment exceeds 64 MB.");
+      if (Number(response.headers.get("content-length")) > FILE_TRANSFER_LIMIT) throw new Error("Attachment exceeds Perry's 128 MB transfer limit.");
       if (!response.body) throw new Error("Attachment was empty.");
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = []; let size = 0;
-      try {
-        while (true) {
-          const { done, value } = await reader.read(); if (done) break;
-          size += value.length;
-          if (size > 64 * 1024 ** 2) throw new Error("Attachment exceeds 64 MB.");
-          chunks.push(value);
-        }
-      } finally { await reader.cancel(); }
       const extension = extname(attachment.fileName).toLowerCase().replace(/[^.a-z0-9]/g, "");
-      const localPath = join(PATHS.uploads, `${randomUUID()}${extension}`);
+      localPath = join(PATHS.uploads, `${randomUUID()}${extension}`);
       await mkdir(PATHS.uploads, { recursive: true });
-      await writeFile(localPath, Buffer.concat(chunks));
+      let size = 0;
+      const limit = new Transform({ transform(chunk: Buffer, _encoding, done) {
+        size += chunk.length;
+        if (size > FILE_TRANSFER_LIMIT) done(new Error("Attachment exceeds Perry's 128 MB transfer limit."));
+        else done(null, chunk);
+      } });
+      await pipeline(Readable.fromWeb(response.body as import("node:stream/web").ReadableStream<Uint8Array>), limit, createWriteStream(localPath, { flags: "wx" }), { signal });
       return { ...attachment, localPath };
     } catch (error) {
+      if (localPath) await rm(localPath, { force: true });
       throw new Error(`Could not fetch ${attachment.fileName}: ${message(error)}`);
     }
   }));
@@ -873,13 +875,13 @@ ${text}` } : asked;
   };
 
   /** Perry's tools for a turn: over HTTP with this runner's token, or through the stdio bridge. */
-  const toolsFor =(mcpUrl: string | undefined, chat: string): PerryTools | undefined => {
+  const toolsFor =(mcpUrl: string | undefined, chat: string, turn: string, grant: string): PerryTools | undefined => {
     if (!mcpUrl) return undefined;
     const address = client.resolve(mcpUrl);
     return {
       name: "assistant",
-      http: { url: address, headers: { Authorization: `Bearer ${token}` } },
-      stdio: { command: process.execPath, args: [MCP_BRIDGE], env: { PERRY_MCP_URL: address, PERRY_MCP_TOKEN: token } },
+      http: { url: address, headers: { Authorization: `Bearer ${token}`, "X-Perry-Turn": turn, "X-Perry-Grant": grant } },
+      stdio: { command: process.execPath, args: [MCP_BRIDGE], env: { PERRY_MCP_URL: address, PERRY_MCP_TOKEN: token, PERRY_MCP_TURN: turn, PERRY_MCP_GRANT: grant } },
       chat,
     };
   };
@@ -1113,7 +1115,7 @@ ${text}` } : asked;
             },
             onRequest: (request) => {
               turn.asking += 1;
-              return answer(request, job.conversationId, kind).finally(() => { turn.asking -= 1; dog?.active(); });
+              return answer(request, job.conversationId, kind, job._id).finally(() => { turn.asking -= 1; dog?.active(); });
             },
             onQuestions: async (nativeId, questions) => {
               turn.asking += 1;
@@ -1148,7 +1150,7 @@ ${text}` } : asked;
             model: job.requestedModel,
             effort: job.requestedEffort,
             access: job.access ?? "supervised",
-            tools: toolsFor(job.mcpUrl, job.conversationId),
+            tools: toolsFor(job.mcpUrl, job.conversationId, job._id, job.mcpGrant),
             ...(job.guest ? { guest: true } : {}),
             ...(job.preparation ? { preparation: true } : {}),
           }, sink)).catch((error) => {

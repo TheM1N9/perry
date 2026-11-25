@@ -17,17 +17,17 @@ export default {
     const socket = {
       ev, user: { id: "999@s.whatsapp.net" },
       async sendPresenceUpdate() {},
-      async sendMessage(to, content) {
+      async sendMessage(to, content, options) {
         const bytes = content.image ?? content.document;
         const name = bytes ? Buffer.from(bytes).toString().replace("synthetic:", "") : "text";
-        attempts.push({ to, name });
+        attempts.push({ to, name, messageId: options?.messageId });
         const remaining = failures.get(name) ?? 0;
         if (remaining) {
           failures.set(name, remaining - 1);
           throw new Error("Synthetic transient failure");
         }
         if (hooks.afterSend) await hooks.afterSend({ to, name });
-        return { key: { id: `synthetic-${attempts.length}` } };
+        return { key: { id: options?.messageId ?? `synthetic-${attempts.length}`, remoteJid: to, fromMe: true }, message: content };
       },
       async logout() {},
       end() { ev.removeAllListeners(); },

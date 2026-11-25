@@ -1,4 +1,4 @@
-// Actual built Next media route and fresh SQLite home. See docs/verification-desktop-media.md.
+// Actual built Next media route and fresh SQLite home. See docs/regression-checks.md.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';

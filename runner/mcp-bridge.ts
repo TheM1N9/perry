@@ -15,7 +15,6 @@
  * The endpoint serves a runner only while it has a turn running, as over HTTP.
  */
 
-import { createInterface } from "node:readline";
 
 const url = process.env.PERRY_MCP_URL;
 const token = process.env.PERRY_MCP_TOKEN;
@@ -44,9 +43,12 @@ async function relay(line: string) {
         accept: "application/json, text/event-stream",
         authorization: `Bearer ${token}`,
         ...(chat ? { "x-perry-chat": chat } : {}),
+        "x-perry-turn": process.env.PERRY_MCP_TURN ?? "",
+        "x-perry-grant": process.env.PERRY_MCP_GRANT ?? "",
         ...(session ? { "mcp-session-id": session } : {}),
       },
       body: line,
+      signal: AbortSignal.timeout(11 * 60_000),
     });
     session = response.headers.get("mcp-session-id") ?? session;
     const body = await response.text();
@@ -69,10 +71,27 @@ async function relay(line: string) {
 }
 
 const inFlight = new Set<Promise<void>>();
-createInterface({ input: process.stdin })
-  .on("line", (line) => {
-    if (!line.trim()) return;
-    const sent = relay(line).finally(() => inFlight.delete(sent));
-    inFlight.add(sent);
-  })
-  .on("close", () => { void Promise.all(inFlight).then(() => process.exit(0)); });
+let parts: Buffer[] = [], size = 0, dropping = false;
+process.stdin.on("data", (chunk: Buffer) => {
+  let start = 0;
+  while (start < chunk.length) {
+    const newline = chunk.indexOf(10, start), end = newline < 0 ? chunk.length : newline;
+    const piece = chunk.subarray(start, end);
+    size += piece.length;
+    if (size > 2 * 1024 * 1024) { dropping = true; parts = []; }
+    if (!dropping) parts.push(piece);
+    start = newline < 0 ? chunk.length : newline + 1;
+    if (newline < 0) continue;
+    if (dropping) write(failure(null, -32600, "MCP request exceeds 2 MB."));
+    else {
+      const line = Buffer.concat(parts, size).toString("utf8");
+      if (line.trim()) {
+        let id: Message["id"];
+        try { id = JSON.parse(line).id; } catch {}
+        if (inFlight.size >= 8) write(failure(id, -32000, "Too many concurrent tool calls. Wait for a result."));
+        else { const sent = relay(line).finally(() => inFlight.delete(sent)); inFlight.add(sent); }
+      }
+    }
+    parts = []; size = 0; dropping = false;
+  }
+}).on("end", () => { void Promise.all(inFlight).then(() => process.exit(0)); });

@@ -4,6 +4,7 @@ export class RequestLimitError extends Error {
 
 // Fixed-size admission state; no address/token map can grow in a long-lived server.
 const budgets = {
+  mcp: { active: 0, window: 0, count: 0, concurrent: 8, perMinute: 600, rejectedAt: 0 },
   call: { active: 0, window: 0, count: 0, concurrent: 16, perMinute: 3000, rejectedAt: 0 },
   upload: { active: 0, window: 0, count: 0, concurrent: 2, perMinute: 30, rejectedAt: 0 },
 };

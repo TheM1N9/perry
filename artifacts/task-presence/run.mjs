@@ -58,6 +58,11 @@ const check = async (name, fixture, accept) => {
   } catch (error) { report.cases.push({ name, passed: false, error: String(error) }); console.log('FAIL ' + name); }
   save();
 };
+const journey = async (name, run) => {
+  try { report.evidence[name] = await run(); report.cases.push({ name, passed: true }); console.log('PASS ' + name); }
+  catch (error) { report.cases.push({ name, passed: false, error: String(error) }); console.log('FAIL ' + name); }
+  save();
+};
 const fixture = async (name, { tracked = false, age = 0, status = 'running', runStatus, turnStatus, preparing = false, question, origin } = {}) => {
   const now = Date.now(), started = now - age;
   const id = await insert('tasks', { title: name, prompt: 'Synthetic task presence proof.', plan: [{ title: 'Preserved unfinished step', status: 'active' }], status, createdAt: started, updatedAt: started, ...(tracked ? {} : { turns: 1 }), ...(question ? { question } : {}), ...(origin ? { origin } : {}) });
@@ -132,6 +137,72 @@ try {
   await call('codex:markFinalized', { id: finalizing.turn });
   assert.ok((await get(finalizing.turn)).finalizedAt); assert.equal((await get(finalizing.run)).status, 'ok');
   await check('native finalization saves result without falsely completing unfinished checklist', finalizing, thread => { notExecuting(thread); assert.equal(thread.label, 'Result ready'); assert.equal(thread.status, 'blocked'); assert.equal(thread.question, undefined); });
+  const claim = async (conversationId) => {
+    conversationId ??= await call('dashboard:createChat', { key });
+    const runId = await call('runs:start', { conversationId, prompt: 'Synthetic exact task completion' });
+    const turnId = await call('codex:enqueueTurn', { conversationId, runId, engine: 'codex', prompt: 'Synthetic exact task completion', instructions: 'No provider or external IO.' });
+    assert.ok(await call('codex:claimTurn', { token, id: turnId }));
+    return { conversationId, runId, turnId };
+  };
+  const tracked = async (title, plan) => {
+    const turn = await claim();
+    const id = await call('work:createTask', { title, prompt: 'Preserve verified task work and its original checklist.', origin: turn.conversationId, turnId: turn.turnId });
+    await call('work:setPlan', { taskId: id, plan, turnId: turn.turnId }); return { id, ...turn };
+  };
+  const finish = async (item, extra = {}) => {
+    await call('codex:finishTurn', { token, id: item.turnId, response: 'Synthetic verified result saved in the source chat.', ...extra });
+    await call('codex:markFinalized', { id: item.turnId });
+  };
+  const recordedPlan = [{ title: 'Verified deliverable', status: 'done', note: 'Preserved evidence' }, { title: 'Checklist metadata not updated', status: 'active' }];
+  const completedPlan = [{ title: 'Verified deliverable', status: 'done' }, { title: 'Excluded by scope', status: 'skipped', note: 'Owner excluded this step' }];
+  await journey('exact authenticated tracked run closes confirmed plan without touching legacy source plans', async () => {
+    const item = await tracked('Exact completed tracked plan', completedPlan);
+    const legacy = await call('work:createTask', { title: 'Legacy unbound source plan', prompt: 'Unknown historical progress', origin: item.conversationId });
+    await call('work:setPlan', { taskId: legacy, plan: completedPlan }); const before = await get(legacy);
+    assert.equal((await get(item.id)).originRunId, item.runId); await finish(item);
+    assert.equal((await get(item.id)).status, 'done'); assert.deepEqual((await get(item.id)).plan, completedPlan); assert.match((await get(item.id)).result, /Synthetic verified result/);
+    assert.deepEqual(await get(legacy), before); return { task: await get(item.id), untouchedLegacy: await get(legacy) };
+  });
+  await journey('tracked final result with stale checklist stays nonurgent without replay and survives duplicate callbacks', async () => {
+    const item = await tracked('Tracked result candidate', recordedPlan); await finish(item); const saved = await get(item.id);
+    assert.equal(saved.status, 'blocked'); assert.ok(saved.completion); assert.equal(saved.question, undefined); assert.equal(saved.decision, undefined); assert.deepEqual(saved.plan, recordedPlan);
+    await call('taskDecisions:armWaiting', {}); assert.equal((await get(item.id)).decision, undefined);
+    assert.equal((await call('dashboard:getInbox', { key })).some(row => row.id === item.id), false);
+    await call('codex:markFinalized', { id: item.turnId }); await call('tasks:afterTurn', { id: item.id, turnId: item.turnId, response: 'Late callback' }); assert.deepEqual(await get(item.id), saved);
+    assert.equal(sql.prepare("SELECT count(*) AS n FROM _scheduled WHERE name='tasks:work' AND args LIKE ?").get(`%${item.id}%`).n, 0);
+    return { task: saved, board: await board(item.id) };
+  });
+  await journey('exact-version owner completion retains recorded steps and rejects stale completion replay', async () => {
+    const item = await tracked('Owner confirms saved result', recordedPlan); await finish(item); const saved = await get(item.id);
+    await assert.rejects(call('tasks:resolveCompletionFromDashboard', { key, id: item.id, version: 'stale-version', action: 'complete' })); assert.deepEqual(await get(item.id), saved);
+    await call('tasks:resolveCompletionFromDashboard', { key, id: item.id, version: saved.completion.version, action: 'complete' });
+    assert.equal((await get(item.id)).status, 'done'); assert.equal((await get(item.id)).result, saved.result); assert.deepEqual((await get(item.id)).plan, recordedPlan);
+    await assert.rejects(call('tasks:resolveCompletionFromDashboard', { key, id: item.id, version: saved.completion.version, action: 'continue' })); return { task: await get(item.id) };
+  });
+  await journey('literal Stop and engine failure never complete even a recorded complete plan', async () => {
+    const stopped = await tracked('Stopped exact tracked run', completedPlan); await call('codex:requestStop', { conversationId: stopped.conversationId }); await finish(stopped, { stopped: true, response: 'Partial work before Stop' });
+    const failed = await tracked('Failed exact tracked run', completedPlan); await finish(failed, { response: '', error: 'Synthetic engine failure' });
+    for (const item of [stopped, failed]) { assert.equal((await get(item.id)).status, 'failed'); assert.equal((await get(item.id)).completion, undefined); assert.equal((await get(item.runId)).status, 'error'); }
+    return { stopped: await get(stopped.id), failed: await get(failed.id) };
+  });
+  await journey('new authenticated plan owner fences a late old finish after candidate continuation', async () => {
+    const item = await tracked('Rebound tracked plan', recordedPlan); await finish(item); const saved = await get(item.id);
+    const newer = await claim(item.conversationId); await call('work:setPlan', { taskId: item.id, plan: completedPlan, turnId: newer.turnId });
+    const before = await get(item.id); assert.equal(before.originRunId, newer.runId); assert.equal(before.completion, undefined);
+    await assert.rejects(call('work:updateTask', { taskId: item.id, turnId: item.turnId, status: 'done', result: 'Late superseded result' }));
+    await assert.rejects(call('tasks:resolveCompletionFromDashboard', { key, id: item.id, version: saved.completion.version, action: 'complete' })); assert.deepEqual(await get(item.id), before);
+    await finish(newer); assert.equal((await get(item.id)).status, 'done'); return { task: await get(item.id), rejectedOldTurn: item.turnId };
+  });
+  await journey('background media-only result is retained and relayed once without replaying generation', async () => {
+    const id = await call('work:createTask', { title: 'Media-only background deliverable', prompt: 'Synthetic attachment result' }); await call('tasks:chatFor', { id, threadId: 'presence-media-result' });
+    const chat = (await get(id)).conversationId; await patch(id, { turns: 1, plan: recordedPlan }); const item = { id, ...await claim(chat) };
+    const storageId = await runtime.storeFile(new Blob(['Synthetic saved artifact'], { type: 'text/plain' }));
+    await call('codex:finishTurn', { token, id: item.turnId, media: [{ storageId, fileName: 'synthetic-result.txt', contentType: 'text/plain', size: 24 }] }); await call('codex:markFinalized', { id: item.turnId });
+    const saved = await get(id); assert.equal(saved.status, 'blocked'); assert.ok(saved.completion); assert.match(saved.result, /Attachments were saved/); assert.equal(saved.question, undefined); assert.deepEqual(saved.plan, recordedPlan); assert.equal(saved.turns, 1);
+    const handoffs = (await rows('taskHandoffs')).filter(row => row.taskId === id); assert.equal(handoffs.length, 1); assert.equal(handoffs[0].outcome, 'result-ready');
+    assert.equal(sql.prepare("SELECT count(*) AS n FROM _scheduled WHERE name='tasks:work' AND args LIKE ?").get(`%${id}%`).n, 0);
+    await call('codex:markFinalized', { id: item.turnId }); assert.equal((await rows('taskHandoffs')).filter(row => row.taskId === id).length, 1); return { task: saved, handoff: handoffs[0] };
+  });
   const taskSnapshot = await rows('tasks');
   const beforeRestart = await board(live.id);
   await runtime.stop(); runtime = new Runtime(sql, schema, modules, { storageDir: join(home, 'storage') }); await runtime.stop();

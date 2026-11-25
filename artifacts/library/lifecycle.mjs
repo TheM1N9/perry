@@ -1,4 +1,4 @@
-// Failure inventory: docs/verification-work-memory.md. Real Runtime/SQLite/HTTP regression journey, isolated HOME.
+// Failure inventory: docs/regression-checks.md. Real Runtime/SQLite/HTTP regression journey, isolated HOME.
 // pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/library/lifecycle.mjs <outDir>
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
