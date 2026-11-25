@@ -21,6 +21,31 @@ dependent tasks, using Perry's existing local backend.
   back to all work. Activity uses the event's actual day in its date dividers.
 - Schedule, goal and watch forms keep unsaved input while live work updates arrive.
 
+## Decisions, updates and saved results
+
+**Needs you** contains current approvals and questions. Informational notices
+belong in **Updates**, where **Mark read** acknowledges the displayed event
+without deleting its history or retrying an external action. Expired execution
+requests offer **Recheck**, **Remind me tomorrow** and **Drop**. Recheck still
+requires a fresh approval before executing the request.
+
+**Working** follows a responsive execution, not an old checklist marker. A
+chat-created plan is linked to the exact run that created or updated it;
+unrelated later replies cannot close it. Saved plans without a worker are
+**Tracked**. They remain in **Waiting** and **All**, rather than filling **Open**.
+
+A successful final result with an unconfirmed checklist becomes **Result ready**.
+The result stays saved, the original steps are retained, and Perry does not
+repeat work merely to repair checkmarks. It creates no new Needs-you question.
+Use **Mark complete** when the result fulfills the task, or **Continue work** to
+resume the same task under its existing approval rules. Marking complete can
+release dependent tasks. An unconfirmed result does not release them.
+
+Inactive plans show the last recorded checklist with unchecked steps labelled
+**Not confirmed**. Explicit completion preserves those recorded step states;
+it does not invent completed or skipped steps. New ownership and result
+receipts are optional schema fields, so older saved plans remain readable.
+
 ## Task prerequisites
 
 In **New task**, select tasks under **Wait for tasks**. A dependent task starts

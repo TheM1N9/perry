@@ -39,7 +39,8 @@ async function updateCast(scope: string, cast: Cast) {
   // this lifecycle rather than racing a second cast on the same CDP tab.
   if (!cast.watchers.size) {
     await browser.withBrowserView(scope, browser.releaseOwnerInput).catch(() => {});
-    casts.delete(scope);
+    if (cast.watchers.size) cast.again = true;
+    else if (casts.get(scope) === cast) casts.delete(scope);
     return;
   }
   if (!current) return;

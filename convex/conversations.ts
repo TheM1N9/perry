@@ -6,6 +6,7 @@ import { vAccess, vChannel, vEngine } from "./schema";
 import { deleteThread } from "./lib/agent";
 import { FORGET_SESSION, pickPatch } from "./engines";
 import { accessChanged } from "./approvals";
+import { ArgumentError } from "../server/validate";
 
 /**
  * Rewind a web chat for a regenerate or an edit: its engine session has seen
@@ -18,10 +19,10 @@ export const rewind = internalMutation({
   handler: async (ctx, args) => {
     const chat = await ctx.db.get(args.id);
     if (!chat) throw new Error("This chat was deleted.");
-    if ((chat.pendingTurns ?? 0) > 0) throw new Error("Wait for the reply to finish, or stop it first.");
+    if ((chat.pendingTurns ?? 0) > 0) throw new ArgumentError("Wait for the reply to finish, or stop it first.");
     for (const status of ["running", "queued"] as const) {
       if (await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", status)).first()) {
-        throw new Error("Wait for the reply to finish, or stop it first.");
+        throw new ArgumentError("Wait for the reply to finish, or stop it first.");
       }
     }
     await ctx.db.patch(args.id, {
@@ -291,6 +292,9 @@ export const copyAttachments = internalMutation({
         messageKey: attachment.messageKey,
         storageId: attachment.storageId,
         localPath: attachment.localPath,
+        libraryId: attachment.libraryId,
+        originPath: attachment.originPath,
+        originRunnerId: attachment.originRunnerId,
         fileName: attachment.fileName,
         contentType: attachment.contentType,
         size: attachment.size,

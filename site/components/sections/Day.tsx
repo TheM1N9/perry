@@ -41,10 +41,10 @@ const BEATS: Beat[] = [
   },
   {
     at: "14:30",
-    title: "Anything risky, it asks first.",
+    title: "Review actions in the chat.",
     line: (
       <>
-        Deleting, sending, pushing: you get the final word, right in the chat. <span className="font-medium text-ink">Go on, pick one.</span>
+        In Ask mode, computer actions that need approval wait for your decision. Auto reviews routine requests; Full access skips these prompts. <span className="font-medium text-ink">Try an approval.</span>
       </>
     ),
     you: { text: "tidy up the repo, the old branches are clutter", time: "14:29" },

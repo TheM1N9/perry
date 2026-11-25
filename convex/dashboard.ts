@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { streamState } from "./lib/turn-stream";
 import { turnErrorCode, type TurnFailure, type TurnErrorCode } from "../lib/turn-errors";
 import { hide, savedValues } from "./vault";
@@ -27,7 +28,7 @@ import { APPROVAL_TTL_MS, accessChanged } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
-import { assertQueueRoom, byQueuePosition, queuePosition, steerable } from "./queue";
+import { assertQueueRoom, byQueuePosition, MAX_QUEUED_PER_CHAT, queuePosition, steerable } from "./queue";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
 import { describeStep, spansOfCalls, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
@@ -39,6 +40,8 @@ import { questionAnswerText } from "../lib/interactive";
 import { citedMemories } from "../lib/reply-text";
 import { recheckInternetConnections } from "./composio";
 import { findBrowser } from "./lib/browser";
+import { turnForRun } from "./lib/run-turn";
+import { pausedAt } from "./pause";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -172,7 +175,7 @@ export type ChatSummary = {
   taskId?: Id<"tasks">;
   isAgent?: boolean;
   engine?: EngineKind;
-  agent?: { status: Doc<"tasks">["status"]; startedAt: number; finishedAt?: number };
+  agent?: { status: Doc<"tasks">["status"]; startedAt: number; finishedAt?: number; execution?: ChatAgent["execution"] };
   /** A reply came after the owner last had the chat open. */
   unseen: boolean;
   /** A runner is naming it; its title is the first message until then (titles.ts). */
@@ -228,6 +231,7 @@ export const listChats = query({
         engine: (chat.taskId ? tasks.get(chat.taskId)?.route?.engine : undefined) ?? chat.engine,
         ...(chat.providerAgent ? { agent: { status: chat.providerAgent.status, startedAt: chat.providerAgent.startedAt, finishedAt: chat.providerAgent.finishedAt } }
           : chat.taskId && tasks.has(chat.taskId) ? { agent: { status: tasks.get(chat.taskId)!.status, startedAt: tasks.get(chat.taskId)!.createdAt,
+            execution: await taskExecution(ctx, tasks.get(chat.taskId)!),
             ...(["done", "failed", "cancelled"].includes(tasks.get(chat.taskId)!.status) ? { finishedAt: tasks.get(chat.taskId)!.updatedAt } : {}) } } : {}),
         unseen: isUnseen(chat, chat.jobId ? jobs.get(chat.jobId) : undefined),
         naming: naming.has(chat._id),
@@ -247,7 +251,50 @@ export type ChatAgent = {
   id: string; runId?: Id<"runs">; conversationId?: Id<"conversations">; parentId: Id<"conversations">; title: string;
   status: Doc<"tasks">["status"]; engine?: EngineKind; text?: string; startedAt: number; finishedAt?: number;
   plan?: Doc<"tasks">["plan"];
+  execution?: { active: boolean; label: string; finishedAt?: number };
 };
+
+async function taskExecution(ctx: QueryCtx, task: Doc<"tasks">): Promise<NonNullable<ChatAgent["execution"]>> {
+  const idle = (label: string, finishedAt?: number) => ({ active: false, label, ...(finishedAt !== undefined ? { finishedAt } : {}) });
+  if (task.status === "done" || task.status === "failed" || task.status === "cancelled") {
+    return idle(task.status === "done" ? "Completed" : task.status === "failed" ? "Failed" : "Stopped", task.updatedAt);
+  }
+  if (task.completion) return idle("Result ready");
+  if (task.status === "blocked") return idle(task.question ? (task.decision?.snoozedUntil ?? 0) > Date.now() ? "Snoozed" : "Needs you" : "Blocked");
+  if (await pausedAt(ctx)) return idle("Paused");
+  if (task.initiative && task.goalId && (await ctx.db.get(task.goalId))?.status !== "active") return idle("Goal paused");
+  if (task.waiting && task.waiting.until > Date.now()) return idle("Waiting for reset");
+  let turn: Doc<"codexTurns"> | null = null;
+  let run: Doc<"runs"> | null = null;
+  if (task.conversationId) {
+    const ordinary = (row: Doc<"codexTurns">) => row.finalizedAt === undefined && row.kind !== "compact" && !row.flush && !row.checkpoint;
+    for (const status of ["running", "queued", "done", "error"] as const) {
+      const attempts = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", task.conversationId!).eq("status", status))
+        .order("desc").take(MAX_QUEUED_PER_CHAT * 4);
+      turn = (status === "queued" ? attempts.sort(byQueuePosition) : attempts).find(ordinary) ?? null;
+      if (turn) break;
+    }
+    if (turn) run = await ctx.db.get(turn.runId);
+  } else if (task.originRunId && task.origin) {
+    run = await ctx.db.get(task.originRunId);
+    if (!run || run.conversationId !== task.origin) return idle("Tracked");
+    turn = await turnForRun(ctx, run._id, task.origin);
+    if (run.status !== "running") return idle(run.status === "ok" ? "Result ready" : run.error === STOPPED ? "Stopped" : "Not running", run.finishedAt);
+    if (!turn) {
+      const steer = await ctx.db.query("codexSteers").withIndex("by_run", q => q.eq("runId", run!._id)).first();
+      if (steer?.conversationId === task.origin && steer.status === "pending") return idle("Queued update");
+    }
+  }
+  if (!turn) return idle(task.conversationId ? task.status === "queued" ? "Queued" : "Not running" : "Tracked");
+  if (turn.waiting && (turn.status === "queued" || turn.retrying)) return idle("Waiting for reset");
+  if (turn.retrying) return idle("Retrying");
+  if (turn.status === "queued") return idle(turn.preparing ? "Preparing" : "Queued");
+  if (turn.status !== "running") return idle(turn.finalizedAt === undefined ? "Finishing" : "Not running", run?.finishedAt);
+  if (turn.stopRequested) return idle("Stopping");
+  const runner = turn.runnerId ? await ctx.db.get(turn.runnerId) : null;
+  if (turnHealth(turn, runner, Date.now()).unresponsive) return idle("Computer not responding");
+  return { active: true, label: "Working" };
+}
 
 export const getChatAgents = query({
   args: { key: vKey, id: v.id("conversations") },
@@ -260,13 +307,14 @@ export const getChatAgents = query({
         id: chat._id, runId: chat.providerAgent!.runId, conversationId: chat._id, parentId: args.id, title: chat.title ?? "Agent", status: chat.providerAgent!.status,
         engine: chat.engine, text: chat.providerAgent!.text, startedAt: chat.providerAgent!.startedAt, finishedAt: chat.providerAgent!.finishedAt,
       }));
-    return [...native, ...tasks.map((task) => ({
-      id: task._id, conversationId: task.conversationId, parentId: args.id, title: task.title,
+    return [...native, ...await Promise.all(tasks.map(async (task): Promise<ChatAgent> => ({
+      id: task._id, runId: task.originRunId, conversationId: task.conversationId, parentId: args.id, title: task.title,
       status: task.status, engine: task.route?.engine ?? task.pick?.engine, text: task.result ?? task.question ?? task.error,
       plan: task.plan,
+      execution: await taskExecution(ctx, task),
       startedAt: task.createdAt,
       ...(["done", "failed", "cancelled"].includes(task.status) ? { finishedAt: task.updatedAt } : {}),
-    }))].sort((a, b) => a.startedAt - b.startedAt);
+    })))].sort((a, b) => a.startedAt - b.startedAt);
   },
 });
 
@@ -930,7 +978,7 @@ export const registerAttachment = mutation({
     if (args.editOf) {
       const message = editOf ? await ctx.db.get(editOf) : null;
       if (chat.channel !== WEB_CHANNEL || message?.threadId !== chat.threadId || message.message.role !== "user") {
-        throw new Error("That message changed. Cancel this edit and open it again.");
+        throw new ArgumentError("That message changed. Cancel this edit and open it again.");
       }
       const existing = await ctx.db.query("chatAttachments")
         .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey)).collect();
@@ -1068,19 +1116,19 @@ export const rewindChat = mutation({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     const chat = ownerChat(await ctx.db.get(args.id));
-    if (chat.channel !== WEB_CHANNEL || chat.contactId) throw new Error("Only your own web messages can be edited.");
+    if (chat.channel !== WEB_CHANNEL || chat.contactId) throw new ArgumentError("Only your own web messages can be edited.");
     if (args.requestId && chat.lastRewindRequest === args.requestId) return null;
     await assertRunning(ctx);
     const targetId = ctx.db.normalizeId("agentMessages", args.messageId);
     const target = targetId ? await ctx.db.get(targetId) : null;
-    if (!target || target.threadId !== chat.threadId) throw new Error("That message changed. Cancel this edit and open it again.");
+    if (!target || target.threadId !== chat.threadId) throw new ArgumentError("That message changed. Cancel this edit and open it again.");
     if ((args.text !== undefined || args.attachmentIds !== undefined) && target.message.role !== "user") {
-      throw new Error("Only your own messages can be edited.");
+      throw new ArgumentError("Only your own messages can be edited.");
     }
     const sent = target.message.role === "user" ? target : await ctx.db.query("agentMessages")
       .withIndex("by_thread_order", (q) => q.eq("threadId", target.threadId).lte("order", target.order))
       .order("desc").filter((q) => q.eq(q.field("message.role"), "user")).first();
-    if (!sent) throw new Error("That message is no longer in this chat.");
+    if (!sent) throw new ArgumentError("That message is no longer in this chat.");
     const raw = sent.text;
     const marker = raw.match(ATTACHMENTS_MARKER);
     const originalKey = marker?.[1]?.trim();
@@ -1090,19 +1138,19 @@ export const rewindChat = mutation({
     const originalIds = new Set(original.map((item) => item._id));
     const text = (args.text ?? (marker ? raw.slice(0, marker.index) : raw)).trim();
     let attachmentIds = args.attachmentIds ?? original.map((item) => item._id);
-    if (attachmentIds.length > 10 || new Set(attachmentIds).size !== attachmentIds.length) throw new Error("A message can have up to 10 different attachments.");
+    if (attachmentIds.length > 10 || new Set(attachmentIds).size !== attachmentIds.length) throw new ArgumentError("A message can have up to 10 different attachments.");
     const files = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
     for (const file of files) {
       if (!file || file.conversationId !== chat._id || (!originalIds.has(file._id) &&
         (!args.requestId || file.editOf !== sent._id || file.messageKey !== args.requestId || file.removedAt))) {
-        throw new Error("One of the attachments is no longer available for this edit.");
+        throw new ArgumentError("One of the attachments is no longer available for this edit.");
       }
     }
-    if (!text && !files.some((file) => file && !file.removedAt)) throw new Error("The message is empty. Use Delete chat to remove it instead.");
+    if (!text && !files.some((file) => file && !file.removedAt)) throw new ArgumentError("The message is empty. Use Delete chat to remove it instead.");
     // Keep files and other messages' references intact. Each edited set has its own ordered references.
     let messageKey = originalKey;
     if (args.attachmentIds !== undefined) {
-      if (!args.requestId) throw new Error("This edit needs a request id.");
+      if (!args.requestId) throw new ArgumentError("This edit needs a request id.");
       messageKey = `edit-${args.requestId}`;
       attachmentIds = [];
       for (const [position, file] of files.entries()) {
@@ -1110,6 +1158,7 @@ export const rewindChat = mutation({
         attachmentIds.push(await ctx.db.insert("chatAttachments", {
           conversationId: chat._id, messageKey, position,
           localPath: file.localPath, storageId: file.storageId,
+          libraryId: file.libraryId, originPath: file.originPath, originRunnerId: file.originRunnerId,
           fileName: file.fileName, contentType: file.contentType, size: file.size,
           createdAt: Date.now(), ...(file.removedAt ? { removedAt: file.removedAt } : {}),
         }));
@@ -1251,11 +1300,11 @@ export const getManners = query({
 });
 
 export const setManners = mutation({
-  args: { key: vKey, quietHours: v.optional(v.object({ start: v.string(), end: v.string() })), dailyLimit: v.optional(v.number()) },
+  args: { key: vKey, quietHours: v.optional(v.object({ start: v.string(), end: v.string() })), dailyLimit: v.optional(v.number()), setting: v.optional(v.union(v.literal("quietHours"), v.literal("dailyLimit"))) },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    await ctx.runMutation(internal.installation.setManners, { quietHours: args.quietHours, dailyLimit: args.dailyLimit });
+    await ctx.runMutation(internal.installation.setManners, { quietHours: args.quietHours, dailyLimit: args.dailyLimit, setting: args.setting });
     return null;
   },
 });
@@ -1642,7 +1691,7 @@ edit under Profile, About you. Do not call any tools for this first reply.
 
 async function startWelcomeChat(
   ctx: MutationCtx,
-  options: { title: string; prompt: string; label: string },
+  options: { title: string; prompt: string; label: string; createRequestId?: string },
 ): Promise<Id<"conversations">> {
   const threadId = await createThread(ctx, { userId: "web:dashboard", title: options.title });
   const engine = await defaultEngine(ctx);
@@ -1651,6 +1700,7 @@ async function startWelcomeChat(
     externalId: `session:${threadId}`,
     threadId,
     title: options.title,
+    ...(options.createRequestId ? { createRequestId: options.createRequestId } : {}),
     ...(engine ? { engine } : {}),
     access: await defaultAccess(ctx),
     lastMessageAt: Date.now(),
@@ -1720,19 +1770,25 @@ export const restorePersonaVersion = mutation({
  * userMd, the owner chose to chat instead, and the assistant asks.
  */
 export const finishOnboarding = mutation({
-  args: { key: vKey, name: v.string(), personality: v.string(), userMd: v.optional(v.string()), interview: v.optional(v.object({ name: v.boolean(), help: v.boolean() })) },
+  args: { key: vKey, requestId: v.optional(v.string()), name: v.string(), personality: v.string(), userMd: v.optional(v.string()), interview: v.optional(v.object({ name: v.boolean(), help: v.boolean() })) },
   returns: v.id("conversations"),
   handler: async (ctx, args): Promise<Id<"conversations">> => {
     assertDashboardKey(args.key);
+    const createRequestId = args.requestId ? `onboarding:${args.requestId}` : undefined;
+    if (createRequestId) {
+      if (args.requestId!.length > 128) throw new Error("Invalid request id.");
+      const existing = await ctx.db.query("conversations").withIndex("by_create_request", q => q.eq("createRequestId", createRequestId)).first();
+      if (existing) return existing._id;
+    }
     await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner" });
     const userMd = args.userMd?.trim();
     if (userMd) await ctx.runMutation(internal.persona.writeUser, { text: userMd, by: "owner" });
     await ctx.runMutation(internal.installation.setOnboarding, { state: "done" });
-    return await startWelcomeChat(ctx, args.interview
+    return await startWelcomeChat(ctx, { ...(args.interview
       ? { title: "Getting to know you", prompt: `${INTERVIEW}${alreadySaid(args.interview)}`, label: "Getting to know you" }
       : userMd
       ? { title: "Welcome", prompt: GREETING, label: "Welcome greeting" }
-      : { title: "Getting to know you", prompt: INTERVIEW, label: "Getting to know you" });
+      : { title: "Getting to know you", prompt: INTERVIEW, label: "Getting to know you" }), createRequestId });
   },
 });
 
@@ -1861,6 +1917,7 @@ export const saveGoal = mutation({
     title: v.string(),
     description: v.optional(v.string()),
     status: v.optional(v.union(v.literal("active"), v.literal("paused"), v.literal("done"))),
+    expectedUpdatedAt: v.optional(v.number()),
     milestones: v.array(v.object({ title: v.string(), done: v.boolean() })),
   },
   returns: v.id("goals"),
@@ -1931,13 +1988,15 @@ export const checkMonitorsNow = action({
  * plan blocked on a question, work that failed, a scheduled job's news or
  * error, and a watch that fired. Each stays until it is dealt with or dismissed.
  */
-export type InboxItem =
+const deliveryRevision = (...content: unknown[]) => createHash("sha256").update(JSON.stringify(content)).digest("hex");
+
+export type InboxItem = { revision?: string } & (
   | { kind: "delivery"; id: Id<"sent"> | Id<"codexTurns"> | Id<"scheduledFailures"> | Id<"whatsappInbox"> | Id<"whatsappOutbox">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
   | { kind: "question"; id: Id<"tasks">; title: string; text: string; at: number }
   | { kind: "task-failed"; id: Id<"tasks">; title: string; text: string; at: number }
   | { kind: "job-error"; id: Id<"jobs">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
   | { kind: "job-result"; id: Id<"jobs">; title: string; text: string; at: number; chatId: Id<"conversations"> }
-  | { kind: "watch"; id: Id<"monitors">; title: string; text: string; at: number; url: string };
+  | { kind: "watch"; id: Id<"monitors">; title: string; text: string; at: number; url: string });
 
 export const getInbox = query({
   args: { key: vKey },
@@ -1948,23 +2007,23 @@ export const getInbox = query({
       const deliveries = await ctx.db.query("sent").withIndex("by_delivery", q => q.eq("deliveryState", state)).order("desc").filter(q => q.and(q.eq(q.field("seenAt"), undefined), q.eq(q.field("batchId"), q.field("_id")))).take(100);
       for (const row of deliveries) {
         if (row.batchId !== row._id) continue;
-        items.push({ kind: "delivery", id: row._id, title: `${row.channel === "telegram" ? "Telegram" : row.channel === "whatsapp" ? "WhatsApp" : "Dashboard"} notification ${state === "uncertain" ? "unconfirmed" : "failed"}`, text: `${row.deliveryError ?? "Check the destination before sending again."}\n\nMessage: ${row.deliveryText ?? row.text}`, at: row.reservedAt ?? row.createdAt, ...(row.origin ? { chatId: row.origin } : {}) });
+        items.push({ kind: "delivery", id: row._id, title: `${row.channel === "telegram" ? "Telegram" : row.channel === "whatsapp" ? "WhatsApp" : "Dashboard"} notification ${state === "uncertain" ? "unconfirmed" : "failed"}`, text: `${row.deliveryError ?? "Check the destination before sending again."}\n\nMessage: ${row.deliveryText ?? row.text}`, at: row.reservedAt ?? row.createdAt, revision: deliveryRevision(row.deliveryState, row.deliveryError, row.deliveryText ?? row.text), ...(row.origin ? { chatId: row.origin } : {}) });
       }
     }
     for (const turn of await ctx.db.query("codexTurns").withIndex("by_delivery_error", q => q.gt("deliveryError", "")).filter(q => q.eq(q.field("deliverySeenAt"), undefined)).take(100)) {
-      if (!turn.deliverySeenAt && turn.deliveryError) items.push({ kind: "delivery", id: turn._id, title: "WhatsApp reply needs attention", text: turn.deliveryError, at: turn.outgoingQueuedAt ?? turn.createdAt, chatId: turn.conversationId });
+      if (!turn.deliverySeenAt && turn.deliveryError) items.push({ kind: "delivery", id: turn._id, title: "WhatsApp reply needs attention", text: turn.deliveryError, at: turn.outgoingQueuedAt ?? turn.createdAt, revision: deliveryRevision(turn.deliveryError), chatId: turn.conversationId });
     }
     for (const row of await ctx.db.query("scheduledFailures").withIndex("by_created").order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100)) {
-      if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: `Scheduled work ${row.state}`, text: `${row.functionName} (${row.scheduleId}). Inspect the existing task and server log before retrying; an uncertain action may already have happened.`, at: row.createdAt });
+      if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: `Scheduled work ${row.state}`, text: `${row.functionName} (${row.scheduleId}). Inspect the existing task and server log before retrying; an uncertain action may already have happened.`, at: row.createdAt, revision: deliveryRevision(row.state, row.functionName, row.scheduleId) });
     }
     for (const row of await ctx.db.query("whatsappInbox").withIndex("by_state", q => q.eq("state", "failed")).order("desc").filter(q => q.eq(q.field("seenAt"), undefined)).take(100)) {
-      if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: "WhatsApp input could not be accepted", text: row.error ?? "Intake failed after five attempts. Resend this message after checking the connection.", at: row.createdAt });
+      if (!row.seenAt) items.push({ kind: "delivery", id: row._id, title: "WhatsApp input could not be accepted", text: row.error ?? "Intake failed after five attempts. Resend this message after checking the connection.", at: row.createdAt, revision: deliveryRevision(row.state, row.error) });
     }
     for (const state of ["failed", "uncertain"] as const) for (const row of await ctx.db.query("whatsappOutbox").withIndex("by_state", q => q.eq("state", state)).order("desc").filter(q => q.and(q.or(q.eq(q.field("kind"), "text"), q.eq(q.field("kind"), "file")), q.eq(q.field("turnId"), undefined), q.eq(q.field("notificationId"), undefined), q.eq(q.field("seenAt"), undefined))).take(100)) {
-      if ((row.kind === "text" || row.kind === "file") && !row.turnId && !row.notificationId && !row.seenAt) items.push({ kind: "delivery", id: row._id, title: `WhatsApp send ${state}`, text: row.error ?? "Check WhatsApp before sending again.", at: row.createdAt });
+      if ((row.kind === "text" || row.kind === "file") && !row.turnId && !row.notificationId && !row.seenAt) items.push({ kind: "delivery", id: row._id, title: `WhatsApp send ${state}`, text: row.error ?? "Check WhatsApp before sending again.", at: row.createdAt, revision: deliveryRevision(row.state, row.error, row.text, row.file) });
     }
     for (const task of await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "blocked")).collect()) {
-      if (task.question) items.push({ kind: "question", id: task._id, title: task.title, text: task.question, at: task.updatedAt });
+      if (task.question && (task.decision?.snoozedUntil ?? 0) <= Date.now()) items.push({ kind: "question", id: task._id, title: task.title, text: task.question, at: task.updatedAt });
     }
     for (const task of await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "failed")).collect()) {
       if ((task.seenAt ?? 0) < task.updatedAt) items.push({ kind: "task-failed", id: task._id, title: task.title, text: task.error ?? "It stopped without saying why.", at: task.updatedAt });
@@ -1996,6 +2055,10 @@ export const dismissInbox = mutation({
     items: v.array(v.object({
       kind: v.union(v.literal("task-failed"), v.literal("job-error"), v.literal("job-result"), v.literal("watch"), v.literal("delivery")),
       id: v.string(),
+      /** The event actually displayed, so an old acknowledgment cannot clear newer news. */
+      at: v.optional(v.number()),
+      /** Omitted by older clients; current clients acknowledge the exact warning content. */
+      revision: v.optional(v.string()),
     })),
   },
   returns: v.null(),
@@ -2004,24 +2067,41 @@ export const dismissInbox = mutation({
     const now = Date.now();
     for (const item of args.items) {
       if (item.kind === "delivery") {
-        for (const table of ["sent", "scheduledFailures", "whatsappInbox", "whatsappOutbox"] as const) {
-          const id = ctx.db.normalizeId(table, item.id);
-          if (id && await ctx.db.get(id)) await ctx.db.patch(id, { seenAt: now });
+        const id = ctx.db.normalizeId("sent", item.id);
+        const row = id ? await ctx.db.get(id) : null;
+        if (row && (item.at === undefined || item.at === (row.reservedAt ?? row.createdAt))
+          && (item.revision === undefined || item.revision === deliveryRevision(row.deliveryState, row.deliveryError, row.deliveryText ?? row.text))) await ctx.db.patch(row._id, { seenAt: item.at ?? now });
+        for (const table of ["scheduledFailures", "whatsappInbox", "whatsappOutbox"] as const) {
+          const sourceId = ctx.db.normalizeId(table, item.id);
+          const source = sourceId ? await ctx.db.get(sourceId) : null;
+          if (!source) continue;
+          const revision = "scheduleId" in source ? deliveryRevision(source.state, source.functionName, source.scheduleId)
+            : "remote" in source ? deliveryRevision(source.state, source.error)
+              : deliveryRevision(source.state, source.error, source.text, source.file);
+          if ((item.at === undefined || item.at === source.createdAt) && (item.revision === undefined || item.revision === revision)) await ctx.db.patch(source._id, { seenAt: item.at ?? now });
         }
         const turnId = ctx.db.normalizeId("codexTurns", item.id);
-        if (turnId && await ctx.db.get(turnId)) await ctx.db.patch(turnId, { deliverySeenAt: now });
+        const turn = turnId ? await ctx.db.get(turnId) : null;
+        if (turn && (item.at === undefined || item.at === (turn.outgoingQueuedAt ?? turn.createdAt))
+          && (item.revision === undefined || item.revision === deliveryRevision(turn.deliveryError))) await ctx.db.patch(turn._id, { deliverySeenAt: item.at ?? now });
       } else if (item.kind === "task-failed") {
         const id = ctx.db.normalizeId("tasks", item.id);
-        if (id) await ctx.db.patch(id, { seenAt: now });
+        const task = id ? await ctx.db.get(id) : null;
+        if (task && (item.at === undefined || task.status === "failed" && task.updatedAt === item.at)) await ctx.db.patch(task._id, { seenAt: item.at ?? now });
       } else if (item.kind === "watch") {
         const id = ctx.db.normalizeId("monitors", item.id);
-        if (id) await ctx.db.patch(id, { seenAt: now });
+        const monitor = id ? await ctx.db.get(id) : null;
+        if (monitor && (item.at === undefined || monitor.firedAt === item.at)) await ctx.db.patch(monitor._id, { seenAt: item.at ?? now });
       } else {
         const id = ctx.db.normalizeId("jobs", item.id);
         const job = id ? await ctx.db.get(id) : null;
         if (!job) continue;
-        if (item.kind === "job-error") await ctx.db.patch(job._id, { seenAt: now });
-        else if (job.conversationId && await ctx.db.get(job.conversationId)) await ctx.db.patch(job.conversationId, { seenAt: now });
+        if (item.kind === "job-error") {
+          if (item.at === undefined || job.lastError && job.lastRunAt === item.at) await ctx.db.patch(job._id, { seenAt: item.at ?? now });
+        } else if (job.conversationId) {
+          const chat = await ctx.db.get(job.conversationId);
+          if (chat && (item.at === undefined || job.lastResult && !job.lastError && chat.lastMessageAt === item.at)) await ctx.db.patch(chat._id, { seenAt: item.at ?? now });
+        }
       }
     }
     return null;

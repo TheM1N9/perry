@@ -11,6 +11,7 @@ import { sendButtons, sendFile, sendMessage, TelegramError, UPLOAD_LIMIT } from 
 import { queueText } from "./whatsapp";
 import { startOfDay } from "./lib/calendar";
 import { decisionActive, vDecisionReview, type DecisionReviewResult } from "./taskDecisions";
+import { isLocalAttachment } from "./library";
 
 /**
  * Assistant speaking first.
@@ -174,6 +175,10 @@ async function send(ctx: ActionCtx, target: Target, text: string, buttons: Butto
       const files: Doc<"chatAttachments">[] = await ctx.runQuery(internal.notify.files, { ids });
       const failures: string[] = [];
       for (const file of files) {
+        if (!file.storageId && !file.localPath) {
+          failures.push(`Could not send ${file.fileName}. Its source machine must upload a copy before it can be sent.`);
+          continue;
+        }
         try {
           let blob: Blob | null;
           if (file.storageId) {
@@ -291,7 +296,7 @@ async function filesOf(ctx: QueryCtx, rows: Doc<"sent">[]): Promise<Doc<"chatAtt
   const files: Doc<"chatAttachments">[] = [];
   for (const row of rows) for (const id of row.attachmentIds ?? []) {
     const file = await ctx.db.get(id);
-    if (file && !file.removedAt) files.push(file);
+    if (file && !file.removedAt) files.push(file.localPath && (file.storageId || !await isLocalAttachment(ctx, file)) ? { ...file, localPath: undefined } : file);
   }
   return files;
 }
@@ -338,7 +343,7 @@ export const whatsappOutcome = internalMutation({
     }
     const rows = await ctx.db.query("sent").withIndex("by_batch", q => q.eq("batchId", receipt._id)).collect();
     for (const row of rows) {
-      await ctx.db.patch(row._id, { deliveryState: state, deliveryError: error, ...(sentAt ? { sentAt } : {}) });
+      await ctx.db.patch(row._id, { deliveryState: state, deliveryError: error, ...(error ? { seenAt: undefined } : {}), ...(sentAt ? { sentAt } : {}) });
       await recordFileOutcome(ctx, row, error);
     }
     const owner = await ctx.db.query("installation").first();
@@ -454,6 +459,8 @@ export const completeDelivery = internalMutation({
     const files = await filesOf(ctx, rows);
     const tracked = Boolean(args.whatsappTo && files.length);
     if (args.whatsappTo) {
+      const missing = files.find(file => !file.storageId && !file.localPath);
+      if (missing) throw new Error(`${missing.fileName} is not available on this computer. Its source machine must upload a copy before it can be sent.`);
       if (!(await queueText(ctx, args.whatsappTo, args.text, tracked ? first._id : undefined))) throw new Error("WhatsApp is no longer paired to this recipient.");
       for (const file of files) {
         if (!(await ctx.runMutation(internal.whatsapp.sendFile, { to: args.whatsappTo, fileName: file.fileName, contentType: file.contentType, ...(file.storageId ? { storageId: file.storageId } : {}), ...(file.localPath ? { localPath: file.localPath } : {}), notificationId: first._id }))) throw new Error(`Could not queue ${file.fileName} for WhatsApp.`);

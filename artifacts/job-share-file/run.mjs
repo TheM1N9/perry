@@ -97,6 +97,7 @@ try {
   installation = await insert("installation", { defaultEngine: "codex", onboarding: "skipped", claimedAt: Date.now(), whatsappOwner: OWNER, ownerChannel: "telegram", ownerExternalId: "42", createdAt: Date.now() });
   whatsappLink = await insert("whatsappLink", { mode: "separate", wanted: true, status: "connected", updatedAt: Date.now() });
   await insert("runners", { name: "Synthetic runner", token, createdAt: Date.now(), lastSeenAt: Date.now(), engines: [{ kind: "codex", installed: true, signedIn: true, auth: {}, models: [], updatedAt: Date.now() }] });
+  writeFileSync(join(scratch, "runner.json"), JSON.stringify({ token, url: "http://synthetic" }));
   await check("WhatsApp job queues ordered files and waits for transport acknowledgement", async () => {
     const r = await run({ response: "Slides prepared.\n" + "x".repeat(9000), files: ["s01.png", "s02.png", "s01.png", "s03.png"] });
     assert.equal(r.receipt.deliveryState, "sending");

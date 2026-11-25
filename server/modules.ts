@@ -55,6 +55,7 @@ import * as lib_provenance from "../convex/lib/provenance";
 import * as lib_recall from "../convex/lib/recall";
 import * as lib_riffStyles from "../convex/lib/riffStyles";
 import * as lib_routing from "../convex/lib/routing";
+import * as lib_run_turn from "../convex/lib/run-turn";
 import * as lib_scroll_index from "../convex/lib/scroll/index";
 import * as lib_scroll_merge from "../convex/lib/scroll/merge";
 import * as lib_scroll_net from "../convex/lib/scroll/net";
@@ -183,6 +184,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/recall": lib_recall,
   "lib/riffStyles": lib_riffStyles,
   "lib/routing": lib_routing,
+  "lib/run-turn": lib_run_turn,
   "lib/scroll/index": lib_scroll_index,
   "lib/scroll/merge": lib_scroll_merge,
   "lib/scroll/net": lib_scroll_net,

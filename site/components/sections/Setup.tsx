@@ -32,6 +32,7 @@ function CopyButton({ text, id, os }: { text: string; id: "install" | "run"; os:
     <button
       type="button"
       data-copy={id}
+      aria-label={id === "run" ? `Copy ${text}` : "Copy installer"}
       onClick={async () => {
         const request = ++generation.current;
         clearTimeout(timer.current);
@@ -140,7 +141,7 @@ export function Setup() {
             </Terminal>
           </Reveal>
           <Reveal delay={0.1}>
-            <Terminal step="2" title="Run it" bar={<CopyButton id="run" os={os} text={RUN.map((line) => line.command).join("\n")} />}>
+            <Terminal step="2" title="Everyday commands">
               <ul>
                 {RUN.map((line) => (
                   <li key={line.command} className="flex flex-wrap items-baseline justify-between gap-x-4">
@@ -148,7 +149,7 @@ export function Setup() {
                       <span className="select-none text-[#8e8e93]">{install.prompt} </span>
                       <Shell line={line.command} />
                     </span>
-                    <span className="font-sans text-[14px] text-[#8e8e93]">{line.note}</span>
+                    <span className="flex items-center gap-2"><span className="font-sans text-[14px] text-[#8e8e93]">{line.note}</span><CopyButton id="run" os={os} text={line.command} /></span>
                   </li>
                 ))}
               </ul>

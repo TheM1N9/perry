@@ -281,18 +281,18 @@ try {
   // --- 13. The pages ---------------------------------------------------------------------------
   mark("E: Settings, the sidebar and the pet");
   browser = await openChat(BASE, KEY);
-  const sidebar = await browser.evaluate(`document.querySelector('[data-sidebar="footer"], [data-slot="sidebar-footer"]')?.innerText ?? document.body.innerText`) as string;
-  check("sidebarShowsUpdate", /Update available/.test(sidebar) && /1 change/.test(sidebar), sidebar.slice(0, 300));
+  await until(() => browser!.evaluate(`Boolean(document.querySelector('[data-update-control][aria-label="Download update"]'))`), "the available update control", 30);
+  check("sidebarShowsUpdate", true);
   await browser.send("Page.navigate", { url: `${BASE}/settings/general` });
-  await until(() => browser!.evaluate(`Boolean(document.querySelector('[data-update-state]'))`), "the Updates section", 30).catch(() => {});
+  await until(() => browser!.evaluate(`Boolean(document.querySelector('section [data-update-state]'))`), "the Updates section", 30);
   await sleep(1_500);
-  const section = await browser.evaluate(`(() => { const box = document.querySelector('[data-update-state]'); box?.scrollIntoView({ block: 'center' }); return box?.closest('section')?.innerText ?? box?.parentElement?.parentElement?.innerText ?? ''; })()`) as string;
+  const section = await browser.evaluate(`(() => { const box = document.querySelector('section [data-update-state]'); box?.scrollIntoView({ block: 'center' }); return box?.closest('section')?.innerText ?? ''; })()`) as string;
   await sleep(500);
   const shot = await browser.send("Page.captureScreenshot", { format: "png" });
   writeFileSync(join(outDir, "settings-updates.png"), Buffer.from(shot.data, "base64"));
-  check("settingsShowUpdateAndFailure", /Update available/.test(section) && /1 change/.test(section) && /Break the build on purpose/.test(section) && /didn.t work/.test(section) && /Update on his own at night/.test(section), section);
+  check("settingsShowUpdateAndFailure", /Update available/.test(section) && /Download/.test(section) && /couldn.t be installed/.test(section) && /Install overnight/.test(section) && /Technical details/.test(section), section);
   await browser.send("Page.navigate", { url: `${BASE}/pet` });
-  const petSays = await until(() => browser!.evaluate(`document.body.innerText.includes("A new version of me is ready")`), "the pet's bubble", 30).catch(() => false);
+  const petSays = await until(() => browser!.evaluate(`document.body.innerText.includes("An update is available") || document.body.innerText.includes("A new version is ready")`), "the pet's update notice", 30).catch(() => false);
   const petShot = await browser.send("Page.captureScreenshot", { format: "png" });
   writeFileSync(join(outDir, "pet-update.png"), Buffer.from(petShot.data, "base64"));
   check("petMentionsUpdate", petSays === true);
@@ -321,7 +321,7 @@ try {
   const runnerToken = (JSON.parse(readFileSync(join(homeB, "runner.json"), "utf8")) as { token: string }).token;
   await call("runner:checkIn", { token: runnerToken, platform: "win32", hostname: "e2e" });
   await call("codex:reportAccount", { token: runnerToken, available: true, authMode: "chatgpt" });
-  const accounts = await call<unknown[]>("codex:accounts", { key: KEY });
+  const accounts = await call<unknown[]>("engines:list", { key: KEY });
   const chat = await call<string>("dashboard:createChat", { key: KEY });
   await call("dashboard:sendChat", { key: KEY, id: chat, text: "Anything new today?" });
   const queued = await call<{ waitingFor?: string }>("updates:update", { key: KEY });

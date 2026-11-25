@@ -17,9 +17,20 @@ Never use the owner's browser profile, desktop, credentials, or a live model.
 - Owner input queued before a tab/chat change lands in the new page; unmount
   leaves scroll/keyboard work alive. Note separately if not reproduced here.
 - Browser close/restart while launch is pending leaks a child/browser session.
+- A cold browser takes more than 15 seconds to expose its first tab. A bounded
+  readiness deadline must admit a delayed real Chrome startup while still
+  honoring Stop, profile transfer and close during launch.
+- A missing executable, exited process or signal termination consumes the whole
+  startup deadline instead of failing promptly with repair guidance.
 - Repeated tab closure/downloads retain connections/history indefinitely.
 - Cancellation leaves approval polling, CDP command timers or load listeners
   alive; teardown must run on normal completion, errors and abort.
+- The last viewer disconnects with a held pointer button, and a new viewer
+  connects while the real CDP pointer-release acknowledgement is delayed.
+  Empty-cast cleanup must retain that same registered cast, deliver a fresh
+  frame to the new viewer, then remove its CDP listener and registry entry
+  when that viewer also disconnects. An already-aborted viewer must retain
+  no view, listener, timer or cast.
 
 Save JSON checks, observed values, browser/version, and failure details on each
 run. A failing check must continue far enough to release all fixture gates.

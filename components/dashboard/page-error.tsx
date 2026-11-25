@@ -11,13 +11,13 @@ import { TopBar } from "./common";
  * longer matches, so that case offers to lock; otherwise the rest of the
  * dashboard keeps working around the page that failed.
  */
-function PageErrorFallback({ onLock }: { onLock: () => void }, { error, reset }: ErrorInfo) {
+function PageErrorFallback({ onLock, wholeDashboard }: { onLock: () => void; wholeDashboard?: boolean }, { error, reset }: ErrorInfo) {
   const message = errorText(error);
   const keyProblem = /dashboard key|DASHBOARD_KEY/i.test(message);
   const stale = /No (public )?(function|query|mutation|action) named/i.test(message);
   return (
     <>
-      <TopBar />
+      {!wholeDashboard && <TopBar />}
       <main className="mx-auto w-full max-w-xl px-6 py-16" role="alert">
         <TriangleAlertIcon className="size-6 text-destructive" aria-hidden />
         <h1 className="mt-4 text-xl font-semibold tracking-tight">{keyProblem ? "That key was rejected" : "This page couldn't load"}</h1>
@@ -26,7 +26,9 @@ function PageErrorFallback({ onLock }: { onLock: () => void }, { error, reset }:
             ? "The dashboard key in this browser doesn't match this Perry any more. Unlock again with the current key."
             : stale
               ? "Perry's server is running older code than this page. Restart Perry with perry update, then reload."
-              : "Perry's server returned an error. Everything else still works."}
+              : wholeDashboard
+                ? "Perry's server returned an error. Try again, or reload the dashboard."
+                : "Perry's server returned an error. You can still use the sidebar to open another page."}
         </p>
         {!keyProblem && <pre className="mt-4 max-h-48 overflow-auto rounded-lg bg-muted p-3 font-mono text-xs whitespace-pre-wrap text-muted-foreground">{message.slice(0, 1200)}</pre>}
         <div className="mt-6 flex gap-2">

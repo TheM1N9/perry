@@ -11,6 +11,9 @@ import { join } from "node:path";
  * profile of its own, so checks run side by side (another checkout's, or
  * another session's) never drive each other's pages. Closing it ends Chrome
  * and deletes its profile, which is 70 to 150 MB, so runs do not fill the disk.
+ * Startup failure cases: a cold hosted runner takes over 30 seconds, first-run
+ * or background services delay the initial page, the process exits, or DevTools
+ * never exposes a page. Keep startup bounded and retain stderr on failure.
  */
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -51,6 +54,7 @@ export async function openChat(base: string, dashboardKey: string) {
   const profile = mkdtempSync(join(tmpdir(), "perry-e2e-profile-"));
   const chrome = spawn(process.env.PERRY_E2E_BROWSER ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", [
     ...(process.platform === "linux" && process.env.GITHUB_ACTIONS === "true" ? ["--no-sandbox", "--disable-dev-shm-usage"] : []),
+    "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--password-store=basic",
     "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     "--window-size=1280,800", "--autoplay-policy=no-user-gesture-required", "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"] });
@@ -74,7 +78,8 @@ export async function openChat(base: string, dashboardKey: string) {
   process.once("exit", close);
 
   let targets: Array<{ type: string; webSocketDebuggerUrl: string }> = [];
-  const launchDeadline = Date.now() + 30_000;
+  const launchTimeout = process.env.GITHUB_ACTIONS === "true" ? 60_000 : 30_000;
+  const launchDeadline = Date.now() + launchTimeout;
   while (Date.now() < launchDeadline && !targets.some((target) => target.type === "page")) {
     if (launchError || chrome.exitCode !== null || chrome.signalCode !== null) break;
     try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1000) })).json() as typeof targets; } catch {}
@@ -84,7 +89,7 @@ export async function openChat(base: string, dashboardKey: string) {
   if (!page) {
     const failure = launchError?.message ?? `exit=${chrome.exitCode}, signal=${chrome.signalCode}`;
     close();
-    throw new Error(`Chrome did not open a page (${failure}). ${launchLog}`);
+    throw new Error(`Chrome did not open a page within ${launchTimeout / 1000} seconds (${failure}). ${launchLog}`);
   }
   const ws = socket = new WebSocket(page.webSocketDebuggerUrl);
   try {

@@ -23,7 +23,8 @@ let playing: HTMLMediaElement | null = null;
 /** Where each file was left, this session. */
 const positions = new Map<string, number>();
 /** Each audio file's waveform, worked out once a session. */
-const waveforms = new Map<string, Promise<number[]>>();
+type Waveform = { work: Promise<number[]>; controller: AbortController; users: number; finished: boolean };
+const waveforms = new Map<string, Waveform>();
 const MEDIA_CACHE_LIMIT = 100;
 
 const SPEEDS_VIDEO = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -50,37 +51,83 @@ function spoken(seconds: number): string {
 }
 
 /** The loudness of each stretch of the file, 0 to 1, from the file itself. */
-function waveformOf(src: string): Promise<number[]> {
-  const known = waveforms.get(src);
-  if (known) return known;
-  const work = (async () => {
-    const response = await fetch(src);
-    if (!response.ok) throw new Error(`${response.status}`);
-    if (Number(response.headers.get("content-length") ?? 0) > WAVEFORM_MAX_BYTES) throw new Error("too big");
-    const data = await response.arrayBuffer();
-    const Context = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const context = new Context();
-    try {
-      const audio = await context.decodeAudioData(data);
-      const samples = audio.getChannelData(0);
-      const step = Math.max(1, Math.floor(samples.length / BARS));
-      const peaks = Array.from({ length: BARS }, (_, bar) => {
-        let sum = 0;
-        const start = bar * step;
-        const end = Math.min(samples.length, start + step);
-        for (let i = start; i < end; i++) sum += samples[i] * samples[i];
-        return Math.sqrt(sum / Math.max(1, end - start));
-      });
-      const loudest = Math.max(...peaks, 1e-6);
-      return peaks.map((peak) => Math.max(0.06, peak / loudest));
-    } finally {
-      void context.close();
+async function readWaveform(src: string, signal: AbortSignal): Promise<number[]> {
+  const response = await fetch(src, { signal });
+  if (!response.ok) throw new Error(`${response.status}`);
+  if (Number(response.headers.get("content-length") ?? 0) > WAVEFORM_MAX_BYTES) {
+    await response.body?.cancel();
+    throw new Error("too big");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No audio data.");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let ended = false;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) { ended = true; break; }
+      size += value.byteLength;
+      if (size > WAVEFORM_MAX_BYTES) throw new Error("too big");
+      chunks.push(value);
     }
-  })();
-  waveforms.set(src, work);
-  if (waveforms.size > MEDIA_CACHE_LIMIT) waveforms.delete(waveforms.keys().next().value!);
-  work.catch(() => { if (waveforms.get(src) === work) waveforms.delete(src); });
-  return work;
+  } finally {
+    if (!ended) await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  signal.throwIfAborted();
+  const data = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength; }
+  const Context = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const context = new Context();
+  const close = () => { void context.close().catch(() => {}); };
+  signal.addEventListener("abort", close, { once: true });
+  try {
+    const audio = await context.decodeAudioData(data.buffer);
+    signal.throwIfAborted();
+    const samples = audio.getChannelData(0);
+    const step = Math.max(1, Math.floor(samples.length / BARS));
+    const peaks = Array.from({ length: BARS }, (_, bar) => {
+      let sum = 0;
+      const start = bar * step;
+      const end = Math.min(samples.length, start + step);
+      for (let i = start; i < end; i++) sum += samples[i] * samples[i];
+      return Math.sqrt(sum / Math.max(1, end - start));
+    });
+    const loudest = Math.max(...peaks, 1e-6);
+    return peaks.map((peak) => Math.max(0.06, peak / loudest));
+  } finally {
+    signal.removeEventListener("abort", close);
+    if (context.state !== "closed") close();
+  }
+}
+
+function waveformOf(src: string) {
+  let entry = waveforms.get(src);
+  if (!entry) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    entry = { controller, users: 0, finished: false, work: readWaveform(src, controller.signal).finally(() => clearTimeout(timer)) };
+    const created = entry;
+    entry.work.then(() => { created.finished = true; }, () => {
+      created.finished = true;
+      if (waveforms.get(src) === created) waveforms.delete(src);
+    });
+    waveforms.set(src, entry);
+    if (waveforms.size > MEDIA_CACHE_LIMIT) waveforms.delete(waveforms.keys().next().value!);
+  }
+  const shared = entry;
+  shared.users++;
+  let released = false;
+  return { work: shared.work, release: () => {
+    if (released) return;
+    released = true;
+    if (--shared.users === 0 && !shared.finished) {
+      shared.controller.abort();
+      if (waveforms.get(src) === shared) waveforms.delete(src);
+    }
+  } };
 }
 
 /** What both players share: the element's state, one-at-a-time, the remembered place and the keys. */
@@ -375,8 +422,10 @@ export function AudioPlayer({ src, name, download, className, compact }: { src: 
   const [peaks, setPeaks] = useState<number[] | null>(null);
   useEffect(() => {
     let current = true;
-    waveformOf(src).then((found) => { if (current) setPeaks(found); }, () => { if (current) setPeaks([]); });
-    return () => { current = false; };
+    setPeaks(null);
+    const waveform = waveformOf(src);
+    waveform.work.then((found) => { if (current) setPeaks(found); }, () => { if (current) setPeaks([]); });
+    return () => { current = false; waveform.release(); };
   }, [src]);
   const bars = peaks?.length ? peaks : Array.from({ length: BARS }, () => 0.18);
   const share = media.duration > 0 ? media.time / media.duration : 0;

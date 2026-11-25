@@ -25,7 +25,8 @@ export function readWords(): Words {
 export function writeWords(words: Words) {
   // The oldest go first: objects keep the order keys were added in.
   const kept = Object.entries(words).slice(-MOST_WORDS);
-  window.localStorage.setItem(STORAGE, JSON.stringify(Object.fromEntries(kept)));
+  try { window.localStorage.setItem(STORAGE, JSON.stringify(Object.fromEntries(kept))); }
+  catch { /* Sending the corrected message still works when spellings cannot be saved. */ }
 }
 
 /** What he wrote down, with the words he has learned. */

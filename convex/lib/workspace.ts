@@ -5,9 +5,9 @@ import type { MutationCtx } from "../_generated/server";
 import { HOME } from "../../runner/home";
 
 /** Membership never makes internal credentials, caches or hidden files browseable. Check symlink targets too. */
-export function workspaceSafe(path: string | undefined, name: string): boolean {
+export function workspaceSafe(path: string | undefined, name: string, resolveLinks = true): boolean {
   let target = path ? resolve(path) : name;
-  try { if (path) target = realpathSync(path); } catch { /* Missing artifacts keep their membership. */ }
+  try { if (path && resolveLinks) target = realpathSync(path); } catch { /* Missing artifacts keep their membership. */ }
   const inHome = relative(HOME, target);
   const parts = (path && !inHome.startsWith("..") ? inHome : target).split(/[\\/]/).filter(Boolean);
   return !parts.some((part) => part.startsWith(".") || /^(node_modules|__pycache__|cache|caches|logs|steps|browser|browser-profiles)$/i.test(part))

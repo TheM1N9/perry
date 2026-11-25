@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { openChat, sleep } from "../browser.ts";
 
@@ -20,6 +21,7 @@ import { openChat, sleep } from "../browser.ts";
 //   7. Start chatting requires personalization, voice or a pet, fails to persist skipping, or changes existing profile content.
 //   8. Personalization cannot be reached from the task-first page, or browser errors escape the replay.
 //   9. Full-width centered boxes hide left-aligned text, or duplicate starter labels replace a required prompt.
+//  10. A configured default without a ready engine must not skip onboarding; synthetic engine readiness then enables text chat without starting a CLI.
 
 const output = resolve(process.argv[2]);
 mkdirSync(output, { recursive: true });
@@ -47,7 +49,7 @@ try {
   const port = probe.address().port;
   await new Promise((done) => probe.close(done));
   const base = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port), "-H", "127.0.0.1"], { cwd: resolve("."), env: { ...process.env, PERRY_PORT: String(port), TELEGRAM_BOT_TOKEN: "", COMPOSIO_API_KEY: "", PERRY_WAKE_DISABLED: "1" }, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+  server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port), "-H", "127.0.0.1"], { cwd: resolve("."), env: { ...process.env, PERRY_PORT: String(port), TELEGRAM_BOT_TOKEN: "", COMPOSIO_API_KEY: "", OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", PERRY_WAKE_DISABLED: "1", PERRY_EMBED_MODEL: "connector-fixture", NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(resolve("artifacts/connector-details/preload.mjs")).href}` }, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
   let serverLog = "";
   server.stderr.on("data", (chunk) => { serverLog = (serverLog + chunk).slice(-8_000); });
   let answered = false;
@@ -58,7 +60,7 @@ try {
   }
   if (!answered) throw new Error(`The server did not answer in 30 seconds.\n${serverLog}`);
   const call = async (path, args = {}) => {
-    const response = await fetch(`${base}/api/backend/admin`, { method: "POST", headers: { "content-type": "application/json", "x-perry-key": key }, body: JSON.stringify({ path, args: { key, ...args } }) });
+    const response = await fetch(`${base}/api/backend/admin`, { method: "POST", headers: { "content-type": "application/json", "x-perry-key": key }, body: JSON.stringify({ path, args }) });
     const body = await response.json();
     if (body.error) throw new Error(`${path}: ${body.error}`);
     return body.value;
@@ -88,15 +90,26 @@ try {
   await until(has("Start with something useful"));
   report.checks.textChatComesFirst = await browser.evaluate(`Boolean(${button("Start chatting")}) && Boolean(${button("Personalize first (optional)")}) && !document.querySelector('input[autocomplete=given-name]')`);
   report.checks.voiceAndPetAreOptional = await browser.evaluate(has("Text chat works without a microphone or desktop pet"));
-  const beforeSkip = await call("dashboard:getPersona");
+  const beforeSkip = await call("dashboard:getPersona", { key });
+  report.checks.unreadyEngineBlocksStart = await browser.evaluate(`${button("Start chatting")}.disabled`);
+  assert.ok(report.checks.unreadyEngineBlocksStart, "A default engine alone is not proof it can answer.");
+  await click("Start chatting");
+  report.checks.unreadyStartKeepsOnboarding = (await call("dashboard:getStatus", { key })).onboarding === "pending";
+  assert.ok(report.checks.unreadyStartKeepsOnboarding);
+  const token = "synthetic-welcome-runner";
+  await call("runner:createToken", { name: "Synthetic welcome computer", token });
+  await call("runner:checkIn", { token, activeTurnIds: [] });
+  await call("codex:reportAccount", { token, available: true, authMode: "chatgpt" });
+  await until(`${button("Start chatting")} && !${button("Start chatting")}.disabled`);
+  report.checks.readyEngineEnablesStart = true;
   await screenshot("start-chatting.png");
   await click("Start chatting");
   await until("location.pathname === '/chat' && document.querySelector('#composer')");
-  report.checks.startChattingNeedsNoVoice = !(await call("pet:status")).heardVoice;
-  report.checks.startChattingPersistsSkip = (await call("dashboard:getStatus")).onboarding === "skipped";
-  report.checks.startChattingPreservesProfile = (await call("dashboard:getPersona")).user === beforeSkip.user;
+  report.checks.startChattingNeedsNoVoice = !(await call("pet:status", { key })).heardVoice;
+  report.checks.startChattingPersistsSkip = (await call("dashboard:getStatus", { key })).onboarding === "skipped";
+  report.checks.startChattingPreservesProfile = (await call("dashboard:getPersona", { key })).user === beforeSkip.user;
 
-  await call("dashboard:redoOnboarding");
+  await call("dashboard:redoOnboarding", { key });
   await browser.send("Page.navigate", { url: `${base}/welcome` });
   await until(has("Start with something useful"));
   await click("Personalize first (optional)");
@@ -124,14 +137,14 @@ try {
   await screenshot("say-hello-no-pet.png");
 
   // He arrives, on the Talk keys in force.
-  await call("todos:presence", { idleSeconds: 0, hotkey: "CommandOrControl+Shift+Space" });
+  await call("todos:presence", { key, idleSeconds: 0, hotkey: "CommandOrControl+Shift+Space" });
   await until(has("say hi"));
   report.checks.showsTheRealKeys = await browser.evaluate("/Shift\\+Space|⇧⌘Space/.test(document.body.innerText)");
   report.checks.stillNoWayOnWhileWaiting = await browser.evaluate("!Array.from(document.querySelectorAll('button')).some((item) => /^(Continue|Save and meet)/.test(item.textContent.trim()))");
   await screenshot("say-hello-waiting.png");
 
   // He hears you: the way on appears, with something made of it.
-  await call("pet:heardVoice");
+  await call("pet:heardVoice", { key });
   await until(has("Well done!"));
   report.checks.wayOnAppearsOnceHeard = await browser.evaluate("Array.from(document.querySelectorAll('button')).some((item) => /^Save and meet/.test(item.textContent.trim()))");
   await screenshot("say-hello-heard.png");
@@ -139,9 +152,9 @@ try {
   await until("/^\\/chat\\/.+/.test(location.pathname)");
 
   // 2. What was said is kept, and the first chat asks for the rest.
-  const persona = await call("dashboard:getPersona");
+  const persona = await call("dashboard:getPersona", { key });
   report.checks.answersAreKept = /Maya/.test(persona.user);
-  report.checks.firstChatAsksTheRest = (await call("dashboard:listChats")).some((chat) => chat.title === "Getting to know you");
+  report.checks.firstChatAsksTheRest = (await call("dashboard:listChats", { key })).some((chat) => chat.title === "Getting to know you");
 
   // 6. The centered task area has its starter prompts below the composer.
   await browser.send("Page.navigate", { url: `${base}/chat` });
@@ -186,7 +199,7 @@ try {
   report.checks.starterKeepsComposerPosition = await browser.evaluate(`Math.abs(document.querySelector('[data-composer]').getBoundingClientRect().top - ${composerTop}) < 2`);
 
   // 5. Coming back with a USER.md: the full questions and a review, since saving replaces it.
-  await call("dashboard:redoOnboarding");
+  await call("dashboard:redoOnboarding", { key });
   await browser.send("Page.navigate", { url: `${base}/welcome` });
   await until(has("Meet your assistant"));
   report.checks.returningOwnerIsShownReview = await browser.evaluate(has("Review"));

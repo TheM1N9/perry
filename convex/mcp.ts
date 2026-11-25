@@ -328,7 +328,7 @@ async function handleRpc(ctx: ActionCtx, request: Request): Promise<Response> {
           finally { checking = false; }
         };
         const internet = name === "internet_read" || name === "internet_search" || name === "internet_scroll";
-        const cancellable = internet || name === "browser" || name === "upload_files";
+        const cancellable = internet || name === "browser" || name === "upload_files" || name === "run_action";
         const timer = cancellable ? setInterval(() => void check(), 500) : undefined;
         const signal = AbortSignal.any([request.signal, controller.signal, AbortSignal.timeout(11 * 60_000)]);
         const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId, turnId: access.turnId, outside, readOnly: bounded, signal } };

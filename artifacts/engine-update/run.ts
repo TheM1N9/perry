@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { createServer } from "node:http";
 import { homedir, userInfo } from "node:os";
 import { delimiter, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { FAKE_AGENT, REPO, perry, sleep } from "../engine-acp/harness";
 
 // bun artifacts/engine-update/run.ts <outDir>
@@ -41,6 +42,9 @@ import { FAKE_AGENT, REPO, perry, sleep } from "../engine-acp/harness";
 //      being shown.
 //  10. A failed or hung update leaves the engine unusable, or its replies held for good.
 //  11. The pages throw.
+//  12. An unrelated installed engine or inherited API key becomes a live fallback, or embeddings download during this isolated run.
+//  13. A runner killed during an update leaves its installer alive, replays an uncertain update on restart, or strands held replies and explicit retry.
+//  14. Backend recovery finishes before Settings receives it; clicking the old running details must not be mistaken for inspecting the recovered failure.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/engine-update/run.ts <outDir>");
@@ -127,6 +131,8 @@ const fakeLog = (dir = state): Array<Record<string, any>> => existsSync(join(dir
 const p = await perry({
   name: "engine-update",
   outDir,
+  env: { TELEGRAM_BOT_TOKEN: "", PERRY_WAKE_DISABLED: "1", PERRY_EMBED_MODEL: "choose-engine-fixture",
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(join(REPO, "artifacts", "choose-engine", "embedding.mjs")).href}` },
   runnerEnv: () => ({
     [PATH_KEY]: RUNNER_PATH,
     PERRY_NPM_REGISTRY: REGISTRY,
@@ -134,6 +140,9 @@ const p = await perry({
     FAKE_ACP_HOME: acpHome,
     CODEX_HOME: codexHome,
     CLAUDE_CONFIG_DIR: claudeConfig,
+    HOME: root, USERPROFILE: root, XDG_CONFIG_HOME: join(root, "config"),
+    PERRY_OPENCODE_COMMAND: join(root, "missing-opencode"),
+    OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "", XAI_API_KEY: "", GEMINI_API_KEY: "", GOOGLE_API_KEY: "",
     // Were the real npm ever reached, it would install nowhere that matters, from a registry with no packages.
     npm_config_prefix: npmPrefix,
     npm_config_registry: REGISTRY,
@@ -183,13 +192,24 @@ try {
   check("runnerReportsTheStandIns", standIns && start.codex.update?.need === "available" && start.claude.update?.need === "required" && start.grok.update?.need === "available",
     { codex: start.codex.update, claude: start.claude.update, grok: start.grok.update });
   if (!standIns) throw new Error("the runner reported other CLIs than the stand-ins; stopping");
+  const unexpected = Object.values(start).filter(engine => !["codex", "claude", "grok"].includes(engine.kind) && engine.signedIn);
+  check("noUnexpectedReadyEngine", unexpected.length === 0, unexpected.map(engine => engine.kind));
+  if (unexpected.length) throw new Error("an unrelated engine is ready; stopping before any prompt");
 
   // --- 2. Only the dashboard's owner, and not Antigravity --------------------------------------------------
   const { id: runnerId } = await engines();
-  const stranger = await call("engineUpdates:request", { key: "not-the-dashboard-key", runnerId, engine: "codex" }).then(() => "accepted", (error: Error) => error.message);
-  const antigravity = await call("engineUpdates:request", { key: KEY, runnerId, engine: "antigravity" }).then(() => "accepted", (error: Error) => error.message);
-  check("onlyTheOwner", stranger !== "accepted" && rows("engineUpdates").length === 0, stranger);
-  check("antigravityComesWithPerry", /comes with Perry/.test(antigravity), antigravity);
+  const requestUpdate = async (args: object) => {
+    const response = await fetch(`${BASE}/api/backend/call`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "engineUpdates:request", args }) });
+    return { status: response.status, body: await response.json() as { error?: string } };
+  };
+  const stranger = await requestUpdate({ key: "not-the-dashboard-key", runnerId, engine: "codex" });
+  const antigravity = await requestUpdate({ key: KEY, runnerId, engine: "antigravity" });
+  check("onlyTheOwner", stranger.status === 401 && rows("engineUpdates").length === 0, stranger);
+  check("antigravityComesWithPerry", antigravity.status === 400 && /comes with Perry/.test(antigravity.body.error ?? ""), antigravity);
+  await call("runner:createToken", { name: "Offline test computer", token: "offline-engine-update-fixture" });
+  const offlineRunner = rows("runners").find(item => item.token === "offline-engine-update-fixture")!;
+  const offline = await requestUpdate({ key: KEY, runnerId: offlineRunner._id, engine: "codex" });
+  check("offlineUpdateExplainsHowToRecover", offline.status === 400 && /Start Perry on Offline test computer/.test(offline.body.error ?? ""), offline);
 
   // --- 3. Settings: an Update button on each engine that needs one ------------------------------------------
   await p.openBrowser();
@@ -212,11 +232,11 @@ try {
   await shot("before.png", "Codex");
   // The command is there for the owner who would rather run it, folded away until asked for.
   const folded = await rowText("Codex");
-  await click("Codex", "Or run it yourself");
+  await click("Codex", "Update manually");
   await until(async () => (await rowText("Codex")).includes("npm install -g @openai/codex@latest"), "the command to unfold", 10);
   await shot("run-it-yourself.png", "Codex");
   const unfolded = await rowText("Codex");
-  await click("Codex", "Or run it yourself");
+  await click("Codex", "Update manually");
   check("commandFoldedAway", !folded.includes("npm install -g") && unfolded.includes("npm install -g @openai/codex@latest"), { folded, unfolded });
 
   // --- 4, 5. Codex: asked for mid-reply, it waits; the next reply waits for it --------------------------------
@@ -225,25 +245,28 @@ try {
   await until(() => turnsOf(busyChat).some((turn) => turn.status === "running") && fakeLog().some((entry) => entry.turn?.startsWith("SLOW 20")), "the slow reply to be running", 60);
   const clicked = await click("Codex", "Update");
   await until(async () => (await engines()).all.codex.updating?.status === "waiting" && Boolean((await engines()).all.codex.updating?.waitingFor), "the update to wait", 30);
+  const duplicateUpdate = await requestUpdate({ key: KEY, runnerId, engine: "codex" });
+  check("duplicateUpdateKeepsOneRequest", duplicateUpdate.status === 400 && /already being updated/.test(duplicateUpdate.body.error ?? "") && rows("engineUpdates").filter(row => row.engine === "codex").length === 1, duplicateUpdate);
   const heldChat = await call<string>("dashboard:createChat", { key: KEY });
   await call("dashboard:sendChat", { key: KEY, id: heldChat, text: "Hello after the update" });
-  await until(async () => (await rowText("Codex")).includes("Starts once"), "the wait on the page", 15);
+  await until(async () => (await rowText("Codex")).includes("The update will start when current replies finish"), "the wait on the page", 15);
   await sleep(3_000);
   await shot("waiting.png", "Codex");
   const waitingText = await rowText("Codex");
   const npmWhileBusy = fakeLog().filter((entry) => entry.cli === "npm").length;
   const heldStatus = turnsOf(heldChat).map((turn) => turn.status);
-  check("waitsForTheReply", clicked && npmWhileBusy === 0 && /Starts once a reply on Codex is done/.test(waitingText) && turnsOf(busyChat).some((turn) => turn.status === "running"),
+  check("waitsForTheReply", clicked && npmWhileBusy === 0 && /The update will start when current replies finish/.test(waitingText) && turnsOf(busyChat).some((turn) => turn.status === "running"),
     { waitingText, npmWhileBusy });
   check("newReplyHeld", heldStatus.length === 1 && heldStatus[0] === "queued" && !fakeLog().some((entry) => entry.turn === "Hello after the update"), heldStatus);
 
   await until(async () => (await engines()).all.codex.updating?.status === "running" && /npm http fetch/.test((await engines()).all.codex.updating?.output ?? ""), "the update to run", 60);
+  await until(() => click("Codex", "Technical details"), "progress details control", 10);
   await until(async () => /npm http fetch/.test(await rowText("Codex")), "its output on the page", 10);
   await shot("updating.png", "Codex");
   const progressText = await rowText("Codex");
-  const streamed = await browser.evaluate(`document.querySelector('[aria-label="Codex on ${NAME}"] pre[aria-label="What the update prints"]')?.innerText ?? ""`) as string;
+  const streamed = await browser.evaluate(`document.querySelector('[aria-label="Codex on ${NAME}"] pre')?.innerText ?? ""`) as string;
   check("progressShown", progressText.includes("Updating Codex…") && progressText.includes("npm http fetch")
-    && streamed.split("\n").length <= 3, { progressText, streamed });
+    && streamed.length > 0 && streamed.length <= 6000, { progressText, streamed });
 
   await until(async () => (await engines()).all.codex.updating?.status === "done", "the Codex update to finish", 60);
   await until(async () => (await rowText("Codex")).includes("Updated Codex"), "the result on the page", 15);
@@ -253,8 +276,10 @@ try {
   const slowEnded = log.find((entry) => entry.turnEnded?.startsWith("SLOW 20"))?.at ?? Infinity;
   const npmStarted = log.find((entry) => entry.cli === "npm")?.at ?? 0;
   check("availableUpdated", codexAfter.version === "0.159.1" && !codexAfter.update && codexAfter.updating?.from === "0.150.0" && codexAfter.updating?.to === "0.159.1"
-    && (await rowText("Codex")).includes("Updated Codex from 0.150.0 to 0.159.1"),
+    && (await rowText("Codex")).includes("Updated Codex"),
     { version: codexAfter.version, update: codexAfter.update ?? null, updating: { ...codexAfter.updating, output: undefined } });
+  const currentVersion = await requestUpdate({ key: KEY, runnerId, engine: "codex" });
+  check("alreadyUpdatedKeepsItsSpecificGuidance", currentVersion.status === 400 && /up to date/.test(currentVersion.body.error ?? ""), currentVersion);
   check("ranAfterTheReply", npmStarted > slowEnded && (await p.lastReply(busyChat)).startsWith("Fake Codex 0.150.0 reply to: SLOW 20"),
     { slowEnded, npmStarted, reply: await p.lastReply(busyChat) });
   await until(async () => (await p.lastReply(heldChat)).startsWith("Fake Codex"), "the held reply", 60);
@@ -268,7 +293,7 @@ try {
   await call("dashboard:sendChat", { key: KEY, id: claudeChat, text: "Hello Claude" });
   await until(async () => (await lastRun(claudeChat))?.status === "error", "the Claude message to be refused", 60);
   const refused = (await lastRun(claudeChat)).error ?? "";
-  check("claudeRefusedBefore", refused.startsWith("Claude Code 2.1.100 on Test PC is too old for Perry") && turnsOf(claudeChat).length === 0, refused);
+  check("claudeRefusedBefore", refused.startsWith("Claude Code 2.1.100 on Test PC is too old for Perry") && turnsOf(claudeChat).every(turn => turn.status === "error" && !turn.runnerId), { error: refused, turns: turnsOf(claudeChat).map(turn => ({ status: turn.status, assigned: Boolean(turn.runnerId) })) });
 
   setState("claude-update", "hang");
   check("claudeUpdateClicked", await click("Claude Code", "Update"));
@@ -283,12 +308,12 @@ try {
   setState("claude-update", "fail");
   await until(() => click("Claude Code", "Try again"), "Try again", 15);
   await until(async () => (await engines()).all.claude.updating?.status === "error" && /EBUSY/.test((await engines()).all.claude.updating?.output ?? ""), "the failing update", 60);
-  await until(async () => (await rowText("Claude Code")).includes("It stopped with exit code 1"), "the failure on the page", 15);
-  await click("Claude Code", "What it said");
+  await until(async () => (await rowText("Claude Code")).includes("The update couldn’t be installed"), "the failure on the page", 15);
+  await click("Claude Code", "Technical details");
   await sleep(500);
   await shot("failed.png", "Claude Code");
   const failedText = await rowText("Claude Code");
-  check("failureShowsOutput", failedText.includes("The update didn't work. It stopped with exit code 1.") && failedText.includes("EBUSY: resource busy or locked")
+  check("failureShowsOutput", failedText.includes("It stopped with exit code 1") && failedText.includes("EBUSY: resource busy or locked")
     && failedText.includes("Update required") && (await buttons("Claude Code")).includes("Try again"), failedText);
 
   setState("claude-update", "ok");
@@ -299,23 +324,53 @@ try {
   const claudeAfter = (await engines()).all.claude;
   const liftedText = await rowText("Claude Code");
   const signIn = await call("engines:requestAuth", { key: KEY, runnerId, engine: "claude", kind: "login" }).then(() => "accepted", (error: Error) => error.message);
+  const turnsBeforeRetry = turnsOf(claudeChat).length;
   await call("dashboard:sendChat", { key: KEY, id: claudeChat, text: "Hello again, Claude" });
-  await until(() => turnsOf(claudeChat).length > 0, "the Claude message to be taken", 30);
-  check("requiredLifted", claudeAfter.version === "2.1.285" && !claudeAfter.update && !liftedText.includes("Update required") && liftedText.includes("Updated Claude Code from 2.1.100 to 2.1.285")
-    && signIn === "accepted" && turnsOf(claudeChat).length === 1,
+  await until(() => turnsOf(claudeChat).length > turnsBeforeRetry && turnsOf(claudeChat).some(turn => turn.prompt === "Hello again, Claude" && turn.status !== "error"), "the Claude message to be admitted", 30);
+  check("requiredLifted", claudeAfter.version === "2.1.285" && !claudeAfter.update && !liftedText.includes("Update required") && liftedText.includes("Updated Claude Code")
+    && signIn === "accepted" && turnsOf(claudeChat).length === turnsBeforeRetry + 1,
     { version: claudeAfter.version, update: claudeAfter.update ?? null, signIn, turns: turnsOf(claudeChat).map((turn) => turn.status) });
 
   // --- 9. Grok Build, in a folder that needs admin rights: the command, not run ------------------------------
   check("grokUpdateClicked", await click("Grok Build", "Update"));
   await until(async () => (await engines()).all.grok.updating?.status === "elevate", "Grok's update to be left to the owner", 30);
-  await until(async () => (await rowText("Grok Build")).includes("administrator rights"), "the command on the page", 15);
+  await until(async () => (await rowText("Grok Build")).includes("terminal as administrator"), "the command on the page", 15);
   await shot("elevate.png", "Grok Build");
   const grok = (await engines()).all.grok;
   const elevateText = await rowText("Grok Build");
   const grokRan = fakeLog(acpHome).filter((entry) => JSON.stringify(entry).includes("update"));
-  check("elevationShowsTheCommand", grok.updating?.command === "grok update" && elevateText.includes("needs administrator rights") && elevateText.includes("Run this yourself in a terminal with those rights")
+  check("elevationShowsTheCommand", grok.updating?.command === "grok update" && elevateText.includes("Open a terminal as administrator and run this command")
     && elevateText.includes("grok update") && !(await buttons("Grok Build")).includes("Update") && grokRan.length === 0 && grok.version === "1.0.42-fake",
     { elevateText, updating: grok.updating, grokRan });
+
+  // A process crash leaves an uncertain update for the owner to retry, not the runner to replay.
+  p.stop(runner);
+  setState("codex-version", "0.150.0");
+  setState("npm-mode", "hang");
+  runner = p.start("runner");
+  await until(async () => (await engines()).all.codex.version === "0.150.0" && Boolean((await engines()).all.codex.update), "old compatible Codex after fresh status", 45);
+  await until(() => click("Codex", "Update"), "interrupted update request", 15);
+  await until(async () => (await engines()).all.codex.updating?.status === "running" && fakeLog().some(entry => entry.cli === "npm" && entry.mode === "hang"), "native updater running before runner crash", 30);
+  const interruptedPids = fakeLog().filter(entry => entry.cli === "npm" && entry.mode === "hang").map(entry => entry.pid as number);
+  const interruptedChat = await call<string>("dashboard:createChat", { key: KEY });
+  await call("dashboard:sendChat", { key: KEY, id: interruptedChat, text: "Continue after updater interruption" });
+  await until(() => turnsOf(interruptedChat).some(turn => turn.status === "queued"), "reply held by interrupted update", 15);
+  p.stop(runner);
+  await until(() => interruptedPids.every(pid => !alive(pid)), "interrupted installer process tree stopped", 10);
+  check("interruptedInstallerCannotOutliveRunner", interruptedPids.length === 1 && interruptedPids.every(pid => !alive(pid)), interruptedPids);
+  runner = p.start("runner");
+  await until(async () => (await engines()).all.codex.updating?.status === "error" && /restarted/.test((await engines()).all.codex.updating?.error ?? ""), "interrupted outcome retained after runner restart", 45);
+  await until(() => browser.evaluate(`Boolean(document.querySelector('[aria-label="Codex on ${NAME}"] [data-engine-update="error"]'))`), "interrupted recovery state on the page", 15);
+  await until(() => click("Codex", "Technical details"), "interrupted update recovery details", 15);
+  await until(async () => /restarted/.test(await rowText("Codex")), "interrupted recovery explanation on the page", 15);
+  check("restartRetainsUnknownUpdateWithoutReplay", /restarted/.test(await rowText("Codex")) && fakeLog().filter(entry => entry.cli === "npm" && entry.mode === "hang").length === 1, await rowText("Codex"));
+  await shot("interrupted-recovery.png", "Codex");
+  await until(async () => (await p.lastReply(interruptedChat)).startsWith("Fake Codex 0.150.0 reply"), "held reply recovers on compatible installed version", 45);
+  check("restartReleasesHeldReply", (await p.lastReply(interruptedChat)) === "Fake Codex 0.150.0 reply to: Continue after updater interruption");
+  setState("npm-mode", "ok");
+  await until(() => click("Codex", "Try again"), "owner retries interrupted update", 15);
+  await until(async () => (await engines()).all.codex.updating?.status === "done" && (await engines()).all.codex.version === "0.159.1", "explicit retry completes update", 45);
+  check("ownerCanRetryInterruptedUpdateOnce", fakeLog().filter(entry => entry.cli === "npm").length === 3 && (await engines()).all.codex.updating?.to === "0.159.1");
 
   check("noPageErrors", browser.errors.length === 0, browser.errors);
 } catch (error) {

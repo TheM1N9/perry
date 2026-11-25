@@ -1,5 +1,7 @@
 # Interactive answers (issue #282)
 
+Merge-regression inventory before fixture migration: every claimed turn must use its own fresh MCP grant and stopped/finished grants must stay refused; synthetic connector discovery must provide the native selected account metadata; operation approval, concurrent retries and lost acknowledgments must still send at most once. Keep the existing real browser draft, Stop/resume, exact interactive-question, sandbox and persistence invariants. Use only the isolated fake provider and normal home/browser teardown.
+
 ## Decision
 
 Extend Perry's chat renderer, MCP tools, SQLite documents and query subscriptions.
@@ -105,10 +107,12 @@ content keeps Perry's existing untrusted-data wrapper and outside-read safeguard
 No artifact control can execute a connector, send a prompt, or approve a tool.
 The host's explicit Ask Perry form queues a targeted **draft** follow-up once per
 revision. Its turn starts marked as having read outside content, and reading an
-artifact also sets that mark. Consequential connector calls are held server-side
-by the existing MCP outward-action gate until the owner approves separately in
-a new chat message. This feature adds no side-effect execution/retry subsystem;
-the existing action result and approval UI remain authoritative. Failed draft
+artifact also sets that mark. Connected writes independently require an approval
+for the exact account, operation and arguments through the existing approval UI.
+Interactive answers cannot grant that approval. An unchanged approved operation
+can continue after reading an artifact; reading does not revoke its approval.
+Explicit Full access permits writes with a durable execution record. Unknown
+provider outcomes never replay automatically. Failed draft
 saves and follow-ups keep the owner's inputs and display failure, never success.
 
 ## Sandbox policy

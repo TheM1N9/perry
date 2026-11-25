@@ -16,6 +16,7 @@ import { parseModelKey } from "@/convex/lib/engines";
 import { useSession } from "@/lib/session";
 import { copyText, errorText } from "@/lib/format";
 import { randomUUID } from "@/lib/uuid";
+import { turnErrorCopy } from "@/lib/turn-errors";
 import { cn } from "@/lib/utils";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -37,6 +38,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { EmptyState, ListSkeleton, Page, TopBar } from "../common";
 import { useNoteSaves } from "./notes";
 import { ModelMenu, shortModelName } from "../chat/model-menu";
+import { Markdown } from "../chat/markdown";
 
 /* ================================ Home ================================ */
 
@@ -137,6 +139,7 @@ const UNTITLED = new Set(["Untitled", "Untitled document"]);
 const HOLD_MS = 400;
 type Batch = { id: string; text: string };
 type Settling = { text: string; sentAt: number };
+type TypedReceipt = { id: string; text: string; selection?: string; runId?: Id<"runs">; status: "sending" | "acknowledged" | "unknown" };
 
 function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversations"> }) {
   const { dashboardKey } = useSession();
@@ -183,6 +186,13 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
   const [handing, setHanding] = useState<"someone" | "perry" | null>(null);
   const [removing, setRemoving] = useState(false);
   const [instruction, setInstruction] = useState("");
+  const instructionRef = useRef("");
+  const [typed, setTyped] = useState<TypedReceipt | null>(null);
+  const typedRef = useRef<TypedReceipt | null>(null);
+  const typedSending = useRef(false);
+  const typedRun = useQuery(api.notes.liveRun, typed?.runId ? { key: dashboardKey, id: note.id, runId: typed.runId } : "skip");
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const dismissedRef = useRef<string | null>(null);
   const [pending, setPending] = useState("");
   const [settling, setSettling] = useState<Settling[]>([]);
   const [sending, setSending] = useState(false);
@@ -210,16 +220,37 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
     return () => { live = false; };
   }, [dashboardKey, listStyles, styleOpen]);
 
-  const keepPending = (text: string) => {
-    pendingRef.current = text;
-    if (mounted.current) setPending(text);
+  const persistPending = () => {
+    if (!mounted.current) return;
     try {
-      if (text) sessionStorage.setItem(storage, JSON.stringify({ pending: text, batch: batch.current }));
+      if (pendingRef.current || instructionRef.current || typedRef.current || dismissedRef.current) sessionStorage.setItem(storage, JSON.stringify({ pending: pendingRef.current, instruction: instructionRef.current, batch: batch.current, typed: typedRef.current, dismissedError: dismissedRef.current }));
       else sessionStorage.removeItem(storage);
       if (mounted.current) setStorageError("");
     } catch {
       if (mounted.current) setStorageError("This browser couldn't keep your unsent words. Copy them before leaving.");
     }
+  };
+  const keepPending = (text: string) => {
+    pendingRef.current = text;
+    if (mounted.current) setPending(text);
+    persistPending();
+  };
+  const keepTyped = (receipt: TypedReceipt | null) => {
+    if (!mounted.current) return;
+    typedRef.current = receipt;
+    setTyped(receipt);
+    persistPending();
+  };
+  const keepInstruction = (text: string) => {
+    instructionRef.current = text.slice(0, 4_000);
+    setInstruction(instructionRef.current);
+    persistPending();
+  };
+  const dismissEngineError = () => {
+    dismissedRef.current = chat?.lastErrorRunId ?? null;
+    setDismissedError(dismissedRef.current);
+    if (typedRef.current?.status === "unknown" || typedRef.current?.runId === dismissedRef.current) keepTyped(null);
+    else persistPending();
   };
   const halt = () => {
     automatic.current = false;
@@ -276,6 +307,19 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
     try {
       const kept = JSON.parse(sessionStorage.getItem(storage) ?? "null");
       if (kept && typeof kept.pending === "string") {
+        if (typeof kept.instruction === "string" && kept.instruction.length <= 4_000) {
+          instructionRef.current = kept.instruction; setInstruction(kept.instruction);
+        }
+        const receipt = kept.typed;
+        if (receipt && typeof receipt.id === "string" && receipt.id.length <= 80 && typeof receipt.text === "string" && receipt.text.trim() && receipt.text.length <= 4_000
+          && (receipt.selection === undefined || typeof receipt.selection === "string" && receipt.selection.length <= 4_000)
+          && (receipt.runId === undefined || typeof receipt.runId === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(receipt.runId))) {
+          typedRef.current = { id: receipt.id, text: receipt.text, ...(receipt.selection ? { selection: receipt.selection } : {}), ...(receipt.runId ? { runId: receipt.runId } : {}), status: receipt.runId ? "acknowledged" : "unknown" };
+          setTyped(typedRef.current);
+        }
+        if (typeof kept.dismissedError === "string" && kept.dismissedError.length <= 128) {
+          dismissedRef.current = kept.dismissedError; setDismissedError(kept.dismissedError);
+        }
         if (kept.batch && typeof kept.batch.id === "string" && kept.batch.id.length <= 80 && typeof kept.batch.text === "string" && kept.pending.startsWith(kept.batch.text)) batch.current = kept.batch;
         keepPending(kept.pending.slice(0, MAX_PENDING + 2_000));
       }
@@ -355,14 +399,28 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
     } catch (cause) { toast.error(errorText(cause)); }
   };
 
-  const submit = async (text = instruction.trim()) => {
-    if (!text) return;
+  const typedBusy = Boolean(typed && (typed.status === "sending" || typed.status === "unknown" || typedRun === undefined || typedRun === null || typedRun?.status === "running"));
+  const submit = async (text = instructionRef.current.trim(), retry?: TypedReceipt) => {
+    if (!text || typedSending.current || !retry && typedBusy) return;
+    const submittedDraft = instructionRef.current;
+    const receipt: TypedReceipt = { id: randomUUID(), text, selection: retry ? retry.selection : selection.current.slice(0, 4_000), status: "sending" };
+    typedSending.current = true;
+    keepTyped(receipt);
+    let dispatched = false;
     try {
       if (!await controller.flush()) throw new Error("Settle the conflicting edits first.");
-      await send({ key: dashboardKey, id: note.id, text, batchId: randomUUID(), typed: true, ...(selection.current ? { selection: selection.current } : {}) });
-      if (text === instruction.trim()) setInstruction("");
-      setError("");
-    } catch (cause) { setError(errorText(cause)); }
+      if (!mounted.current) { keepTyped({ ...receipt, status: "unknown" }); return; }
+      dispatched = true;
+      const result = await send({ key: dashboardKey, id: note.id, text, batchId: receipt.id, typed: true, ...(receipt.selection ? { selection: receipt.selection } : {}) });
+      keepTyped({ ...receipt, ...(result ? { runId: result.runId } : {}), status: result ? "acknowledged" : "unknown" });
+      if (mounted.current) {
+        if (!retry && instructionRef.current === submittedDraft && submittedDraft.trim() === text) keepInstruction("");
+        setError("");
+      }
+    } catch (cause) {
+      keepTyped(dispatched ? { ...receipt, status: "unknown" } : null);
+      if (mounted.current) setError(errorText(cause));
+    } finally { typedSending.current = false; }
   };
 
   // Keys: the Riff hotkey (hold to talk, tap to toggle), Esc and Ctrl/⌘+Enter on an edit, Ctrl/⌘+S to save.
@@ -445,14 +503,34 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
       <Button size="sm" variant="ghost" onClick={reject} data-riff-reject>Reject<Kbd className="ml-1 max-md:hidden">Esc</Kbd></Button>
       <Button size="sm" onClick={() => void accept()} data-riff-accept>Accept<Kbd className="ml-1 bg-primary-foreground/15 text-primary-foreground max-md:hidden">{mac ? "⌘↵" : "Ctrl ↵"}</Kbd></Button>
     </>}><span className="line-clamp-2 md:truncate md:block">{proposal.instruction ? `“${proposal.instruction}”` : "Perry's edit"}</span></DockRow>;
+  } else if (typed?.status === "unknown" || typed?.runId && typedRun === null) {
+    row = <DockRow key="typed-unknown" tone="error" actions={<>
+      <Button size="sm" variant="ghost" onClick={() => void copyText(typed.text).then(() => toast.success("Instruction copied."), cause => toast.error(errorText(cause)))}>Copy</Button>
+      <Button size="sm" variant="outline" render={<Link href="/settings/engines" />}>Settings</Button>
+      <Button size="sm" variant="outline" onClick={() => { keepTyped(null); setError(""); }}>Dismiss</Button>
+    </>}><p>{error || "Couldn't confirm this instruction's status. Check the document and History before sending again."}</p><p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground">{typed.text}</p></DockRow>;
   } else if (error || speech.error || storageError) {
     row = <DockRow key="error" tone="error" actions={pending ? <>
       <Button size="sm" variant="ghost" onClick={() => void copyText(pending).then(() => toast.success("Copied."), (cause) => toast.error(errorText(cause)))}>Copy</Button>
       <Button size="sm" variant="ghost" disabled={sending || listening} onClick={() => { batch.current = null; keepPending(""); setError(""); }}>Discard</Button>
       <Button size="sm" variant="outline" disabled={sending} onClick={() => { automatic.current = true; void latest.current(); }}>Retry</Button>
-    </> : <Button size="sm" variant="ghost" onClick={() => setError("")}>Dismiss</Button>}>{error || speech.error || storageError}</DockRow>;
-  } else if (lastError && !working && pending) {
-    row = <DockRow key="engine" tone="error" actions={<Button size="sm" variant="outline" onClick={() => { automatic.current = true; void latest.current(); }}>Retry</Button>}>{lastError}</DockRow>;
+    </> : storageError && instruction ? <Button size="sm" variant="outline" onClick={() => void copyText(instruction).then(() => toast.success("Instruction copied."), cause => toast.error(errorText(cause)))}>Copy instruction</Button>
+      : <Button size="sm" variant="ghost" onClick={() => setError("")}>Dismiss</Button>}>{error || speech.error || storageError}</DockRow>;
+  } else if (lastError && lastErrorRun && !working && dismissedError !== lastErrorRun) {
+    const failure = turnErrorCopy(chat?.lastErrorCode);
+    row = <DockRow key={`engine-${lastErrorRun}`} tone="error" actions={<>
+      <Button size="sm" variant="ghost" onClick={dismissEngineError}>Dismiss</Button>
+      <Button size="sm" variant="outline" render={<Link href="/settings/engines" />}>Settings</Button>
+      {typed?.runId === lastErrorRun && typedRun?.status === "error"
+        ? <Button size="sm" onClick={() => void submit(typed.text, typed)}>Retry instruction</Button>
+        : pending && <Button size="sm" variant="outline" onClick={() => { automatic.current = true; void latest.current(); }}>Retry</Button>}
+    </>}><p>{failure.title}</p><p className="mt-1 text-foreground">{failure.guidance}</p><p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{lastError}</p>{typed?.runId === lastErrorRun && <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground">{typed.text}</p>}</DockRow>;
+  } else if (typed?.runId && typedRun?.current && typedRun.status !== "running") {
+    row = <DockRow key={`result-${typed.runId}`} actions={<Button size="sm" variant="ghost" onClick={() => keepTyped(null)}>Dismiss</Button>}>
+      <p className="font-medium">No edit waiting for review</p>
+      <p className="mb-1 mt-2 text-xs text-muted-foreground">Last reply</p>
+      {typedRun.reply ? <div className="max-h-60 overflow-y-auto [overflow-wrap:anywhere]"><Markdown text={typedRun.reply} /></div> : <p>The request ended without a written reply. Review the document and History.</p>}
+    </DockRow>;
   }
 
   const modelChip = "h-11 shrink-0 gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground md:h-8 md:px-2.5";
@@ -538,20 +616,19 @@ function LiveDocument({ note, chatId }: { note: NoteView; chatId: Id<"conversati
             <TooltipContent>{speech.supported ? <>{listening ? "Stop" : "Talk"} <span className="opacity-70">· hold or tap {hotkey}</span></> : "Voice needs Chrome, Edge or Safari on localhost or HTTPS. You can still type."}</TooltipContent>
           </Tooltip>
           <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-            <input value={instruction} onChange={(event) => setInstruction(event.target.value)} maxLength={4_000} aria-label="Ask for a change" data-riff-ask
+            <input value={instruction} onChange={(event) => keepInstruction(event.target.value)} maxLength={4_000} aria-label="Ask for a change" data-riff-ask
               placeholder={listening ? "Listening…" : "Ask for a change"}
               className="h-10 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground md:text-sm" />
             {/* One status and one way to stop at a time: listening (the mic stops it), Perry writing (× stops him), or idle. */}
-            {instruction.trim() ? <Button type="submit" size="icon-sm" className="size-10 shrink-0 rounded-full md:size-8" aria-label="Send instruction"><ArrowUpIcon /></Button>
-              : listening ? null
-              : working ? <Tooltip>
+            {instruction.trim() && <Button type="submit" size="icon-sm" disabled={typedBusy} className="size-10 shrink-0 rounded-full md:size-8" aria-label={typedBusy ? "Waiting for previous instruction" : "Send instruction"}><ArrowUpIcon /></Button>}
+            {listening ? null : working ? <Tooltip>
                 <TooltipTrigger render={<Button type="button" variant="ghost" size="sm" className="min-h-11 shrink-0 gap-1.5 text-muted-foreground md:min-h-8" data-riff-stop aria-label="Perry is writing. Stop"
                   onClick={() => { halt(); speech.stop(); void stopEdits({ key: dashboardKey, id: chatId }).catch((cause) => setError(errorText(cause))); }} />}>
                   Writing…<XIcon className="size-3.5" />
                 </TooltipTrigger>
                 <TooltipContent>Stop Perry</TooltipContent>
               </Tooltip>
-              : speech.supported && <Kbd className="mr-1 shrink-0 max-md:hidden" data-riff-hotkey>{hotkey}</Kbd>}
+              : !instruction.trim() && speech.supported && <Kbd className="mr-1 shrink-0 max-md:hidden" data-riff-hotkey>{hotkey}</Kbd>}
           </form>
           {!listening && !working && (mobile
             ? <Button type="button" variant="ghost" size="sm" className={modelChip} aria-label={`Model: ${modelInfo?.name ?? "default"}`} data-riff-model-chip onClick={() => setModelOpen(true)}>{chip}</Button>

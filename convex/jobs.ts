@@ -14,6 +14,7 @@ import { LIMIT_HIT } from "./lib/usage";
 import type { Choice } from "./lib/routing";
 import { choose, jobAsk, routeOf, type Route } from "./routing";
 import { assertRunning, missedPatch, pausedAt } from "./pause";
+import { ArgumentError } from "../server/validate";
 
 /**
  * Proactivity: named jobs that run a prompt as a Codex turn, either on a cron
@@ -431,9 +432,28 @@ export const run = internalAction({
       return null;
     } catch (error) {
       const retained: boolean = await ctx.runMutation(internal.jobs.failedFolder, { id: args.id, error: String(error), chatReserved });
-      if (!retained) throw error;
+      if (!retained) {
+        await ctx.runMutation(internal.jobs.failedStart, { id: args.id, error: error instanceof ArgumentError ? error.message : "Perry could not start this job. Try again; if it keeps failing, check Settings → Engines.", chatReserved });
+        throw error;
+      }
       return null;
     }
+  },
+});
+
+/** Preparation failed before a turn existed; retain its recovery instruction and release the chat. */
+export const failedStart = internalMutation({
+  args: { id: v.id("jobs"), error: v.string(), chatReserved: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.id);
+    if (!job) return null;
+    if (args.chatReserved && job.conversationId) {
+      const chat = await ctx.db.get(job.conversationId);
+      if (chat) await ctx.db.patch(chat._id, { pendingTurns: Math.max(0, (chat.pendingTurns ?? 0) - 1) });
+    }
+    await ctx.db.patch(job._id, { lastRunAt: Date.now(), lastError: args.error.slice(0, 500), waiting: undefined });
+    return null;
   },
 });
 
@@ -511,6 +531,11 @@ export const finished = internalMutation({
     if (!job) return null;
     if (args.turnId && await ctx.db.query("sent").withIndex("by_job_turn", q => q.eq("jobTurnId", args.turnId)).first()) return null;
     const turn = args.turnId ? await ctx.db.get(args.turnId) : null;
+    if (turn && turn.conversationId === job.conversationId) {
+      if (turn.reportedAt !== undefined) return null;
+      // The note, recovery scheduling and delivery queue commit with this receipt.
+      await ctx.db.patch(turn._id, { reportedAt: Date.now() });
+    }
     const files = turn?.mediaKey && turn.conversationId === job.conversationId
       ? (await ctx.db.query("chatAttachments").withIndex("by_message", q => q.eq("conversationId", turn.conversationId).eq("messageKey", turn.mediaKey!)).collect()).filter(file => !file.removedAt)
       : [];
@@ -550,7 +575,7 @@ export const finished = internalMutation({
       if (job.noteId && !args.error && !kept) await ctx.db.patch(job._id, { noteId: undefined });
       const noted = kept ? `\n\n_Added to your note “${kept.title}”._` : "";
       // Back to the chat it was set up in; the heartbeat and the others to the messaging channel (channels.ts).
-      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${report}${noted}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name }, ...(files.length ? { attachmentIds: files.map(file => file._id), jobTurnId: args.turnId } : {}), ...(job.builtin === "heartbeat" ? { heartbeatAlert: result } : {}) });
+      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${report}${noted}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name }, ...(args.turnId ? { jobTurnId: args.turnId } : {}), ...(files.length ? { attachmentIds: files.map(file => file._id) } : {}), ...(job.builtin === "heartbeat" ? { heartbeatAlert: result } : {}) });
     }
     return null;
   },
@@ -785,7 +810,7 @@ export const keepOn = mutation({
  */
 export const saveFromDashboard = mutation({
   args: {
-    key: v.string(), id: v.optional(v.id("jobs")), name: v.string(), prompt: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()),
+    key: v.string(), id: v.optional(v.string()), name: v.string(), prompt: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()),
     /** Run it when a file lands in this folder on this computer. */
     folder: v.optional(v.string()),
     /** The note its runs are added to; null for none. */
@@ -794,37 +819,38 @@ export const saveFromDashboard = mutation({
   returns: v.id("jobs"),
   handler: async (ctx, args): Promise<Id<"jobs">> => {
     assertDashboardKey(args.key);
-    if (args.name.trim().length < 2) throw new Error("Give it a name of at least two letters.");
-    if (args.prompt.trim().length < 10) throw new Error("Say what Perry should do, in a sentence or so.");
+    if (args.name.trim().length < 2) throw new ArgumentError("Give it a name of at least two letters.");
+    if (args.prompt.trim().length < 10) throw new ArgumentError("Say what Perry should do, in a sentence or so.");
     const when = { schedule: args.schedule?.trim() || undefined, at: args.at?.trim() || undefined };
     const folder = args.folder?.trim();
-    if (folder && !ABSOLUTE_PATH.test(folder)) throw new Error("Give the folder's full path, such as C:\\Users\\you\\Downloads or /home/you/Downloads.");
-    if (!args.id) {
+    if (folder && !ABSOLUTE_PATH.test(folder)) throw new ArgumentError("Give the folder's full path, such as C:\\Users\\you\\Downloads or /home/you/Downloads.");
+    if (args.id === undefined) {
       const made: { id?: Id<"jobs">; error?: string } = await ctx.runMutation(internal.jobs.create, {
         name: args.name, prompt: args.prompt, ...(folder ? { trigger: folderTrigger(folder) } : when), ...(args.noteId ? { noteId: args.noteId } : {}),
       });
-      if (!made.id) throw new Error(made.error ?? "Could not save it.");
+      if (!made.id) throw made.error ? new ArgumentError(made.error) : new Error("Could not save it.");
       return made.id;
     }
-    const job = await ctx.db.get(args.id);
-    if (!job) throw new Error("That schedule no longer exists.");
+    const id = ctx.db.normalizeId("jobs", args.id);
+    const job = id ? await ctx.db.get(id) : null;
+    if (!job) throw new ArgumentError("That schedule no longer exists.");
     // A job an event starts keeps its event; a folder can move to another folder.
     if (job.trigger) {
       if (folder && job.trigger.kind === "folder" && folder !== job.trigger.path) await ctx.db.patch(job._id, { trigger: folderTrigger(folder) });
-      const changed: { updated: boolean; error?: string } = await ctx.runMutation(internal.jobs.update, { id: args.id, name: args.name, prompt: args.prompt, ...(args.noteId !== undefined ? { noteId: args.noteId } : {}) });
-      if (!changed.updated) throw new Error(changed.error ?? "Could not save it.");
-      return args.id;
+      const changed: { updated: boolean; error?: string } = await ctx.runMutation(internal.jobs.update, { id: job._id, name: args.name, prompt: args.prompt, ...(args.noteId !== undefined ? { noteId: args.noteId } : {}) });
+      if (!changed.updated) throw changed.error ? new ArgumentError(changed.error) : new Error("Could not save it.");
+      return job._id;
     }
     // Only a new time is a reschedule; saving the same one leaves a paused job paused.
     const moved = job.builtin ? when.schedule !== job.schedule : when.schedule !== job.schedule || (when.at !== undefined && Date.parse(when.at) !== job.runAt);
     const changed: { updated: boolean; error?: string } = await ctx.runMutation(internal.jobs.update, {
-      id: args.id,
+      id: job._id,
       ...(job.builtin ? {} : { name: args.name, prompt: args.prompt }),
       ...(moved ? when : {}),
       ...(args.noteId !== undefined ? { noteId: args.noteId } : {}),
     });
-    if (!changed.updated) throw new Error(changed.error ?? "Could not save it.");
-    return args.id;
+    if (!changed.updated) throw changed.error ? new ArgumentError(changed.error) : new Error("Could not save it.");
+    return job._id;
   },
 });
 

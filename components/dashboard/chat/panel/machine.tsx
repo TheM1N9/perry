@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useConvex, useMutation, useQuery } from "@/client/react";
-import { WriteOutcomeUnknownError } from "@/client/backend";
+import { BackendError, WriteOutcomeUnknownError } from "@/client/backend";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { MachineCommand } from "@/lib/machine-protocol";
@@ -32,7 +32,13 @@ export function useMachine(conversationId: Id<"conversations">) {
     try {
       const args = { key, conversationId, input, requestId, ...(runnerId ? { runnerId } : {}) };
       let id: Id<"machineRequests">;
-      try { id = await request(args); } catch (cause) { if (!(cause instanceof WriteOutcomeUnknownError)) throw cause; id = await request(args); }
+      try {
+        try { id = await request(args); }
+        catch (cause) { if (!(cause instanceof WriteOutcomeUnknownError)) throw cause; id = await request(args); }
+      } catch (cause) {
+        if (cause instanceof BackendError && !(cause instanceof WriteOutcomeUnknownError) && cause.status < 500) pending.current.delete(signature);
+        throw cause;
+      }
       const end = Date.now() + 130000;
       while (!signal?.aborted && Date.now() < end) {
         const result = await client.query(api.machines.result, { key, id });

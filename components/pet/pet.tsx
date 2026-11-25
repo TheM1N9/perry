@@ -6,8 +6,9 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "motion/react";
 import { catchError, type ErrorInfo } from "next/error";
+import { toast } from "sonner";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { useConnection, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
+import { useConnection, useConvex, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { shownStep, type Pose } from "@/convex/lib/activity";
@@ -27,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlatypusArt } from "@/components/dashboard/platypus";
 import { updateReady, useUpdates } from "@/components/dashboard/updates";
 import { usePause } from "@/components/dashboard/pause";
+import { useNeedsYouCount } from "@/components/dashboard/needs-you-count";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
 import { PetChat, keepPicture, type PetChatId, type Shot, type TakenShot } from "./chat";
 import { Empty } from "./empty";
@@ -120,28 +122,50 @@ const REMARK_EVERY_MS = { news: 30_000, added: 20_000, looked: 30_000 } as const
 const AWAY_SHOWS_MS = 20_000;
 
 export function PetScreen() {
+  const client = useConvex();
   const [key, setKey] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    client.clearChatCache();
     // The window's page is see-through; only what he draws shows.
-    for (const element of [document.documentElement, document.body]) element.style.background = "transparent";
+    const backgrounds = [document.documentElement, document.body].map(element => ({ element, color: element.style.getPropertyValue("background-color"), priority: element.style.getPropertyPriority("background-color") }));
+    const colorScheme = document.documentElement.style.getPropertyValue("color-scheme");
+    const schemePriority = document.documentElement.style.getPropertyPriority("color-scheme");
+    for (const { element } of backgrounds) element.style.backgroundColor = "transparent";
     document.documentElement.style.colorScheme = "normal";
     // The pet's window opens with the key in the fragment, as `perry open` does; it is kept and taken out of the address.
     const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("key");
-    if (fromLink) {
-      window.localStorage.setItem(KEY_STORAGE, fromLink);
-      window.history.replaceState(window.history.state, "", window.location.pathname);
+    let unlocked = fromLink;
+    try {
+      if (fromLink) window.localStorage.setItem(KEY_STORAGE, fromLink);
+      else unlocked = window.localStorage.getItem(KEY_STORAGE);
+    } catch {
+      if (fromLink) toast.info("Unlocked for this tab. Browser storage is unavailable, so the key won't be remembered.");
+    } finally {
+      if (fromLink) window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
     }
-    setKey(window.localStorage.getItem(KEY_STORAGE));
+    setKey(unlocked);
     setReady(true);
-  }, []);
+    return () => {
+      client.clearChatCache();
+      for (const { element, color, priority } of backgrounds) element.style.setProperty("background-color", color, priority);
+      document.documentElement.style.setProperty("color-scheme", colorScheme, schemePriority);
+    };
+  }, [client]);
   // A picture of the screen is sent as a file, which the media server takes with the key in its cookie, as the dashboard sets it.
   useEffect(() => {
-    if (key) document.cookie = `perry_media=${encodeURIComponent(key)}; Path=/api/media; SameSite=Strict; Max-Age=31536000`;
-  }, [key]);
+    if (!ready) return;
+    document.cookie = key ? `perry_media=${encodeURIComponent(key)}; Path=/api/media; SameSite=Strict; Max-Age=31536000` : "perry_media=; Path=/api/media; SameSite=Strict; Max-Age=0";
+  }, [ready, key]);
 
-  const session = useMemo(() => key ? { dashboardKey: key, lock: () => { window.localStorage.removeItem(KEY_STORAGE); setKey(null); } } : null, [key]);
+  const lock = useCallback(() => {
+    client.clearChatCache();
+    try { window.localStorage.removeItem(KEY_STORAGE); }
+    catch { toast.error("This tab is locked, but the browser could not remove its remembered key. Clear this site's browser data before sharing it."); }
+    setKey(null);
+  }, [client]);
+  const session = useMemo(() => key ? { dashboardKey: key, lock } : null, [key, lock]);
   useClickThrough();
 
   if (!ready) return null;
@@ -222,6 +246,24 @@ const STEP_TIMER_MS = 5_000;
 
 function Pet() {
   const key = useDashboardKey();
+  // Preferences still work for this mounted pet when the browser refuses persistence.
+  const preferences = useMemo(() => {
+    const unsaved = new Map<string, string | null>();
+    return {
+      getItem(name: string) {
+        if (unsaved.has(name)) return unsaved.get(name) ?? null;
+        try { return window.localStorage.getItem(name); } catch { return null; }
+      },
+      setItem(name: string, value: string) {
+        try { window.localStorage.setItem(name, value); unsaved.delete(name); }
+        catch { unsaved.set(name, value); }
+      },
+      removeItem(name: string) {
+        try { window.localStorage.removeItem(name); unsaved.delete(name); }
+        catch { unsaved.set(name, null); }
+      },
+    };
+  }, []);
   /**
    * On another of the owner's computers, paired with a key of its own (its prefix,
    * PET_KEY_PREFIX in convex/lib/devices.ts), never the dashboard key. The server
@@ -230,6 +272,7 @@ function Pet() {
   const paired = key.startsWith("pet_");
   const board = useQuery(api.todos.board, { key });
   const approvals = useQuery(api.approvals.pending, { key });
+  const needs = useNeedsYouCount();
   const inbox = useQuery(api.dashboard.getInbox, { key });
   const chats = useQuery(api.dashboard.listChats, { key });
   const setDone = useMutation(api.todos.setDone);
@@ -255,19 +298,19 @@ function Pet() {
   const localVoiceNow = useRef(localVoice);
   localVoiceNow.current = localVoice;
   useEffect(() => {
-    try { setLocalVoice({ ...DEFAULT_VOICE, ...JSON.parse(window.localStorage.getItem(VOICE_STORAGE) ?? "{}") as Partial<LocalVoice> }); } catch { /* The defaults will do. */ }
-  }, []);
+    try { setLocalVoice({ ...DEFAULT_VOICE, ...JSON.parse(preferences.getItem(VOICE_STORAGE) ?? "{}") as Partial<LocalVoice> }); } catch { /* The defaults will do. */ }
+  }, [preferences]);
   const changeVoice = useCallback((change: Partial<LocalVoice>) => {
     const next = { ...localVoiceNow.current, ...change };
     setLocalVoice(next);
-    window.localStorage.setItem(VOICE_STORAGE, JSON.stringify(next));
-  }, []);
+    preferences.setItem(VOICE_STORAGE, JSON.stringify(next));
+  }, [preferences]);
   const [quietUntil, setQuietUntil] = useState(0);
-  useEffect(() => { setQuietUntil(Number(window.localStorage.getItem(QUIET_STORAGE) ?? 0) || 0); }, []);
+  useEffect(() => { setQuietUntil(Number(preferences.getItem(QUIET_STORAGE) ?? 0) || 0); }, [preferences]);
   const quietFor = useCallback((until: number) => {
     setQuietUntil(until);
-    window.localStorage.setItem(QUIET_STORAGE, String(until));
-  }, []);
+    preferences.setItem(QUIET_STORAGE, String(until));
+  }, [preferences]);
   // Whether to show him how to talk: assumed already shown until this computer says otherwise, so it never flashes up.
   const [offering, setOffering] = useState(false);
   const [teachKeys, setTeachKeys] = useState(false);
@@ -359,10 +402,10 @@ function Pet() {
   }, [say]);
   const setChatId = useCallback((id: PetChatId) => {
     setChatIdState(id);
-    if (id) window.localStorage.setItem(CHAT_STORAGE, id);
-    else window.localStorage.removeItem(CHAT_STORAGE);
-  }, []);
-  useEffect(() => { setChatIdState(window.localStorage.getItem(CHAT_STORAGE) as PetChatId); }, []);
+    if (id) preferences.setItem(CHAT_STORAGE, id);
+    else preferences.removeItem(CHAT_STORAGE);
+  }, [preferences]);
+  useEffect(() => { setChatIdState(preferences.getItem(CHAT_STORAGE) as PetChatId); }, [preferences]);
   useEffect(() => {
     if (selectedChatId && chats && !chatId) setChatId(null);
   }, [selectedChatId, chats, chatId, setChatId]);
@@ -402,10 +445,10 @@ function Pet() {
   const [updateNews, setUpdateNews] = useState<number | null>(null);
   useEffect(() => {
     const sha = updates && updateReady(updates) ? updates.latest?.sha : undefined;
-    if (!sha || window.localStorage.getItem(UPDATE_STORAGE) === sha) return;
-    window.localStorage.setItem(UPDATE_STORAGE, sha);
+    if (!sha || preferences.getItem(UPDATE_STORAGE) === sha) return;
+    preferences.setItem(UPDATE_STORAGE, sha);
     setUpdateNews(Date.now() + UPDATE_SHOWS_MS);
-  }, [updates]);
+  }, [updates, preferences]);
   // The engines he works with, near or at their plan's limit: said before a reply fails for it, not after.
   const planLimits = useQuery(api.usage.limits, { key });
   const limits = (planLimits?.engines ?? [])
@@ -419,11 +462,15 @@ function Pet() {
   const [limitNews, setLimitNews] = useState<{ mark: string; until: number } | null>(null);
   useEffect(() => {
     if (!limit) return;
-    const seen: string[] = JSON.parse(window.localStorage.getItem(LIMIT_STORAGE) ?? "[]");
+    let seen: string[] = [];
+    try {
+      const saved: unknown = JSON.parse(preferences.getItem(LIMIT_STORAGE) ?? "[]");
+      if (Array.isArray(saved)) seen = saved.filter((item): item is string => typeof item === "string");
+    } catch { /* A damaged preference does not block the warning. */ }
     if (seen.includes(limit.mark)) return;
-    window.localStorage.setItem(LIMIT_STORAGE, JSON.stringify([...seen, limit.mark].slice(-20)));
+    preferences.setItem(LIMIT_STORAGE, JSON.stringify([...seen, limit.mark].slice(-20)));
     setLimitNews({ mark: limit.mark, until: Date.now() + LIMIT_SHOWS_MS });
-  }, [limit?.mark]);
+  }, [limit?.mark, preferences]);
   const resume = useCallback(() => {
     void setPaused(false).then(() => say("I'm back on", undefined, 2500), (cause) => say("I couldn't resume", errorText(cause), 6000));
   }, [setPaused, say]);
@@ -553,15 +600,15 @@ function Pet() {
     setDraft((previous) => (previous.trim() ? `${previous.trimEnd()} ${text}` : text));
     if (sends) setSendSignal((count) => count + 1);
     // The first time: he makes something of it, and the welcome page hears.
-    if (!window.localStorage.getItem(TRIED_STORAGE)) {
-      window.localStorage.setItem(TRIED_STORAGE, "1");
+    if (!preferences.getItem(TRIED_STORAGE)) {
+      preferences.setItem(TRIED_STORAGE, "1");
       setOffering(false);
       setFirstWords(true);
       setCheer((count) => count + 1);
       say("Well done!", "That's all it takes. Talk to me from anywhere.", 5000);
       attempt(noteTalked({ key }));
     }
-  }, [attempt, key, noteTalked, say]);
+  }, [attempt, key, noteTalked, say, preferences]);
   const retryHeard = useCallback(() => {
     // Back in the box to check, rather than sent: it has been a while since it was said.
     talkSends.current = false;
@@ -659,20 +706,20 @@ function Pet() {
   // Show him how, a few times at most, until it has been tried or waved away.
   useEffect(() => {
     if (!window.perryPet || !hotkey.hotkey) return;
-    if (window.localStorage.getItem(TRIED_STORAGE)) { setTeachKeys((Number(window.localStorage.getItem(`${TRIED_STORAGE}.uses`)) || 0) < 5); return; }
+    if (preferences.getItem(TRIED_STORAGE)) { setTeachKeys((Number(preferences.getItem(`${TRIED_STORAGE}.uses`)) || 0) < 5); return; }
     setTeachKeys(true);
-    const offers = Number(window.localStorage.getItem(OFFERS_STORAGE)) || 0;
+    const offers = Number(preferences.getItem(OFFERS_STORAGE)) || 0;
     if (offers >= MOST_OFFERS) return;
-    window.localStorage.setItem(OFFERS_STORAGE, String(offers + 1));
+    preferences.setItem(OFFERS_STORAGE, String(offers + 1));
     setOffering(true);
-  }, [hotkey.hotkey]);
+  }, [hotkey.hotkey, preferences]);
   // Keycaps in the empty chat stop once they have been used a few times.
   useEffect(() => {
     if (voice.state !== "listening") return;
-    const uses = (Number(window.localStorage.getItem(`${TRIED_STORAGE}.uses`)) || 0) + 1;
-    window.localStorage.setItem(`${TRIED_STORAGE}.uses`, String(uses));
+    const uses = (Number(preferences.getItem(`${TRIED_STORAGE}.uses`)) || 0) + 1;
+    preferences.setItem(`${TRIED_STORAGE}.uses`, String(uses));
     if (uses >= 5) setTeachKeys(false);
-  }, [voice.state]);
+  }, [voice.state, preferences]);
   // A picture of the screen: his chat opens with it in the box, ready for the question.
   const showShot = useCallback((taken: TakenShot) => {
     // What to allow on a Mac, and where, takes a while to read: it stays up longer.
@@ -727,17 +774,19 @@ function Pet() {
     return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("blur", onBlur); };
   }, [stopTalking]);
 
-  const done = (todo: TodoView) => {
-    attempt(setDone({ key, id: todo.id, done: true }));
+  const celebrateDone = (todo: TodoView) => {
     setCheer((count) => count + 1);
     const streak = (board?.streak ?? 0) || 1;
     say("Done!", streak > 1 ? `${plural(streak, "day")} in a row` : undefined, 5000, undefined, { undo: () => attempt(setDone({ key, id: todo.id, done: false })) });
+  };
+  const done = (todo: TodoView) => {
+    attempt(setDone({ key, id: todo.id, done: true }).then(() => celebrateDone(todo)));
   };
 
   // What he has to say, most pressing first: a computer waiting on you, something late, the last minutes
   // before something, a reply you have not read, what he is working on, a heads-up.
   const asking = (approvals ?? []).filter((item) => item.expiresAt > now);
-  const needs = asking.length + (inbox?.length ?? 0);
+  const unreadUpdates = (inbox ?? []).filter(item => item.kind !== "question").length;
   const timed = (board?.open ?? []).filter((todo) => todo.dueAt !== undefined);
   const late = timed.filter((todo) => todo.dueAt! <= now);
   const next = timed.find((todo) => todo.dueAt! > now);
@@ -871,7 +920,7 @@ function Pet() {
   if (!bubble && offering && hotkey.hotkey) {
     ambient = true;
     bubble = (
-      <Bubble id="try-talking" title="Say hi to me" onClose={() => { window.localStorage.setItem(OFFERS_STORAGE, String(MOST_OFFERS)); setOffering(false); }}>
+      <Bubble id="try-talking" title="Say hi to me" onClose={() => { preferences.setItem(OFFERS_STORAGE, String(MOST_OFFERS)); setOffering(false); }}>
         <p className="text-xs leading-relaxed text-muted-foreground">{hotkey.hold ? "Tap " : "Hold "}<Kbd>{describe(hotkey.hotkey, /Mac/.test(navigator.platform))}</Kbd>{hotkey.hold ? ", talk, and tap it again." : " and talk."}</p>
       </Bubble>
     );
@@ -917,6 +966,8 @@ function Pet() {
             <>Quiet until {new Date(quietUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} ·{" "}
               <Button variant="link" className="h-auto p-0 text-xs" onClick={() => quietFor(0)}>Undo</Button>
             </>
+          ) : unreadUpdates ? (
+            <Button variant="link" className="h-auto p-0 text-xs font-normal" onClick={() => { setTab("needs"); setOpen(true); }}>{plural(unreadUpdates, "update")} to read</Button>
           ) : "Here when you need him";
   const panel = (
     <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)} onOpenApp={() => openPath("/")}
@@ -933,7 +984,7 @@ function Pet() {
           shot={shot} onShot={setShot} onLook={window.perryPet?.look ? () => void lookNow() : undefined} lookKeys={lookKey.hotkey} />
       )
         : tab === "needs" ? <PetNeedsYou now={now} onChat={openChat} open={openPath} />
-          : <PetTodos board={board} now={now} onDone={done} onAdded={(title, dueAt) => say(`Got it: ${title}`, dueAt ? dueLabel(dueAt) : undefined, 2500)} />}
+          : <PetTodos board={board} now={now} onDone={celebrateDone} onAdded={(title, dueAt) => say(`Got it: ${title}`, dueAt ? dueLabel(dueAt) : undefined, 2500)} />}
     </Panel>
   );
   return (
@@ -1133,15 +1184,16 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
   useEffect(() => {
     if (asleep) return;
     let timer: ReturnType<typeof setTimeout>;
+    let blinkTimer: ReturnType<typeof setTimeout> | undefined;
     const next = () => {
       timer = setTimeout(() => {
         setBlink(true);
-        setTimeout(() => setBlink(false), 140);
+        blinkTimer = setTimeout(() => setBlink(false), 140);
         next();
       }, 2600 + Math.random() * 3200);
     };
     next();
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); clearTimeout(blinkTimer); };
   }, [asleep]);
 
   // Woken: the fedora drops back on, and he hops as it lands, a little squashed, then up. His own

@@ -7,6 +7,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { pausedAt } from "./pause";
 import { heartbeat } from "./initiative";
 import { presenceOf } from "./todos";
+import { ArgumentError } from "../server/validate";
 
 const HOUR = 60 * 60_000;
 /** dueAt is an earliest reconsideration time, never a scheduled send. */
@@ -20,7 +21,7 @@ export function approvalQuestion(row: Pick<Doc<"approvals">, "title" | "detail">
 /** Checks the question generation again when a held notification is finally sent. */
 export async function decisionActive(ctx: QueryCtx, ref: { taskId: Id<"tasks">; version: string }): Promise<boolean> {
   const task = await ctx.db.get(ref.taskId);
-  if (!task || task.status !== "blocked" || task.decision?.version !== ref.version || await pausedAt(ctx)) return false;
+  if (!task || task.status !== "blocked" || !task.question?.trim() || task.completion || task.decision?.version !== ref.version || await pausedAt(ctx)) return false;
   return !task.goalId || (await ctx.db.get(task.goalId))?.status === "active";
 }
 
@@ -39,15 +40,30 @@ async function change(ctx: MutationCtx, args: { id: string; version?: string; un
   if (args.conversationId && !await ownerChat(ctx, args.conversationId)) throw new Error("Only the owner can answer this decision.");
   const id = ctx.db.normalizeId("tasks", args.id);
   const task = id ? await ctx.db.get(id) : null;
-  if (!task || task.status !== "blocked" || !task.decision || args.version && args.version !== task.decision.version) return "That question has already changed or been answered. Check Work for the current decision.";
+  if (!task || task.status !== "blocked" || !task.question?.trim() || task.completion || !task.decision || args.version && args.version !== task.decision.version) return "That question has already changed or been answered. Check Work for the current decision.";
   if (args.drop) {
     await ctx.runMutation(internal.work.updateTask, { taskId: task._id, status: "cancelled" });
     return "Dropped. I won’t ask again.";
   }
-  if (!Number.isFinite(args.until) || args.until! < Date.now() + 60_000 || args.until! > Date.now() + 90 * 24 * HOUR) throw new Error("Choose a reminder between a minute and 90 days from now.");
-  await ctx.db.patch(task._id, { decision: { ...decisionReceipt(args.until), snoozedUntil: args.until, reason: "The owner asked to wait until this time." }, updatedAt: Date.now() });
+  if (!Number.isFinite(args.until) || args.until! < Date.now() + 60_000 || args.until! > Date.now() + 90 * 24 * HOUR) throw new ArgumentError("Choose a reminder between a minute and 90 days from now.");
+  const decision = { ...decisionReceipt(args.until), snoozedUntil: args.until, reason: "The owner asked to wait until this time." };
+  await ctx.db.patch(task._id, { decision, updatedAt: Date.now() });
+  await ctx.scheduler.runAt(args.until!, internal.taskDecisions.wakeSnoozed, { id: task._id, version: decision.version });
   return "Snoozed. I’ll wait until the chosen time.";
 }
+
+/** Native persisted scheduling refreshes open clients when a snooze becomes due. */
+export const wakeSnoozed = internalMutation({
+  args: { id: v.id("tasks"), version: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.id);
+    if (task?.status === "blocked" && task.question?.trim() && !task.completion && task.decision?.version === args.version && task.decision.snoozedUntil !== undefined && task.decision.snoozedUntil <= Date.now()) {
+      await ctx.db.patch(task._id, { decision: { ...task.decision, snoozedUntil: undefined } });
+    }
+    return null;
+  },
+});
 
 export const update = internalMutation({
   args: { id: v.string(), version: v.string(), until: v.optional(v.number()), drop: v.optional(v.boolean()), conversationId: v.id("conversations") },
@@ -60,8 +76,19 @@ export const snoozeFromDashboard = mutation({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const task = await ctx.db.get(args.id);
-    if (!task?.decision || task.status !== "blocked" || task.decision.version !== args.version) throw new Error("That question changed. Refresh Work before snoozing it.");
+    if (!task?.decision || task.status !== "blocked" || !task.question?.trim() || task.completion || task.decision.version !== args.version) throw new ArgumentError("That question changed. Refresh the Board before snoozing it.");
     return await change(ctx, args);
+  },
+});
+
+export const dropFromDashboard = mutation({
+  args: { key: v.string(), id: v.id("tasks"), version: v.string() },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const task = await ctx.db.get(args.id);
+    if (!task?.decision || task.status !== "blocked" || !task.question?.trim() || task.completion || task.decision.version !== args.version) throw new ArgumentError("That question changed. Refresh the Board before dropping it.");
+    return await change(ctx, { id: args.id, version: args.version, drop: true });
   },
 });
 
@@ -80,7 +107,7 @@ export const fromPhone = internalMutation({
     const action = callback ? callback[3] : command![2];
     const taskId = callback ? ctx.db.normalizeId("tasks", callback[1]) : null;
     const task = callback ? taskId ? await ctx.db.get(taskId) : null : await ctx.db.query("tasks").withIndex("by_decision_version", q => q.eq("decision.version", version)).first();
-    if (!task || task.status !== "blocked" || task.decision?.version !== version) return "That question has already changed or been answered. Check Work for the current decision.";
+    if (!task || task.status !== "blocked" || !task.question?.trim() || task.completion || task.decision?.version !== version) return "That question has already changed or been answered. Check Work for the current decision.";
     const id = task._id;
     if (action === "s" || action.toLowerCase() === "tomorrow") return await change(ctx, { id, version, until: Date.now() + 24 * HOUR });
     if (action === "d" || action.toLowerCase() === "drop") return await change(ctx, { id, version, drop: true });
@@ -101,6 +128,7 @@ export const context = internalMutation({
     await ctx.db.patch(job._id, { decisionCursor: page.isDone ? undefined : page.continueCursor });
     const decisions = [];
     for (const task of page.page) {
+      if (!task.question?.trim() || task.completion) continue;
       if (task.goalId && (await ctx.db.get(task.goalId))?.status !== "active") continue;
       const history = await ctx.db.query("sent").withIndex("by_decision_task", q => q.eq("taskDecision.taskId", task._id)).order("desc").take(3);
       decisions.push({ taskId: task._id, version: task.decision!.version, title: task.title, question: task.question?.slice(0, 1600),
@@ -117,8 +145,9 @@ export const context = internalMutation({
 export const armWaiting = internalMutation({
   args: {}, returns: v.null(),
   handler: async (ctx) => {
-    const tasks = await ctx.db.query("tasks").withIndex("by_status", q => q.eq("status", "blocked")).filter(q => q.eq(q.field("decision"), undefined)).take(20);
-    for (const task of tasks) await ctx.db.patch(task._id, { decision: decisionReceipt() });
+    const tasks = await ctx.db.query("tasks").withIndex("by_status", q => q.eq("status", "blocked"))
+      .filter(q => q.and(q.eq(q.field("decision"), undefined), q.eq(q.field("completion"), undefined), q.neq(q.field("question"), undefined), q.neq(q.field("question"), ""))).take(20);
+    for (const task of tasks) if (task.question?.trim()) await ctx.db.patch(task._id, { decision: decisionReceipt() });
     return null;
   },
 });

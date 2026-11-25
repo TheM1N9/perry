@@ -61,6 +61,7 @@ export async function startStandIn() {
   const deleted: string[] = [];
   const links: Array<{ toolkit: string; callbackUrl?: string }> = [];
   const unknown: string[] = [];
+  const profileReads: Array<{ accountId: string; action: string }> = [];
   let base = "";
 
   const logo = (slug: string) => `${base}/logo/${slug}.svg`;
@@ -109,6 +110,18 @@ export async function startStandIn() {
       const items = connections.filter(() => users.length === 0 || users.includes("owner")).map(account);
       return json(res, 200, { items, next_cursor: null, total_pages: 1, current_page: 1 });
     }
+    if (req.method === "GET" && (match = path.match(/^\/connected_accounts\/([\w-]+)$/))) {
+      const item = connections.find(entry => entry.id === match![1]);
+      return item ? json(res, 200, account(item)) : json(res, 404, { error: { message: "Connected account not found" } });
+    }
+    if (req.method === "POST" && (match = path.match(/^\/connected_accounts\/([\w-]+)\/refresh$/))) {
+      const item = connections.find(entry => entry.id === match![1]);
+      if (!item) return json(res, 404, { error: { message: "Connected account not found" } });
+      const callbackUrl = url.searchParams.get("redirect_url") ?? undefined;
+      if (item.status === "ACTIVE" && !callbackUrl) return json(res, 200, { id: item.id, status: "ACTIVE" });
+      links.push({ toolkit: item.toolkit, callbackUrl });
+      return json(res, 200, { id: item.id, status: "INITIATED", redirect_url: `${base}/link?toolkit=${encodeURIComponent(item.toolkit)}` });
+    }
     if (req.method === "DELETE" && (match = path.match(/^\/connected_accounts\/([\w-]+)$/))) {
       const index = connections.findIndex((item) => item.id === match![1]);
       if (index < 0) return json(res, 404, { error: { message: "Connected account not found" } });
@@ -128,6 +141,7 @@ export async function startStandIn() {
       });
     }
     if (req.method === "POST" && (match = path.match(/^\/tools\/execute\/(\w+)$/))) {
+      profileReads.push({ accountId: body.connected_account_id, action: match[1] });
       const item = connections.find((entry) => entry.id === body.connected_account_id);
       const answer = WHO_AM_I[match[1]];
       if (!item || !answer || item.status !== "ACTIVE" || !item.identity) return json(res, 200, { data: {}, error: "Not available", successful: false, log_id: "log_stand_in" });
@@ -148,7 +162,7 @@ export async function startStandIn() {
   base = `http://127.0.0.1:${port}`;
   return {
     url: base,
-    connections, deleted, links, unknown,
+    connections, deleted, links, unknown, profileReads,
     /** Change a connection's state at "Composio", as time would. */
     set: (id: string, status: string) => { connections.find((item) => item.id === id)!.status = status; },
     close: () => new Promise<void>((done) => server.close(() => done())),

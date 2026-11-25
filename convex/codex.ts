@@ -9,7 +9,7 @@ import { ConvexError, v, type Infer } from "convex/values";
 import { markUsed } from "./archive";
 import { TAKE_LONGER_MAX_MIN } from "./lib/turnLimits";
 import { settleRunSpans } from "./lib/settle-traces";
-import { settleHandoffs } from "./tasks";
+import { completionResult, settleHandoffs, settleTrackedTasks } from "./tasks";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { createThread, saveMessages, handoffText, historyOf } from "./lib/agent";
@@ -21,7 +21,7 @@ import { assertRunning, pausedAt } from "./pause";
 import { authenticate } from "./runner";
 import { recordTurnHeartbeat } from "./lib/turn-health";
 import { ABSOLUTE_PATH, describePath, stepsKey } from "./media";
-import { index as indexInLibrary } from "./library";
+import { index as indexInLibrary, isLocalAttachment, localRunnerId } from "./library";
 import { QUIET } from "./jobs";
 import { HIDDEN, hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
@@ -820,7 +820,7 @@ export const traceTurn = mutation({
  * run, and none from a change that had a saved value in it: the step hides
  * that value, but the file itself would show it.
  */
-async function linkFiles(ctx: MutationCtx, conversationId: Id<"conversations">, runId: Id<"runs">, span: { name: string; input?: string; output?: string }) {
+async function linkFiles(ctx: MutationCtx, conversationId: Id<"conversations">, runId: Id<"runs">, span: { name: string; input?: string; output?: string }, producer: Id<"runners"> | undefined) {
   if (`${span.input ?? ""}${span.output ?? ""}${span.name}`.includes(HIDDEN)) return;
   const paths = span.name.split(", ").filter((path) => ABSOLUTE_PATH.test(path)).slice(0, 20);
   if (!paths.length) return;
@@ -831,7 +831,7 @@ async function linkFiles(ctx: MutationCtx, conversationId: Id<"conversations">, 
   for (const path of paths) {
     if (linked.has(path)) continue;
     // A file written in Perry's files folder is his, in the Library (library.ts); one elsewhere is only linked.
-    await indexInLibrary(ctx, await ctx.db.insert("chatAttachments", { conversationId, messageKey, localPath: path, ...describePath(path), size: 0, createdAt: Date.now() }));
+    await indexInLibrary(ctx, await ctx.db.insert("chatAttachments", { conversationId, messageKey, originRunnerId: producer, originPath: path, localPath: path, ...describePath(path), size: 0, createdAt: Date.now() }));
   }
 }
 
@@ -903,7 +903,7 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
       .first();
     // Old starts, retries and completions cannot reopen or rewrite a finished step.
     if (existing && existing.status !== "running") continue;
-    if (row.kind === "fileChange" && row.status === "ok") await linkFiles(ctx, job.conversationId, run._id, row);
+    if (row.kind === "fileChange" && row.status === "ok") await linkFiles(ctx, job.conversationId, run._id, row, job.runnerId);
     if (existing) {
       await ctx.db.patch(existing._id, row);
       continue;
@@ -1029,12 +1029,19 @@ export const finishTurn = mutation({
       const stored = item.storageId ? await ctx.storage.getMetadata(item.storageId) : null;
       const local = item.localPath && ABSOLUTE_PATH.test(item.localPath) ? item.localPath : undefined;
       if (!stored && !local) continue;
+      if (local && shared.some(existing => existing.removedAt && existing.originPath === local)) {
+        if (item.storageId && !await ctx.db.query("chatAttachments").withIndex("by_storage", q => q.eq("storageId", item.storageId)).first()
+          && !await ctx.db.query("library").withIndex("by_storage", q => q.eq("storageId", item.storageId)).first()) await ctx.storage.delete(item.storageId);
+        continue;
+      }
       mediaKey = `codex-${job._id}`;
       // The stored copy is reachable even when the runner is on another computer.
       const row = stored && local ? shared.find((existing) => existing.localPath === local && !existing.storageId) : undefined;
       if (row) {
+        await indexInLibrary(ctx, row._id);
+        const linked = await ctx.db.get(row._id);
         await ctx.db.patch(row._id, { storageId: item.storageId, localPath: undefined, size: stored!.size });
-        for (const entry of await ctx.db.query("library").withIndex("by_path", q => q.eq("localPath", local!)).collect()) await ctx.db.patch(entry._id, { storageId: item.storageId, localPath: undefined, size: stored!.size });
+        if (linked?.libraryId) await ctx.db.patch(linked.libraryId, { storageId: item.storageId, localPath: job.runnerId === await localRunnerId(ctx) ? local : undefined, size: stored!.size });
         await indexInLibrary(ctx, row._id);
         continue;
       }
@@ -1206,9 +1213,10 @@ export const turnFiles = internalQuery({
       .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey))
       .collect();
     // A file deleted from the Library is not sent.
-    return rows.filter((row) => !row.removedAt).map((row) => ({
-      storageId: row.storageId, localPath: row.localPath, fileName: row.fileName, contentType: row.contentType, size: row.size, delivery: row.delivery,
-    }));
+    return await Promise.all(rows.filter((row) => !row.removedAt).map(async (row) => ({
+      storageId: row.storageId, localPath: !row.storageId && row.localPath && await isLocalAttachment(ctx, row) ? row.localPath : undefined,
+      fileName: row.fileName, contentType: row.contentType, size: row.size, delivery: row.delivery,
+    })));
   },
 });
 
@@ -1243,7 +1251,9 @@ async function deliverToTelegram(
   const onSent = async (id: number, body: string) => { await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: chatId, messageId: String(id), text: body, isPerry: true }); };
   const send = async (file: TurnFile, caption?: string) => {
     if (!file.storageId) {
-      await sendMessage(token, chatId, `${file.fileName} is on your computer at ${file.localPath}; it could not be uploaded.`);
+      await sendMessage(token, chatId, file.localPath
+        ? `${file.fileName} is on your computer at ${file.localPath}; it could not be uploaded.`
+        : `${file.fileName} could not be sent. Its source machine must upload a copy before it can be sent.`);
       return;
     }
     if (file.size > UPLOAD_LIMIT) {
@@ -1361,11 +1371,13 @@ export const markFinalized = internalMutation({
       lastMessageAt: Date.now(),
       pendingTurns: conversation.channel === "web" ? Math.max(0, (conversation.pendingTurns ?? 0) - 1 - steers.length) : conversation.pendingTurns,
     });
+    await settleTrackedTasks(ctx, job._id);
     // Finish the task in the same transaction: a retry cannot slip between finalization and its task callback.
     if (conversation?.taskId && !job.flush && !job.reactionOnly) {
+      const result = await completionResult(ctx, job);
       await ctx.runMutation(internal.tasks.afterTurn, {
-        id: conversation.taskId, ...(job.stopped ? { error: job.error ?? STOPPED } : job.error && turnErrorCode(job) !== "empty_reply" ? { error: job.error } : {}),
-        ...(job.response !== undefined ? { response: hide(job.response, await savedValues(ctx)) } : {}),
+        id: conversation.taskId, turnId: job._id, ...(job.stopped ? { error: job.error ?? STOPPED } : job.error && turnErrorCode(job) !== "empty_reply" ? { error: job.error } : {}),
+        ...(result ? { response: result.text, resultAvailable: result.available } : {}),
       });
     }
     return null;

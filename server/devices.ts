@@ -21,7 +21,8 @@ import { backend } from "./index";
 const PET_CALLS: Record<string, "which pet" | true> = {
   "todos:board": true, "todos:add": true, "todos:restore": true, "todos:setDone": true, "todos:pushBack": true, "todos:remove": true, "todos:setRepeat": true, "todos:endDay": true,
   "todos:presence": "which pet",
-  "approvals:pending": true, "approvals:decide": true,
+  "approvals:pending": true, "approvals:pendingCount": true, "approvals:decide": true,
+  "questions:pendingCount": true,
   "dashboard:getInbox": true, "dashboard:dismissInbox": true, "dashboard:getShortcuts": true, "dashboard:getActivity": true,
   "dashboard:listChats": true, "dashboard:getChat": true, "dashboard:getChatMessages": true, "dashboard:markChatSeen": true,
   "dashboard:createChat": true, "dashboard:sendChat": true, "dashboard:stopChat": true, "dashboard:registerAttachment": true,

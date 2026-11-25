@@ -93,6 +93,7 @@ export const accept = mutation({
     const note = await liveNote(ctx, args.id);
     const proposal = note.riffProposal;
     if (!proposal || proposal.at !== args.at) return { ok: false, reason: "gone" };
+    if (proposal.title !== undefined && proposal.baseRevision !== note.revision) return { ok: false, reason: "changed" };
     const base = proposal.baseContent.replace(/\s+$/, "");
     let content: string;
     if (note.content === proposal.baseContent) content = proposal.content;

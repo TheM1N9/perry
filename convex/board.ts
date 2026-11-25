@@ -4,14 +4,17 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { describeStep } from "./lib/activity";
-import type { EngineKind } from "./lib/engines";
+import { ENGINES, type EngineKind } from "./lib/engines";
 import { turnHealth } from "./lib/turn-health";
 import { citedMemories } from "../lib/reply-text";
-import { APPROVAL_TTL_MS, BRAIN_TTL_MS } from "./approvals";
+import { BRAIN_TTL_MS, isPendingForOwner } from "./approvals";
 import { STOPPED } from "./codex";
 import { QUIET } from "./jobs";
 import { boardLink } from "../lib/board-links";
 import { dependenciesOf, type TaskDependency } from "./tasks";
+import { byQueuePosition, MAX_QUEUED_PER_CHAT } from "./queue";
+import { pausedAt } from "./pause";
+import { turnForRun } from "./lib/run-turn";
 
 /**
  * The Board (issue #363): what Perry is doing, read from what it already
@@ -52,6 +55,10 @@ export type BoardThread = {
   nextAt?: number;
   projectId?: Id<"projects">;
   chatId?: Id<"conversations">;
+  /** A tracked plan's origin is for review, not evidence of its own executing agent. */
+  sourceChatId?: Id<"conversations">;
+  /** A background task has a turn that can accept an owner update right now. */
+  canSteer?: boolean;
   /** A sub-agent's: the thread whose turn started it (a chat turn, a task or a schedule), which it is listed under. */
   parent?: string;
   /** Its address on the Board: its channel, with it open. */
@@ -91,6 +98,7 @@ export type BoardView = {
 export type FeedItem =
   | {
     kind: "run"; id: string; runId: Id<"runs">; at: number; holder?: BoardHolder; status: BoardStatus; label: string; endedAt?: number;
+    route?: Doc<"runs">["route"];
     /** Its reply, when the thread ends with it as the result: the timeline leaves it out rather than say it twice. */
     omit?: string;
   }
@@ -166,7 +174,7 @@ function loader(ctx: QueryCtx, now: number) {
     return chats.get(id)!;
   };
   const turnOf = (runId: Id<"runs">) => {
-    if (!turns.has(runId)) turns.set(runId, ctx.db.query("codexTurns").withIndex("by_run", (q) => q.eq("runId", runId)).first());
+    if (!turns.has(runId)) turns.set(runId, turnForRun(ctx, runId));
     return turns.get(runId)!;
   };
   const allRunners = () => runners ??= ctx.db.query("runners").collect().then((rows) => new Map(rows.map((row) => [row._id, row])));
@@ -174,7 +182,10 @@ function loader(ctx: QueryCtx, now: number) {
   const pending = () => asking ??= ctx.db.query("approvals")
     .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", now - BRAIN_TTL_MS))
     .collect()
-    .then((rows) => rows.filter((row) => row.createdAt > now - (row.kind === "brain" ? BRAIN_TTL_MS : APPROVAL_TTL_MS)));
+    .then(async (rows) => {
+      const valid = await Promise.all(rows.map(row => isPendingForOwner(ctx, row)));
+      return rows.filter((_row, index) => valid[index]);
+    });
   const latestRun = (conversationId: Id<"conversations"> | undefined) => conversationId
     ? ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", conversationId)).order("desc").first()
     : Promise.resolve(null);
@@ -192,11 +203,19 @@ function loader(ctx: QueryCtx, now: number) {
     if (run.status === "ok") return { status: "done", label: "Done" };
     if (run.status === "rejected") return { status: "failed", label: "Rejected" };
     if (run.status === "error") return run.error === STOPPED ? { status: "done", label: "Stopped" } : { status: "failed", label: "Failed" };
+    const turn = await turnOf(run._id);
+    if (!turn) {
+      const steer = await ctx.db.query("codexSteers").withIndex("by_run", q => q.eq("runId", run._id)).first();
+      if (steer?.status === "pending" && steer.conversationId === run.conversationId) return { status: "queued", label: "Queued update" };
+    }
     if ((await pending()).some((row) => row.conversationId === run.conversationId)) return { status: "waiting", label: "Needs you" };
     if ((await nativeQuestions()).some(row => row.conversationId === run.conversationId)) return { status: "waiting", label: "Needs you" };
-    const turn = await turnOf(run._id);
-    if (!turn) return now - run.startedAt > ORPHAN_MS ? { status: "failed", label: "Interrupted" } : { status: "working", label: "Working" };
-    if (turn.status === "queued") return turn.waiting ? { status: "blocked", label: "Waiting for reset" } : { status: "queued", label: "Queued" };
+    if (!turn) return now - run.startedAt > ORPHAN_MS ? { status: "failed", label: "Interrupted" } : { status: "queued", label: "Preparing" };
+    if (turn.waiting && (turn.status === "queued" || turn.retrying)) return { status: "blocked", label: "Waiting for reset" };
+    if (turn.retrying) return { status: "queued", label: "Retrying" };
+    if (turn.status === "queued") return { status: "queued", label: turn.preparing ? "Preparing" : "Queued" };
+    if (turn.status !== "running") return { status: "blocked", label: turn.finalizedAt === undefined ? "Finishing" : "Not running" };
+    if (turn.stopRequested) return { status: "blocked", label: "Stopping" };
     const runner = turn.runnerId ? (await allRunners()).get(turn.runnerId) ?? null : null;
     if (turn.status === "running" && turnHealth(turn, runner, now).unresponsive) return { status: "blocked", label: "Computer not responding" };
     return { status: "working", label: "Working" };
@@ -250,10 +269,24 @@ function loader(ctx: QueryCtx, now: number) {
   }
 
   async function taskThread(task: Doc<"tasks">): Promise<BoardThread> {
-    const run = await latestRun(task.conversationId);
+    let execution: Doc<"codexTurns"> | undefined;
+    if (task.status === "running" && task.conversationId) {
+      const ordinary = (turn: Doc<"codexTurns">) => turn.finalizedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint;
+      execution = (await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", task.conversationId!).eq("status", "running")).take(2)).find(ordinary);
+      if (!execution) execution = (await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", task.conversationId!).eq("status", "queued")).take(MAX_QUEUED_PER_CHAT)).filter(ordinary).sort(byQueuePosition)[0];
+      if (!execution) {
+        // Read a bounded queue's worth of recent attempts; an older delivery can still own work behind a newer receipt.
+        const delivering = await Promise.all((["done", "error"] as const).map(status => ctx.db.query("codexTurns")
+          .withIndex("by_conversation_status", q => q.eq("conversationId", task.conversationId!).eq("status", status)).order("desc").take(MAX_QUEUED_PER_CHAT * (ENGINES.length + 4))));
+        execution = delivering.flat().filter(ordinary).sort((a, b) => b._creationTime - a._creationTime)[0];
+      }
+    }
+    const recordedRun = !task.conversationId && task.originRunId ? await ctx.db.get(task.originRunId) : null;
+    const boundRun = recordedRun && recordedRun.conversationId === task.origin ? recordedRun : null;
+    const run = execution ? await ctx.db.get(execution.runId) : boundRun ?? await latestRun(task.conversationId);
+    const sourceChat = !task.conversationId && task.origin ? await chat(task.origin) : null;
     const dependencies = await dependenciesOf(ctx, task);
     const pending = dependencies.filter(dependency => dependency.status !== "done");
-    const active = task.plan.find((step) => step.status === "active")?.title;
     let state: { status: BoardStatus; label: string };
     let line: string | undefined;
     if (task.status === "queued") {
@@ -261,13 +294,25 @@ function loader(ctx: QueryCtx, now: number) {
       state = pending.length ? { status: "blocked", label: "Waiting on tasks" } : waiting ? { status: "blocked", label: "Waiting for reset" } : { status: "queued", label: "Queued" };
       line = pending.length ? pending.map(item => `${item.title}${item.status === "failed" || item.status === "cancelled" || item.status === "missing" ? ` (${item.status})` : ""}`).join(", ") : waiting ? task.waiting!.why : undefined;
     } else if (task.status === "running") {
-      state = run?.status === "running" ? await runState(run) : { status: "working", label: "Working" };
-      if (state.status === "done" || state.status === "failed") state = { status: "working", label: "Working" };
-      // In line or held up, it says nothing of a step; at work, the step it is on.
-      line = state.status === "working" || state.status === "waiting" ? (run?.status === "running" ? (await stepOf(run)).label : active) : undefined;
+      if (!task.conversationId && !boundRun) {
+        state = { status: "blocked", label: "Tracked" };
+        line = sourceChat ? "Plan recorded in a chat. Open its source chat to review progress." : "No active agent is linked to this plan. Review its saved progress here.";
+      } else {
+        state = run ? await runState(run) : { status: "blocked", label: "Not running" };
+        if (state.status === "done") state = { status: "blocked", label: "Not running" };
+        line = state.status === "working" || state.status === "waiting" ? (await stepOf(run!)).label
+          : state.status === "failed" ? firstLine(run?.error) ?? "This task's execution was interrupted. Open its chat to review the unfinished work."
+            : state.label === "Finishing" ? "The worker has finished. Its result is being saved and delivered."
+              : state.label === "Not running" ? "This task is unfinished and has no active turn. Open its chat to review before continuing."
+                : state.label === "Computer not responding" ? "The worker stopped checking in. Open its chat to review its progress."
+                  : state.label === "Stopping" ? "The worker is stopping; its completed work will be kept."
+                    : state.label === "Waiting for reset" ? execution?.waiting?.why : undefined;
+      }
     } else if (task.status === "blocked") {
-      state = task.question ? { status: "waiting", label: "Needs you" } : { status: "blocked", label: "Blocked" };
-      line = task.question;
+      state = task.completion ? { status: "blocked", label: "Result ready" }
+        : task.question && (task.decision?.snoozedUntil ?? 0) > now ? { status: "blocked", label: "Snoozed" }
+        : task.question ? { status: "waiting", label: "Needs you" } : { status: "blocked", label: "Blocked" };
+      line = task.completion ? task.result : task.question;
     } else if (task.status === "failed") {
       state = { status: "failed", label: "Failed" };
       line = task.error;
@@ -292,6 +337,8 @@ function loader(ctx: QueryCtx, now: number) {
       ...(task.projectId ? { projectId: task.projectId } : await projectOf(task.conversationId, task.origin)),
       ...(dependencies.length ? { dependencies } : {}),
       ...(task.conversationId ? { chatId: task.conversationId } : {}),
+      ...(sourceChat ? { sourceChatId: sourceChat._id } : {}),
+      canSteer: Boolean(task.status === "running" && task.turns && execution && (execution.status === "queued" || execution.status === "running") && run?.status === "running" && execution.engine && !execution.stopRequested && !execution.guest && !await pausedAt(ctx)),
       href: boardLink({ channel: "tasks", thread: `task:${task._id}` }),
     };
   }
@@ -522,7 +569,7 @@ export const get = query({
       waiting.push({ id: `native-question:${question._id}`, kind: "question", text: question.questions.map(item => item.question).join("\n"), where: chat?.title, ...(thread ? { thread } : {}), href: thread ? boardLink({ thread }) : `/chat/${question.conversationId}`, at: question.createdAt });
     }
     for (const task of active) {
-      if (task.status === "blocked" && task.question) waiting.push({ id: `question:${task._id}`, kind: "question", text: task.question, where: task.title, thread: `task:${task._id}`, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }), at: task.updatedAt });
+      if (task.status === "blocked" && task.question && (task.decision?.snoozedUntil ?? 0) <= now) waiting.push({ id: `question:${task._id}`, kind: "question", text: task.question, where: task.title, thread: `task:${task._id}`, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }), at: task.updatedAt });
     }
     for (const approval of await load.pending()) {
       const thread = await load.threadIdOf(approval.conversationId);
@@ -589,7 +636,7 @@ export const thread = query({
     };
     const runFeed = async (run: Doc<"runs">, withEnd: boolean) => {
       const state = await load.runState(run);
-      feed.push({ kind: "run", id: `run:${run._id}`, runId: run._id, at: run.startedAt, holder: await load.holderOf(run), ...state, ...(run.finishedAt !== undefined ? { endedAt: run.finishedAt } : {}) });
+      feed.push({ kind: "run", id: `run:${run._id}`, runId: run._id, at: run.startedAt, holder: await load.holderOf(run), ...state, ...(run.route ? { route: run.route } : {}), ...(run.finishedAt !== undefined ? { endedAt: run.finishedAt } : {}) });
       // A turn's reply is the last of its timeline; only a failure needs saying after it.
       if (withEnd && run.finishedAt !== undefined && run.status === "error" && run.error !== STOPPED) {
         feed.push({ kind: "error", id: `run:${run._id}:error`, at: run.finishedAt, text: run.error ?? "It stopped without saying why.", ...await lastStep(run) });
@@ -625,12 +672,13 @@ export const thread = query({
       const id = ctx.db.normalizeId("tasks", raw);
       const task = id ? await ctx.db.get(id) : null;
       if (!task) return null;
-      const runs = await runsOf(task.conversationId, TASK_RUNS);
+      const boundRun = !task.conversationId && task.originRunId ? await ctx.db.get(task.originRunId) : null;
+      const runs = boundRun && boundRun.conversationId === task.origin ? [boundRun] : await runsOf(task.conversationId, TASK_RUNS);
       for (const run of runs) await runFeed(run, false);
       for (const said of task.steering ?? []) feed.push({ kind: "said", id: `said:${said.requestId}`, at: said.createdAt, text: said.text });
-      await approvalsIn(task.conversationId);
+      await approvalsIn(task.conversationId ?? (boundRun && boundRun.conversationId === task.origin ? task.origin : undefined));
       if (task.status === "blocked" && task.question) feed.push({ kind: "question", id: `${args.id}:question`, at: task.updatedAt, text: task.question, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }) });
-      if (task.status === "done" && task.result) feed.push({ kind: "result", id: `${args.id}:result`, at: task.updatedAt, text: task.result });
+      if ((task.status === "done" || task.completion) && task.result) feed.push({ kind: "result", id: `${args.id}:result`, at: task.completion?.createdAt ?? task.updatedAt, text: task.result });
       if (task.status === "failed") feed.push({ kind: "error", id: `${args.id}:error`, at: task.updatedAt, text: task.error ?? "It stopped without saying why.", ...await lastStep(runs.at(-1)) });
       return withAgents({ ...sorted(await load.taskThread(task), task.plan), task });
     }

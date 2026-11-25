@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { ArgumentError } from "../server/validate";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { isRunnable, RUNNABLE_ENGINES, type EngineKind } from "./lib/engines";
@@ -323,16 +324,20 @@ export const ownerWrote = internalMutation({
 
 /** Quiet hours and the day's limit for Perry's own messages, from Settings → Notifications (notify.ts). Unset turns one off. */
 export const setManners = internalMutation({
-  args: { quietHours: v.optional(v.object({ start: v.string(), end: v.string() })), dailyLimit: v.optional(v.number()) },
+  args: { quietHours: v.optional(v.object({ start: v.string(), end: v.string() })), dailyLimit: v.optional(v.number()), setting: v.optional(v.union(v.literal("quietHours"), v.literal("dailyLimit"))) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const install = await read(ctx);
-    if (!install) throw new Error("Run pnpm run setup first.");
+    if (!install) throw new ArgumentError("Run pnpm run setup first.");
     const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
-    if (args.quietHours && (!clock.test(args.quietHours.start) || !clock.test(args.quietHours.end))) throw new Error("Quiet hours are two times, like 22:00 and 07:00.");
-    if (args.quietHours && args.quietHours.start === args.quietHours.end) throw new Error("Quiet hours need to start and end at different times.");
-    if (args.dailyLimit !== undefined && (!Number.isInteger(args.dailyLimit) || args.dailyLimit < 1 || args.dailyLimit > 100)) throw new Error("The daily limit is a whole number from 1 to 100.");
-    await ctx.db.patch(install._id, { quietHours: args.quietHours, dailyLimit: args.dailyLimit });
+    if (args.quietHours && (!clock.test(args.quietHours.start) || !clock.test(args.quietHours.end))) throw new ArgumentError("Quiet hours are two times, like 22:00 and 07:00.");
+    if (args.quietHours && args.quietHours.start === args.quietHours.end) throw new ArgumentError("Quiet hours need to start and end at different times.");
+    if (args.dailyLimit !== undefined && (!Number.isInteger(args.dailyLimit) || args.dailyLimit < 1 || args.dailyLimit > 100)) throw new ArgumentError("The daily limit is a whole number from 1 to 100.");
+    if ((args.setting === "quietHours" && args.dailyLimit !== undefined) || (args.setting === "dailyLimit" && args.quietHours !== undefined)) throw new ArgumentError("Save quiet hours and the daily limit separately.");
+    // Existing callers replace both settings; individual controls patch only their own field.
+    await ctx.db.patch(install._id, args.setting === "quietHours" ? { quietHours: args.quietHours }
+      : args.setting === "dailyLimit" ? { dailyLimit: args.dailyLimit }
+      : { quietHours: args.quietHours, dailyLimit: args.dailyLimit });
     return null;
   },
 });

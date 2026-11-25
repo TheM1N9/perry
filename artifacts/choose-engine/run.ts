@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { FAKE_AGENT, REPO, perry, redact, sleep } from "../engine-acp/harness";
 
 // bun artifacts/choose-engine/run.ts <outDir> [--setup-only]
@@ -50,11 +51,15 @@ import { FAKE_AGENT, REPO, perry, redact, sleep } from "../engine-acp/harness";
 //  16. Setup writes service/encryption keys with group/other access on POSIX,
 //      or a rerun leaves a preexisting permissive env file readable. Check the
 //      real fresh/rerun setup flow; Windows keeps its inherited ACL semantics.
+//  17. The short welcome flow cannot sign in, enables chat before readiness, or requires voice/personalization.
+//  18. Denied storage strands a completed welcome; rapid activation or an acknowledgement retry creates two chats.
+//  19. Setup already saved a default, but it is signed out: welcome hides its recovery controls or enables chat anyway.
 
 const argv = process.argv.slice(2);
 const outDir = argv.find((arg) => !arg.startsWith("--")) ?? "";
 if (!outDir) throw new Error("usage: bun artifacts/choose-engine/run.ts <outDir> [--setup-only]");
 const setupOnly = argv.includes("--setup-only");
+const firstUseOnly = argv.includes("--first-use-only");
 mkdirSync(outDir, { recursive: true });
 const FAKE_CLI = join(REPO, "artifacts", "choose-engine", "fake-cli.ts");
 // Its real path: macOS reaches its temp folder through a link, and where codex resolves is checked against it.
@@ -303,7 +308,8 @@ const clickText = (tag: string, text: string) => `(() => { const el = [...docume
 async function dashboard() {
   // --- A. A new install ------------------------------------------------------------------------------------------
   const runnerWorld = world({ codex: "signed-out", claude: "signed-out", grok: "signed-in" });
-  const a = await perry({ name: "choose-engine", outDir, runnerEnv: () => forRunner(runnerWorld), engine: null });
+  const a = await perry({ name: "choose-engine", outDir, runnerEnv: () => forRunner(runnerWorld), engine: null,
+    env: { PERRY_EMBED_MODEL: "choose-engine-fixture", NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(join(REPO, "artifacts", "choose-engine", "embedding.mjs")).href}` } });
   testHomes.push(a.home);
   const stops: Array<() => void> = [];
   try {
@@ -338,7 +344,7 @@ async function dashboard() {
     if (heartbeatChat) await a.until(async () => (await a.runsOf(heartbeatChat!))[0]?.status === "error", "the schedule to be refused", 60);
     const earlyRun = (await a.runsOf(early))[0] as { status: string; error?: string; model?: string };
     const turnsBefore = a.rows("codexTurns");
-    check("noTurnWithoutChoice", earlyRun.error === NO_ENGINE && earlyRun.model === "no engine" && turnsBefore.length === 0
+    check("noTurnWithoutChoice", earlyRun.error === NO_ENGINE && earlyRun.model === "no engine" && turnsBefore.every((turn) => turn.status === "error" && !turn.runnerId)
       && !logOf(runnerWorld.state).some((entry) => entry.method === "turn/start") && !logOf(runnerWorld.acp).some((entry) => entry.prompt !== undefined)
       && Boolean(heartbeatChat) && (await a.runsOf(heartbeatChat!))[0]?.status === "error",
       { earlyRun, turns: turnsBefore.length, heartbeatChat: heartbeatChat ? (await a.runsOf(heartbeatChat))[0] : null });
@@ -349,37 +355,73 @@ async function dashboard() {
     await a.until(() => browser.evaluate(`document.body.innerText.includes("Choose the engine")`), "the chat to ask for an engine", 30);
     const chatAsks = await browser.evaluate(`[...document.querySelectorAll('[role="alert"]')].map((el) => el.innerText).join("\\n")`) as string;
     await shoot(a, "chat-no-engine.png", "main");
-    check("chatAsksForEngine", chatAsks.includes("doesn't pick one for you") && chatAsks.includes("Perry has no default engine yet"), chatAsks);
+    check("chatAsksForEngine", chatAsks.includes("doesn't pick one for you") && chatAsks.includes("Choose") && earlyRun.error === NO_ENGINE, chatAsks);
 
+    await a.call("dashboard:setDefaultEngine", { key: a.KEY, engine: "codex" });
+    await browser.send("Page.navigate", { url: `${a.BASE}/welcome` });
+    await a.until(() => browser.evaluate(`document.querySelector('h1')?.innerText === 'Start with something useful'`), "welcome with a saved signed-out default", 30);
+    await browser.evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    const savedDefault = await browser.evaluate(`({ disabled: [...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='Start chatting')?.disabled, recovery: Boolean(document.querySelector('[aria-label="Sign in to Codex"] button')), selected: document.querySelector('[role=radio][aria-checked=true]')?.getAttribute('aria-label') })`) as { disabled?: boolean; recovery: boolean; selected?: string };
+    check("savedDefaultStillWaitsForReadyEngine", savedDefault.disabled === true, savedDefault);
+    check("savedDefaultShowsSignInWithoutChangingChoice", savedDefault.recovery && savedDefault.selected === "Codex", savedDefault);
+    if (savedDefault.recovery) {
+      await browser.evaluate(click('[role="radio"][aria-label="Grok Build"]'));
+      await browser.evaluate(clickText("button", "Start chatting"));
+      await a.until(() => browser.evaluate(`location.pathname === '/chat'`), "ready replacement for unavailable saved default", 30);
+      check("welcomeReplacesUnavailableSavedChoiceOnlyAfterOwnerSelects", await a.call("dashboard:getDefaultEngine", { key: a.KEY }) === "grok");
+      await a.call("dashboard:redoOnboarding", { key: a.KEY });
+    }
+    a.sql(`UPDATE "doc_installation" SET doc = json_set(json_remove(doc, '$.defaultEngine'), '$.askEngine', json('true')) WHERE _id = ?`, [a.rows("installation")[0]._id]);
     await browser.send("Page.navigate", { url: a.BASE });
     await a.until(() => browser.evaluate(`location.pathname === "/welcome" && Boolean(document.querySelector('[role="radiogroup"][aria-label="Default engine"]'))`), "the welcome page's engine step", 60);
     await sleep(800);
     const cards = await browser.evaluate(`[...document.querySelectorAll('[role="radiogroup"][aria-label="Default engine"] [role="radio"]')].map((el) => ({ label: el.getAttribute("aria-label"), checked: el.getAttribute("aria-checked") === "true", text: el.innerText }))`) as Array<{ label: string; checked: boolean; text: string }>;
     const heading = await browser.evaluate(`document.querySelector("h1")?.innerText`) as string;
     await shoot(a, "onboarding-engine.png", "main");
-    check("welcomeAsksWithOneOffered", heading === "Choose an engine" && cards.map((card) => card.label).join(",") === "Grok Build,Antigravity,Claude Code,Codex"
+    check("welcomeAsksWithOneOffered", heading === "Start with something useful" && cards.map((card) => card.label).join(",") === "Grok Build,Antigravity,Claude Code,Codex,OpenCode"
       && cards.filter((card) => card.checked).map((card) => card.label).join(",") === "Grok Build"
       && /Signed in with Grok account/.test(cards[0].text) && /not signed in/.test(cards[3].text), { heading, cards });
 
     // The owner picks Codex, which is not signed in, and signs in from here.
     await browser.evaluate(click('[role="radio"][aria-label="Codex"]'));
     await a.until(() => browser.evaluate(`Boolean(document.querySelector('[aria-label="Sign in to Codex"] button'))`), "Codex's sign-in on the welcome page", 15);
+    check("chatWaitsForReadyEngine", await browser.evaluate(`[...document.querySelectorAll('button')].find(el => el.textContent.includes('Start chatting'))?.disabled === true`));
     await browser.evaluate(clickText('[aria-label="Sign in to Codex"] button', "Sign in with ChatGPT"));
     await a.until(() => browser.evaluate(`document.body.innerText.includes("FAKE-CODE")`), "the device code", 60);
     await shoot(a, "onboarding-sign-in.png", "main");
     await a.until(() => browser.evaluate(`(document.querySelector('[role="radio"][aria-label="Codex"]')?.innerText ?? "").includes("Signed in")`), "Codex to be signed in", 60);
     const signedIn = await browser.evaluate(`document.querySelector('[role="radio"][aria-label="Codex"]').innerText`) as string;
     check("welcomeSignsIn", /Signed in with ChatGPT Plus/.test(signedIn) && logOf(runnerWorld.state).some((entry) => entry.method === "account/login/start"), signedIn);
-    await browser.evaluate(clickText("button", "Continue"));
+    await a.until(() => browser.evaluate(`[...document.querySelectorAll('button')].find(el => el.textContent.includes('Start chatting'))?.disabled === false`), "chat to be ready", 15);
+    await browser.evaluate(clickText("button", "Start chatting"));
     await a.until(async () => (await a.call<string | null>("dashboard:getDefaultEngine", { key: a.KEY })) === "codex", "Codex to be the default", 30);
-    await a.until(() => browser.evaluate(`document.querySelector("h1")?.innerText === "Meet your assistant"`), "the next step", 15);
+    await a.until(() => browser.evaluate(`location.pathname === "/chat" && Boolean(document.querySelector('[contenteditable="true"][aria-label="Message Perry"]'))`), "text chat without personalization", 30);
     check("welcomeSavesChoice", true);
+    await browser.evaluate(`document.querySelector('[contenteditable="true"][aria-label="Message Perry"]').focus()`);
+    await browser.send("Input.insertText", { text: "Hello from the first-use screen" });
+    await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await a.until(() => browser.evaluate(`location.pathname.startsWith("/chat/") && document.body.innerText.includes("Fake Codex reply to: Hello from the first-use screen")`), "the first typed reply", 90);
+    check("firstTypedChatWithoutVoice", true);
+
+    await a.call("dashboard:redoOnboarding", { key: a.KEY });
+    await browser.send("Page.navigate", { url: `${a.BASE}/welcome` });
+    await a.until(() => browser.evaluate(`document.body.innerText.includes("Personalize first (optional)")`), "optional personalization", 30);
+    await browser.evaluate(clickText("button", "Personalize first (optional)"));
+    await a.until(() => browser.evaluate(`document.querySelector("h1")?.innerText === "Meet your assistant"`), "personalization", 15);
+    const chatsBeforeFinish = a.rows("conversations").length;
+    await browser.evaluate(`Object.defineProperty(Storage.prototype, 'setItem', { configurable: true, value() { throw new DOMException('Storage unavailable', 'QuotaExceededError'); } }); true`);
+    await browser.evaluate(`Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined }); true`);
 
     // 11. After the choice, turns run on it: the welcome chat, and the chat that was refused before.
-    await browser.evaluate(clickText("button", "I'd rather just chat"));
+    await browser.evaluate(`(() => { const el = [...document.querySelectorAll('button')].find(el => el.textContent.includes("I'd rather just chat")); el.click(); el.click(); return true; })()`);
     await a.until(() => browser.evaluate(`location.pathname.startsWith("/chat/")`), "the welcome chat", 30);
     const welcome = await browser.evaluate(`location.pathname.split("/").pop()`) as string;
     await a.until(async () => (await a.lastReply(welcome)).startsWith("Fake Codex reply to:"), "the welcome chat's reply", 90);
+    check("welcomeSurvivesDeniedStorageAndDoubleActivation", a.rows("conversations").length === chatsBeforeFinish + 1 && !(await browser.evaluate(`document.body.innerText.includes("Couldn't start")`)));
+    const retryArgs = { key: a.KEY, requestId: "lost-welcome-ack", name: "Perry", personality: "Helpful" };
+    const [firstCompletion, replayedCompletion] = await Promise.all([a.call<string>("dashboard:finishOnboarding", retryArgs), a.call<string>("dashboard:finishOnboarding", retryArgs)]);
+    check("welcomeCompletionRetryIsIdempotent", firstCompletion === replayedCompletion && a.rows("conversations").filter(row => row.createRequestId === "onboarding:lost-welcome-ack").length === 1);
     const retried = await a.exchange(early, "Hello after choosing");
     check("turnsRunOnTheChoice", a.turnsOf(welcome).every((turn) => turn.engine === "codex") && retried.reply === "Fake Codex reply to: Hello after choosing"
       && (await a.conversation(early)).engine === "codex" && (await a.conversation(welcome)).engine === "codex",
@@ -404,10 +446,17 @@ async function dashboard() {
     if (heartbeat) await a.call("jobs:runNow", { key: a.KEY, id: heartbeat.id });
     if (heartbeatChat) await a.until(async () => (await a.runsOf(heartbeatChat!)).length > runsBefore && (await a.runsOf(heartbeatChat!))[0].status !== "running", "the schedule to run", 90);
     const heartbeatTurn = heartbeatChat ? a.turnsOf(heartbeatChat).at(-1) : undefined;
+    const heartbeatRoute = a.rows("jobs").find(job => job._id === heartbeat?.id)?.route as { movedFrom?: { engine?: string; why?: string } } | undefined;
     check("settingsChangesDefault", (await a.conversation(later)).engine === "grok" && /Fake grok reply to: Hello Grok by default/.test(grokReply.reply)
       && earlyAgain.reply === "Fake Codex reply to: Still on Codex?" && (await a.conversation(early)).engine === "codex"
-      && heartbeatTurn?.engine === "grok" && !(await a.conversation(heartbeatChat!)).engine,
-      { later: (await a.conversation(later)).engine, grok: grokReply.reply.slice(0, 80), early: earlyAgain.reply, heartbeat: heartbeatTurn?.engine });
+      && heartbeatTurn?.engine === "codex" && heartbeatRoute?.movedFrom?.engine === "grok" && /preparation/.test(heartbeatRoute.movedFrom.why ?? "") && !(await a.conversation(heartbeatChat!)).engine,
+      { later: (await a.conversation(later)).engine, grok: grokReply.reply.slice(0, 80), early: earlyAgain.reply, heartbeat: heartbeatTurn?.engine, heartbeatRoute });
+    const ordinary = await a.call<string>("jobs:saveFromDashboard", { key: a.KEY, name: "Default engine check", prompt: "Reply with a brief verification greeting.", schedule: "0 12 * * *" });
+    await a.call("jobs:runNow", { key: a.KEY, id: ordinary });
+    let ordinaryChat: string | undefined;
+    await a.until(async () => Boolean(ordinaryChat = (await a.call<Job[]>("jobs:list")).find(job => job.id === ordinary)?.chatId), "the ordinary schedule's chat", 60);
+    await a.until(async () => (await a.runsOf(ordinaryChat!))[0]?.status === "ok", "the ordinary schedule to finish", 90);
+    check("ordinaryScheduleInheritsDefault", a.turnsOf(ordinaryChat!).at(-1)?.engine === "grok" && !(await a.conversation(ordinaryChat!)).engine);
     check("noPageErrorsNewInstall", browser.errors.length === 0, browser.errors);
   } catch (error) {
     notes.stoppedAt = `new install: ${String(error)}`;
@@ -419,6 +468,8 @@ async function dashboard() {
     notes.runnerLogNew = a.logs.runner.split("\n").filter(Boolean).slice(-30);
     try { rmSync(a.home, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); } catch {}
   }
+
+  if (firstUseOnly) return;
 
   // --- B. An install from before the choice ------------------------------------------------------------------------
   const oldWorld = world({ codex: "signed-in" });
@@ -548,7 +599,7 @@ async function dashboard() {
 }
 
 try {
-  await terminal();
+  if (!firstUseOnly) await terminal();
   if (!setupOnly) await dashboard();
 } catch (error) {
   notes.stoppedAt = `${notes.stoppedAt ?? ""} ${String(error)}`;

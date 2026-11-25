@@ -350,13 +350,14 @@ export abstract class AcpEngine implements Engine {
 
   /** The agent's process, started and initialized when first needed and again after it exits. */
   protected ensure(): Promise<Connection> {
-    if (this.conn && !this.conn.closed) return Promise.resolve(this.conn);
+    if (this.conn && !this.conn.closed && !this.conn.connection.signal.aborted) return Promise.resolve(this.conn);
+    if (this.conn) this.close(this.conn);
     this.starting ??= this.start().finally(() => { this.starting = null; });
     return this.starting;
   }
 
   /** Whether the agent is running now, for a status that must not start it. */
-  protected get running(): boolean { return Boolean(this.conn && !this.conn.closed); }
+  protected get running(): boolean { return Boolean(this.conn && !this.conn.closed && !this.conn.connection.signal.aborted); }
 
   private async start(): Promise<Connection> {
     const launch = await this.launch();
@@ -473,11 +474,12 @@ ${line}`.slice(-4000); this.onText(line); });
       // Session effort options describe the selected model only. Retain other
       // models' previously learned options instead of copying these onto them.
       const levels = selected ? efforts.map((item) => item.value) : previous?.efforts;
-      const defaultEffort = selected && effort?.type === "select"
-        ? (!fresh && previous?.defaultEffort) || String(effort.currentValue) : previous?.defaultEffort;
+      const previousDefault = previous?.defaultEffort && levels?.includes(previous.defaultEffort) ? previous.defaultEffort : undefined;
+      const currentDefault = selected && effort?.type === "select" && levels?.includes(String(effort.currentValue)) ? String(effort.currentValue) : undefined;
+      const defaultEffort = selected ? (!fresh && previousDefault) || currentDefault : previousDefault;
       return {
         id: value.value, name: value.name, isDefault: value.value === (knownDefault ?? model.currentValue),
-        ...(levels?.length ? { efforts: levels, ...(defaultEffort ? { defaultEffort } : {}) } : {}),
+        ...(levels !== undefined ? { efforts: levels, ...(defaultEffort ? { defaultEffort } : {}) } : {}),
       };
     });
     if (!models.length || json(models) === json(this.learned)) return;
@@ -589,14 +591,16 @@ ${line}`.slice(-4000); this.onText(line); });
   private async configure(conn: Connection, session: Session, input: TurnInput) {
     await this.setMode(conn, session, input.access);
     const model = this.option(session.config, "model");
-    if (input.model && input.model !== DEFAULT_MODEL && model?.type === "select") {
+    if (input.model && input.model !== DEFAULT_MODEL) {
+      if (model?.type !== "select") throw new Error(`${this.label} did not offer model selection for this session. Choose another engine or update it in Settings → Engines, then try again.`);
       if (this.values(model).some((item) => item.value === input.model)) await this.setOption(conn, session, model, input.model);
-      else this.warn(`${this.label} does not offer the model ${input.model}; keeping ${model.currentValue}.`);
+      else throw new Error(`${this.label} no longer offers the model ${input.model}. Choose another model for this chat, then try again.`);
     }
     // The model can change which efforts there are, so this is looked up after it.
     const effort = this.option(session.config, "thought_level");
-    if (input.effort && effort?.type === "select" && this.values(effort).some((item) => item.value === input.effort)) {
-      await this.setOption(conn, session, effort, input.effort);
+    if (input.effort && effort?.type === "select") {
+      if (this.values(effort).some((item) => item.value === input.effort)) await this.setOption(conn, session, effort, input.effort);
+      else throw new Error(`${this.label} no longer offers the thinking level ${input.effort}. Choose Default or another thinking level for this chat, then try again.`);
     }
   }
 
@@ -923,8 +927,8 @@ ${line}`.slice(-4000); this.onText(line); });
   }
 
   /**
-   * The agent asks before acting. At Full access, and for Perry's own tools,
-   * it is allowed once here; otherwise the runner decides with the chat's
+   * The agent asks before acting. At Full access it is allowed once here;
+   * otherwise the runner decides with the chat's
    * access, and the answer is the agent's own option id. A stopped turn
    * answers "cancelled", as ACP asks.
    */
@@ -952,10 +956,11 @@ ${line}`.slice(-4000); this.onText(line); });
         if (turn.stop.signal.aborted) onAbort();
       });
       const chosen = await Promise.race([turn.sink.onRequest(normalized), stopped]);
-      if (chosen === null) return cancelled;
+      if (chosen === null || turn.stop.signal.aborted) return cancelled;
       if (OPTION_KINDS[options.find((option) => option.optionId === chosen)?.kind ?? "reject_once"] === "decline") turn.declined.add(call.toolCallId);
       return selected(chosen);
     } catch (error) {
+      if (turn.stop.signal.aborted) return cancelled;
       this.warn(`could not ask about ${call.title}: ${message(error)}`);
       turn.declined.add(call.toolCallId);
       return decline();

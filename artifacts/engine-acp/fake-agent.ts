@@ -152,10 +152,18 @@ let authenticated = false;
 const alwaysApprove = argv.includes("--always-approve") || argv.includes("--yolo");
 
 function config(session: Saved): SessionConfigOption[] {
+  const modelOption = join(HOME, "model-option-kind");
+  const kind = existsSync(modelOption) ? readFileSync(modelOption, "utf8").trim() : "select";
+  const effortOption = join(HOME, "effort-option-kind");
+  const effortKind = existsSync(effortOption) ? readFileSync(effortOption, "utf8").trim() : "select";
   return [
     ...(profile === "antigravity" ? [{ id: "mode", name: "Mode", category: "mode", type: "select" as const, currentValue: session.mode ?? "default", options: ["default", "auto_edit", "yolo"].map((value) => ({ value, name: value })) }] : []),
-    { id: "model", name: "Model", category: "model", type: "select", currentValue: session.model, options: MODELS[profile].map((value) => ({ value, name: value })) },
-    { id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", type: "select", currentValue: session.effort, options: EFFORTS.map((value) => ({ value, name: value })) },
+    ...(kind === "missing" ? [] : kind === "boolean"
+      ? [{ id: "model", name: "Model", category: "model", type: "boolean" as const, currentValue: false }]
+      : [{ id: "model", name: "Model", category: "model", type: "select" as const, currentValue: session.model, options: MODELS[profile].filter(value => kind !== "remove-heavy" || !value.includes("heavy")).map((value) => ({ value, name: value })) }]),
+    ...(effortKind === "missing" ? [] : effortKind === "boolean"
+      ? [{ id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", type: "boolean" as const, currentValue: false }]
+      : [{ id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", type: "select" as const, currentValue: session.effort, options: EFFORTS.filter(value => effortKind !== "remove-high" || value !== "high").map((value) => ({ value, name: value })) }]),
   ];
 }
 
@@ -434,7 +442,8 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     return done("end_turn");
   }
   // A background task's turn (convex/tasks.ts, promptFor): "FINISH <outcome> <summary>" on a line of its prompt calls
-  // finish_task; answered, it finishes done with the answer. "THEN-LIMITED" after it: from then on every turn hits the limit.
+  // finish_task; answered, it finishes done, or asks a revised question for REBLOCK <question>.
+  // "THEN-LIMITED" after it: from then on every turn hits the limit.
   const taskId = /\(task id (\w+)\)/.exec(text)?.[1];
   const answered = /The owner(?: answered your question|\'s reply): "(?:The owner\'s instruction: )?([^"\n]*)/.exec(text)?.[1];
   const result = /^RESULT ([\s\S]*)/m.exec(text)?.[1].split("\n\nYou are working on this by yourself:")[0];
@@ -445,7 +454,9 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
   }
   const finish = text.split("\n").map((line) => line.trim()).find((line) => line.startsWith("FINISH "));
   if (taskId && (answered !== undefined || finish)) {
-    const [, outcome = "done", ...rest] = answered !== undefined ? ["FINISH", "done", `Carried on with ${answered}.`] : finish!.split(" ");
+    const reblock = answered?.startsWith("REBLOCK ") ? answered.slice("REBLOCK ".length) : undefined;
+    const [, outcome = "done", ...rest] = reblock !== undefined ? ["FINISH", "blocked", reblock]
+      : answered !== undefined ? ["FINISH", "done", `Carried on with ${answered}.`] : finish!.split(" ");
     const summary = rest.join(" ").replace(/\s*THEN-LIMITED$/, "");
     const outcomeText = await callTool(session, "finish_task", { taskId, outcome, summary }, true);
     log({ finished: { taskId, outcome, summary, outcomeText } });

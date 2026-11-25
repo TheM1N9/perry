@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import ts from "typescript";
 import { replayRunnerLifecycle } from "./runner-lifecycle";
 
-const out = resolve("artifacts/parallel-sessions");
+const out = resolve(process.env.PERRY_E2E_OUTPUT ?? "artifacts/parallel-sessions");
 const scratch = resolve("node_modules/.cache/perry-parallel-sessions", `run-${Date.now()}`);
 mkdirSync(scratch, { recursive: true });
 process.env.PERRY_HOME = join(scratch, "home");
@@ -36,11 +36,11 @@ async function running(name: string) {
   const claimed = await call("codex:claimTurn", { token, id: turn });
   if (!claimed) throw new Error(`Could not claim ${name}`);
   await call("codex:setResume", { token, id: turn, cursor: `native-${name}` });
-  return { chat, turn, runId };
+  return { chat, turn, runId, mcpGrant: claimed.mcpGrant };
 }
-async function mcp(threads?: string[], chat?: string, why = "session isolation fixture") {
+async function mcp(threads?: string[], chat?: string, why = "session isolation fixture", session?: { turn: string; mcpGrant: string }) {
   const meta = threads ? { "x-codex-turn-metadata": { thread_id: threads[0], session_id: threads[1] } } : undefined;
-  const response = await rt.runHttp("/mcp", new Request("http://fixture.local/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(chat ? { "x-perry-chat": chat } : {}) }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "take_longer", arguments: { minutes: 7, why }, ...(meta ? { _meta: meta } : {}) } }) }));
+  const response = await rt.runHttp("/mcp", new Request("http://fixture.local/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(session ? { "x-perry-turn": session.turn, "x-perry-grant": session.mcpGrant } : {}), ...(chat ? { "x-perry-chat": chat } : {}) }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "take_longer", arguments: { minutes: 7, why }, ...(meta ? { _meta: meta } : {}) } }) }));
   return await response.json() as any;
 }
 try {
@@ -49,18 +49,20 @@ try {
     runnerId = db.insert("runners", { name: "Fake runner", token, createdAt: Date.now(), lastSeenAt: Date.now(), engines: [{ kind: "codex", installed: true, signedIn: true, auth: {}, models: [], updatedAt: Date.now() }] });
   });
   const sole = await running("sole");
-  const stale = await mcp(["finished-native-session"]);
+  const stale = await mcp(["finished-native-session"], undefined, undefined, sole);
   check("explicit stale native identity cannot act on another session", Boolean(stale.error || stale.result?.isError) && !db.get(sole.turn)?.patienceWhy);
-  const staleChat = await mcp(undefined, "finished-perry-chat");
+  const staleChat = await mcp(undefined, "finished-perry-chat", undefined, sole);
   check("explicit stale chat identity cannot act on another session", Boolean(staleChat.error || staleChat.result?.isError) && !db.get(sole.turn)?.patienceWhy);
-  await mcp(undefined, undefined, "legacy single-session caller");
-  check("single-session legacy callers remain compatible", db.get(sole.turn)?.patienceWhy === "legacy single-session caller");
+  const missingGrant = await mcp();
+  check("runner token alone cannot act even with one active session", Boolean(missingGrant.error) && !db.get(sole.turn)?.patienceWhy);
+  await mcp(undefined, undefined, "exact granted single-session caller", sole);
+  check("fresh turn grant resolves its exact session without optional metadata", db.get(sole.turn)?.patienceWhy === "exact granted single-session caller");
   const activeTask = await call("tasks:queueFromDashboard", { key, title: "Task to cancel", prompt: "Keep working" });
   await rt.exclusive(() => { db.patch(activeTask, { status: "running", turns: 1, conversationId: sole.chat }); db.patch(sole.chat, { taskId: activeTask }); });
   await call("dashboard:cancelTask", { key, taskId: activeTask });
   check("task cancellation interrupts its running turn", db.get(sole.turn)?.stopRequested === true);
-  const stoppedCall = await mcp(["native-sole"]);
-  check("stopped native session cannot continue calling tools", Boolean(stoppedCall.result?.isError) && db.get(sole.turn)?.patienceWhy === "legacy single-session caller");
+  const stoppedCall = await mcp(["native-sole"], undefined, undefined, sole);
+  check("stopped native session cannot continue calling tools", Boolean(stoppedCall.result?.isError) && db.get(sole.turn)?.patienceWhy === "exact granted single-session caller");
   try { await call("work:updateTask", { taskId: activeTask, status: "done", result: "Late completion" }); } catch {}
   check("late completion cannot overwrite task cancellation", db.get(activeTask)?.status === "cancelled");
 
@@ -81,16 +83,16 @@ try {
   const extraRun = await call("runs:start", { conversationId: sibling.chat, prompt: "same-chat queued message" });
   const extraTurn = await call("codex:enqueueTurn", { conversationId: sibling.chat, runId: extraRun, engine: "codex", prompt: "same-chat queued message", instructions: "Fixture only", policy: "queue" });
   check("same assistant chat cannot claim a second concurrent turn", await call("codex:claimTurn", { token, id: extraTurn }) === null);
-  await mcp(["native-child-of-peer", "native-peer"], undefined, "native child routed to peer");
+  await mcp(["native-child-of-peer", "native-peer"], undefined, "native child routed to peer", peer);
   check("native child root metadata resolves its own parent", db.get(peer.turn)?.patienceWhy === "native child routed to peer" && !db.get(sibling.turn)?.patienceWhy);
-  const conflict = await mcp(["native-sibling"], peer.chat);
+  const conflict = await mcp(["native-sibling"], peer.chat, undefined, peer);
   check("conflicting native and Perry identities are refused", Boolean(conflict.error) && !db.get(sibling.turn)?.patienceWhy);
-  const ambiguous = await mcp(["native-sibling", "native-peer"]);
-  check("multiple matching native sessions are refused", Boolean(ambiguous.error) && !db.get(sibling.turn)?.patienceWhy);
+  await mcp(["native-sibling", "native-peer"], undefined, "grant pins peer despite multiple native identities", peer);
+  check("fresh grant prevents metadata from selecting a different active session", db.get(peer.turn)?.patienceWhy === "grant pins peer despite multiple native identities" && !db.get(sibling.turn)?.patienceWhy);
   const unnamed = await mcp();
   check("unnamed calls cannot select an arbitrary parallel session", Boolean(unnamed.error));
   await call("dashboard:setChatModel", { key, id: peer.chat, model: "fixture-claude", engine: "claude" });
-  await mcp(["native-child-of-peer", "native-peer"], undefined, "old turn survives engine switch");
+  await mcp(["native-child-of-peer", "native-peer"], undefined, "old turn survives engine switch", peer);
   check("engine switch cannot detach an already running native session", db.get(peer.turn)?.patienceWhy === "old turn survives engine switch" && db.get(peer.turn)?.sessionCursor === "native-peer");
   await call("codex:finishTurn", { token, id: sibling.turn, response: "First native session turn done" });
   await call("codex:finalizeTurn", { id: sibling.turn });

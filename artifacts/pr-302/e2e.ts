@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 const dir = resolve(process.argv[2] || 'artifacts/pr-302/results'); mkdirSync(dir,{recursive:true});
-process.env.PERRY_HOME = mkdtempSync(join(dir,'home-'));
-process.env.FIXTURE_STATE = join(dir,'state.json');
+const home = mkdtempSync(join(tmpdir(),'perry-opencode-'));
+process.env.PERRY_HOME = home;
+process.env.FIXTURE_STATE = join(home,'state.json');
 process.env.PERRY_OPENCODE_COMMAND = `"${process.execPath}" "${resolve('artifacts/pr-302/fake-opencode.ts')}"`;
 process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({model:{providerID:'z',model:'configured'}, plugins:[]});
 const save = (extra:any={}) => writeFileSync(process.env.FIXTURE_STATE!,JSON.stringify({providers:[{id:'provider',connections:[{type:'credential',id:'first'},{type:'credential',id:'second'}]}],...extra}));
@@ -11,6 +13,7 @@ save();
 const { OpenCodeEngine } = await import('../../runner/engines/opencode');
 const engine = new OpenCodeEngine();
 const results: any[] = [];
+let failure: string | undefined;
 try {
  const status = await engine.status();
  assert.equal(status.models.find(m=>m.isDefault)?.id,'default');
@@ -38,5 +41,10 @@ try {
  results.push({check:'Failed logout and environment authentication never report success',pass:true});
  save({failModels:true}); engine.reload(); const fallback=await engine.status(); assert(fallback.models.every(m=>!m.id.includes('failed')));
  results.push({check:'Failed model listing uses learned fallback',pass:true});
-} finally { engine.reload(); writeFileSync(join(dir,'result.json'),JSON.stringify({results},null,2)); }
-console.log(JSON.stringify({passed:results.length,results},null,2));
+} catch(error) { failure=String(error); process.exitCode=1; }
+finally {
+ engine.kill();
+ try { rmSync(home,{recursive:true,force:true,maxRetries:10,retryDelay:250}); } catch(error) { failure??=String(error); process.exitCode=1; }
+ writeFileSync(join(dir,'result.json'),JSON.stringify({passed:!failure,results,failure,homeRemoved:!existsSync(home)},null,2));
+}
+console.log(JSON.stringify({passed:!failure,count:results.length,results,failure,homeRemoved:!existsSync(home)},null,2));

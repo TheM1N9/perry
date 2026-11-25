@@ -12,7 +12,7 @@ export function BlurWords({ text, className, id = "hero-title" }: { text: string
           key={i}
           aria-hidden
           className="inline-block whitespace-pre"
-          initial={{ opacity: 0, filter: "blur(10px)", y: "18%" }}
+          initial={false}
           animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
           transition={{ duration: 0.8, delay: 0.1 + i * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
         >

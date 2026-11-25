@@ -204,7 +204,7 @@ export function NewProjectDialog({ open, chat, onClose }: { open: boolean; chat?
           <DialogDescription>Chats in it share instructions and memory.</DialogDescription>
         </DialogHeader>
         <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="contents">
-          <Input aria-label="Project name" placeholder="Hackonomics scripts" value={name} maxLength={80} autoFocus required onChange={(event) => setName(event.target.value)} />
+          <Input aria-label="Project name" placeholder="Website launch" value={name} maxLength={80} autoFocus required pattern=".*\S.*" title="Enter a project name with at least one non-space character." onChange={(event) => setName(event.target.value)} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}Create</Button>
@@ -240,7 +240,7 @@ export function RenameProjectDialog({ project, onClose }: { project: { id: Proje
       <DialogContent className="sm:max-w-sm">
         <DialogHeader><DialogTitle>Rename project</DialogTitle></DialogHeader>
         <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="contents">
-          <Input aria-label="Project name" value={name} maxLength={80} autoFocus required onChange={(event) => setName(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+          <Input aria-label="Project name" value={name} maxLength={80} autoFocus required pattern=".*\S.*" title="Enter a project name with at least one non-space character." onChange={(event) => setName(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}Rename</Button>

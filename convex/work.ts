@@ -5,6 +5,7 @@ import { internalMutation, internalQuery, type MutationCtx } from "./_generated/
 import { parseTarget } from "./lib/price";
 import { pausedAt } from "./pause";
 import { decisionReceipt } from "./taskDecisions";
+import { ArgumentError } from "../server/validate";
 
 /**
  * Tasks, goals and monitors: the things that outlive a single message.
@@ -43,16 +44,20 @@ export const createTask = internalMutation({
     prompt: v.string(),
     goalId: v.optional(v.id("goals")),
     origin: v.optional(v.id("conversations")),
+    turnId: v.optional(v.id("codexTurns")),
   },
   returns: v.id("tasks"),
   handler: async (ctx, args) => {
     const now = Date.now();
+    const turn = args.turnId ? await ctx.db.get(args.turnId) : null;
+    if (args.turnId && (!turn || turn.conversationId !== args.origin || turn.status !== "running" || turn.stopRequested || turn.guest)) throw new ArgumentError("This turn cannot create a tracked plan for that chat.");
     return await ctx.db.insert("tasks", {
       title: args.title.slice(0, 160),
       prompt: args.prompt.slice(0, 12000),
       status: "running",
       goalId: args.goalId,
       ...(args.origin ? { origin: args.origin } : {}),
+      ...(turn ? { originRunId: turn.runId } : {}),
       plan: [],
       createdAt: now,
       updatedAt: now,
@@ -65,13 +70,20 @@ export const createTask = internalMutation({
  * produce. normalizeId turns a wrong one into null instead of an exception.
  */
 export const setPlan = internalMutation({
-  args: { taskId: v.string(), plan: v.array(vPlanStep) },
+  args: { taskId: v.string(), plan: v.array(vPlanStep), turnId: v.optional(v.id("codexTurns")) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const id = ctx.db.normalizeId("tasks", args.taskId);
     if (!id) return null;
+    const task = await ctx.db.get(id);
+    if (!task) return null;
+    if (task.status === "cancelled") throw new ArgumentError("The owner cancelled this task; its plan cannot be changed.");
+    const turn = args.turnId ? await ctx.db.get(args.turnId) : null;
+    if (args.turnId && (!turn || turn.status !== "running" || turn.stopRequested || turn.guest || turn.conversationId !== (task.conversationId ?? task.origin))) throw new ArgumentError("Update this plan from its own task or source chat.");
     await ctx.db.patch(id, {
       plan: args.plan.slice(0, 40),
+      ...(turn && !task.conversationId && task.origin ? { originRunId: turn.runId } : {}),
+      ...(task.completion ? { completion: undefined, ...(turn ? { status: "running" as const } : {}) } : {}),
       updatedAt: Date.now(),
     });
     return null;
@@ -93,6 +105,17 @@ export const updateTask = internalMutation({
     if (!id) return null;
     const task = await ctx.db.get(id);
     if (!task) return null;
+    if (turnId) {
+      const turn = await ctx.db.get(turnId);
+      if (!turn || turn.status !== "running" || turn.finalizedAt !== undefined || turn.stopRequested || turn.guest || turn.conversationId !== (task.conversationId ?? task.origin)) throw new ArgumentError("This turn no longer owns the task. Refresh its current state before changing it.");
+      if (!task.conversationId && task.originRunId && task.originRunId !== turn.runId) {
+        const applied = await ctx.db.query("codexSteers").withIndex("by_run", q => q.eq("runId", task.originRunId!)).first();
+        if (!applied || applied.turnId !== turn._id || applied.status !== "applied") throw new ArgumentError("This plan is bound to another turn. Read status_report and update it with set_plan in its source chat before finishing it.");
+      }
+      const later = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", turn.conversationId))
+        .filter(q => q.eq(q.field("finalizedAt"), undefined)).collect();
+      if (later.some(item => item._id !== turn._id && item._creationTime > turn._creationTime && item.kind !== "compact" && !item.flush && !item.checkpoint && !item.stopRequested)) throw new ArgumentError("A newer task turn is pending. Let that turn settle before finishing this task.");
+    }
     if (task.initiative && task.goalId && rest.status !== "cancelled" && (await ctx.db.get(task.goalId))?.status !== "active") {
       throw new Error("This goal is no longer active; keep its work for when the owner resumes it.");
     }
@@ -106,6 +129,7 @@ export const updateTask = internalMutation({
       throw new Error("The owner sent an update still awaiting delivery. Keep completed work and let its follow-up turn finish the task.");
     }
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
+    if (rest.status !== undefined || rest.question !== undefined || rest.result !== undefined || rest.error !== undefined) patch.completion = undefined;
     if (rest.status === "blocked" && (!task.decision || task.status !== "blocked" || rest.question !== undefined && rest.question !== task.question)) patch.decision = decisionReceipt();
     if (rest.status && rest.status !== "blocked") patch.decision = undefined;
     for (const [key, value] of Object.entries(rest)) {
@@ -210,7 +234,7 @@ export const updateGoal = internalMutation({
       milestones: goal.milestones.map((m) =>
         done.has(m.title.trim().toLowerCase()) ? { ...m, done: true } : m,
       ),
-      updatedAt: Date.now(),
+      updatedAt: Math.max(Date.now(), goal.updatedAt + 1),
     });
     if (args.status) await goalTasks(ctx, args.id, args.status);
     return null;
@@ -228,12 +252,13 @@ export const saveGoal = internalMutation({
     title: v.string(),
     description: v.optional(v.string()),
     status: v.optional(v.union(v.literal("active"), v.literal("paused"), v.literal("done"))),
+    expectedUpdatedAt: v.optional(v.number()),
     milestones: v.array(v.object({ title: v.string(), done: v.boolean() })),
   },
   returns: v.id("goals"),
   handler: async (ctx, args) => {
     const title = args.title.trim().slice(0, 160);
-    if (!title) throw new Error("Give the goal a title.");
+    if (!title) throw new ArgumentError("Give the goal a title.");
     const fields = {
       title,
       description: args.description?.trim() || undefined,
@@ -245,8 +270,9 @@ export const saveGoal = internalMutation({
     };
     if (!args.id) return await ctx.db.insert("goals", { ...fields, status: args.status ?? "active", createdAt: Date.now() });
     const goal = await ctx.db.get(args.id);
-    if (!goal) throw new Error("That goal no longer exists.");
-    await ctx.db.patch(goal._id, { ...fields, status: args.status ?? goal.status });
+    if (!goal) throw new ArgumentError("That goal no longer exists.");
+    if (args.expectedUpdatedAt !== undefined && args.expectedUpdatedAt !== goal.updatedAt) throw new ArgumentError("This goal changed while you were editing. Your draft is still here; load the latest goal before saving.");
+    await ctx.db.patch(goal._id, { ...fields, updatedAt: Math.max(Date.now(), goal.updatedAt + 1), status: args.status ?? goal.status });
     if (args.status) await goalTasks(ctx, goal._id, args.status);
     return goal._id;
   },
@@ -480,6 +506,8 @@ export const snapshot = internalQuery({
       tasks: tasks.map((t) => ({
         id: t._id,
         chatId: t.conversationId,
+        sourceChatId: t.origin,
+        completion: t.completion,
         title: t.title,
         status: t.status,
         goalId: t.goalId,

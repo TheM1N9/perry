@@ -33,16 +33,21 @@ export function useUpdates() {
   const reloadRequired = useVersionNotice(view?.uiVersion);
   const downloading = useRef(false);
   const installing = useRef(false);
+  const pendingReload = useRef<{ sha: string; previous?: string } | null>(null);
 
   useEffect(() => {
-    let pending: { sha: string; previous?: string } | null = null;
-    try { pending = JSON.parse(sessionStorage.getItem(RELOAD) ?? "null"); } catch { sessionStorage.removeItem(RELOAD); }
+    let pending = pendingReload.current;
+    if (!pending) {
+      try { pending = JSON.parse(sessionStorage.getItem(RELOAD) ?? "null"); }
+      catch { try { sessionStorage.removeItem(RELOAD); } catch {} }
+    }
     if (!pending) return;
-    if (reloadRequired) { sessionStorage.removeItem(RELOAD); window.location.reload(); return; }
+    const clear = () => { pendingReload.current = null; try { sessionStorage.removeItem(RELOAD); } catch {} };
+    if (reloadRequired) { clear(); window.location.reload(); return; }
     if (!view?.last || view.last.id === pending.previous) return;
-    if (!view.last.ok) { sessionStorage.removeItem(RELOAD); return; }
+    if (!view.last.ok) { clear(); return; }
     if (view.last.to !== pending.sha) return;
-    sessionStorage.removeItem(RELOAD);
+    clear();
     window.location.reload();
   }, [view?.last, reloadRequired]);
 
@@ -62,11 +67,13 @@ export function useUpdates() {
     if (!sha) throw new Error("Download the update first.");
     installing.current = true;
     try {
-      sessionStorage.setItem(RELOAD, JSON.stringify({ sha, previous: view?.last?.id }));
+      pendingReload.current = { sha, previous: view?.last?.id };
+      try { sessionStorage.setItem(RELOAD, JSON.stringify(pendingReload.current)); } catch {}
       const { waitingFor } = await request({ key, expectedSha: sha });
       return waitingFor ? "Perry will install the update when the current work finishes." : "Installing the update. This page will reload when it’s ready.";
     } catch (error) {
-      sessionStorage.removeItem(RELOAD);
+      pendingReload.current = null;
+      try { sessionStorage.removeItem(RELOAD); } catch {}
       throw error;
     } finally { installing.current = false; }
   }, [key, request, reloadRequired, view?.downloaded?.sha, view?.last?.id]);

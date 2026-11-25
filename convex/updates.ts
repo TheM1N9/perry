@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { v } from "convex/values";
+import { ArgumentError } from "../server/validate";
 import { PATHS } from "../runner/home";
 import { dashboardVersion } from "../lib/dashboard-version";
 import { internal } from "./_generated/api";
@@ -137,11 +138,11 @@ export const update = mutation({
   args: { key: v.string(), expectedSha: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ waitingFor?: string }> => {
     assertDashboardKey(args.key);
-    if (!supervised()) throw new Error("Perry updates himself when he runs in the background. Start him with perry start, or update him with perry update.");
+    if (!supervised()) throw new ArgumentError("Perry updates himself when he runs in the background. Start him with perry start, or update him with perry update.");
     const row = await ctx.db.query("updates").first();
-    if (!row || !available(row)) throw new Error(row?.problem ?? "There's nothing new to update to.");
-    if (row.downloading) throw new Error("Wait for the download to finish.");
-    if (args.expectedSha && (row.downloaded?.sha !== args.expectedSha || row.latest?.sha !== args.expectedSha)) throw new Error("The available update changed. Download it again.");
+    if (!row || !available(row)) throw new ArgumentError(row?.problem ?? "There's nothing new to update to.");
+    if (row.downloading) throw new ArgumentError("Wait for the download to finish.");
+    if (args.expectedSha && (row.downloaded?.sha !== args.expectedSha || row.latest?.sha !== args.expectedSha)) throw new ArgumentError("The available update changed. Download it again.");
     if (!row.requested && !row.wantedAt) await ctx.db.patch(row._id, { wantedAt: Date.now(), wantedTarget: args.expectedSha });
     await ctx.scheduler.runAfter(0, internal.updates.tick, {});
     return { waitingFor: await busyWith(ctx) };
@@ -158,7 +159,7 @@ export const download = action({
     try {
       const found = await standing(REPO);
       const ready = await ctx.runMutation(internal.updates.finishDownload, { id, ...found });
-      if (!ready && found.problem) throw new Error(found.problem);
+      if (!ready && found.problem) throw new ArgumentError(found.problem);
       return { ready };
     } catch (error) {
       await ctx.runMutation(internal.updates.failDownload, { id });
@@ -170,9 +171,9 @@ export const download = action({
 export const beginDownload = internalMutation({
   args: {},
   handler: async (ctx): Promise<string | null> => {
-    if (!supervised()) throw new Error("Automatic updates aren't available in this session.");
+    if (!supervised()) throw new ArgumentError("Start Perry with perry start to download updates, or update him with perry update.");
     const row = await ctx.db.query("updates").first();
-    if (!row?.behind) throw new Error("You're up to date.");
+    if (!row?.behind) throw new ArgumentError("You're up to date.");
     if (row.requested || row.wantedAt || (row.downloading && Date.now() - row.downloading.at < DOWNLOAD_MS)) return null;
     const id = randomUUID();
     await ctx.db.patch(row._id, { downloading: { id, at: Date.now() }, downloaded: undefined });

@@ -152,7 +152,7 @@ export function Composer({
           className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
           {shown.map((item, position) => (
             <button type="button" key={item.key} id={`chat-command-${position}`} role="option" aria-selected={position === index} tabIndex={-1}
-              onMouseMove={() => setHighlight(position)} onMouseDown={(event) => { event.preventDefault(); item.apply(); }}
+              onMouseMove={() => setHighlight(position)} onMouseDown={(event) => event.preventDefault()} onClick={() => item.apply()}
               className="flex w-full cursor-default items-baseline gap-3 rounded-lg px-3 py-2 text-left text-sm outline-none select-none aria-selected:bg-muted aria-selected:text-foreground">
               <span className="shrink-0 font-mono font-medium">{item.label}</span>
               <span className="min-w-0 truncate text-muted-foreground">{item.hint}</span>

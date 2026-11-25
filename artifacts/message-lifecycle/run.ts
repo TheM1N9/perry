@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const output = resolve("artifacts/message-lifecycle");
+const output = resolve(process.env.PERRY_E2E_OUTPUT ?? "artifacts/message-lifecycle");
 const scratch = resolve("node_modules/.cache/perry-message-lifecycle", `run-${Date.now()}`);
 mkdirSync(scratch, { recursive: true });
 process.env.PERRY_HOME = join(scratch, "home");
@@ -110,7 +110,7 @@ try {
   const steerId = await prepare(followup);
   const steer = db.get(steerId)!;
   check("follow-up targets the original running turn", steer.turnId === active && steer.status === "pending");
-  check("steering preserves media", (steer.attachments as any[])?.[0]?.localPath === "C:/fixture/image.png");
+  check("steering preserves authenticated media delivery", (steer.attachments as any[])?.[0]?.url === `/api/runner/files/${attachment}`);
   await call("codex:ackSteer", { token, id: steerId, applied: true });
   const queued = await send(steering, "explicitly queued", { mode: "queue" });
   const queuedTurn = await prepare(queued);

@@ -233,6 +233,7 @@ function beginAction() {
 }
 
 const IDLE_MS = 10 * 60_000;
+const STARTUP_MS = 60_000;
 const TEXT_CAP = 12_000;
 const ELEMENTS_CAP = 150;
 
@@ -294,14 +295,20 @@ async function launch(): Promise<Tab> {
     ], { stdio: "ignore", windowsHide: true });
     child.on("error", () => {});
     let targets: Array<{ id: string; type: string; webSocketDebuggerUrl: string }> = [];
-    for (let i = 0; i < 100 && !targets.some(target => target.type === "page"); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+    const deadline = Date.now() + STARTUP_MS;
+    const signal = context.getStore()?.signal;
+    while (Date.now() < deadline && !targets.some(target => target.type === "page")) {
+      await delay(Math.min(150, deadline - Date.now()), undefined, { signal });
       ensureCurrent();
-      try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(500) })).json() as typeof targets; } catch {}
-      if (child.exitCode !== null) throw new Error("Perry's browser did not start.");
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      const pollSignal = AbortSignal.any([AbortSignal.timeout(Math.min(500, remaining)), ...(signal ? [signal] : [])]);
+      try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: pollSignal })).json() as typeof targets; } catch {}
+      ensureCurrent();
+      if (!child.pid || child.exitCode !== null || child.signalCode !== null) throw new Error("Perry's browser did not start. Check that the browser is installed and allowed to run.");
     }
     const page = targets.find((target) => target.type === "page");
-    if (!page) { child.kill(); throw new Error("Perry's browser opened no tab."); }
+    if (!page) { child.kill(); throw new Error("Perry's browser did not open a tab within 60 seconds. Close it and try again."); }
     ensureCurrent();
     session = await connect(page.webSocketDebuggerUrl);
     ensureCurrent();

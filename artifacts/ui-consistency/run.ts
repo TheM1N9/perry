@@ -3,10 +3,11 @@ import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { openChat, sleep } from "../browser";
+import { boardLink, NEEDS_YOU } from "../../lib/board-links";
 
-// bun artifacts/ui-consistency/run.ts <outDir> [--before <checkout>]
+// bun artifacts/ui-consistency/run.ts <outDir> [--before <checkout>] [--work-memory]
 // Issue #176: the browser's own controls and one-off styles replaced with
 // Perry's (Checkbox, RadioGroup cards, DatePicker and TimePicker, Table,
 // Tooltip, ScrollArea, the pet's menu and tabs). A fresh Perry: the production
@@ -24,8 +25,8 @@ import { openChat, sleep } from "../browser";
 //
 // Ways it could fail, written down before the checks:
 //   1. A browser control is still the browser's: a visible native checkbox,
-//      date, time or datetime-local field, or a <details>, on a checked screen,
-//      in either theme.
+//      date, time or datetime-local field on a checked screen, in either theme.
+//      Native details/summary disclosures are valid platform controls.
 //   2. A search box shows two clear buttons: the browser's × still drawn beside
 //      Perry's, or Perry's gone.
 //   3. A reply's checklist still has bullets or the browser's grey box, its
@@ -48,6 +49,10 @@ import { openChat, sleep } from "../browser";
 //   9. Anything throws or logs an error on a checked page.
 //  10. A picture proves nothing: a screen is shot before its seeded content
 //      shows (each shot waits for its seeded words).
+//  11. Brain mistakes a failed search for an empty result, loses the search
+//      on retry, or an old /memory bookmark no longer opens its page.
+//  12. A Board schedule cannot be paused/resumed/edited, loses an edit after
+//      a failed save, or a retry changes the timing or creates a duplicate.
 
 const args = process.argv.slice(2);
 const outDir = args[0];
@@ -55,6 +60,7 @@ if (!outDir) throw new Error("usage: bun artifacts/ui-consistency/run.ts <outDir
 const beforeAt = args.indexOf("--before");
 const REPO = beforeAt >= 0 ? resolve(args[beforeAt + 1]) : resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BEFORE = beforeAt >= 0;
+const WORK_MEMORY = args.includes("--work-memory");
 const OUT = resolve(outDir);
 mkdirSync(OUT, { recursive: true });
 
@@ -81,8 +87,12 @@ const env: NodeJS.ProcessEnv = {
   ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   // Never the owner's accounts: no engine here has a sign-in.
   CODEX_HOME: join(home, "codex-home"), CLAUDE_CONFIG_DIR: join(home, "claude-home"),
+  PERRY_EMBED_MODEL: "connector-fixture", PERRY_WAKE_DISABLED: "1",
+  NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(join(REPO, "artifacts", "connector-details", "preload.mjs")).href}`,
 };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE" || name === "PERRY_URL") delete env[name];
+env.TELEGRAM_BOT_TOKEN = "";
+env.COMPOSIO_API_KEY = "";
 mkdirSync(env.CODEX_HOME!, { recursive: true });
 mkdirSync(env.CLAUDE_CONFIG_DIR!, { recursive: true });
 let log = "";
@@ -105,7 +115,7 @@ async function until(test: () => Promise<unknown> | unknown, what: string, secon
 }
 
 type DomNode = { nodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
-type Job = { id: string; name: string; schedule?: string; runAt?: number };
+type Job = { id: string; name: string; schedule?: string; runAt?: number; enabled?: boolean };
 type Browser = Awaited<ReturnType<typeof openChat>>;
 let browser: Browser | null = null;
 let heartbeat: ReturnType<typeof setInterval> | null = null;
@@ -193,7 +203,7 @@ try {
     log: Array.from({ length: 30 }, (_, i) => `step ${i + 1}: ${i === 29 ? "ERR_PNPM_META_FETCH_FAIL  GET https://registry.npmjs.org/next: request to https://registry.npmjs.org/next failed, reason: getaddrinfo ENOTFOUND registry.npmjs.org" : "ok"}`).join("\n"),
   } });
 
-  await call("approvals:request", { token, kind: "command", title: "Remove-Item -Recurse .\\build-cache", cwd: join(workdir, "site"), conversationId: planChat });
+  const waitingApproval = await call<{ id: string }>("approvals:request", { token, kind: "command", title: "Remove-Item -Recurse .\\build-cache", cwd: join(workdir, "site") });
   const old = await call<{ id: string }>("approvals:request", { token, kind: "command", title: "git push origin main --force-with-lease --no-verify # after the rebase of the long-lived feature branch", cwd: workdir });
   await call("approvals:decide", { key: KEY, id: old.id, approved: false });
 
@@ -249,7 +259,7 @@ try {
   /** Native controls visible on the page; with nativeClearButtons, search boxes still drawing the browser's own ×. */
   const NATIVE = `(() => {
     const shown = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 2 && r.height > 2 && s.visibility !== "hidden" && s.display !== "none" && Number(s.opacity) > 0.05 && el.getAttribute("aria-hidden") !== "true" && !el.closest("[aria-hidden=true]"); };
-    const natives = [...document.querySelectorAll("input[type=checkbox], input[type=date], input[type=time], input[type=datetime-local], details")].filter(shown).map((el) => el.outerHTML.slice(0, 120));
+    const natives = [...document.querySelectorAll("input[type=checkbox], input[type=date], input[type=time], input[type=datetime-local]")].filter(shown).map((el) => el.outerHTML.slice(0, 120));
     return { natives };
   })()`;
   const nativesFound: Record<string, unknown> = {};
@@ -354,11 +364,24 @@ try {
     }
     await collectErrors(`chat-${mode}`);
 
-    // --- Memory: one clear button; tips on "Only in…" and "Promoted overnight" ---------------
-    await go("/memory", "coffee black");
-    const search = `document.querySelector('input[aria-label="Search memories"]')`;
+    // Brain lists pages; line contents are found through its search.
+    await go("/brain", "Things to remember");
+    const search = `document.querySelector('input[aria-label="Search Brain"]')`;
+    if (!BEFORE && mode === "light") {
+      // Fail the actual browser transport once; retry must reach the real
+      // production search and preserve the owner's query.
+      await evaluate(`(() => { const realFetch = window.fetch; window.fetch = function(input, init) { if (init?.body && JSON.parse(init.body).path === "pages:search") { window.fetch = realFetch; return Promise.resolve(new Response(JSON.stringify({error:"Search temporarily unavailable"}), {status:503, headers:{"content-type":"application/json"}})); } return realFetch.apply(this, arguments); }; return true; })()`);
+    }
     await evaluate(`${search}.focus(); true`);
-    await typeText("e");
+    await typeText("coffee");
+    if (!BEFORE && mode === "light") {
+      await waitFor(`document.querySelector('[role="alert"]')?.textContent.includes("Couldn't search Brain")`, "an honest search error");
+      check("brainSearchFailureIsVisible", !await evaluate(`document.body.innerText.includes("Nothing in Brain says that")`));
+      await shot("brain-search-error");
+      await click(byText("button", "Try again"));
+    }
+    await waitFor(`document.body.innerText.includes("coffee black")`, "Brain to find the seeded memory line", 30);
+    if (!BEFORE && mode === "light") check("brainSearchRetryRecovers", await evaluate(`${search}.value === "coffee" && !document.querySelector('[role="alert"]')`));
     await waitFor(`document.querySelector('[aria-label="Clear search"]')`, "the clear button", 10).catch(() => {});
     await shot(`memory-${mode}`);
     if (!BEFORE) {
@@ -369,28 +392,73 @@ try {
         check("searchHasOneClearButton", clear.ours === 1 && clear.type === "search" && browsers.length > 0 && browsers.every((item) => item.appearance === "none"), { ...clear, browsers });
         await click(`document.querySelector('[aria-label="Clear search"]')`);
         await sleep(500);
-        check("onlyInChatTip", await tipCheck("only in chat", byText("span[tabindex]", "Only in Coffee order"), /Kept to one chat/));
-        if (project) check("onlyInProjectTip", await tipCheck("only in project", `document.querySelector('a[href^="/projects/"]')`, /Kept to a project/));
-        check("promotedTip", await tipCheck("promoted overnight", byText("span[tabindex]", "Promoted overnight"), /Promoted from daily notes overnight/));
+        check("brainListsScopedPages", await evaluate(`Boolean(document.querySelector('[data-memory-page="chat"]'))`));
+        if (project) check("brainListsProjectPages", await evaluate(`Boolean(document.querySelector('[data-project-chip]'))`));
       }
     }
     await collectErrors(`memory-${mode}`);
-    await go("/memory?tab=about", "USER.md");
+    await send("Page.navigate", { url: `${BASE}/memory?tab=about` });
+    await waitFor(`location.pathname.startsWith("/brain/")`, "old About link to open its Brain page", 30);
     if (!BEFORE) await noNatives(`about-${mode}`);
 
-    // --- Work: tips on the schedule's times; the time and date pickers ------------------------
-    await go("/work", "Morning briefing");
+    // --- Board: schedule state, edit recovery; the time and date pickers ---------------------
+    await go(`/board?channel=jobs&thread=job:${job.id}`, "Morning briefing");
     await shot(`work-${mode}`);
     if (!BEFORE) {
       await noNatives(`work-${mode}`);
       if (mode === "light") {
-        check("cronTip", await tipCheck("cron", byText("span[tabindex]", "Weekdays"), /0 8 \* \* 1-5/));
-        check("nextRunTip", await tipCheck("next run", byText("span[tabindex]", "Next"), /\d{4}|\d:\d\d/));
-        check("lastRanTip", await tipCheck("last ran", byText("span[tabindex]", "Last ran"), /\d{4}|\d:\d\d/));
+        const invalidSchedules = [
+          { args: { name: "X", prompt: "Prepare a useful local briefing.", schedule: "0 8 * * *" }, words: "at least two letters" },
+          { args: { name: "Bad prompt", prompt: "Short", schedule: "0 8 * * *" }, words: "in a sentence or so" },
+          { args: { name: "Bad folder", prompt: "Prepare a useful local briefing.", folder: "relative-folder" }, words: "folder's full path" },
+          { args: { name: "Bad timing", prompt: "Prepare a useful local briefing.", schedule: "not a cron" }, words: "not a valid cron expression" },
+        ];
+        const validation: Array<{ status: number; error?: string }> = [];
+        for (const item of invalidSchedules) {
+          const response = await fetch(`${BASE}/api/backend/admin`, { method: "POST", headers: { "content-type": "application/json", "x-perry-key": KEY }, body: JSON.stringify({ path: "jobs:saveFromDashboard", args: { key: KEY, ...item.args } }) });
+          const body = await response.json() as { error?: string };
+          validation.push({ status: response.status, error: body.error });
+        }
+        check("scheduleValidationExplainsRepairOverHttp", validation.every((item, i) => item.status === 400 && item.error?.includes(invalidSchedules[i].words)), validation);
+        const tombstone = await call<{ id: string }>("jobs:create", { name: "Removed schedule", prompt: "Prepare a useful local briefing.", schedule: "0 8 * * *" });
+        await call("jobs:removeFromDashboard", { key: KEY, id: tombstone.id });
+        const missing = await fetch(`${BASE}/api/backend/admin`, { method: "POST", headers: { "content-type": "application/json", "x-perry-key": KEY }, body: JSON.stringify({ path: "jobs:saveFromDashboard", args: { key: KEY, id: tombstone.id, name: "Removed schedule", prompt: "Prepare a useful local briefing.", schedule: "0 8 * * *" } }) });
+        const missingBody = await missing.json() as { error?: string };
+        check("removedScheduleExplainsRecoveryOverHttp", missing.status === 400 && missingBody.error === "That schedule no longer exists.", missingBody);
+        const wrongIds: Array<{ status: number; error?: string }> = [];
+        for (const id of ["", "not-a-job", ...(project ? [project] : [])]) {
+          const response = await fetch(`${BASE}/api/backend/admin`, { method: "POST", headers: { "content-type": "application/json", "x-perry-key": KEY }, body: JSON.stringify({ path: "jobs:saveFromDashboard", args: { key: KEY, id, name: "Wrong schedule", prompt: "Prepare a useful local briefing.", schedule: "0 8 * * *" } }) });
+          wrongIds.push({ status: response.status, ...(await response.json() as { error?: string }) });
+        }
+        check("foreignScheduleIdsAreRefusedOverHttp", wrongIds.every(item => item.status === 400 && item.error === "That schedule no longer exists.") && (!project || (await call<{name:string}>("projects:get", {key:KEY,id:project})).name === "Kitchen renovation"), wrongIds);
+        check("boardShowsScheduleTiming", await evaluate(`document.body.innerText.includes("Weekdays") && Boolean(document.querySelector('[data-job-model]'))`));
+        await click(`document.querySelector('[data-more]')`);
+        await click(byText('[role="menuitem"]', "pause"));
+        await until(async () => (await call<{jobs:Job[]}>("jobs:listForDashboard", {key:KEY})).jobs.find(item => item.id === job.id)?.enabled === false, "the schedule to pause");
+        await waitFor(`document.body.innerText.includes("paused")`, "the paused state");
+        check("boardPausesSchedule", true);
+        await click(`document.querySelector('[data-more]')`);
+        await click(byText('[role="menuitem"]', "change"));
+        await waitFor(`document.querySelector("#schedule-name")`, "the edit form");
+        await evaluate(`document.querySelector("#schedule-name").focus(); document.querySelector("#schedule-name").select(); true`);
+        await typeText("Morning briefing revised");
+        await evaluate(`(() => { const realFetch = window.fetch; window.fetch = function(input, init) { if (init?.body && JSON.parse(init.body).path === "jobs:saveFromDashboard") { window.fetch = realFetch; return Promise.resolve(new Response(JSON.stringify({error:"Save temporarily unavailable"}), {status:503, headers:{"content-type":"application/json"}})); } return realFetch.apply(this, arguments); }; return true; })()`);
+        await click(byText('[role=dialog] button[type=submit]', "Save"));
+        await waitFor(`document.body.innerText.includes("Save temporarily unavailable")`, "the save refusal");
+        check("scheduleFailedSaveRetainsEdit", await evaluate(`document.querySelector("#schedule-name")?.value === "Morning briefing revised"`));
+        await shot("schedule-save-error");
+        await click(byText('[role=dialog] button[type=submit]', "Save"));
+        await waitFor(`!document.querySelector("#schedule-name")`, "the retry to close the form");
+        const updated = (await call<{jobs:Job[]}>("jobs:listForDashboard", {key:KEY})).jobs.filter(item => item.id === job.id);
+        check("scheduleRetryKeepsPauseAndIdentity", updated.length === 1 && updated[0].name === "Morning briefing revised" && updated[0].schedule === "0 8 * * 1-5" && updated[0].enabled === false, updated);
+        await click(`document.querySelector('[data-more]')`);
+        await click(byText('[role="menuitem"]', "resume"));
+        await until(async () => (await call<{jobs:Job[]}>("jobs:listForDashboard", {key:KEY})).jobs.find(item => item.id === job.id)?.enabled === true, "the schedule to resume");
+        check("boardResumesSchedule", true);
       }
     }
     // A daily schedule at 07:45, by the time picker.
-    await click(byText("button", "New schedule"));
+    await click(`document.querySelector('[data-new="jobs"]')`);
     await waitFor(`document.querySelector("#schedule-name")`, "the schedule form");
     if (!BEFORE && mode === "light") {
       await evaluate(`document.querySelector("#schedule-name").focus(); true`);
@@ -402,12 +470,24 @@ try {
       await evaluate(`document.querySelector('[aria-label="At: minutes"]').focus(); true`);
       await typeText("45");
       await noNatives("schedule-daily");
+      const countBeforeInvalid = (await call<{ jobs: Job[] }>("jobs:listForDashboard", { key: KEY })).jobs.length;
+      await click(`document.querySelector("#schedule-repeat")`);
+      await click(byText("[role=option]", "Custom (cron)"));
+      await evaluate(`document.querySelector("#schedule-cron").focus(); true`);
+      await typeText("not a cron");
+      await click(byText('[role=dialog] button[type=submit]', "Create"));
+      await waitFor(`document.body.innerText.includes("not a valid cron expression")`, "specific invalid schedule feedback");
+      const countAfterInvalid = (await call<{ jobs: Job[] }>("jobs:listForDashboard", { key: KEY })).jobs.length;
+      check("invalidScheduleRetainsDraftWithoutInsert", await evaluate(`document.querySelector("#schedule-name")?.value === "E2E stretch reminder" && document.querySelector("#schedule-cron")?.value === "not a cron"`) && countAfterInvalid === countBeforeInvalid);
+      await shot("schedule-invalid-cron");
+      await click(`document.querySelector("#schedule-repeat")`);
+      await click(byText("[role=option]", "Every day"));
       await click(byText('[role=dialog] button[type=submit]', "Create"));
       let daily: Job | undefined;
       await until(async () => { daily = (await call<{ jobs: Job[] }>("jobs:listForDashboard", { key: KEY })).jobs.find((item) => item.name === "E2E stretch reminder"); return Boolean(daily); }, "the daily schedule", 15).catch(() => {});
       check("timePickerSavesDailyTime", daily?.schedule === "45 7 * * *", daily);
       await waitFor(`!document.querySelector("[role=dialog]")`, "the dialog to close", 10).catch(() => {});
-      await click(byText("button", "New schedule"));
+      await click(`document.querySelector('[data-new="jobs"]')`);
       await waitFor(`document.querySelector("#schedule-name")`, "the schedule form");
     }
     // Once, on the 15th of next month at 16:20, by the date picker.
@@ -445,6 +525,7 @@ try {
       await press("Escape");
     }
     await collectErrors(`work-${mode}`);
+    if (WORK_MEMORY) continue;
 
     // --- Settings: the theme and the update's log (General), quiet hours (Notifications); WhatsApp's cards and checkbox -----
     await go("/settings/notifications", "Quiet hours");
@@ -464,12 +545,12 @@ try {
         check("timePickerSavesQuietHours", (manners as { quietHours?: { start: string } } | null)?.quietHours?.start === "21:30", manners);
       }
     }
-    await go("/settings/general", "What it said");
+    await go("/settings/general", "Technical details");
     if (!BEFORE) {
       await noNatives(`settings-${mode}`);
       if (mode === "light") {
-        const logOpen = byText("button", "What it said");
-        check("updateLogIsCollapsible", Boolean(await evaluate(`Boolean(${logOpen}) && !document.querySelector("details")`)));
+        const logOpen = byText("button", "Technical details");
+        check("updateLogIsCollapsible", Boolean(await evaluate(`Boolean(${logOpen}) && ${logOpen}.getAttribute('aria-expanded') === 'false'`)));
         await click(logOpen);
         check("updateLogOpens", Boolean(await evaluate(`document.body.innerText.includes("ERR_PNPM_META_FETCH_FAIL")`)));
         const theme = await evaluate(`(() => { const group = document.querySelector('[aria-label="Theme"]'); const items = [...group.querySelectorAll("button")]; return { role: group.getAttribute("role"), items: items.map((b) => [b.innerText.trim(), b.getAttribute("aria-pressed")]) }; })()`);
@@ -519,7 +600,8 @@ try {
     await collectErrors(`activity-${mode}`);
 
     // --- Needs you: the approval's expiry --------------------------------------------------------
-    await go("/inbox", "build-cache");
+    await go(BEFORE ? "/inbox" : boardLink({ tab: NEEDS_YOU, thread: `approval:${waitingApproval.id}` }), "build-cache");
+    if (!BEFORE) await waitFor(`document.querySelector('#approval-${waitingApproval.id} span[tabindex]')`, "the opened approval card", 15);
     await shot(`inbox-${mode}`);
     if (!BEFORE) {
       await noNatives(`inbox-${mode}`);

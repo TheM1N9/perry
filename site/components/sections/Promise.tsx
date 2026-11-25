@@ -2,9 +2,9 @@ import { Reveal } from "@/components/fx/Reveal";
 
 // What Perry isn't, each with the plain fact behind it.
 const NOT = [
-  { title: "No cloud.", body: "Perry runs on your computer. Your files stay on it, and its dashboard opens only with your key." },
-  { title: "No new subscription.", body: "It thinks with the plan you already pay for, ChatGPT, Claude or Grok, through that maker's own coding agent. You choose which." },
-  { title: "No rogue moves.", body: "One owner per Perry, and anything risky waits for your Approve." },
+  { title: "Stored on your computer.", body: "Perry runs locally and keeps your chats, memory and files there. Your selected AI engine and connected services receive the content needed for your requests. The dashboard opens with your key." },
+  { title: "Use your existing plan.", body: "It thinks with your ChatGPT, Claude or Grok plan through that maker's coding agent. Usage counts toward that plan's limits; optional integrations and cloud services can cost extra." },
+  { title: "Choose its access.", body: "Ask requests approval for computer actions that need it. Auto reviews requests and handles routine ones. Full access permits computer work without those prompts. One owner per Perry." },
 ];
 
 export function Promise() {

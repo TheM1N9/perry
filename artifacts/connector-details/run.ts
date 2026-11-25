@@ -5,10 +5,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { openChat, sleep } from "../browser";
 import { KEY, startStandIn } from "../connector-accounts/stand-in";
 
-const output = resolve("artifacts/connector-details/results");
+const output = resolve(process.argv[2] ?? "artifacts/connector-details/results");
 mkdirSync(output, { recursive: true });
 const home = mkdtempSync(join(tmpdir(), "perry-connector-details-"));
 const provider = await startStandIn();
@@ -26,7 +27,8 @@ const base = `http://127.0.0.1:${port}`;
 const key = "connector-details-fixture";
 const server = spawn("node", ["node_modules/next/dist/bin/next", "start", "-p", String(port)], {
   cwd: process.cwd(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env, PERRY_HOME: home, DASHBOARD_KEY: key, PERRY_PORT: String(port), PERRY_CREDENTIAL_KEY: "11".repeat(32), COMPOSIO_API_KEY: KEY, COMPOSIO_BASE_URL: provider.url, TELEMETRY_DISABLED: "true" },
+  env: { ...process.env, PERRY_HOME: home, DASHBOARD_KEY: key, PERRY_PORT: String(port), PERRY_CREDENTIAL_KEY: "11".repeat(32), COMPOSIO_API_KEY: KEY, COMPOSIO_BASE_URL: provider.url, TELEGRAM_BOT_TOKEN: "", PERRY_WAKE_DISABLED: "1", TELEMETRY_DISABLED: "true",
+    PERRY_EMBED_MODEL: "connector-fixture", NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(resolve("artifacts/connector-details/preload.mjs")).href}` },
 });
 let log = "";
 server.stdout?.on("data", (chunk) => { log += chunk; });

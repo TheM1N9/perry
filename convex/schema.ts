@@ -384,6 +384,10 @@ export default defineSchema({
     })),
     /** Where it was asked for: its question and result go back there (tasks.ts). Unset: the owner's messaging app. */
     origin: v.optional(v.id("conversations")),
+    /** Exact run that most recently created/updated a tracked plan, supplied by the authenticated turn. */
+    originRunId: v.optional(v.id("runs")),
+    /** A delivered result whose checklist was not confirmed; never authorizes work or completes prerequisites. */
+    completion: v.optional(v.object({ version: v.string(), runId: v.id("runs"), turnId: v.id("codexTurns"), createdAt: v.number() })),
     /** The chat a background task works in, a turn at a time. Unset for a task only tracked in a chat (start_task). */
     conversationId: v.optional(v.id("conversations")),
     /** Turns it has taken, against tasks.MAX_TURNS. */
@@ -440,6 +444,7 @@ export default defineSchema({
     .index("by_decision_version", ["decision.version"])
     .index("by_expired_approval", ["expiredApprovalId"])
     .index("by_origin", ["origin", "updatedAt"])
+    .index("by_origin_run", ["originRunId"])
     .index("by_conversation", ["conversationId"])
     .index("by_initiative", ["initiative.key"])
     .index("by_goal", ["goalId"])
@@ -456,14 +461,16 @@ export default defineSchema({
     taskId: v.id("tasks"),
     /** The chat that queued the task: Perry's turn there reads it. */
     conversationId: v.id("conversations"),
-    outcome: v.union(v.literal("done"), v.literal("blocked"), v.literal("failed"), v.literal("waiting")),
+    outcome: v.union(v.literal("done"), v.literal("blocked"), v.literal("failed"), v.literal("waiting"), v.literal("result-ready")),
     /** Saved outcome text, retained for older handoffs and inspection. */
     notice: v.string(),
     /** The child's original words, retained even when its task is resumed. */
     report: v.optional(v.string()),
+    decisionVersion: v.optional(v.string()),
+    completionVersion: v.optional(v.string()),
     /** What its turn is listed as in Activity, and found by. */
     label: v.string(),
-    state: v.union(v.literal("pending"), v.literal("answered"), v.literal("waiting"), v.literal("fallback")),
+    state: v.union(v.literal("pending"), v.literal("answered"), v.literal("waiting"), v.literal("fallback"), v.literal("superseded")),
     tries: v.number(),
     triedAt: v.optional(v.number()),
     /** Exact delivery run, shared by siblings batched into the same turn or steer. */
@@ -1152,6 +1159,12 @@ export default defineSchema({
    * there. See app/api/media.
    */
   chatAttachments: defineTable({
+    /** Logical file shared by these immutable message copies. */
+    libraryId: v.optional(v.id("library")),
+    /** Inert path identity retained across removal, so a late upload cannot restore it. */
+    originPath: v.optional(v.string()),
+    /** Authenticated producer, kept even when a step/message is copied to another chat. */
+    originRunnerId: v.optional(v.id("runners")),
     delivery: v.optional(vFileDelivery),
     /** Upload staged for editing this immutable message revision. */
     editOf: v.optional(v.id("agentMessages")),
@@ -1173,6 +1186,7 @@ export default defineSchema({
   })
     .index("by_conversation", ["conversationId"])
     .index("by_message", ["conversationId", "messageKey"])
+    .index("by_library", ["libraryId"])
     .index("by_path", ["localPath"])
     .index("by_storage", ["storageId"]),
 
@@ -1190,6 +1204,9 @@ export default defineSchema({
     size: v.number(),
     localPath: v.optional(v.string()),
     storageId: v.optional(v.id("_storage")),
+    /** Origin identity only; never a path to read, preview or delete on this server. */
+    originPath: v.optional(v.string()),
+    originRunnerId: v.optional(v.id("runners")),
     by: v.union(v.literal("owner"), v.literal("perry")),
     from: vLibraryFrom,
     /** How it came to be (lib/library.ts, HOW). */
@@ -1211,6 +1228,7 @@ export default defineSchema({
     .index("by_created", ["createdAt"])
     .index("by_path", ["localPath"])
     .index("by_storage", ["storageId"])
+    .index("by_origin", ["originRunnerId", "originPath"])
     .index("by_version", ["versionOf"])
     .index("by_conversation", ["conversationId"]),
 
@@ -1688,6 +1706,12 @@ export default defineSchema({
     contactId: v.optional(v.id("contacts")),
     /** For "brain": the change to Brain it asks about (compaction.ts). */
     proposalId: v.optional(v.id("brainProposals")),
+    /** One immutable connected-account operation; retries never dispatch a second time. */
+    connectedAction: v.optional(v.object({
+      requestId: v.string(), scope: v.string(), turnId: v.id("codexTurns"),
+      state: v.union(v.literal("ready"), v.literal("executing"), v.literal("done"), v.literal("unknown")),
+      startedAt: v.optional(v.number()), result: v.optional(v.string()),
+    })),
     title: v.string(),
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),
@@ -1721,7 +1745,7 @@ export default defineSchema({
     whatsappChatId: v.optional(v.string()),
     createdAt: v.number(),
     decidedAt: v.optional(v.number()),
-  }).index("by_status", ["status", "createdAt"]),
+  }).index("by_status", ["status", "createdAt"]).index("by_connected_request", ["conversationId", "connectedAction.requestId"]),
 
   /**
    * What the owner said to always allow on one runner: an exact command, or a

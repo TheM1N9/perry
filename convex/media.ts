@@ -3,7 +3,7 @@ import { vFileDelivery } from "./schema";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { index } from "./library";
+import { index, isLocalAttachment } from "./library";
 import { authenticate } from "./runner";
 
 /**
@@ -68,7 +68,7 @@ export const runnerAttachment = query({
     const runner = await authenticate(ctx, args.token);
     const attachment = await ctx.db.get(args.id);
     const chat = attachment ? await ctx.db.get(attachment.conversationId) : null;
-    if (!attachment || attachment.removedAt || !attachment.localPath || chat?.codexRunnerId !== runner._id) return null;
+    if (!attachment || attachment.removedAt || !attachment.localPath || chat?.codexRunnerId !== runner._id || !await isLocalAttachment(ctx, attachment)) return null;
     return { localPath: attachment.localPath, fileName: attachment.fileName, contentType: attachment.contentType };
   },
 });
@@ -109,7 +109,7 @@ export const localAttachment = query({
     assertDashboardKey(args.key);
     const id = ctx.db.normalizeId("chatAttachments", args.id);
     const row = id ? await ctx.db.get(id) : null;
-    return row?.localPath && !row.removedAt ? { localPath: row.localPath, fileName: row.fileName, contentType: row.contentType } : null;
+    return row?.localPath && !row.removedAt && await isLocalAttachment(ctx, row) ? { localPath: row.localPath, fileName: row.fileName, contentType: row.contentType } : null;
   },
 });
 
@@ -164,11 +164,12 @@ export const shareFromLibrary = internalMutation({
     const existing = await ctx.db.query("chatAttachments")
       .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))
       .collect();
-    if (!existing.some((row) => (item.localPath && row.localPath === item.localPath) || (item.storageId && row.storageId === item.storageId))) {
+    if (!existing.some((row) => row.libraryId ? row.libraryId === item._id : item.storageId ? row.storageId === item.storageId : Boolean(item.localPath && row.localPath === item.localPath))) {
       const attachmentId = await ctx.db.insert("chatAttachments", {
+        libraryId: item._id,
         conversationId: job.conversationId,
         messageKey: mediaKey,
-        ...(item.localPath ? { localPath: item.localPath } : { storageId: item.storageId }),
+        ...(item.storageId ? { storageId: item.storageId } : { localPath: item.localPath }),
         fileName: item.name,
         contentType: item.contentType,
         delivery: args.delivery,

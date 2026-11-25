@@ -226,8 +226,8 @@ export const moveChat = mutation({
       for (const row of memberships) await ctx.db.patch(row._id, { projectId: undefined });
       return null;
     }
-    if (chat.contactId) throw new Error("Perry's chats with other people stay out of projects, so nothing of yours reaches them.");
-    if (!canJoin(chat)) throw new Error("Your Telegram and WhatsApp chats are about everything, so they stay out of projects.");
+    if (chat.contactId) throw new ArgumentError("Perry's chats with other people stay out of projects, so nothing of yours reaches them.");
+    if (!canJoin(chat)) throw new ArgumentError("Your Telegram and WhatsApp chats are about everything, so they stay out of projects.");
     const project = await ctx.db.get(args.projectId);
     if (!project) throw new Error("This project was deleted.");
     if (project.workspaceRequestId) throw new ArgumentError("Wait for this project's workspace to finish moving.");

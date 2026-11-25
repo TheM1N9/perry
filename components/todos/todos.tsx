@@ -7,7 +7,7 @@ import { useMutation } from "@/client/react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StatusBadge, TextTip } from "@/components/dashboard/common";
 import { api } from "@/convex/_generated/api";
@@ -26,40 +26,45 @@ import { cronFor, describeSchedule, dueLabel, readTodo, REPEAT_NAMES, REPEATS, r
 export function QuickAdd({ onAdded, autoFocus, className }: { onAdded?: (title: string, dueAt?: number) => void; autoFocus?: boolean; className?: string }) {
   const key = useDashboardKey();
   const add = useMutation(api.todos.add);
-  const [text, setText] = useState("");
+  const [draft, setDraft] = useState({ text: "", literal: false });
+  const { text, literal } = draft;
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const read = text.trim() ? readTodo(text) : null;
+  const read: ReturnType<typeof readTodo> | null = text.trim() ? literal ? { title: text.trim() } : readTodo(text) : null;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!read) return;
-    // Cleared at once, so the next one can be typed while this one saves; put back if it does not.
-    const typed = text;
-    setText("");
+    if (!read || saving) return;
+    setSaving(true);
     setError("");
     try {
       await add({ key, title: read.title, ...(read.dueAt ? { dueAt: read.dueAt } : {}), ...(read.repeat ? { repeat: read.repeat } : {}) });
-      onAdded?.(read.title, read.dueAt);
+      setDraft({ text: "", literal: false });
+      if (onAdded) onAdded(read.title, read.dueAt);
+      else toast.success(`Added “${read.title}”`);
     } catch (cause) {
-      setText((now) => now || typed);
       setError(errorText(cause));
-    }
+    } finally { setSaving(false); }
   };
 
   return (
-    <form onSubmit={(event) => void submit(event)} className={className}>
-      <InputGroup className="h-10 rounded-xl bg-card shadow-raised dark:bg-card">
+    <form onSubmit={(event) => void submit(event)} className={className} aria-busy={saving || undefined}>
+      <InputGroup className="h-10 rounded-xl bg-card shadow-raised pointer-coarse:h-12 dark:bg-card">
         <InputGroupAddon><PlusIcon aria-hidden /></InputGroupAddon>
         <InputGroupInput
           value={text}
-          onChange={(event) => { setText(event.target.value); setError(""); }}
+          readOnly={saving}
+          onChange={(event) => { setDraft({ text: event.target.value, literal: false }); setError(""); }}
           autoFocus={autoFocus}
           aria-label="Add a to-do"
           placeholder="Add a to-do: “call Sam 2pm”"
           className="md:text-sm"
         />
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton type="submit" size="sm" variant="secondary" disabled={!read || saving} aria-label="Add to-do" className="min-w-11 pointer-coarse:min-h-11">{saving ? "Saving…" : "Add"}</InputGroupButton>
+        </InputGroupAddon>
       </InputGroup>
-      <div className="mt-1.5 flex min-h-5 items-center gap-1.5 px-0.5 text-xs text-muted-foreground" aria-live="polite">
+      <div className="mt-1.5 flex min-h-5 flex-wrap items-center gap-x-1.5 gap-y-1 px-0.5 text-xs text-muted-foreground" aria-live="polite">
         {error ? <span className="text-destructive">{error}</span>
           : read?.repeatName ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 font-medium text-foreground">
@@ -69,8 +74,10 @@ export function QuickAdd({ onAdded, autoFocus, className }: { onAdded?: (title: 
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 font-medium text-foreground">
               <AlarmClockIcon className="size-3" aria-hidden />{dueLabel(read.dueAt)}
             </span>
-          ) : read ? <span>No time · Enter to add</span> : null}
+          ) : read ? <span>{literal ? "Text only" : "No time"} · Enter to add</span> : null}
         {read?.dueAt && <span className="truncate">“{read.title}”</span>}
+        {read?.dueAt && <Button type="button" variant="ghost" size="xs" disabled={saving} className="shrink-0 text-muted-foreground pointer-coarse:min-h-11" onClick={() => { setDraft((now) => ({ ...now, literal: true })); setError(""); }}>Use text only</Button>}
+        {saving && <span className="ml-auto">Saving…</span>}
       </div>
     </form>
   );
@@ -115,8 +122,16 @@ export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: 
               checked={done}
               aria-label={done ? `Put back “${todo.title}”` : `Done: “${todo.title}”`}
               onCheckedChange={() => {
-                void setDone({ key, id: todo.id, done: !done }).catch(fail);
-                if (!done) onDone?.(todo);
+                void setDone({ key, id: todo.id, done: !done }).then(() => {
+                  if (done) return;
+                  if (onDone) onDone(todo);
+                  else toast.success(`Completed “${todo.title}”`, {
+                    id: `todo-completed:${todo.id}`,
+                    ...(todo.repeat ? { description: "Its next occurrence is on your list." } : {
+                      action: { label: "Undo", onClick: () => { void setDone({ key, id: todo.id, done: false }).catch(fail); } },
+                    }),
+                  });
+                }).catch(fail);
               }}
               className="size-[18px] cursor-pointer rounded-full border-[1.5px] border-muted-foreground/45 hover:border-primary hover:bg-primary/10 data-checked:hover:bg-primary [&_[data-slot=checkbox-indicator]>svg]:size-3 [&_svg]:stroke-3"
             />

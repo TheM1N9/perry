@@ -6,6 +6,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { CLI_PACKAGES, ENGINE_LABELS, updateOf, type EngineKind } from "./lib/engines";
 import { authenticate } from "./runner";
 import { vEngine, vEngineUpdateStatus } from "./schema";
+import { ArgumentError } from "../server/validate";
 
 /**
  * Updating an engine's CLI from Settings, on the computer it is on. The owner
@@ -46,15 +47,15 @@ export const request = mutation({
     assertDashboardKey(args.key);
     const runner = await ctx.db.get(args.runnerId);
     const label = ENGINE_LABELS[args.engine];
-    if (!runner || runner.revoked) throw new Error("That computer isn't connected to Perry.");
-    if (!CLI_PACKAGES[args.engine]) throw new Error(`${label} comes with Perry, which downloads the version it works with. A newer one comes with an update to Perry.`);
-    if (!isOnline(runner)) throw new Error(`Start Perry on ${runner.name} to update ${label} there.`);
+    if (!runner || runner.revoked) throw new ArgumentError("That computer isn't connected to Perry.");
+    if (!CLI_PACKAGES[args.engine]) throw new ArgumentError(`${label} comes with Perry, which downloads the version it works with. A newer one comes with an update to Perry.`);
+    if (!isOnline(runner)) throw new ArgumentError(`Start Perry on ${runner.name} to update ${label} there.`);
     const status = statusesOf(runner).find((item) => item.kind === args.engine);
-    if (!status?.installed && !status?.version) throw new Error(`${label} isn't installed on ${runner.name}.`);
+    if (!status?.installed && !status?.version) throw new ArgumentError(`${label} isn't installed on ${runner.name}.`);
     const update = updateOf(status);
-    if (!update) throw new Error(`${label} on ${runner.name} is up to date.`);
+    if (!update) throw new ArgumentError(`${label} on ${runner.name} is up to date.`);
     const rows = await rowsOf(ctx, runner._id, args.engine);
-    if (rows.some((row) => OPEN.includes(row.status))) throw new Error(`${label} is already being updated on ${runner.name}.`);
+    if (rows.some((row) => OPEN.includes(row.status))) throw new ArgumentError(`${label} is already being updated on ${runner.name}.`);
     for (const row of rows) await ctx.db.delete(row._id);
     await ctx.db.insert("engineUpdates", {
       runnerId: runner._id, engine: args.engine, status: "queued", command: update.command, from: update.version, requestedAt: Date.now(),

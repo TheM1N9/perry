@@ -1,8 +1,13 @@
 # Install Perry
 
-Perry is yours. You run your own deployment, with your own bot and your own
-keys, and nobody else's data is anywhere near it. There is no shared server, no
-account on someone else's system, and nothing in this repo phones home.
+Perry runs as a single-owner service on your computer. Chats, memory and files
+are stored under `~/.perry`. You use your own engine account and connect only
+the services you need. The chosen engine and those services receive the
+content needed for your request; local storage does not mean offline processing.
+
+Optional dashboard diagnostics are off by default. Control them in **Settings
+→ General → Privacy** for each browser. Installer analytics are a separate
+opt-in through `PERRY_TELEMETRY_ENABLED=1`; `PERRY_TELEMETRY_DISABLED=1` disables them.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh    # macOS, Linux, WSL
@@ -62,9 +67,8 @@ Perry runs on macOS, Linux and Windows:
 
 `perry doctor --machine` checks all of that on the machine it runs on.
 
-That is the whole install. The wizard walks five steps, tells you what it is
-doing, and is safe to re-run: it keeps whatever is already configured and only
-asks for what is missing.
+Setup checks what is already configured and asks for what is missing. You can
+run it again to finish an interrupted setup.
 
 ## Running it
 
@@ -78,7 +82,7 @@ starts at every login and restarts either one if it crashes. From then on:
 | `perry logs [-f]` | what the runner and the dashboard have been saying |
 | `perry open` | the dashboard, already unlocked in this browser |
 | `perry stop` / `perry start` | stop it, or start it again |
-| `perry update` | pull the latest Perry, install, push the backend, rebuild, restart |
+| `perry update` | download the latest Perry, install dependencies, rebuild and restart |
 | `perry doctor` | check this machine and your deployment |
 | `perry pair` | a new code to claim Perry on Telegram |
 | `perry run` | run it in this terminal instead, to watch it or to answer approvals there |
@@ -90,15 +94,15 @@ work in `~/.perry/workspace` unless you connected with another folder.
 
 ## What the wizard does
 
-No account is needed but the one of the engine you choose: Perry keeps
-everything on this computer, in `~/.perry`.
+Web chat uses the engine you choose and follows that engine's sign-in
+requirements. Telegram, WhatsApp and other integrations are optional.
 
 1. **Telegram bot, optional.** To talk to Perry on Telegram as well as in the
    dashboard, message [@BotFather](https://t.me/BotFather), send `/newbot`,
    answer two questions, and paste the token back; the wizard checks it against
    Telegram before continuing. Press Enter to skip, and Perry is yours from the
-   dashboard alone. A bot can be added later: save its token on the **Keys**
-   page, then pair it from **Setup**. Without a bot, job results and page-watch
+   dashboard alone. Add a bot later in **Settings → Telegram**, then generate
+   a pairing code there and send it to that bot. Without a bot, job results and page-watch
    alerts stay in the dashboard (a job's results in its own chat) rather than
    reaching you as messages.
 2. **The default engine.** Perry thinks with a coding agent on your own
@@ -125,6 +129,11 @@ Telegram for messages; nothing needs to be reachable from the internet. With a
 bot, it prints six digits. Without one there is nothing to claim: the dashboard
 key is the owner's key.
 
+On the welcome screen, check that the chosen engine is ready and sign in if
+needed. Choose **Start chatting** to write your first message. Voice and
+personalization are optional. Later, `perry open` reopens the dashboard and
+**Settings → Engines** shows sign-in and readiness on each computer.
+
 Send those six digits to your bot. Whoever sends them first owns that install,
 and from then on every other sender is ignored without a reply. Codes expire
 after an hour.
@@ -149,18 +158,19 @@ dashboard.convex.dev when you are happy.
 
 ## Changing keys later
 
-Everything except the dashboard key is editable on the **Keys** page: the bot
-token and Composio. No terminal, and changes apply on the next turn; a new bot
-token within a few seconds.
+Enter each service key beside the feature that uses it: the bot token in
+**Settings → Telegram**, the Gemini API key in **Settings → Engines**, and the
+Composio key in **Apps & skills**. Changes apply on the next turn; a new bot
+token takes effect within a few seconds.
 
-Keys entered there are write-only. The page shows whether one is set, where it
+Service keys entered there are write-only. The control shows whether one is set, where it
 came from, and its last four characters, and never reads one back. A key saved
 there overrides the one in `.env.local`, and clearing it falls back to that one
 if it exists.
 
 `DASHBOARD_KEY` stays in `.env.local` on purpose. It is what guards that page,
 so it cannot be edited from behind it, and a lockout stays recoverable: change
-it in `.env.local`, in Perry's folder, then `perry stop && perry start`.
+it in `.env.local`, in Perry's folder, then run `perry stop` followed by `perry start`.
 
 ## Connecting your machine
 
@@ -279,14 +289,15 @@ off, and anything else is asked for. How Codex enforces that depends on the OS:
 are isolated already. `pnpm run doctor -- --machine` runs one sandboxed command
 on macOS and Linux to show the sandbox works.
 
-All of this is for **Supervised** chats, the default. A chat set to **Full
+These sandbox settings apply to **Ask** chats, the default for a new install.
+**Auto** uses a reviewer for commands instead of this sandbox. A chat set to **Full
 access** (in its composer, with `/access full`, or by the default for new chats
 in Settings → Access & approvals) runs every turn with `danger-full-access` whatever
-`PERRY_CODEX_SANDBOX` says: no sandbox, and nothing waits for you. Codex still
+`PERRY_CODEX_SANDBOX` says: computer commands run without sandbox approval prompts. Codex still
 sends each command to the runner, which lets it through at once, so that a
 chat put back on Ask or Auto while a reply runs is asked or reviewed from its
-next command. `PERRY_CODEX_SANDBOX` still sets the sandbox of every Supervised chat on that
-machine, so with it set to `danger-full-access` even a Supervised chat runs
+next command. `PERRY_CODEX_SANDBOX` still sets the sandbox of every Ask chat on that
+machine, so with it set to `danger-full-access` even an Ask chat runs
 unsandboxed, though Codex still asks there before anything it judges risky.
 
 ### Claude Code
@@ -308,10 +319,10 @@ both.
   gave it; until one has run, its aliases (`default`, `sonnet`, `opus`, `haiku`).
   Chat names and the reviewer use `haiku` on a Claude chat
   (`PERRY_CLAUDE_TITLE_MODEL`, `PERRY_CLAUDE_REVIEW_MODEL` pick another).
-- **Access.** Supervised uses Claude Code's default mode: anything that is not
+- **Access.** Ask uses Claude Code's default mode: anything that is not
   read-only is asked, in the dashboard or the runner's terminal. On macOS, Linux
   and WSL it runs in Claude Code's own sandbox, which lets sandboxed commands
-  run; native Windows has no such sandbox, so there Supervised relies on
+  run; native Windows has no such sandbox, so there Ask relies on
   approvals alone. Auto lets edits in the working folders go ahead and sends
   every command to the reviewer. Full access lets edits go ahead and allows
   everything else without asking. A change of access while a reply runs
@@ -367,14 +378,14 @@ that point in a separate thread. Each chat shows a stable session ID in the
 sidebar and header; the header copies the full ID. Older messages load on demand. Web chats share
 Perry's saved memories with Telegram while keeping their histories separate.
 
-The sidebar holds New chat, Search, Needs you, To-dos, Work (scheduled jobs,
-Perry's plans, goals, and watched pages), Memory, Apps & skills (connected
-accounts and skills), your projects and your chats. At the bottom are the
-desktop pet, the computer Perry works on, and your name, which opens Usage (how
-much of each engine's plan is left), the theme, Settings and Lock dashboard. Settings
+The sidebar holds New chat, Search, Board, To-dos, Riff, Meetings, Library,
+your projects and your chats. Board brings together work, schedules and
+decisions that need you. Open Brain and Apps & skills from your account menu
+or Settings. At the bottom are the desktop pet and your account menu, which
+also opens Usage, the theme, Settings and Lock dashboard. Settings
 puts everything else in sections down its left: General, Engines, Usage,
 Computers, Access & approvals, Notifications, Telegram, WhatsApp, Desktop pet,
-People, Logins & secrets, Dashboard key and Activity log. Each key is entered
+People, Logins & secrets, Dashboard key, Internet and Activity log. Each key is entered
 beside what it unlocks: the Telegram bot token in Telegram, the Gemini API key
 in Engines, and the Composio key in Apps & skills. Engines shows the default engine,
 and each engine's account on each connected machine; the activity log lists every run with session filters,
@@ -440,10 +451,9 @@ Send them the repo. `perry setup` gives them their own Perry on their own
 computer, with separate everything. Your memories, keys, and conversations stay
 on your computer and are never visible to theirs.
 
-What is not built is several people sharing one install. The dashboard key is a
-single bearer token and memories are one pool with no per-person scoping.
-Making that work means replacing the key with real accounts and adding an owner
-id to three tables.
+Each install is for one owner. The dashboard key is a single bearer token and
+memories are shared within that install. A hosted service for several owners
+would need accounts and isolation throughout its data, files and tools.
 
 ## Troubleshooting
 
@@ -452,7 +462,7 @@ pairing code. If Perry's server is not answering, `perry start`, and
 `perry logs` says why it stopped.
 
 **"That broke: ..." in chat.** Perry reports failures instead of swallowing
-them. The full error is in `perry logs` and in the Activity tab.
+them. Check `perry logs` and **Settings → Activity log** for details.
 
 **"Perry has no default engine yet" in chat.** Perry never picks an engine for
 you. Choose one in Settings → Engines, or pick a model for that chat,

@@ -346,7 +346,8 @@ export function DeleteDialog({ chat, onClose }: { chat: { id: ChatSummary["id"];
     setDeleting(true);
     try {
       await deleteChat({ key: dashboardKey, id: chat.id });
-      if (window.localStorage.getItem(ACTIVE_CHAT) === chat.id) window.localStorage.removeItem(ACTIVE_CHAT);
+      try { if (window.localStorage.getItem(ACTIVE_CHAT) === chat.id) window.localStorage.removeItem(ACTIVE_CHAT); }
+      catch { /* The chat was deleted even if browser storage is unavailable. */ }
       if (pathname === `/chat/${chat.id}`) router.replace("/chat");
       toast.success("Chat deleted.");
       onClose();
