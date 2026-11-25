@@ -77,4 +77,8 @@ browser errors so a selector failure cannot be mistaken for a passing app.
   Windows short names). Seed permission rules with the canonical directory,
   as the runner does, and explicitly run the filesystem probe through a real
   directory alias so every platform exercises that boundary.
+- Queued subscription reads must snapshot caller arguments before yielding for
+  concurrency admission. Mutating a chat id, key or nested arguments afterward
+  must not fetch another scope under the original cache key. Cancel queued reads
+  on unsubscribe/invalidation/close; a delayed reconnect batch must not revive them.
 

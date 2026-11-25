@@ -103,7 +103,8 @@ async function mcp(chat: string, args: object, signal?: AbortSignal) {
   const manualQueue = { current: new Promise<void>(done => { releaseKeys = done; }) };
   const stateRef = { current: await owner(main.chat, { action: "status" }) as any };
   const manualCode = ts.transpileModule(panelSource.slice(manualStart, manualEnd), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
-  const manual = new Function("manualQueue", "stateRef", "act", `${manualCode}; return manual;`)(manualQueue, stateRef, (request: any) => owner(main.chat, request));
+  const manualErrors: string[] = [];
+  const manual = new Function("manualQueue", "stateRef", "requests", "call", "setError", `${manualCode}; return manual;`)(manualQueue, stateRef, { current: new AbortController() }, (request: any) => owner(main.chat, request), (error: string) => manualErrors.push(error));
   manual({ action: "text", text: "SHOULD NOT REACH THE NEW TAB" });
   await owner(main.chat, { action: "newTab", identity: identity(main.chat) });
   await owner(main.chat, { action: "navigate", identity: identity(main.chat), url: site });
@@ -111,7 +112,7 @@ async function mcp(chat: string, args: object, signal?: AbortSignal) {
   stateRef.current = await owner(main.chat, { action: "status" });
   releaseKeys(); await manualQueue.current;
   evidence.queuedTyping = await evaluate(main.chat, "document.querySelector('input').value");
-  check("queued owner typing never retargets a newly selected tab", evidence.queuedTyping === "abcd");
+  check("queued owner typing never retargets a newly selected tab", evidence.queuedTyping === "abcd" && manualErrors.length === 0);
   await owner(main.chat, { action: "resume", identity: identity(main.chat) });
   const first = await mcp(main.chat, { action: "look" });
   evidence.firstLook = first;
@@ -137,7 +138,12 @@ async function mcp(chat: string, args: object, signal?: AbortSignal) {
   check("stopped browser approval is dismissed and cannot be approved", !lateApproval && db.get(approval._id)?.status === "expired");
 
   const other = await session("other");
-  const opened = await mcp(other.chat, { action: "open", url: site });
+  const otherProfile = await owner(other.chat, { action: "createProfile", name: "Separate fixture" }) as { id: string };
+  await owner(other.chat, { action: "selectProfile", profileId: otherProfile.id, transfer: false });
+  await owner(other.chat, { action: "start" });
+  await owner(other.chat, { action: "resume", identity: identity(other.chat) });
+  const opened = await mcp(other.chat, { action: "open", identity: identity(other.chat), url: site });
+  evidence.separateBrowser = opened;
   check("Stop leaves a separate chat browser usable", !opened.error && opened.title === "Control fixture" && identity(other.chat).sessionId !== identity(main.chat).sessionId);
   const abort = new AbortController();
   const aborted = mcp(other.chat, { action: "click", identity: opened.identity, ref: opened.elements.find((item: any) => item.label === "Send").ref }, abort.signal);
@@ -194,7 +200,11 @@ async function mcp(chat: string, args: object, signal?: AbortSignal) {
   check("Stop cancels a browser navigation before the page responds", Boolean(navigationResult.error) && evidence.navigation.cancelMs < 2_000 && !browser.browserControl(other.chat).busy);
   check("cancelled navigation releases pending CDP commands", [...browser.browserControl(other.chat).connections.values()].every(connection => connection.pending.size === 0));
   const paused = await session("pause");
-  const pausePage = await mcp(paused.chat, { action: "open", url: site });
+  const pauseProfile = await owner(paused.chat, { action: "createProfile", name: "Pause fixture" }) as { id: string };
+  await owner(paused.chat, { action: "selectProfile", profileId: pauseProfile.id, transfer: false });
+  await owner(paused.chat, { action: "start" });
+  await owner(paused.chat, { action: "resume", identity: identity(paused.chat) });
+  const pausePage = await mcp(paused.chat, { action: "open", identity: identity(paused.chat), url: site });
   const pauseWait = mcp(paused.chat, { action: "click", identity: pausePage.identity, ref: pausePage.elements.find((item: any) => item.label === "Send").ref });
   await until(async () => (await db.query("approvals").collect()).some(row => row.conversationId === paused.chat && row.status === "pending"));
   await call("pause:set", { key, paused: true });
@@ -202,6 +212,51 @@ async function mcp(chat: string, args: object, signal?: AbortSignal) {
   check("global Pause cancels an in-flight browser approval", Boolean(pauseResult.error) && await evaluate(paused.chat, "window.sent || 0") === 0 && !browser.browserControl(paused.chat).busy);
   await call("pause:set", { key, paused: false });
   check("Resume cannot revive the stopped browser call", (await db.query("approvals").collect()).filter(row => row.conversationId === paused.chat).every(row => row.status !== "pending") && await evaluate(paused.chat, "window.sent || 0") === 0);
+
+  const { streamBrowser } = await import("../../server/browser-stream");
+  await owner(main.chat, { action: "takeover" });
+  await owner(main.chat, { action: "input", identity: identity(main.chat), input: { type: "pointer", phase: "mousePressed", x: 20, y: 20, button: "left", buttons: 1, clickCount: 1, modifiers: 0 } });
+  const connection = browser.browserControl(main.chat).current!;
+  const listenersBefore = connection.listeners.size;
+  const firstViewer = new AbortController(), secondViewer = new AbortController();
+  const frames = [0, 0];
+  const drain = async (stream: ReadableStream<Uint8Array>, index: number) => {
+    const reader = stream.getReader();
+    try { while (true) { const packet = await reader.read(); if (packet.done) return; for (const line of new TextDecoder().decode(packet.value).trim().split("\n")) if (JSON.parse(line).frame) frames[index]++; } }
+    finally { reader.releaseLock(); }
+  };
+  const sendNormallyDuringView = connection.ws.send.bind(connection.ws);
+  let heldRelease: any;
+  let firstDrain: Promise<void> | undefined, secondDrain: Promise<void> | undefined;
+  try {
+    firstDrain = drain(streamBrowser(main.chat, false, 640, firstViewer.signal), 0);
+    await until(() => frames[0] > 0);
+    const registered = (globalThis as any).__perryScreencasts.get(main.chat);
+    connection.ws.send = (data: any) => {
+      const packet = JSON.parse(String(data));
+      if (packet.method === "Input.dispatchMouseEvent" && packet.params.type === "mouseReleased") { heldRelease = data; return; }
+      sendNormallyDuringView(data);
+    };
+    firstViewer.abort();
+    await until(() => heldRelease !== undefined);
+    secondDrain = drain(streamBrowser(main.chat, false, 640, secondViewer.signal), 1);
+    connection.ws.send = sendNormallyDuringView;
+    sendNormallyDuringView(heldRelease); heldRelease = undefined;
+    await until(() => frames[1] > 0);
+    check("reconnecting during final-viewer cleanup retains its live cast", (globalThis as any).__perryScreencasts.get(main.chat) === registered && registered.watchers.size === 1);
+    secondViewer.abort();
+    await until(() => !(globalThis as any).__perryScreencasts.has(main.chat));
+    check("final viewer disconnect releases screencast registration and CDP listener", connection.listeners.size === listenersBefore);
+    const alreadyGone = new AbortController(); alreadyGone.abort();
+    await drain(streamBrowser(main.chat, false, 640, alreadyGone.signal), 1);
+    check("already-aborted viewer allocates no screencast", !(globalThis as any).__perryScreencasts.has(main.chat) && connection.listeners.size === listenersBefore);
+    evidence.screencast = { frames, listenersBefore, listenersAfter: connection.listeners.size };
+  } finally {
+    connection.ws.send = sendNormallyDuringView;
+    if (heldRelease !== undefined) sendNormallyDuringView(heldRelease);
+    firstViewer.abort(); secondViewer.abort();
+    await Promise.all([firstDrain, secondDrain]);
+  }
 } catch (error) {
   evidence.error = error instanceof Error ? error.stack?.replaceAll(process.cwd(), ".") : String(error);
 } finally {

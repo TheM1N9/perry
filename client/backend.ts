@@ -16,7 +16,7 @@ type AnyFunction = FunctionReference<"query" | "mutation" | "action", "public" |
 type Listener = () => void;
 
 export class BackendError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly retryAfterMs?: number, readonly admission = false) {
     super(message);
   }
 }
@@ -42,6 +42,7 @@ type Subscription = {
   controller?: AbortController;
   retry?: ReturnType<typeof setTimeout>;
   retryDelay?: number;
+  retryAt?: number;
   again: boolean;
   idleAt?: number;
   expiry?: ReturnType<typeof setTimeout>;
@@ -63,6 +64,9 @@ export class BackendClient {
   private readonly adminKey?: string;
   private hoverTimer?: ReturnType<typeof setTimeout>;
   private prefetching = false;
+  private activeQueries = 0;
+  private queryWaiters = new Set<() => void>();
+  private refreshPending?: { due: Map<Subscription, number>; promise: Promise<unknown>; resolve: (value: unknown) => void; timer?: ReturnType<typeof setTimeout> };
   /** Lets pagination discard its load-more fallback on redaction/session changes. */
   chatCacheGeneration = 0;
   /** Called when the change stream connects or drops, for anything that shows it. */
@@ -113,7 +117,11 @@ export class BackendClient {
         return { error: `The server answered ${response.status}.` };
       }) as { value?: T; reads?: string[]; writes?: string[]; error?: string };
       if (!response.ok || body.error) {
-        const error = new BackendError(body.error ?? `The server answered ${response.status}.`, response.status);
+        const retryAfter = response.headers.get("retry-after");
+        const retryMs = retryAfter ? /^\d+(?:\.\d+)?$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now() : NaN;
+        const error = new BackendError(body.error ?? `The server answered ${response.status}.`, response.status,
+          Number.isFinite(retryMs) ? retryMs > 2_147_483_647 ? Infinity : Math.max(250, retryMs) : undefined,
+          ["minute", "concurrent"].includes(response.headers.get("x-perry-admission") ?? ""));
         if (response.status === 401 || response.status === 403 || /dashboard key|DASHBOARD_KEY/i.test(error.message)) this.clearChatCache(error);
         throw error;
       }
@@ -122,7 +130,27 @@ export class BackendClient {
   }
 
   async query<Q extends FunctionReference<"query", any>>(ref: Q, args?: FunctionArgs<Q>): Promise<FunctionReturnType<Q>> {
-    return (await this.call<FunctionReturnType<Q>>(ref as AnyFunction, args)).value;
+    return (await this.admittedCall<FunctionReturnType<Q>>(ref as AnyFunction, args, {}, true)).value;
+  }
+
+  private async admittedCall<T>(ref: AnyFunction, args: unknown, options: { timeoutMs?: number }, read = false) {
+    const stableArgs: unknown = JSON.parse(JSON.stringify(args ?? {}));
+    const until = Date.now() + (options.timeoutMs ?? 30_000);
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.call<T>(ref, stableArgs, { timeoutMs: Math.max(1, until - Date.now()) }); }
+      catch (error) {
+        if (!(error instanceof BackendError) || error.status !== 429 || (!read && !error.admission) || attempt >= 2) throw error;
+        const delay = error.retryAfterMs ?? 1000;
+        if (this.closed || Date.now() + delay >= until) throw error;
+        await new Promise<void>((resolve, reject) => {
+          const done = () => { clearTimeout(timer); this.lifetime.signal.removeEventListener("abort", abort); resolve(); };
+          const abort = () => { clearTimeout(timer); this.lifetime.signal.removeEventListener("abort", abort); reject(error); };
+          const timer = setTimeout(done, delay);
+          this.lifetime.signal.addEventListener("abort", abort, { once: true });
+          if (this.lifetime.signal.aborted) abort();
+        });
+      }
+    }
   }
 
   async mutation<M extends FunctionReference<"mutation", any>>(ref: M, args?: FunctionArgs<M>): Promise<FunctionReturnType<M>> {
@@ -141,7 +169,7 @@ export class BackendClient {
     const started = performance.now();
     let success = false;
     try {
-      const result = await this.call<FunctionReturnType<F>>(ref as AnyFunction, args, { timeoutMs: kind === "action" ? 120_000 : 30_000 });
+      const result = await this.admittedCall<FunctionReturnType<F>>(ref as AnyFunction, args, { timeoutMs: kind === "action" ? 120_000 : 30_000 });
       success = true;
       return result;
     } catch (error) {
@@ -167,10 +195,11 @@ export class BackendClient {
   subscribe(name: string, args: unknown, listener: Listener): () => void {
     if (this.closed) return () => {};
     this.pruneRecentChats();
-    const key = keyOf(name, args);
+    const stableArgs: unknown = JSON.parse(JSON.stringify(args ?? {}));
+    const key = keyOf(name, stableArgs);
     let sub = this.subscriptions.get(key);
     if (!sub) {
-      sub = { name, args, reads: null, loaded: false, listeners: new Set(), inFlight: null, again: false, revision: 0 };
+      sub = { name, args: stableArgs, reads: null, loaded: false, listeners: new Set(), inFlight: null, again: false, revision: 0 };
       this.subscriptions.set(key, sub);
     }
     const wasIdle = sub.listeners.size === 0;
@@ -193,6 +222,9 @@ export class BackendClient {
     if (this.subscriptions.get(key) !== sub) return;
     clearTimeout(sub.expiry);
     clearTimeout(sub.retry);
+    sub.retry = undefined;
+    sub.retryAt = undefined;
+    this.refreshPending?.due.delete(sub);
     sub.again = false;
     sub.controller?.abort();
     sub.idleAt = Date.now();
@@ -200,8 +232,8 @@ export class BackendClient {
     this.subscriptions.delete(key);
     this.subscriptions.set(key, sub);
     const retained = !sub.error && sub.retainedBytes;
-    // Unconfirmed/pending chat history must not linger after navigation.
-    const ttl = isChatHistory(sub.name) ? (retained ? RECENT_CHAT_TTL : 0) : isChatPayload(sub.name) ? 0 : 5_000;
+    // A failed snapshot would throw before a retry can mount and subscribe.
+    const ttl = sub.error ? 0 : isChatHistory(sub.name) ? (retained ? RECENT_CHAT_TTL : 0) : isChatPayload(sub.name) ? 0 : 5_000;
     if (!ttl) {
       if (this.subscriptions.get(key) === sub) this.subscriptions.delete(key);
       return;
@@ -262,6 +294,9 @@ export class BackendClient {
       clearTimeout(sub.expiry);
       sub.revision++;
       clearTimeout(sub.retry);
+      sub.retry = undefined;
+      sub.retryAt = undefined;
+      this.refreshPending?.due.delete(sub);
       sub.controller?.abort();
       sub.again = false;
       sub.value = undefined;
@@ -291,8 +326,33 @@ export class BackendClient {
     for (const listener of [...sub.listeners]) listener();
   }
 
+  /** Bound reconnect/refresh bursts while leaving admission for writes and the other clients. */
+  private querySlot(signal: AbortSignal): Promise<() => void> {
+    return new Promise((resolve, reject) => {
+      const grant = () => {
+        this.queryWaiters.delete(grant);
+        signal.removeEventListener("abort", abort);
+        this.activeQueries++;
+        let released = false;
+        resolve(() => {
+          if (released) return;
+          released = true;
+          this.activeQueries--;
+          this.queryWaiters.values().next().value?.();
+        });
+      };
+      const abort = () => { this.queryWaiters.delete(grant); signal.removeEventListener("abort", abort); reject(signal.reason); };
+      if (signal.aborted) { abort(); return; }
+      if (this.activeQueries < 4) grant();
+      else { this.queryWaiters.add(grant); signal.addEventListener("abort", abort, { once: true }); }
+    });
+  }
+
   private fetch(sub: Subscription): Promise<void> {
+    if (sub.retry && (sub.retryAt ?? 0) > Date.now()) return sub.inFlight ?? Promise.resolve();
     clearTimeout(sub.retry);
+    sub.retry = undefined;
+    sub.retryAt = undefined;
     if (sub.inFlight) { sub.again = true; return sub.inFlight; }
     sub.inFlight = (async () => {
       do {
@@ -300,7 +360,9 @@ export class BackendClient {
         const revision = sub.revision;
         const controller = new AbortController();
         sub.controller = controller;
+        let release: (() => void) | undefined;
         try {
+          release = await this.querySlot(AbortSignal.any([this.lifetime.signal, controller.signal]));
           const result = await this.call(sub.name, sub.args, { signal: controller.signal });
           if (revision !== sub.revision || this.closed) continue;
           const changed = !sub.loaded || sub.error || JSON.stringify(result.value) !== JSON.stringify(sub.value);
@@ -314,11 +376,15 @@ export class BackendClient {
         } catch (error) {
           if (revision !== sub.revision || this.closed) continue;
           if (controller.signal.aborted) continue;
-          if (error instanceof Error && error.name === "TimeoutError" && sub.listeners.size) {
-            const delay = sub.retryDelay ?? 500;
+          if ((error instanceof Error && error.name === "TimeoutError" || error instanceof BackendError && error.status === 429) && sub.listeners.size) {
+            const delay = error instanceof BackendError && error.retryAfterMs !== undefined ? error.retryAfterMs : sub.retryDelay ?? 500;
+            if (!Number.isFinite(delay)) { sub.error = error; sub.loaded = true; this.notify(sub); break; }
             sub.retryDelay = Math.min(delay * 2, 10_000);
+            sub.retryAt = Date.now() + delay;
+            sub.again = false;
             sub.retry = setTimeout(() => {
               sub.retry = undefined;
+              sub.retryAt = undefined;
               if (!this.closed && sub.listeners.size && this.subscriptions.get(keyOf(sub.name, sub.args)) === sub) void this.fetch(sub);
             }, delay);
             break;
@@ -329,7 +395,7 @@ export class BackendClient {
           sub.error = error;
           sub.loaded = true;
           this.notify(sub);
-        } finally { if (sub.controller === controller) sub.controller = undefined; }
+        } finally { release?.(); if (sub.controller === controller) sub.controller = undefined; }
       } while (sub.again);
       sub.inFlight = null;
       if (!sub.listeners.size && this.subscriptions.get(keyOf(sub.name, sub.args)) === sub) this.keepIdle(keyOf(sub.name, sub.args), sub);
@@ -358,9 +424,22 @@ export class BackendClient {
         this.notify(sub);
       }
     }
-    const due = [...this.subscriptions.values()].filter((sub) =>
-      sub.listeners.size > 0 && (!wanted || sub.reads === null || readsChanged(sub.reads, wanted) || (sensitive && isChatPayload(sub.name))));
-    return Promise.all(due.map((sub) => this.fetch(sub)));
+    if (this.closed) return Promise.resolve();
+    const due = [...this.subscriptions.values()].filter(sub => sub.listeners.size > 0
+      && (!wanted || sub.reads === null || readsChanged(sub.reads, wanted) || (sensitive && isChatPayload(sub.name))));
+    if (!due.length) return Promise.resolve();
+    if (this.refreshPending) { for (const sub of due) this.refreshPending.due.set(sub, sub.revision); return this.refreshPending.promise; }
+    let resolve!: (value: unknown) => void;
+    const promise = new Promise<unknown>(done => { resolve = done; });
+    const pending = { due: new Map(due.map(sub => [sub, sub.revision])), promise, resolve, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+    this.refreshPending = pending;
+    pending.timer = setTimeout(() => {
+      this.refreshPending = undefined;
+      const due = [...pending.due].filter(([sub, revision]) => sub.listeners.size > 0 && sub.revision === revision
+        && this.subscriptions.get(keyOf(sub.name, sub.args)) === sub);
+      pending.resolve(Promise.all(due.map(([sub]) => this.fetch(sub))));
+    }, 250);
+    return promise;
   }
 
   /** For withOptimisticUpdate: read and replace a live query's value until the server answers. */
@@ -453,6 +532,7 @@ export class BackendClient {
     this.closed = true;
     this.lifetime.abort();
     clearTimeout(this.hoverTimer);
+    if (this.refreshPending) { clearTimeout(this.refreshPending.timer); this.refreshPending.resolve(undefined); this.refreshPending = undefined; }
     for (const sub of this.subscriptions.values()) { clearTimeout(sub.expiry); clearTimeout(sub.retry); }
     this.stream?.abort();
     this.stream = null;

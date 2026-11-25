@@ -41,6 +41,7 @@ export class MachineHost {
     }
     await this.flushReceipts();
     await this.client.mutation(api.machines.recover, { token: this.token, receipts: [...this.receipts.values()].map(receipt => receipt.id) });
+    if (this.stopped) return;
     this.timer = setInterval(() => { void this.report(); this.expire(); if (Date.now() > this.retryAt) { this.retryAt = Date.now() + 2000; void this.flushReceipts().then(() => this.pump()); } }, 150);
     this.timer.unref();
   }
@@ -69,7 +70,10 @@ export class MachineHost {
   }
   private async perform(request: Doc<"machineRequests">, input: MachineCommand) {
     const receipt: { id: Id<"machineRequests">; result?: string; error?: string } = { id: request._id };
-    try { receipt.result = JSON.stringify(await this.execute(request, input)); }
+    try {
+      if (this.stopped) throw new Error("The runner stopped before this operation started. Try again.");
+      receipt.result = JSON.stringify(await this.execute(request, input));
+    }
     catch (error) { receipt.error = error instanceof Error ? error.message : String(error); }
     const path = join(this.receiptDir, `${request._id}.json`);
     await writeFile(`${path}.tmp`, JSON.stringify(receipt), { mode: 0o600 });
@@ -100,6 +104,7 @@ export class MachineHost {
   }
   private async execute(request: Doc<"machineRequests">, input: MachineCommand): Promise<unknown> {
     const cwd = await this.cwd(request), chat = request.conversationId;
+    if (this.stopped) throw new Error("The runner stopped before this operation started. Try again.");
     switch (input.kind) {
       case "terminal.open": {
         for (const [id, terminal] of this.terminals) if (terminal.chat === chat && terminal.status === "running" && terminal.cwd === cwd) { return { sessionId: id, cwd }; }
@@ -107,6 +112,7 @@ export class MachineHost {
         const env = { ...process.env } as Record<string, string>;
         for (const name of ["DASHBOARD_KEY", "TELEGRAM_BOT_TOKEN", "COMPOSIO_API_KEY", "ELECTRON_RUN_AS_NODE"]) delete env[name];
         const pty = await openTerminalProcess(process.platform === "win32" ? "powershell.exe" : process.env.SHELL || "/bin/sh", process.platform === "win32" ? ["-NoLogo"] : [], { cwd, env, name: "xterm-256color", cols: input.cols, rows: input.rows });
+        if (this.stopped) { pty.kill(); throw new Error("The runner stopped while opening the terminal. Open it again after reconnecting."); }
         const id = randomUUID();
         const terminal: Terminal = { pty, chat, cwd, output: "", offset: 0, status: "running", dirty: true, data: { dispose() {} }, exit: { dispose() {} } };
         terminal.data = pty.onData(data => { terminal.output += data; terminal.offset += data.length; terminal.output = terminal.output.slice(-131072); terminal.dirty = true; });
@@ -170,7 +176,13 @@ export class MachineHost {
         if (this.devices.size >= 4) throw new Error("Close a device panel before opening another.");
         const { createAgentDeviceClient } = await import("agent-device");
         const sessionId = `perry-${chat}-${randomUUID()}`, client = createAgentDeviceClient({ cwd, session: sessionId });
-        await client.apps.open({ app: input.app, platform: input.platform, ...(input.platform === "ios" ? { udid: input.deviceId } : { serial: input.deviceId }), timeoutMs: 90000 });
+        try {
+          await client.apps.open({ app: input.app, platform: input.platform, ...(input.platform === "ios" ? { udid: input.deviceId } : { serial: input.deviceId }), timeoutMs: 90000 });
+          if (this.stopped) throw new Error("The runner stopped while opening the device. Open it again after reconnecting.");
+        } catch (error) {
+          await client.sessions.close().catch(() => {});
+          throw error;
+        }
         this.devices.set(sessionId, { client, chat, viewedAt: Date.now() }); return { sessionId };
       }
       case "device.screenshot": case "device.action": case "device.close": {

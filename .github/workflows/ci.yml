@@ -34,6 +34,47 @@ jobs:
       - run: pnpm exec tsc --noEmit -p convex
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec tsc --noEmit -p artifacts
+      - run: pnpm build
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/library/lifecycle.mjs "${{ runner.temp }}/library-lifecycle"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: library-lifecycle-${{ runner.os }}
+          path: ${{ runner.temp }}/library-lifecycle/result.json
+          if-no-files-found: error
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/internet-routing/run.ts
+        env:
+          PERRY_E2E_OUTPUT: ${{ runner.temp }}/permission-boundary
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: permission-boundary-${{ runner.os }}
+          path: ${{ runner.temp }}/permission-boundary/result.json
+          if-no-files-found: error
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/message-lifecycle/run.ts
+        env:
+          PERRY_E2E_OUTPUT: ${{ runner.temp }}/chat-lifecycle/message
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/parallel-sessions/run.ts
+        env:
+          PERRY_E2E_OUTPUT: ${{ runner.temp }}/chat-lifecycle/parallel
+      - if: runner.os == 'Windows'
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/machine-lifecycle/run.mjs "${{ runner.temp }}/machine-lifecycle"
+      - if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: machine-lifecycle-${{ runner.os }}
+          path: ${{ runner.temp }}/machine-lifecycle/result.json
+          if-no-files-found: error
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: chat-lifecycle-${{ runner.os }}
+          path: ${{ runner.temp }}/chat-lifecycle
+          if-no-files-found: error
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/job-share-file/run.mjs "${{ runner.temp }}/job-share-file"
       - if: always()
         uses: actions/upload-artifact@v4
@@ -41,6 +82,39 @@ jobs:
           retention-days: 14
           name: job-share-file-${{ runner.os }}
           path: ${{ runner.temp }}/job-share-file/result.json
+          if-no-files-found: error
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/unattended-work/run.mjs "${{ runner.temp }}/unattended-work"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: unattended-work-${{ runner.os }}
+          path: ${{ runner.temp }}/unattended-work/result.json
+          if-no-files-found: error
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/task-presence/run.mjs "${{ runner.temp }}/task-presence"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: task-presence-${{ runner.os }}
+          path: ${{ runner.temp }}/task-presence/result.json
+          if-no-files-found: error
+      - run: pnpm exec bun artifacts/auto-routing/run.ts "${{ runner.temp }}/engine-protocol" --protocol-only
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: engine-protocol-${{ runner.os }}
+          path: ${{ runner.temp }}/engine-protocol/result.json
+          if-no-files-found: error
+      - if: runner.os == 'Windows'
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/computer-control/stream-reconnect.mjs "${{ runner.temp }}/stream-reconnect"
+      - if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: stream-reconnect-${{ runner.os }}
+          path: ${{ runner.temp }}/stream-reconnect/result.json
           if-no-files-found: error
       - run: pnpm exec node --experimental-strip-types artifacts/pr-300/stream-integration.mjs
       - run: pnpm exec node artifacts/pr-300/file-render-integration.mjs
@@ -144,6 +218,69 @@ jobs:
           name: choose-engine-${{ runner.os }}
           path: ${{ runner.temp }}/choose-engine
           if-no-files-found: ignore
+      - if: runner.os == 'Windows'
+        run: pnpm exec bun artifacts/choose-engine/run.ts "${{ runner.temp }}/first-use" --first-use-only
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+      - if: runner.os == 'Windows'
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/settings-recovery/run.ts "${{ runner.temp }}/settings-recovery"
+      - if: runner.os == 'Windows'
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/settings-recovery/navigation.ts "${{ runner.temp }}/settings-navigation"
+      - if: runner.os == 'Windows'
+        run: pnpm exec bun artifacts/auto-routing/run.ts "${{ runner.temp }}/engine-readiness" --readiness-only
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+      - if: runner.os == 'Windows'
+        run: pnpm exec bun artifacts/auto-routing/run.ts "${{ runner.temp }}/engine-model-recovery" --model-recovery-only
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+      - if: runner.os == 'Windows'
+        run: pnpm exec bun artifacts/engine-update/run.ts "${{ runner.temp }}/engine-update"
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+      - if: runner.os == 'Windows'
+        run: pnpm exec bun artifacts/connector-accounts/run.ts "${{ runner.temp }}/connector-accounts" --stand-in
+      - if: runner.os == 'Windows'
+        run: pnpm exec bun artifacts/connector-details/run.ts "${{ runner.temp }}/connector-details"
+      - name: Prepare task-presence browser driver
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          $taskBrowserTools = Join-Path $env:RUNNER_TEMP 'task-presence-browser-tools'
+          New-Item -ItemType Directory -Force -Path $taskBrowserTools | Out-Null
+          Set-Content -LiteralPath (Join-Path $taskBrowserTools 'package.json') -Value '{"private":true,"type":"module"}'
+          pnpm --dir $taskBrowserTools add --ignore-scripts --save-exact playwright@1.62.1
+      - name: Verify task execution display and owner controls
+        if: runner.os == 'Windows'
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/task-presence/browser.ts "${{ runner.temp }}/task-presence-browser"
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+          PERRY_E2E_PLAYWRIGHT: ${{ runner.temp }}/task-presence-browser-tools/node_modules/playwright/index.mjs
+          PERRY_E2E_BROWSER: C:/Program Files/Google/Chrome/Application/chrome.exe
+      - if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: task-presence-browser-${{ runner.os }}
+          path: ${{ runner.temp }}/task-presence-browser
+          if-no-files-found: error
+      - if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: first-use-settings-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/first-use
+            ${{ runner.temp }}/settings-recovery/result.json
+            ${{ runner.temp }}/settings-navigation/result.json
+            ${{ runner.temp }}/engine-readiness
+            ${{ runner.temp }}/engine-model-recovery
+            ${{ runner.temp }}/engine-update
+            ${{ runner.temp }}/connector-accounts
+            ${{ runner.temp }}/connector-details
+          if-no-files-found: error
       # The desktop pet looking at the screen on a Mac (issue #152), with no Screen Recording permission: what he
       # says to allow, the window in front, and how `perry pet` starts him (artifacts/screen-look/look.ts).
       - if: runner.os == 'macOS'

@@ -172,16 +172,20 @@ const conversation = runtime.store.insert("conversations", { channel: "web", ext
 const turn = runtime.store.insert("codexTurns", { runnerId: runner, conversationId: conversation, status: "running", prompt: "Read public sources", engine: "codex", createdAt: Date.now() });
 const login = runtime.store.insert("vault", { label: "Synthetic login", url: "https://example.com", value: "fixture-login-value", createdAt: Date.now(), updatedAt: Date.now() });
 let id = 0;
+const approvalRows = () => runtime.store.all("approvals").map(row => z.object({ _id: z.string(), status: z.string(), decidedBy: z.string().optional(), connectedAction: z.object({ requestId: z.string(), state: z.string() }).passthrough().optional() }).parse(row));
 async function mcp(name: string, args: object) {
   const response = await runtime.runHttp("/mcp", new Request("http://perry.test/mcp", { method: "POST", headers: { authorization: "Bearer internet-e2e-runner", "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }) }));
   const body = await response.json() as { result?: { content?: Array<{ text: string }> }; error?: unknown };
   assert.ok(!body.error, JSON.stringify(body));
-  return JSON.parse(body.result?.content?.[0]?.text ?? "null") as { untrusted?: string; result?: Awaited<ReturnType<typeof executeInternet>> & { ok?: boolean }; error?: string; refused?: boolean; stored?: boolean; id?: string; value?: string };
+  return JSON.parse(body.result?.content?.[0]?.text ?? "null") as { untrusted?: string; result?: Awaited<ReturnType<typeof executeInternet>> & { ok?: boolean; state?: string; requestId?: string }; error?: string; refused?: boolean; stored?: boolean; id?: string; value?: string };
 }
 let accountStatus = "ACTIVE";
+let selectedAccountId = "ca-fixture";
 let connectorError: string | null = null;
 let providerStatus = 0;
 let accountsTruncated = false;
+let loseAcknowledgement = false;
+let writeMetadataGate: { entered: () => void; wait: Promise<void> } | undefined;
 const providerCalls: Array<{ path: string; body: Record<string, unknown> }> = [];
 const provider = createServer(async (req, res) => {
   const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk));
@@ -194,13 +198,19 @@ const provider = createServer(async (req, res) => {
   if (path === "/api/v3.1/connected_accounts") return send({ items: [{ id: "ca-fixture", status: accountStatus, status_reason: null, toolkit: { slug: "youtube" }, auth_config: { id: "ac-fixture", is_composio_managed: true, is_disabled: false }, is_disabled: false, created_at: "2026-10-01", updated_at: "2026-10-01", data: { access_token: "fixture-private-token" } }], next_cursor: accountsTruncated ? "another-page" : null, total_pages: accountsTruncated ? 4 : 1 });
   if (path === "/api/v3.1/tool_router/session") return send({ session_id: "fixture-session", config: { user_id: "owner", execute: {}, search: {}, preload: { tools: [] } }, config_version: 1, mcp: { type: "http", url: "http://fixture.invalid/mcp" } });
   if (path === "/api/v3.1/tools/YOUTUBE_GET_VIDEO") return send({ slug: "YOUTUBE_GET_VIDEO", name: "Fixture read", input_parameters: { type: "object", properties: { issue_number: { type: "integer" } } }, output_parameters: { type: "object", properties: {} }, no_auth: false });
-  if (path === "/api/v3.1/tools/YOUTUBE_CREATE_VIDEO") return send({ slug: "YOUTUBE_CREATE_VIDEO", name: "Fixture write", toolkit: { slug: "youtube", name: "YouTube", logo: "https://example.com/youtube.svg" }, tags: ["createHint"], input_parameters: { type: "object", properties: {} }, output_parameters: { type: "object", properties: {} }, no_auth: false });
-  if (path.endsWith("/toolkits")) return send({ items: [{ slug: "youtube", name: "YouTube", is_no_auth: false, connected_account: { id: "ca-fixture", status: accountStatus, auth_config: { id: "ac-fixture", auth_scheme: "OAUTH2", is_composio_managed: true } } }], next_cursor: null, total_pages: 1 });
+  if (path === "/api/v3.1/tools/YOUTUBE_CREATE_VIDEO") {
+    writeMetadataGate?.entered(); await writeMetadataGate?.wait;
+    return send({ slug: "YOUTUBE_CREATE_VIDEO", name: "Fixture write", toolkit: { slug: "youtube", name: "YouTube", logo: "https://example.com/youtube.svg" }, tags: ["createHint"], input_parameters: { type: "object", properties: {} }, output_parameters: { type: "object", properties: {} }, no_auth: false });
+  }
+  if (path.endsWith("/toolkits")) return send({ items: [{ slug: "youtube", name: "YouTube", is_no_auth: false, connected_account: { id: selectedAccountId, status: accountStatus, auth_config: { id: "ac-fixture", auth_scheme: "OAUTH2", is_composio_managed: true } } }], next_cursor: null, total_pages: 1 });
   if (path.endsWith("/search")) return send({ success: true, error: null,
     results: [{ index: 0, use_case: "read private issue", primary_tool_slugs: ["YOUTUBE_GET_VIDEO", "YOUTUBE_CREATE_VIDEO", "YOUTUBE_GET_TOKEN"], related_tool_slugs: [], toolkits: ["youtube"] }],
     tool_schemas: Object.fromEntries(["YOUTUBE_GET_VIDEO", "YOUTUBE_CREATE_VIDEO", "YOUTUBE_GET_TOKEN"].map((slug) => [slug, { tool_slug: slug, toolkit: "youtube", description: "Fixture operation", input_schema: { type: "object", properties: { issue_number: { type: "integer" }, source_url: { type: "string" } }, required: ["issue_number"], additionalProperties: false } }])),
     toolkit_connection_statuses: [{ toolkit: "youtube", description: "YouTube", has_active_connection: true, status_message: "Active fixture" }], next_steps_guidance: [], session: { id: "fixture-session", generate_id: false, instructions: "Fixture" }, time_info: { current_time_utc: "2026-10-13T00:00:00Z", current_time_utc_epoch_seconds: 1, message: "Fixture" } });
-  if (path.includes("/tools/execute/") || path.endsWith("/execute")) return send({ successful: !connectorError, data: { items: [{ id: 1, body: "Private fixture content", html_url: "https://youtube.com/watch?v=fixture" }], access_token: "fixture-private-token" }, error: connectorError, log_id: "fixture-log" });
+  if (path.includes("/tools/execute/") || path.endsWith("/execute")) {
+    if (loseAcknowledgement) { req.socket.destroy(); return; }
+    return send({ successful: !connectorError, data: { items: [{ id: 1, body: "Private fixture content", html_url: "https://youtube.com/watch?v=fixture" }], access_token: "fixture-private-token" }, error: connectorError, log_id: "fixture-log" });
+  }
   res.statusCode = 404; send({ error: "Unexpected fixture endpoint" });
 });
 await new Promise<void>((done) => provider.listen(0, "127.0.0.1", done));
@@ -318,9 +328,32 @@ try {
   });
   await check("approved account continuation writes once; autonomous preparation stays read-only", async () => {
     const beforeWrite = providerCalls.filter((c) => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length;
-    const continuation = await mcp("run_action", { slug: "YOUTUBE_CREATE_VIDEO", args: { title: "Owner-requested synthetic draft" } });
+    let settled = false;
+    const action = { slug: "YOUTUBE_CREATE_VIDEO", requestId: "synthetic-owner-write", args: { title: "Owner-requested synthetic draft" } };
+    const pending = mcp("run_action", action).finally(() => { settled = true; });
+    let approval;
+    for (let attempt = 0; attempt < 60 && !settled; attempt++) {
+      approval = approvalRows().find((row) => row.connectedAction?.requestId === action.requestId);
+      if (approval) break;
+      await new Promise((done) => setTimeout(done, 50));
+    }
+    assert.equal(providerCalls.filter((c) => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, beforeWrite, "A supervised write must wait before entering the provider");
+    assert.ok(approval, "Exact operation must be reviewable before execution");
+    await runtime.runMutation("approvals:decide", { key: "internet-e2e-dashboard", id: approval._id, approved: true });
+    const continuation = await pending;
     assert.notEqual(continuation.refused, true);
     assert.equal(continuation.result?.ok, true, JSON.stringify(continuation));
+    assert.equal(providerCalls.filter((c) => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, beforeWrite + 1);
+    const retries = await Promise.all([mcp("run_action", action), mcp("run_action", { ...action, args: { title: action.args.title } })]);
+    assert.ok(retries.every(reply => reply.result?.ok));
+    assert.equal(providerCalls.filter((c) => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, beforeWrite + 1, "Approved retries cannot duplicate a write");
+    const changed = await mcp("run_action", { ...action, args: { title: "Changed without review" } });
+    assert.equal(changed.result?.ok, false);
+    assert.equal(changed.result?.state, "scope_changed");
+    selectedAccountId = "ca-different";
+    const accountChanged = await mcp("run_action", action);
+    selectedAccountId = "ca-fixture";
+    assert.equal(accountChanged.result?.state, "scope_changed");
     assert.equal(providerCalls.filter((c) => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, beforeWrite + 1);
     const task = runtime.store.insert("tasks", { title: "Fixture preparation", prompt: "Read-only comparison", status: "running", createdAt: Date.now(), initiative: { key: "fixture", reason: "Synthetic preparation", sources: [], nextCheckAt: Date.now() } });
     runtime.store.patch(conversation, { taskId: task });
@@ -333,6 +366,96 @@ try {
       runtime.store.patch(turn, { preparation: false });
       runtime.store.patch(conversation, { taskId: undefined });
     }
+  });
+  await check("Full access is explicit; provider acknowledgement loss is durable and never replayed", async () => {
+    const executions = () => providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length;
+    runtime.store.patch(conversation, { access: "full" });
+    const action = { slug: "YOUTUBE_CREATE_VIDEO", args: { title: "Synthetic uncertain operation" } };
+    loseAcknowledgement = true;
+    const before = executions();
+    const first = await mcp("run_action", action);
+    loseAcknowledgement = false;
+    assert.equal(first.result?.state, "unknown");
+    assert.ok(first.result?.requestId, "Full-access unknown outcomes must return the generated recovery id");
+    const retryAction = { ...action, requestId: first.result.requestId };
+    runtime.store.patch(turn, { status: "done" });
+    const recoveryTurn = runtime.store.insert("codexTurns", { runnerId: runner, conversationId: conversation, status: "running", prompt: "Check the earlier unknown operation without repeating it", engine: "codex", createdAt: Date.now() });
+    const retry = await mcp("run_action", retryAction);
+    runtime.store.patch(recoveryTurn, { status: "done" });
+    runtime.store.patch(turn, { status: "running" });
+    assert.equal(retry.result?.state, "unknown");
+    assert.equal(executions(), before + 1);
+    const row = approvalRows().find(row => row.connectedAction?.requestId === retryAction.requestId);
+    assert.equal(row?.status, "auto"); assert.equal(row?.decidedBy, "trust");
+    runtime.store.patch(row!._id, { connectedAction: { ...row!.connectedAction, state: "executing", startedAt: Date.now() - 61_000 } });
+    assert.equal((await mcp("run_action", retryAction)).result?.state, "unknown", "An abandoned execution claim becomes unknown rather than replaying after a crash");
+    assert.equal(executions(), before + 1);
+    runtime.store.patch(conversation, { access: "supervised" });
+  });
+  await check("Stop and Pause during metadata discovery prevent an already trusted write from dispatching", async () => {
+    const before = providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length;
+    runtime.store.patch(conversation, { access: "full" });
+    let install = runtime.store.all("installation")[0];
+    if (!install) { const id = runtime.store.insert("installation", { createdAt: Date.now() }); install = runtime.store.all("installation").find(row => row._id === id)!; }
+    for (const condition of ["stop", "pause"]) {
+      let entered!: () => void; let release!: () => void;
+      const arrived = new Promise<void>(done => { entered = done; });
+      writeMetadataGate = { entered, wait: new Promise<void>(done => { release = done; }) };
+      const pending = mcp("run_action", { slug: "YOUTUBE_CREATE_VIDEO", requestId: `${condition}-metadata-race`, args: { title: "Must not enter execution" } });
+      await arrived;
+      if (condition === "stop") runtime.store.patch(turn, { stopRequested: true });
+      else runtime.store.patch(install._id, { paused: { at: Date.now(), by: "web" } });
+      release();
+      const result = await pending;
+      assert.equal(result.result?.state, "stopped");
+      runtime.store.patch(turn, { stopRequested: false });
+      runtime.store.patch(install._id, { paused: undefined });
+      writeMetadataGate = undefined;
+    }
+    runtime.store.patch(conversation, { access: "supervised" });
+    assert.equal(providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, before);
+  });
+  await check("oversized phone previews cannot approve unseen connected arguments", async () => {
+    const before = providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length;
+    const pending = mcp("run_action", { slug: "YOUTUBE_CREATE_VIDEO", requestId: "phone-scope", args: { title: "x".repeat(1000) } });
+    let row;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      row = approvalRows().find(row => row.connectedAction?.requestId === "phone-scope");
+      if (row) break;
+      await new Promise(done => setTimeout(done, 30));
+    }
+    assert.ok(row);
+    const install = runtime.store.all("installation")[0];
+    const owner = { claimedAt: Date.now(), ownerChannel: "telegram", ownerExternalId: "fixture-owner" };
+    if (install) runtime.store.patch(install._id, owner); else runtime.store.insert("installation", owner);
+    const phone = await runtime.runMutation("approvals:answerFromTelegram", { senderId: "fixture-owner", data: `ap:${row._id}:y` }, { internal: true });
+    assert.match(String(phone), /complete operation.*dashboard/i);
+    assert.equal(runtime.store.all("approvals").find(item => item._id === row._id)?.status, "pending");
+    runtime.store.patch(row._id, { whatsappChatId: "fixture-phone" });
+    assert.match(String(await runtime.runMutation("approvals:answerFromWhatsApp", { chatId: "fixture-phone", text: "1" }, { internal: true })), /complete operation.*dashboard/i);
+    await runtime.runMutation("approvals:decide", { key: "internet-e2e-dashboard", id: row._id, approved: false });
+    assert.equal((await pending).result?.ok, false);
+    assert.equal(providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, before);
+  });
+  await check("pending connected approvals expire or cancel on Stop without dispatch", async () => {
+    const before = providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length;
+    for (const condition of ["expiry", "stop"]) {
+      const requestId = `pending-${condition}`;
+      const pending = mcp("run_action", { slug: "YOUTUBE_CREATE_VIDEO", requestId, args: { title: "Must remain unexecuted" } }).catch(() => null);
+      let row;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        row = approvalRows().find(row => row.connectedAction?.requestId === requestId);
+        if (row) break;
+        await new Promise(done => setTimeout(done, 30));
+      }
+      assert.ok(row);
+      if (condition === "expiry") runtime.store.patch(row._id, { createdAt: Date.now() - 11 * 60_000 });
+      else runtime.store.patch(turn, { stopRequested: true });
+      await pending;
+      assert.equal(approvalRows().find(item => item._id === row._id)?.status, "expired");
+      runtime.store.patch(turn, { stopRequested: false });
+    }
+    assert.equal(providerCalls.filter(c => c.path.includes("/tools/execute/") || c.path.endsWith("/execute")).length, before);
   });
   if (process.env.PERRY_INTERNET_LIVE === "1") {
     for (const request of [
@@ -351,8 +474,9 @@ try {
   await browser.closeBrowser();
   await runtime.stop(); sql.close(); site.close(); provider.close();
   site.closeAllConnections(); provider.closeAllConnections();
-  mkdirSync("artifacts/internet-routing", { recursive: true });
-  writeFileSync("artifacts/internet-routing/result.json", JSON.stringify({ ranAt: new Date().toISOString(), platform: process.platform, pass: results.every((r) => r.passed), scope: `Deterministic source/provider fixtures plus real SDK/SQLite/MCP/public HTTP transport on ${process.platform}; no live connector account claims.`, results, hits, providerPaths: providerCalls.map((c) => c.path) }, null, 2));
+  const output = process.env.PERRY_E2E_OUTPUT ?? "artifacts/internet-routing";
+  mkdirSync(output, { recursive: true });
+  writeFileSync(join(output, "result.json"), JSON.stringify({ ranAt: new Date().toISOString(), platform: process.platform, pass: results.every((r) => r.passed), scope: `Deterministic source/provider fixtures plus real SDK/SQLite/MCP/public HTTP transport on ${process.platform}; no live connector account claims.`, results, hits, providerPaths: providerCalls.map((c) => c.path) }, null, 2));
   // Chromium releases its profile handles asynchronously after termination on Windows.
   if (process.platform === "win32") await new Promise((done) => setTimeout(done, 3000));
   await rm(home, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });

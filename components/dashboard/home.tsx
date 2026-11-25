@@ -21,7 +21,9 @@ export function Home() {
     if (!status || !chats) return;
     if (status.onboarding === "pending") return router.replace("/welcome");
     if (status.telegramConfigured && !status.claimed) return router.replace("/settings/telegram");
-    const last = window.localStorage.getItem(ACTIVE_CHAT);
+    let last: string | null = null;
+    try { last = window.localStorage.getItem(ACTIVE_CHAT); }
+    catch { /* Open a new chat when browser storage is unavailable. */ }
     router.replace(last && chats.some((chat) => chat.id === last) ? `/chat/${last}` : "/chat");
   }, [status, chats, router]);
 

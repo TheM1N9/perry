@@ -4,8 +4,8 @@ export class RequestLimitError extends Error {
 
 // Fixed-size admission state; no address/token map can grow in a long-lived server.
 const budgets = {
-  call: { active: 0, window: 0, count: 0, concurrent: 16, perMinute: 3000 },
-  upload: { active: 0, window: 0, count: 0, concurrent: 2, perMinute: 30 },
+  call: { active: 0, window: 0, count: 0, concurrent: 16, perMinute: 3000, rejectedAt: 0 },
+  upload: { active: 0, window: 0, count: 0, concurrent: 2, perMinute: 30, rejectedAt: 0 },
 };
 
 /** Hold admission until the entire handler finishes, not just until its body is buffered. */
@@ -19,7 +19,16 @@ export function requestSlot(kind: keyof typeof budgets): (() => void) | null {
   return () => { if (!released) { released = true; state.active--; } };
 }
 
-export const busyResponse = () => Response.json({ error: "Perry is handling too many requests. Try again shortly." }, { status: 429, headers: { "Retry-After": "5" } });
+export function busyResponse(kind: keyof typeof budgets = "call") {
+  const state = budgets[kind];
+  const rateLimited = state.count >= state.perMinute;
+  const retryAfter = rateLimited ? Math.max(1, Math.ceil((state.window + 60_000 - Date.now()) / 1000)) : 1;
+  if (Date.now() - state.rejectedAt >= 5_000) {
+    state.rejectedAt = Date.now();
+    console.warn(`[perry] request admission ${kind}: ${rateLimited ? "minute" : "concurrent"} limit; active=${state.active}, count=${state.count}, retryAfter=${retryAfter}s.`);
+  }
+  return Response.json({ error: "Perry is handling too many requests. Try again shortly." }, { status: 429, headers: { "Retry-After": String(retryAfter), "X-Perry-Admission": rateLimited ? "minute" : "concurrent" } });
+}
 
 /** Bearer authentication still applies; browser cross-origin writes are refused as defense in depth. */
 export function requestOriginAllowed(request: Request): boolean {

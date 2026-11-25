@@ -10,6 +10,9 @@ import { hide } from "./vault";
 import { expiredConnection, reconnectMessage } from "./lib/connection-health";
 import { connectedDiagnostic, type ConnectedDiagnostic } from "./lib/connected-error";
 import { DEADLINE_MS, InternetError, publicUrl, type ConnectedRead, type InternetFailure, type InternetRequest, type Platform } from "./lib/internet";
+import { createHash } from "node:crypto";
+import type { Id } from "./_generated/dataModel";
+import { encryptCredential, decryptCredential } from "./lib/credential-encryption";
 
 /**
  * Assistant's hands on your accounts, through Composio.
@@ -36,14 +39,14 @@ import { DEADLINE_MS, InternetError, publicUrl, type ConnectedRead, type Interne
  */
 const USER_ID = "owner";
 
-function client(apiKey: string | null): Composio {
+function client(apiKey: string | null, singleAttempt = false): Composio {
   if (!apiKey) {
     throw new Error(
       "COMPOSIO_API_KEY is not set, so no accounts are connected. Get a key " +
         "at composio.dev, then save it under Apps & skills → Connectors.",
     );
   }
-  return new Composio({ apiKey });
+  return singleAttempt ? new InternetClient(apiKey) : new Composio({ apiKey });
 }
 
 async function session(apiKey: string | null, toolkits?: string[]) {
@@ -601,12 +604,14 @@ export const search = internalAction({
 
 /** Bounded preparation calls fail closed unless provider metadata identifies the exact operation as read-only. */
 export const execute = internalAction({
-  args: { slug: v.string(), args: v.optional(v.any()), readOnly: v.optional(v.boolean()) },
+  args: { slug: v.string(), args: v.optional(v.any()), readOnly: v.optional(v.boolean()), conversationId: v.optional(v.id("conversations")), turnId: v.optional(v.id("codexTurns")), requestId: v.optional(v.string()) },
   handler: async (
     ctx,
     input,
-  ): Promise<{ ok: boolean; data?: unknown; error?: string; diagnostic?: ConnectedDiagnostic }> => {
+  ): Promise<{ ok: boolean; data?: unknown; error?: string; diagnostic?: ConnectedDiagnostic; approvalId?: Id<"approvals">; requestId?: string; state?: string }> => {
     let selected: { accountId: string; toolkit: string } | undefined;
+    let claimed: Id<"approvals"> | undefined;
+    let requestId: string | undefined;
     let stage = "credentials";
     const startedAt = Date.now();
     const failed = async (error: unknown) => {
@@ -620,12 +625,14 @@ export const execute = internalAction({
     };
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
-      const composio = client(apiKey);
+      // A lost acknowledgement must never cause the SDK to repeat an account write.
+      const composio = client(apiKey, true);
       stage = "tool_metadata";
       // Resolve metadata from the SDK, never infer the toolkit from a slug prefix.
       const tool = await composio.tools.getRawComposioToolBySlug(input.slug).catch(() => null);
-      if (input.readOnly && (!tool || tool.slug !== input.slug || !tool.tags?.includes("readOnlyHint")
-        || tool.tags.some(tag => ["createHint", "updateHint", "destructiveHint"].includes(tag)))) {
+      const verifiedRead = Boolean(tool && tool.slug === input.slug && tool.tags?.includes("readOnlyHint")
+        && !tool.tags.some(tag => ["createHint", "updateHint", "destructiveHint"].includes(tag)));
+      if (input.readOnly && !verifiedRead) {
         return { ok: false, error: "This operation is not verified as read-only. Prepare a proposal for the owner instead; missing, conflicting or unavailable tool metadata cannot authorize execution." };
       }
       // Router helper tools may not have standalone metadata. They still execute,
@@ -643,6 +650,19 @@ export const execute = internalAction({
           return { ok: false, error: reconnectMessage };
         }
       }
+      if (!verifiedRead) {
+        if (!tool || tool.slug !== input.slug || !selected || !input.turnId || !input.conversationId) return { ok: false, error: "A connected write requires current operation metadata, a connected account and an active owner chat. Discover the operation and reconnect the account before trying again." };
+        const scope = JSON.stringify({ accountId: selected.accountId, toolkit: selected.toolkit, slug: input.slug, args: input.args ?? {} }, (_key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+        if (scope.length > 12_000) return { ok: false, error: "This operation is too large to review. Prepare a smaller operation." };
+        requestId = input.requestId ?? `${input.turnId}:${createHash("sha256").update(scope).digest("hex")}`;
+        const reserved = await ctx.runMutation(internal.approvals.connected, { conversationId: input.conversationId, turnId: input.turnId, requestId, scope, slug: input.slug });
+        if (!reserved.id) return { ok: false, state: "scope_changed", requestId, error: reserved.error };
+        const id = reserved.id;
+        const claim = await ctx.runMutation(internal.approvals.claimConnected, { id, turnId: input.turnId });
+        if (claim.state === "done") return claim.result ? { ...JSON.parse(decryptCredential("secrets", claim.result)), requestId } : { ok: true, state: "done", requestId, error: "This operation already completed. Its response is no longer retained; inspect the destination account for the outcome. It was not repeated." };
+        if (claim.state !== "claimed") return { ok: false, state: claim.state, requestId, ...(claim.state === "pending" ? { approvalId: id } : {}), error: claim.state === "pending" ? "Waiting for the owner to review this exact operation." : ["executing", "unknown"].includes(claim.state) ? "This operation entered execution and will not be repeated. Check the destination account before preparing a new operation; its outcome may be unknown." : "The operation was declined, expired or stopped. Tell the owner where things stand." };
+        claimed = id;
+      }
       // Standalone app tools use the native account-specific execution API.
       // The router's `account` option returns HTTP 400/code 4300 on projects
       // without multi-account selection. Native execution pins the account
@@ -657,12 +677,21 @@ export const execute = internalAction({
         }).then((reply) => ({ data: reply.data, error: reply.successful ? null : (reply.error ?? "execution_failed") }))
         : await s.execute(input.slug, (input.args ?? {}) as Record<string, unknown>);
       if (result.error) {
-        return await failed(result.error);
+        const failure = await failed(result.error);
+        if (claimed) await ctx.runMutation(internal.approvals.finishConnected, { id: claimed });
+        return { ...failure, ...(claimed ? { state: "unknown", requestId } : {}) };
       }
       if (selected) await ctx.runMutation(internal.connectorHealth.observe, { ...selected, startedAt, expired: false }).catch(() => null);
-      return { ok: true, data: result.data };
+      const output = { ok: true, data: result.data };
+      if (claimed) {
+        const serialized = JSON.stringify(output);
+        await ctx.runMutation(internal.approvals.finishConnected, { id: claimed, result: encryptCredential("secrets", serialized.length <= 256_000 ? serialized : JSON.stringify({ ok: true, state: "done", error: "The operation completed. Its large response was not retained. Inspect the destination account; do not repeat the operation." })) });
+      }
+      return { ...output, ...(requestId ? { requestId } : {}) };
     } catch (error) {
-      return await failed(error);
+      if (claimed) await ctx.runMutation(internal.approvals.finishConnected, { id: claimed }).catch(() => null);
+      const failure = await failed(error);
+      return claimed ? { ...failure, state: "unknown", requestId, error: `${failure.error} The operation entered execution and will not be repeated. Check the destination account before preparing another operation.` } : failure;
     }
   },
 });

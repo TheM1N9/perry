@@ -43,6 +43,8 @@ export function Brain() {
   const open = useMutation(api.pages.openMemoryPage);
   const [filter, setFilter] = useState(params.get("q") ?? "");
   const [deep, setDeep] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const creatingPage = useRef(false);
   const file = useRef<HTMLInputElement>(null);
   const needle = filter.trim().toLocaleLowerCase();
   const setView = (next: string | undefined) => {
@@ -57,11 +59,16 @@ export function Brain() {
   }, [dashboardKey, open, params, router]);
 
   const newPage = async (title?: string, content?: string) => {
+    if (creatingPage.current) return;
+    creatingPage.current = true;
+    setCreating(true);
     try {
       const id = await create({ key: dashboardKey, ...(title ? { title } : {}), ...(content !== undefined ? { content } : {}) });
       router.push(noteHref(id));
     } catch (cause) {
       toast.error(`Couldn't make it: ${errorText(cause)}`);
+      creatingPage.current = false;
+      setCreating(false);
     }
   };
   // A Markdown file from elsewhere opens as a new page.
@@ -85,8 +92,8 @@ export function Brain() {
         </ToggleGroup>
         <input ref={file} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" className="hidden" aria-label="Open a Markdown file"
           onChange={(event) => { void openFile(event.target.files?.[0]); event.target.value = ""; }} />
-        <Button variant="outline" onClick={() => file.current?.click()}><FileUpIcon />Open .md</Button>
-        <Button onClick={() => void newPage()}><PlusIcon />New page</Button>
+        <Button variant="outline" disabled={creating} onClick={() => file.current?.click()}><FileUpIcon />Open .md</Button>
+        <Button disabled={creating} aria-busy={creating || undefined} onClick={() => void newPage()}>{creating ? <Spinner /> : <PlusIcon />}New page</Button>
       </>}
     >
       {map ? <BrainMap /> : <div className="space-y-8">
@@ -238,16 +245,18 @@ const KIND = { profile: "About me", core: "Things to remember", daily: "Journal"
 function FoundLines({ term, deep }: { term: string; deep?: boolean }) {
   const { dashboardKey } = useSession();
   const search = useAction(api.pages.search);
-  const [found, setFound] = useState<{ term: string; deep: boolean; hits: Found[] } | null>(null);
+  const [found, setFound] = useState<{ term: string; deep: boolean; hits: Found[]; error?: string } | null>(null);
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     let current = true;
     const timer = window.setTimeout(() => {
       void search({ key: dashboardKey, query: term, limit: 12, ...(deep ? { deep: true } : {}) })
-        .then((hits) => { if (current) setFound({ term, deep: Boolean(deep), hits }); }, () => { if (current) setFound({ term, deep: Boolean(deep), hits: [] }); });
+        .then((hits) => { if (current) setFound({ term, deep: Boolean(deep), hits }); }, (cause) => { if (current) setFound({ term, deep: Boolean(deep), hits: [], error: errorText(cause) }); });
     }, 250);
     return () => { current = false; window.clearTimeout(timer); };
-  }, [dashboardKey, search, term, deep]);
+  }, [dashboardKey, search, term, deep, retry]);
   if (found?.term !== term || found.deep !== Boolean(deep)) return <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner />Searching…</p>;
+  if (found.error) return <div className="space-y-2 text-sm" role="alert"><p>Couldn't search Brain: {found.error}</p><Button size="sm" variant="outline" onClick={() => { setFound(null); setRetry(value => value + 1); }}>Try again</Button></div>;
   if (!found.hits.length) return <EmptyState title="Nothing in Brain says that" />;
   return (
     <section aria-label="Found in Brain" className="space-y-1">

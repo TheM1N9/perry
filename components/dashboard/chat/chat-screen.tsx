@@ -236,7 +236,10 @@ export function ChatScreen() {
   const compactionStatus = useQuery(api.dashboard.getCompaction, compaction ? { key: dashboardKey, id: compaction } : "skip");
 
   // Remember the open chat, for the next visit to the root.
-  useEffect(() => { if (paramId) window.localStorage.setItem(ACTIVE_CHAT, paramId); }, [paramId]);
+  useEffect(() => {
+    try { if (paramId) window.localStorage.setItem(ACTIVE_CHAT, paramId); }
+    catch { /* Chat navigation still works without a remembered last chat. */ }
+  }, [paramId]);
   useEffect(() => { document.title = summary?.title ? `${summary.title} · Perry` : selectedId ? "Perry" : "New chat · Perry"; }, [summary?.title, selectedId]);
   // A new chat, or another one, starts with a clean composer state.
   useEffect(() => {
@@ -922,7 +925,7 @@ export function ChatScreen() {
                 />}
                 </Fragment>
               })}
-              {chat?.taskPlan && chat.taskPlan.plan.length > 0 && <PlanChecklist steps={chat.taskPlan.plan} active={["queued", "running", "blocked"].includes(chat.taskPlan.status)} />}
+              {chat?.taskPlan && chat.taskPlan.plan.length > 0 && <PlanChecklist steps={chat.taskPlan.plan} active={["queued", "running", "blocked"].includes(chat.taskPlan.status)} running={chat.isRunning && chat.taskPlan.status === "running"} />}
               {replying && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
                 work={liveWork} agents={agentsForWork(agents, liveWork)} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
               {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}

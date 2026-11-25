@@ -14,6 +14,7 @@ import { hasUserMd } from "@/convex/lib/pages";
 import { describe, holdProblem } from "@/convex/lib/shortcuts";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { randomUUID } from "@/lib/uuid";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
@@ -58,6 +59,8 @@ export function Welcome() {
   const id = useId();
   const reduce = useReducedMotion();
   const heading = useRef<HTMLHeadingElement>(null);
+  const pending = useRef(false);
+  const finishRequest = useRef<string | null>(null);
 
   const [step, setStep] = useState(0);
   const [customizing, setCustomizing] = useState(false);
@@ -92,8 +95,8 @@ export function Welcome() {
   const ready = engines?.filter((item) => item.ready) ?? [];
   const onlyReady = ready.length === 1 ? ready[0].kind : undefined;
   useEffect(() => {
-    if (engine === undefined && onlyReady) setEngine(onlyReady);
-  }, [engine, onlyReady]);
+    if (engine === undefined && status && !status.defaultEngine && onlyReady) setEngine(onlyReady);
+  }, [engine, onlyReady, status]);
 
   if (!loaded || !persona || !steps) {
     return <main className="grid min-h-dvh place-items-center"><Spinner className="size-5 text-muted-foreground" /></main>;
@@ -105,6 +108,8 @@ export function Welcome() {
   const set = <K extends keyof Answers>(key: K, value: Answers[K]) => setAnswers((current) => ({ ...current, [key]: value }));
 
   const run = async (kind: "save" | "chat" | "skip") => {
+    if (pending.current) return;
+    pending.current = true;
     setBusy(kind);
     setError("");
     try {
@@ -114,23 +119,31 @@ export function Welcome() {
       }
       const reviewed = steps?.includes(REVIEW);
       const written = kind === "save" ? (reviewed ? userMd : composeUserMd(answers, timezone)) : "";
-      const chatId = await finish({ key: dashboardKey, name: assistant, personality, ...(written.trim() ? { userMd: written } : {}), ...(kind === "save" && !reviewed ? { interview: { name: Boolean(answers.call.trim()), help: answers.help.length > 0 || Boolean(answers.helpOther.trim()) } } : {}) });
-      window.localStorage.setItem(ACTIVE_CHAT, chatId);
+      finishRequest.current ??= randomUUID();
+      const chatId = await finish({ key: dashboardKey, requestId: finishRequest.current, name: assistant, personality, ...(written.trim() ? { userMd: written } : {}), ...(kind === "save" && !reviewed ? { interview: { name: Boolean(answers.call.trim()), help: answers.help.length > 0 || Boolean(answers.helpOther.trim()) } } : {}) });
+      try { window.localStorage.setItem(ACTIVE_CHAT, chatId); } catch { /* The URL opens this chat even when storage is unavailable. */ }
       router.replace(`/chat/${chatId}`);
     } catch (cause) {
+      pending.current = false;
       setError(errorText(cause));
       setBusy("");
     }
   };
   const at = steps[step];
-  const picked = engines?.find((item) => item.kind === engine);
+  const savedEngine = status?.defaultEngine;
+  const selectedEngine = engine ?? savedEngine;
+  const picked = engines?.find((item) => item.kind === selectedEngine);
+  const showEngineChoice = !savedEngine || !engines?.some((item) => item.kind === savedEngine && item.ready)
+    || Boolean(engine && engine !== savedEngine);
   const next = (event: FormEvent) => {
     event.preventDefault();
+    if (pending.current) return;
     if (at === ENGINE_STEP) {
       if (!engine) return setError("Choose the engine Perry should use.");
+      pending.current = true;
       setBusy("engine");
       setError("");
-      void chooseEngine({ key: dashboardKey, engine }).then(() => { setBusy(""); setStep(step + 1); }, (cause) => { setError(errorText(cause)); setBusy(""); });
+      void chooseEngine({ key: dashboardKey, engine }).then(() => { pending.current = false; setBusy(""); setStep(step + 1); }, (cause) => { pending.current = false; setError(errorText(cause)); setBusy(""); });
     } else if (at === "Meet your assistant") setStep(step + 1);
     else if (at === "About you") { if (!edited) setUserMd(composeUserMd(answers, timezone)); setStep(step + 1); }
     else if (at === REVIEW) setStep(step + 1);
@@ -144,35 +157,48 @@ export function Welcome() {
   const leaving = at === ENGINE_STEP || at === "Meet your assistant";
 
   const startTextChat = async () => {
-    if (busy) return;
-    if (!status?.defaultEngine && !engine) return setError("Choose an engine to start chatting.");
+    if (pending.current) return;
+    if (!picked?.ready) return setError("Choose an installed, signed-in engine to start chatting.");
+    pending.current = true;
     setBusy("chat");
     setError("");
     try {
-      if (!status?.defaultEngine && engine) await chooseEngine({ key: dashboardKey, engine });
+      if (selectedEngine && selectedEngine !== savedEngine) await chooseEngine({ key: dashboardKey, engine: selectedEngine });
       await skip({ key: dashboardKey });
       router.replace("/chat");
     } catch (cause) {
+      pending.current = false;
       setError(errorText(cause));
       setBusy("");
     }
   };
 
+  const engineSetup = picked && !picked.ready && (
+    <div className="rounded-xl border p-4" role="group" aria-label={`Sign in to ${picked.label}`}>
+      <p className="text-sm font-medium">{picked.label} isn&apos;t ready yet</p>
+      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">Perry answers once it&apos;s installed and signed in.</p>
+      <ul className="mt-1 divide-y">
+        {computers?.flatMap((computer) => computer.engines.filter((item) => item.kind === picked.kind)
+          .map((item) => <li key={computer.id}><EngineRow runnerId={computer.id} computer={computer.name} online={computer.online} engine={item} /></li>))}
+      </ul>
+    </div>
+  );
+
   if (!customizing && !returning) return <main className="grid min-h-dvh place-items-center bg-muted/40 px-4 py-10 sm:py-16">
     <form className="w-full max-w-xl space-y-6 rounded-2xl border bg-card p-6 shadow-float sm:p-8" onSubmit={(event) => { event.preventDefault(); void startTextChat(); }}>
       <PerryMark className="size-12" />
       <Heading ref={heading} title="Start with something useful">Ask for a reminder, plan your day or work through an idea. You can personalize Perry later.</Heading>
-      {!status?.defaultEngine && <FieldSet>
+      {showEngineChoice && <FieldSet>
         <FieldLegend variant="label">Choose the engine Perry uses</FieldLegend>
         <FieldDescription>Use your existing plan. Your choice is saved for future chats.</FieldDescription>
         {engines === undefined ? <Spinner /> : !engines.length ? <p className="text-sm text-muted-foreground">Start Perry&apos;s runner to see the engines on this computer.</p>
-          : <EngineChoice engines={engines} value={engine} onChange={(kind) => { setEngine(kind); setError(""); }} disabled={Boolean(busy)} />}
-        {picked && !picked.ready && <p className="text-sm text-warning">{picked.label} needs to be installed and signed in before it can answer. You can finish that in Settings → Engines.</p>}
+          : <EngineChoice engines={engines} value={selectedEngine} current={savedEngine} onChange={(kind) => { setEngine(kind); setError(""); }} disabled={Boolean(busy)} />}
+        {engineSetup}
       </FieldSet>}
       <p className="text-sm text-muted-foreground">Text chat works without a microphone or desktop pet. Voice, calendar and desktop setup are optional.</p>
       {error && <Alert variant="destructive"><AlertTitle>Couldn&apos;t start</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" size="lg" disabled={Boolean(busy) || (!status?.defaultEngine && !engine)} aria-busy={busy === "chat"}>{busy === "chat" && <Spinner />}Start chatting</Button>
+        <Button type="submit" size="lg" disabled={Boolean(busy) || !picked?.ready} aria-busy={busy === "chat"}>{busy === "chat" && <Spinner />}Start chatting</Button>
         <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => setCustomizing(true)}>Personalize first (optional)</Button>
       </div>
     </form>
@@ -219,16 +245,7 @@ export function Welcome() {
                     : engines.length === 0 ? (
                       <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner className="size-3" />Waiting for your computer to say which engines it has…</p>
                     ) : <EngineChoice engines={engines} value={engine} onChange={(kind) => { setEngine(kind); setError(""); }} disabled={busy === "engine"} />}
-                  {picked && !picked.ready && (
-                    <div className="rounded-xl border p-4" role="group" aria-label={`Sign in to ${picked.label}`}>
-                      <p className="text-sm font-medium">{picked.label} isn&apos;t ready yet</p>
-                      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">Perry answers once it&apos;s installed and signed in.</p>
-                      <ul className="mt-1 divide-y">
-                        {computers?.flatMap((computer) => computer.engines.filter((item) => item.kind === picked.kind)
-                          .map((item) => <li key={computer.id}><EngineRow runnerId={computer.id} computer={computer.name} online={computer.online} engine={item} /></li>))}
-                      </ul>
-                    </div>
-                  )}
+                  {engineSetup}
                 </>
               )}
 

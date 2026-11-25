@@ -71,7 +71,7 @@ export async function perry(options: {
     return child;
   };
   const stop = (child: ChildProcess | null) => {
-    if (!child?.pid) return;
+    if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
     if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
     else child.kill("SIGTERM");
   };

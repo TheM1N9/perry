@@ -20,6 +20,12 @@ Never use the owner's browser profile, desktop, credentials, or a live model.
 - Repeated tab closure/downloads retain connections/history indefinitely.
 - Cancellation leaves approval polling, CDP command timers or load listeners
   alive; teardown must run on normal completion, errors and abort.
+- The last viewer disconnects with a held pointer button, and a new viewer
+  connects while the real CDP pointer-release acknowledgement is delayed.
+  Empty-cast cleanup must retain that same registered cast, deliver a fresh
+  frame to the new viewer, then remove its CDP listener and registry entry
+  when that viewer also disconnects. An already-aborted viewer must retain
+  no view, listener, timer or cast.
 
 Save JSON checks, observed values, browser/version, and failure details on each
 run. A failing check must continue far enough to release all fixture gates.

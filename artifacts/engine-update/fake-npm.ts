@@ -36,6 +36,7 @@ for (const step of steps) {
   console.error(step);
   await sleep(900);
 }
+if (mode === "hang") await new Promise(() => setInterval(() => {}, 60_000));
 if (mode === "fail") {
   console.error("npm error code EBUSY\nnpm error syscall rename\nnpm error EBUSY: resource busy or locked, rename 'codex.exe'");
   process.exit(1);

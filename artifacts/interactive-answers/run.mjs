@@ -35,7 +35,21 @@ const site = createServer((req, res) => {
 await new Promise((done) => site.listen(0, "127.0.0.1", done));
 const siteHost = `127.0.0.1:${site.address().port}`;
 const fixture = `http://${siteHost}/fixture`;
-const env = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(port), PERRY_INTERACTIVE_ANSWERS: "1", DASHBOARD_KEY: key, PERRY_ENGINE: "codex", PERRY_WEB_TEST_SITE: siteHost, TELEGRAM_BOT_TOKEN: "", COMPOSIO_API_KEY: "", NODE_ENV: "production", HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1" };
+let accountWrites = 0;
+let loseProviderAcknowledgement = false;
+const provider = createServer(async (req, res) => {
+  for await (const _chunk of req) { /* consume the synthetic request */ }
+  const path = req.url.split("?")[0];
+  res.setHeader("content-type", "application/json");
+  const send = value => res.end(JSON.stringify(value));
+  if (path === "/api/v3.1/tools/GMAIL_SEND_EMAIL") return send({ slug: "GMAIL_SEND_EMAIL", name: "Synthetic send", toolkit: { slug: "gmail", name: "Gmail", logo: "https://example.com/gmail.svg" }, tags: ["createHint"], input_parameters: { type: "object", properties: {} }, output_parameters: { type: "object", properties: {} }, no_auth: false });
+  if (path === "/api/v3.1/tool_router/session") return send({ session_id: "fixture-session", config: { user_id: "owner", execute: {}, search: {}, preload: { tools: [] } }, config_version: 1, mcp: { type: "http", url: "http://fixture.invalid/mcp" } });
+  if (path.endsWith("/toolkits")) return send({ items: [{ slug: "gmail", name: "Gmail", is_no_auth: false, connected_account: { id: "ca-fixture", status: "ACTIVE", auth_config: { id: "ac-fixture", auth_scheme: "OAUTH2", is_composio_managed: true } } }], next_cursor: null, total_pages: 1 });
+  if (path.includes("/tools/execute/")) { accountWrites++; if (loseProviderAcknowledgement) { req.socket.destroy(); return; } return send({ successful: true, data: { id: "synthetic-message" }, error: null, log_id: "fixture-log" }); }
+  res.statusCode = 404; send({ error: "Unexpected synthetic provider endpoint" });
+});
+await new Promise(done => provider.listen(0, "127.0.0.1", done));
+const env = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(port), PERRY_INTERACTIVE_ANSWERS: "1", DASHBOARD_KEY: key, PERRY_ENGINE: "codex", PERRY_WEB_TEST_SITE: siteHost, TELEGRAM_BOT_TOKEN: "", COMPOSIO_API_KEY: "synthetic-e2e-key", COMPOSIO_BASE_URL: `http://127.0.0.1:${provider.address().port}`, NODE_ENV: "production", HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1" };
 let server;
 let serverLog = "";
 let browser;
@@ -181,10 +195,23 @@ try {
   await analyticsCard.getByRole("button", { name: "Sources & assumptions" }).click();
   check("partial source data displays provenance and missing values honestly", (await analyticsCard.innerText()).includes("Missing") && (await analyticsCard.innerText()).includes(routedRead.sourceReceipt.fetchedAt));
   await analyticsCard.getByLabel("Filter channels").fill("no-such-channel");
-  await until(async () => (await analyticsCard.innerText()).includes("No data matches"), "empty data filter");
+  await until(async () => (await analyticsCard.innerText()).includes("No numeric values to plot."), "empty data filter");
   check("filters handle empty results without invented values", true);
-  const held = await mcp("run_action", { slug: "GMAIL_SEND_EMAIL", args: { to: "nobody@example.invalid" } });
-  check("outside-read consequential account action is refused server-side", held.refused === true && Boolean(held.error));
+  const longReviewValue = `review-start-${"x".repeat(1100)}-review-end`;
+  const operation = { slug: "GMAIL_SEND_EMAIL", requestId: "outside-read-synthetic-send", args: { to: "nobody@example.invalid", subject: "Synthetic only", body: longReviewValue } };
+  const waiting = mcp("run_action", operation);
+  void waiting.catch(() => {});
+  let operationApproval;
+  await until(async () => { operationApproval = (await call("approvals:pending", { key }, false)).find(row => row.title === "Run GMAIL_SEND_EMAIL"); return Boolean(operationApproval); }, "exact connected operation approval");
+  check("outside content cannot send without an exact owner approval", accountWrites === 0 && operationApproval.detail.includes("ca-fixture") && operationApproval.detail.includes("nobody@example.invalid"));
+  const operationCard = page.locator(`#approval-${operationApproval.id}`);
+  const reviewedDetail = operationCard.locator("dd").filter({ hasText: longReviewValue });
+  await reviewedDetail.waitFor();
+  assert.ok(await reviewedDetail.evaluate(node => node.textContent.includes("-review-end") && node.scrollWidth <= node.clientWidth + 1), "The complete long connected argument must wrap inside the review card");
+  await operationCard.getByRole("button", { name: "Allow once", exact: true }).click();
+  check("one dashboard approval continues the exact operation after reads", (await waiting).result?.ok && accountWrites === 1);
+  await page.reload();
+  check("reloaded unchanged operation retries never prompt or send twice", (await mcp("run_action", operation)).result?.ok && accountWrites === 1 && !(await call("approvals:pending", { key }, false)).some(row => row.id === operationApproval.id));
   const approval = await call("approvals:request", { token, kind: "write", title: "Fixture proposed publish (never executed)", conversationId: chat });
   if (approval.next === "review") await call("approvals:reviewed", { token, id: approval.id, verdict: "caution", reason: "Fixture consequential action" });
   assert.notEqual(approval.next, "run");
@@ -256,12 +283,30 @@ try {
   await until(async () => (await list())[0].values.usage === 32, "keyboard number input");
   check("keyboard works at narrow width with reduced motion", await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches && document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: join(output, "mobile-reduced-motion.png"), fullPage: true });
-  await card.getByRole("button", { name: /^Actions for / }).click();
-  await page.getByRole("menuitem", { name: "Reset", exact: true }).click();
-  await until(async () => (await list())[0].values.usage === 10, "reset draft");
-  await card.getByRole("button", { name: /^Actions for / }).click();
-  await page.getByRole("menuitem", { name: "Undo", exact: true }).click();
-  await until(async () => (await list())[0].values.usage === 32, "undo draft");
+  for (const [operation, newer] of [["reset", 33], ["undo", 31]]) {
+    let release;
+    const gate = new Promise(done => { release = done; });
+    let arrived = false;
+    await page.route("**/api/backend/call", async route => {
+      const body = route.request().postDataJSON();
+      if (body?.path === "interactive:save" && body.args.operation === operation) {
+        const response = await route.fetch(); arrived = true; await gate; await route.fulfill({ response });
+      } else await route.continue();
+    });
+    try {
+      await card.getByRole("button", { name: /^Actions for / }).click();
+      await page.getByRole("menuitem", { name: operation === "reset" ? "Reset" : "Undo", exact: true }).click();
+      await until(async () => arrived, `${operation} response`);
+      await until(async () => (await list())[0].values.usage === 10, `${operation} draft`);
+      await usage.fill(String(newer));
+      release();
+      await until(async () => (await list())[0].values.usage === newer && await usage.inputValue() === String(newer), `newer typing retained after ${operation} response`);
+    } finally { release(); await page.unroute("**/api/backend/call"); }
+    await card.getByText("Saved draft", { exact: true }).waitFor();
+  }
+  await usage.fill("32");
+  await until(async () => (await list())[0].values.usage === 32, "restore selected input after Undo race");
+  await card.getByText("Saved draft", { exact: true }).waitFor();
   const downloadEvent = page.waitForEvent("download");
   await card.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menuitem", { name: "Export CSV", exact: true }).click();
@@ -321,7 +366,21 @@ try {
   await until(async () => { steer = (await call("codex:pendingSteers", { token })).find((row) => row.turnId === turnId); return Boolean(steer); }, "draft steer");
   await call("codex:ackSteer", { token, id: steer._id, applied: true });
   check("applied artifact follow-up cannot count as approval to act outward", await call("codex:outwardAllowed", { turnId }) === false);
-  check("draft steer blocks consequential connector action after application", (await mcp("run_action", { slug: "GMAIL_SEND_EMAIL", args: { to: "nobody@example.invalid" } })).refused === true);
+  const steerWrite = mcp("run_action", { slug: "GMAIL_SEND_EMAIL", requestId: "interactive-steer-cannot-approve", args: { to: "nobody@example.invalid" } });
+  void steerWrite.catch(() => {});
+  let steerApproval;
+  await until(async () => { steerApproval = (await call("approvals:pending", { key }, false)).find(row => row.title === "Run GMAIL_SEND_EMAIL"); return Boolean(steerApproval); }, "interactive answer still waits for external approval");
+  check("interactive answers never grant connected-account approval", accountWrites === 1);
+  await page.locator(`#approval-${steerApproval.id}`).getByRole("button", { name: "Decline", exact: true }).click();
+  check("declined connected operation cannot dispatch after interactive answers", !(await steerWrite).result?.ok && accountWrites === 1);
+  await call("dashboard:setChatAccess", { key, id: chat, access: "full" }, false);
+  loseProviderAcknowledgement = true;
+  const uncertainOperation = { slug: "GMAIL_SEND_EMAIL", args: { to: "nobody@example.invalid", subject: "Synthetic lost acknowledgement" } };
+  const uncertain = await mcp("run_action", uncertainOperation);
+  loseProviderAcknowledgement = false;
+  check("Full-access lost acknowledgement returns a durable generated recovery id", uncertain.result?.state === "unknown" && Boolean(uncertain.result.requestId) && accountWrites === 2);
+  check("unknown operation recovery never dispatches a duplicate", (await mcp("run_action", { ...uncertainOperation, requestId: uncertain.result.requestId })).result?.state === "unknown" && accountWrites === 2);
+  await call("dashboard:setChatAccess", { key, id: chat, access: "supervised" }, false);
   current = (await list())[0];
   await call("interactive:followup", { ...followupArgs, expectedRevision: current.revision, requestId: "draft-steer-queued" }, false);
   let failedSteer;
@@ -354,6 +413,7 @@ try {
   await browser?.close();
   await stop();
   await new Promise((done) => site.close(done));
+  await new Promise((done) => provider.close(done));
   writeFileSync(join(output, "result.json"), JSON.stringify({ ranAt: new Date().toISOString(), platform: platform(), pass: checks.every((check) => check.pass), checks, browserDiagnostics: browserDiagnostics.slice(-20), limitations: ["Fixture data, no real connector account calls", "Simulated runner reports, no LLM-selection behavior evaluated", `Chrome runtime on ${platform()} only; other platforms not exercised in this run`], home }, null, 2));
   writeFileSync(join(output, "server.log"), serverLog);
 }

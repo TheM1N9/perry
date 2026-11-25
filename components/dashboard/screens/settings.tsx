@@ -482,11 +482,11 @@ function Manners() {
     latest.current = { on: Boolean(manners.quietHours), start: manners.quietHours?.start ?? "22:00", end: manners.quietHours?.end ?? "07:00" };
     setQuietState(latest.current);
   }, [manners]);
-  const store = (next: { quietHours?: { start: string; end: string }; dailyLimit?: number }, success: string) =>
+  const store = (next: { setting: "quietHours"; quietHours?: { start: string; end: string } } | { setting: "dailyLimit"; dailyLimit?: number }, success: string) =>
     void save({ key: dashboardKey, ...next }).then(() => toast.success(success), (cause) => toast.error(errorText(cause)));
   const limit = manners?.dailyLimit;
   const hours = (on: boolean, start = latest.current.start, end = latest.current.end) => on ? { quietHours: { start, end } } : {};
-  const saveHours = () => { const { on, start, end } = latest.current; if (on) store({ ...hours(true, start, end), dailyLimit: limit }, `Quiet from ${start} to ${end}.`); };
+  const saveHours = () => { const { on, start, end } = latest.current; if (on) store({ setting: "quietHours", ...hours(true, start, end) }, `Quiet from ${start} to ${end}.`); };
   return (
     <Section title="Proactive messages" icon={<BellIcon />} description="Due reminders always arrive."
       tip="Controls schedules, watches and heartbeat messages. Messages held by quiet hours or the daily limit arrive together later. Due reminders bypass both.">
@@ -494,7 +494,7 @@ function Manners() {
           <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-medium">
             Quiet hours
             <Switch checked={quiet.on} disabled={!manners} aria-label="Quiet hours"
-              onCheckedChange={(on) => { setQuiet({ ...latest.current, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${latest.current.start} to ${latest.current.end}.` : "Quiet hours off."); }} />
+              onCheckedChange={(on) => { setQuiet({ ...latest.current, on }); store({ setting: "quietHours", ...hours(on) }, on ? `Quiet from ${latest.current.start} to ${latest.current.end}.` : "Quiet hours off."); }} />
           </label>
         {quiet.on && <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm text-muted-foreground">From</span>
@@ -507,7 +507,7 @@ function Manners() {
         <div className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-x-4">
           <span className="text-sm text-muted-foreground">Daily limit</span>
           <Select modal={false} items={LIMITS} value={limit ? String(limit) : "none"} disabled={!manners}
-            onValueChange={(value) => { if (!value) return; const n = value === "none" ? undefined : Number(value); store({ ...hours(quiet.on), dailyLimit: n }, n ? `At most ${n} a day.` : "No daily limit."); }}>
+            onValueChange={(value) => { if (!value) return; const n = value === "none" ? undefined : Number(value); store({ setting: "dailyLimit", dailyLimit: n }, n ? `At most ${n} a day.` : "No daily limit."); }}>
             <SelectTrigger aria-label="Daily limit" className="min-h-11 w-40 sm:min-h-9"><SelectValue /></SelectTrigger>
             <SelectContent>{LIMITS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
           </Select>
@@ -642,7 +642,7 @@ export function KeyRow({ name, className }: { name: SecretName; className?: stri
     setError("");
     try {
       await setKey({ key: dashboardKey, name, value });
-      setDraft("");
+      setDraft((current) => current.trim() === value ? "" : current);
       toast.success(name.startsWith("TELEGRAM") ? "Saved. Perry listens to this bot within a few seconds." : "Saved. It takes effect on the next message.");
     } catch (cause) {
       setError(errorText(cause));
@@ -725,7 +725,7 @@ function Logins() {
     setSaving(true);
     try {
       await saveLogin({ key: dashboardKey, label: draft.label, url: draft.url || undefined, username: draft.username || undefined, value: draft.value });
-      setDraft(NO_LOGIN);
+      setDraft((current) => current === draft ? NO_LOGIN : current);
       toast.success(`${draft.label.trim()} added. Perry can sign in with it from the next message.`);
     } catch (cause) {
       setError(errorText(cause));

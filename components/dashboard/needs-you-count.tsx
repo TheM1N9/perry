@@ -2,15 +2,13 @@
 
 import { useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
-import { useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 
-/** Approvals still open, plus everything else waiting in Needs you. */
+/** Decisions still waiting: approvals, task questions and native chat questions. */
 export function useNeedsYouCount(): number {
   const { dashboardKey } = useSession();
-  const approvals = useQuery(api.approvals.pending, { key: dashboardKey });
+  const approvals = useQuery(api.approvals.pendingCount, { key: dashboardKey });
   const inbox = useQuery(api.dashboard.getInbox, { key: dashboardKey });
   const questions = useQuery(api.questions.pendingCount, { key: dashboardKey });
-  const now = useNow(15_000);
-  return (approvals ?? []).filter((item) => item.expiresAt > now).length + (inbox?.length ?? 0) + (questions ?? 0);
+  return (approvals ?? 0) + (inbox ?? []).filter(item => item.kind === "question").length + (questions ?? 0);
 }

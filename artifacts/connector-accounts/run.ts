@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Composio } from "@composio/core";
 import { openChat, sleep } from "../browser";
 import { KEY as STAND_IN_KEY, startStandIn } from "./stand-in";
@@ -61,6 +61,7 @@ import { KEY as STAND_IN_KEY, startStandIn } from "./stand-in";
 //      field must sit below every section of the Connectors page.
 //  17. A real failure is hidden along with "no key": with a key Composio
 //      refuses (stand-in only), the page must say it couldn't reach Composio.
+//  18. Stand-in mode inherits real account traffic or downloads embeddings instead of staying on loopback.
 
 const [outDir, given] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/connector-accounts/run.ts <outDir> [composio key | --stand-in]");
@@ -81,10 +82,15 @@ const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = { mode: standIn ? "stand-in" : "real account" };
 
 const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
-delete env.TELEGRAM_BOT_TOKEN;
-delete env.COMPOSIO_API_KEY;
+env.TELEGRAM_BOT_TOKEN = "";
+env.COMPOSIO_API_KEY = "";
+env.PERRY_WAKE_DISABLED = "1";
 delete env.COMPOSIO_BASE_URL;
-if (standIn) env.COMPOSIO_BASE_URL = standIn.url;
+if (standIn) {
+  env.COMPOSIO_BASE_URL = standIn.url;
+  env.PERRY_EMBED_MODEL = "connector-fixture";
+  env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(join(REPO, "artifacts", "connector-details", "preload.mjs")).href}`;
+}
 let log = "";
 const server: ChildProcess = spawn("node", [join(REPO, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 server.stdout?.on("data", (chunk: Buffer) => { log += chunk; });
@@ -156,13 +162,15 @@ try {
   let started = Date.now();
   const first = await call<{ accounts: Account[]; error?: string }>("dashboard:getConnectedAccounts", { key: KEY });
   const firstMs = Date.now() - started;
+  const profileReadsAfterFirst = standIn?.profileReads.length;
   started = Date.now();
   const second = await call<{ accounts: Account[] }>("dashboard:getConnectedAccounts", { key: KEY });
   const secondMs = Date.now() - started;
   notes.loads = { firstMs, secondMs, error: first.error };
   const address = (slug: string) => first.accounts.filter((item) => item.toolkit === slug && item.status === "ACTIVE").every((item) => /@/.test(item.account ?? ""));
   checks.namesTheAccount = first.accounts.some((item) => item.toolkit === "gmail") ? address("gmail") && address("googlecalendar") : true;
-  checks.askedOnceThenKept = JSON.stringify(second.accounts.map((item) => item.account)) === JSON.stringify(first.accounts.map((item) => item.account)) && secondMs < firstMs;
+  checks.askedOnceThenKept = JSON.stringify(second.accounts.map((item) => item.account)) === JSON.stringify(first.accounts.map((item) => item.account))
+    && (standIn ? standIn.profileReads.length === profileReadsAfterFirst : secondMs < firstMs);
 
   // Later, at the stand-in: the second Gmail and the old Calendar sign-in expire, their addresses already known.
   if (standIn) {
@@ -245,7 +253,7 @@ try {
   checks.oneRowPerAddress = shown.every((item) => { const addresses = item.rows.map((entry) => entry.label).filter((label) => label.includes("@")); return new Set(addresses).size === addresses.length; });
   checks.pageShowsAddresses = expected.some((item) => item.toolkit.slug === "gmail") ? shown.find((item) => item.name === "Gmail")!.rows.filter((entry) => entry.status === "Connected").every((entry) => entry.label.includes("@")) : true;
   const broken = (item: Card) => item.rows.filter((entry) => entry.status !== "Connected" && entry.status !== "Finishing sign-in").length;
-  checks.expiredOffersReconnect = rows.filter((entry) => entry.status === "Expired").length >= expected.filter((item) => item.status === "EXPIRED").length - rows.filter((entry) => entry.times > 1).length
+  checks.expiredOffersReconnect = rows.filter((entry) => entry.status === "Reconnect required").length >= expected.filter((item) => item.status === "EXPIRED").length - rows.filter((entry) => entry.times > 1).length
     && rows.filter((entry) => entry.status !== "Connected").every((entry) => entry.reconnect)
     && shown.every((item) => broken(item) === 0 ? !/need/.test(item.summary) : item.summary.includes(`${broken(item)} need`));
   const attention = shown.map((item) => item.rows.some((entry) => entry.status !== "Connected"));
@@ -296,7 +304,7 @@ try {
     await clickIn(cardsList, "Disconnect");
     await until(() => has(dialog), "the confirmation");
     notes.dialog = (await text(dialog)).replace(/\n+/g, " | ");
-    await clickIn(dialog, "Keep it");
+    await clickIn(dialog, "Cancel");
     await until(async () => !(await has(dialog)), "the dialog to close");
     checks.disconnectAsksAndCancelKeeps = /Disconnect/.test(String(notes.dialog)) && (await truth()).length === expected.length;
   } else {
@@ -308,9 +316,9 @@ try {
     checks.orderIsAttentionThenName = JSON.stringify(names) === JSON.stringify(["Gmail", "Notion", "YouTube", "Google Calendar", "Higgsfield MCP", "Slack"]);
     checks.cardSummaries = gmail?.summary === "2 accounts · 1 needs reconnecting" && byName.YouTube?.summary === "1 account · 1 needs reconnecting"
       && byName.Notion?.summary === "1 account · 1 finishing sign-in" && calendar?.summary === "1 account" && higgsfield?.summary === "2 accounts";
-    checks.duplicateShowsOnce = JSON.stringify(gmail?.rows.map((entry) => [entry.label, entry.status, entry.times, entry.reconnect])) === JSON.stringify([["sam@example.com", "Expired", 1, true], ["alex@example.com", "Connected", 2, false]]);
+    checks.duplicateShowsOnce = JSON.stringify(gmail?.rows.map((entry) => [entry.label, entry.status, entry.times, entry.reconnect])) === JSON.stringify([["sam@example.com", "Reconnect required", 1, true], ["alex@example.com", "Connected", 2, false]]);
     checks.expiredSpareUnderWorkingAccount = calendar?.rows.length === 1 && calendar.rows[0].label === "alex@example.com" && calendar.rows[0].status === "Connected" && calendar.rows[0].times === 2 && !calendar.rows[0].reconnect;
-    checks.expiredWithoutAddress = byName.YouTube?.rows[0]?.label.startsWith("Added") === true && byName.YouTube.rows[0].status === "Expired" && byName.YouTube.rows[0].reconnect;
+    checks.expiredWithoutAddress = byName.YouTube?.rows[0]?.label.startsWith("Added") === true && byName.YouTube.rows[0].status === "Reconnect required" && byName.YouTube.rows[0].reconnect;
     checks.noAddressStaysApart = higgsfield?.rows.length === 2 && higgsfield.rows.every((entry) => entry.label.startsWith("Added") && /\d:\d\d/.test(entry.label)) && higgsfield.rows[0].label !== higgsfield.rows[1].label;
 
     // 12. The catalogue: Gmail has one working account (signed in twice) and one expired.
@@ -348,7 +356,7 @@ try {
     await clickIn(row("Gmail", "alex@example.com"), "Disconnect");
     await until(() => has(dialog), "the disconnect question");
     notes.disconnectDialog = (await text(dialog)).replace(/\n+/g, " | ");
-    await clickIn(dialog, "Keep it");
+    await clickIn(dialog, "Cancel");
     await until(async () => !(await has(dialog)), "the dialog to close");
     const kept = standIn.deleted.length === 1;
     await clickIn(row("Gmail", "alex@example.com"), "Disconnect");
@@ -363,16 +371,28 @@ try {
     await shoot("after-removals.png", `section[aria-label="Connected"]`);
 
     // 8. Add another account starts at that card's app, and comes back here; Reconnect too.
-    const signIn = async (click: string, toolkit: string) => {
+    const signIn = async (click: string, toolkit: string, accountId?: string) => {
       await evaluate(`${click}.click(); true`);
       await until(async () => String(await evaluate(`location.href`).catch(() => "")).startsWith(`${standIn.url}/link?toolkit=${toolkit}`), `the ${toolkit} sign-in`);
       const link = standIn.links.at(-1);
-      return link?.toolkit === toolkit && link.callbackUrl === `${BASE}/apps/connectors?connected=${toolkit}`;
+      return link?.toolkit === toolkit && link.callbackUrl === `${BASE}/apps/connectors?connected=${toolkit}${accountId ? `&account=${accountId}` : ""}`;
     };
     checks.addAnotherStartsFromTheApp = await signIn(`${card("Gmail")}.querySelector(':scope > div button')`, "gmail");
     await send("Page.navigate", { url: `${BASE}/apps/connectors` });
     await until(() => has(cardsList), "the page again", 60);
-    checks.reconnectStartsFromTheApp = await signIn(`[...${row("YouTube", (await cards()).find((item) => item.name === "YouTube")!.rows[0].label)}.querySelectorAll("button")].find((b) => b.innerText.trim() === "Reconnect")`, "youtube");
+    checks.reconnectStartsFromTheApp = await signIn(`[...${row("YouTube", (await cards()).find((item) => item.name === "YouTube")!.rows[0].label)}.querySelectorAll("button")].find((b) => b.innerText.trim() === "Reconnect")`, "youtube", "ca_youtube");
+    standIn.connections.push({ id: "ca_youtube_alternate", toolkit: "youtube", status: "ACTIVE", createdAt: new Date().toISOString() });
+    const callback = `${BASE}/apps/connectors?connected=youtube&account=ca_youtube&status=success`;
+    await send("Page.navigate", { url: callback });
+    await until(() => evaluate(`document.body.innerText.includes("youtube isn't confirmed yet")`) as Promise<boolean>, "unconfirmed account callback");
+    checks.activeAlternateDoesNotConfirmExpiredReconnect = await evaluate(`!document.body.innerText.includes('youtube is reconnected.') && location.search === ''`) as boolean;
+    standIn.set("ca_youtube", "ACTIVE");
+    await send("Page.navigate", { url: callback });
+    await until(() => evaluate(`document.body.innerText.includes('youtube is reconnected.')`) as Promise<boolean>, "confirmed target account callback");
+    checks.targetAccountCallbackConfirmsAndClearsAddress = await evaluate(`location.search === ''`) as boolean;
+    await send("Page.navigate", { url: `${BASE}/apps/connectors?connected=youtube&account=ca_youtube&status=failed` });
+    await until(() => evaluate(`document.body.innerText.includes("Signing in to youtube didn't finish")`) as Promise<boolean>, "failed account callback");
+    checks.failedCallbackRemainsAFailureWithActiveAccount = await evaluate(`!document.body.innerText.includes('youtube is reconnected.') && location.search === ''`) as boolean;
     notes.links = standIn.links;
     notes.unknownCalls = standIn.unknown;
     checks.noUnknownCalls = standIn.unknown.length === 0;
@@ -394,6 +414,7 @@ try {
   notes.stoppedAt = String(error);
   checks.completed = false;
 } finally {
+  if (standIn) notes.provider = { deleted: standIn.deleted, links: standIn.links, unknown: standIn.unknown };
   browser?.close();
   if (server.pid) process.platform === "win32" ? spawn("taskkill", ["/PID", String(server.pid), "/T", "/F"], { stdio: "ignore" }) : server.kill("SIGTERM");
   await sleep(2_000);

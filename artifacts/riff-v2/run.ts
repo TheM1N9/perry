@@ -507,13 +507,13 @@ try {
     await openModels();
     const offered = await b.evaluate(`[...document.querySelectorAll('[data-riff-models] [role=group]')].map((g) => g.innerText.replace(/\\s+/g, ' ').trim())`) as string[];
     check("the dock's model menu lists the models by engine", offered.length === 2 && offered[0].includes("GPT-5.5 mini") && offered[1].includes("Claude Opus 5.5"), offered);
-    const layers = await b.evaluate(`({ surfaces: document.querySelectorAll('[data-riff-models]').length, nested: document.querySelectorAll('[role=listbox], [data-riff-models] [data-riff-models]').length, thinking: [...document.querySelectorAll('[data-riff-models] [role=radio]')].map((n) => n.innerText) })`) as { surfaces: number; nested: number; thinking: string[] };
+    const layers = await b.evaluate(`({ surfaces: document.querySelectorAll('[data-riff-models]').length, nested: document.querySelectorAll('[role=listbox], [data-riff-models] [data-riff-models]').length, thinking: [...document.querySelectorAll('[data-riff-models] [role=radio][data-effort]')].map((n) => n.innerText) })`) as { surfaces: number; nested: number; thinking: string[] };
     check("one surface: models and thinking together, no menu on a menu", layers.surfaces === 1 && layers.nested === 0 && JSON.stringify(layers.thinking) === JSON.stringify(["Default", "Low", "Medium", "High"]), layers);
     await shot("model-selector-desktop.png");
     await click('[data-riff-models] [data-model="claude/claude-opus-5-5"]');
     const picked = await until(async () => { const c = await pub<{ engine?: string; model?: string }>("dashboard:getChat", { id: chat }); return c.engine === "claude" && c.model === "claude-opus-5-5" ? c : null; }, "the model to be kept with the document");
     check("picking a model keeps it with the document", Boolean(picked));
-    await waitFor("[...document.querySelectorAll('[data-riff-models] [role=radio]')].length === 4", "Opus's thinking levels");
+    await waitFor("[...document.querySelectorAll('[data-riff-models] [role=radio][data-effort]')].length === 4", "Opus's thinking levels");
     await click('[data-riff-models] [data-effort="low"]');
     await until(async () => (await pub<{ effort?: string }>("dashboard:getChat", { id: chat })).effort === "low", "the thinking level to be kept");
     await key("keyDown", "Escape", "Escape"); await key("keyUp", "Escape", "Escape");

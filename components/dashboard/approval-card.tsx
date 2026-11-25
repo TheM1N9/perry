@@ -127,7 +127,7 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
               </div>
             )}
             {approval.paths && approval.paths.length > 0 && <div className="grid gap-1"><dt className="text-xs text-muted-foreground">Affected paths</dt><dd><ul className="space-y-1">{approval.paths.map((path,index) => <li key={`${index}:${path}`} className="font-mono font-medium [overflow-wrap:anywhere]">{path}</li>)}</ul></dd></div>}
-            {approval.detail && <div><dt className="sr-only">Detail</dt><dd className="text-pretty text-muted-foreground">{approval.detail}</dd></div>}
+            {approval.detail && <div className="min-w-0"><dt className="sr-only">Detail</dt><dd className="whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{approval.detail}</dd></div>}
           </dl>
         )}
         {approval.review && (

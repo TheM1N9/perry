@@ -90,7 +90,7 @@ Supported engine names are `codex`, `claude`, `grok` and `antigravity`. Setup st
 | “Note this down.” | Saves an editable Brain page. Projects keep related chats and notes together. |
 | “Send this to me on WhatsApp. I'll continue there.” | Sends the conversation to your paired app with a recap. |
 
-**Perry can also start useful work.** Periodic checks of connected email and calendars can uncover something relevant to your plans or active goals. Perry can research it and prepare a concrete next step. Work shows the task, its reason and its progress. Automatic preparation stays read-only for accounts; consequential actions still need your approval.
+**Perry can also start useful work.** Periodic checks of connected email and calendars can uncover something relevant to your plans or active goals. Perry can research it and prepare a concrete next step. Board shows the task, its reason and its progress. Automatic preparation stays read-only for accounts; consequential actions still need your approval.
 
 **Decisions keep their context.** Answer a task's question in chat to continue that same task. Perry considers urgency and earlier follow-ups before asking again. You can snooze, cancel or pause work from the dashboard.
 
@@ -109,7 +109,7 @@ Recent changes on `main` include:
 
 - **Scroll a topic.** Ask what people are posting about something in the last 6 hours to a week. Perry searches the platforms it can reach, remembers what it already showed you, and says which platforms are not set up.
 - **Approved work continues after outside reads.** Reading a webpage or account result no longer forces another approval for an already authorized account workflow. Outside content remains untrusted, and consequential-action confirmations remain.
-- **Autonomous work and decision follow-through.** Perry can start bounded preparation, keep one task for an issue and resume it when you answer. Work shows waiting decisions and follow-ups.
+- **Autonomous work and decision follow-through.** Perry can start bounded preparation, keep one task for an issue and resume it when you answer. Board shows waiting decisions and follow-ups.
 - **Riff voice document editing.** Dictate a document and revise it through its own editing conversation.
 - **GitHub token connections.** Connect GitHub with a personal access token as an alternative to OAuth, using the permissions granted to that token.
 - **Voice, meetings and recovery improvements.** Recent updates improve voice input, meeting prompts and local transcription, message delivery, interrupted work and HTTP image attachments.

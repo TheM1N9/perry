@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FolderOutputIcon, MessageSquareIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -89,7 +89,7 @@ function Instructions({ project }: { project: ProjectView }) {
     <Field>
       <FieldLabel htmlFor="project-instructions" className="sr-only">Instructions for {project.name}</FieldLabel>
       <Textarea id="project-instructions" value={instructions.value} rows={6} maxLength={8000} className="min-h-36 leading-relaxed" {...instructions.field}
-        placeholder={"For example:\nScripts for the Hackonomics YouTube channel: money explained for people in their twenties.\nHook in the first line, short sentences, no jargon, 8 to 10 minutes read aloud.\nEnd every script with one question for the comments."}
+        placeholder={"For example:\nHelp prepare our website launch.\nKeep answers concise and explain technical terms.\nAsk before publishing or changing anything outside this project."}
         onChange={(event) => instructions.change(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void instructions.flush(); } }} />
       <SaveStatus state={instructions.state} idle="Saves as you type." onRetry={() => void instructions.flush()} />
@@ -101,8 +101,23 @@ function NewPage({ project }: { project: ProjectView }) {
   const { dashboardKey } = useSession();
   const router = useRouter();
   const create = useMutation(api.notes.create);
+  const [creating, setCreating] = useState(false);
+  const pending = useRef(false);
+  const newPage = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setCreating(true);
+    try {
+      const id = await create({ key: dashboardKey, projectId: project.id });
+      router.push(noteHref(id));
+    } catch (cause) {
+      toast.error(`Couldn't make it: ${errorText(cause)}`);
+      pending.current = false;
+      setCreating(false);
+    }
+  };
   return (
-    <Button variant="outline" size="sm" onClick={() => void create({ key: dashboardKey, projectId: project.id }).then((id) => router.push(noteHref(id)), (cause) => toast.error(`Couldn't make it: ${errorText(cause)}`))}>
+    <Button variant="outline" size="sm" disabled={creating} aria-busy={creating || undefined} onClick={() => void newPage()}>
       <PlusIcon />New page
     </Button>
   );

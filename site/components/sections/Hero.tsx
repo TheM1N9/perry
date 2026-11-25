@@ -11,7 +11,7 @@ export function Hero() {
       <div className="mx-auto flex max-w-[1180px] flex-col items-center px-6 pb-20 pt-14 text-center md:pb-24 md:pt-20">
         {/* Perry himself: the one place he's shown big. */}
         <motion.div
-          initial={{ opacity: 0, y: 24, scale: 0.94 }}
+          initial={false}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ type: "spring", stiffness: 220, damping: 22, delay: 0.1 }}
           className="relative"
@@ -26,14 +26,14 @@ export function Hero() {
           className="mt-8 max-w-[15ch] text-[52px] font-[600] leading-[0.98] tracking-[-0.04em] text-ink sm:text-[72px] lg:text-[100px]"
         />
         <motion.p
-          initial={{ opacity: 0, y: 12 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.5 }}
           className="mt-7 max-w-[34ch] text-[19px] leading-[1.45] text-ink-3 md:text-[22px]"
         >
-          Perry lives in your Telegram, works on your own computer, and never makes a risky move without you.
+          Chat on the web, WhatsApp or Telegram. Perry works on your computer with the access settings you choose.
         </motion.p>
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.65 }} className="mt-9 flex flex-wrap justify-center gap-3">
+        <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.65 }} className="mt-9 flex flex-wrap justify-center gap-3">
           <TrackLink
             href="#setup"
             event="CTA click"

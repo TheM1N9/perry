@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { matches } from "@/convex/lib/shortcuts";
@@ -32,11 +33,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     client.clearChatCache();
     // `perry open` passes the key in the fragment, which never reaches a server; it is kept and taken out of the address.
     const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("key");
-    if (fromLink) {
-      window.localStorage.setItem(KEY_STORAGE, fromLink);
-      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    let key = fromLink;
+    try {
+      if (fromLink) window.localStorage.setItem(KEY_STORAGE, fromLink);
+      else key = window.localStorage.getItem(KEY_STORAGE);
+    } catch {
+      if (fromLink) toast.info("Unlocked for this tab. Browser storage is unavailable, so the key won't be remembered.");
+    } finally {
+      if (fromLink) window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
     }
-    setDashboardKey(window.localStorage.getItem(KEY_STORAGE));
+    setDashboardKey(key);
     setReady(true);
     return () => client.clearChatCache();
   }, [client]);
@@ -53,18 +59,27 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const lock = useCallback(() => {
     client.clearChatCache();
     trackDashboardEvent("Dashboard locked");
-    window.localStorage.removeItem(KEY_STORAGE);
+    try { window.localStorage.removeItem(KEY_STORAGE); }
+    catch { toast.error("This tab is locked, but the browser could not remove its remembered key. Clear this site's browser data before sharing it."); }
     setDashboardKey(null);
   }, [client]);
   const session = useMemo<Session | null>(() => dashboardKey ? { dashboardKey, lock } : null, [dashboardKey, lock]);
 
   if (!ready) return null;
   if (!session) {
-    return <Gate onUnlock={(key) => { client.clearChatCache(); trackDashboardEvent("Dashboard unlocked"); window.localStorage.setItem(KEY_STORAGE, key); setDashboardKey(key); }} />;
+    return <Gate onUnlock={(key) => {
+      client.clearChatCache();
+      trackDashboardEvent("Dashboard unlocked");
+      try { window.localStorage.setItem(KEY_STORAGE, key); }
+      catch { toast.info("Unlocked for this tab. Browser storage is unavailable, so the key won't be remembered."); }
+      setDashboardKey(key);
+    }} />;
   }
   return (
     <SessionContext.Provider value={session}>
-      <Unlocked>{children}</Unlocked>
+      <PageErrorBoundary onLock={lock} wholeDashboard>
+        <Unlocked>{children}</Unlocked>
+      </PageErrorBoundary>
     </SessionContext.Provider>
   );
 }
@@ -121,7 +136,7 @@ function Unlocked({ children }: { children: ReactNode }) {
   const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
 
   // The welcome page is full screen, before anything else.
-  if (pathname === "/welcome") return <PageErrorBoundary onLock={lock}>{children}</PageErrorBoundary>;
+  if (pathname === "/welcome") return children;
 
   return (
     <PaletteContext.Provider value={palette}>

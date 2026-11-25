@@ -7,7 +7,7 @@ import { useTheme } from "next-themes";
 import { useMutation } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Artifact } from "@/convex/interactive";
-import { bridgeSchema, migrateValues, tableRows, validValue, type Definition, type Input as InputDefinition, type Values } from "@/lib/interactive";
+import { bridgeSchema, migrateValues, parseValues, tableRows, validValue, type Definition, type Input as InputDefinition, type Values } from "@/lib/interactive";
 import { sandboxDocument } from "@/lib/interactive-sandbox";
 import { useDashboardKey } from "@/lib/session";
 import { ArrowUp, CheckIcon, ChevronRight, MoreHorizontal } from "lucide-react";
@@ -140,6 +140,36 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const currentValues = useRef(values); currentValues.current = values;
   const dirty = !same(base.values, values);
+  const draftKey = `perry.autosave.interactive.${artifact.conversationId}.${artifact.id}`;
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem(draftKey);
+      if (cached && artifact.lifecycle !== "answered") {
+        const draft = JSON.parse(cached);
+        const recovered = parseValues(artifact.definition, draft.values);
+        if (!same(recovered, artifact.values)) {
+          setValues(recovered);
+          setConflict(draft.revision !== artifact.revision);
+          setNotice(draft.revision === artifact.revision ? "Recovered an unsaved draft" : "Recovered your inputs. A newer revision is available; choose which draft to keep.");
+        }
+      }
+    } catch { /* Browser storage is optional; server autosave remains available. */ }
+    setRestored(true);
+  }, [draftKey]);
+  useEffect(() => {
+    if (!restored) return;
+    try {
+      if (dirty && base.lifecycle !== "answered") sessionStorage.setItem(draftKey, JSON.stringify({ revision: base.revision, values }));
+      else sessionStorage.removeItem(draftKey);
+    } catch { /* The beforeunload guard still protects an unsaved form. */ }
+  }, [restored, draftKey, dirty, base.revision, base.lifecycle, values]);
+  useEffect(() => {
+    if (!dirty && !saveBusy) return;
+    const leaving = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", leaving);
+    return () => window.removeEventListener("beforeunload", leaving);
+  }, [dirty, saveBusy]);
   useEffect(() => {
     void report({ key, id: artifact.id, conversationId: artifact.conversationId, event: "restored" }).catch(() => {});
     if (artifact.definition.view.kind !== "sandbox") void report({ key, id: artifact.id, conversationId: artifact.conversationId, event: "ready" }).catch(() => {});
@@ -156,15 +186,20 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
     try {
       const result = await save({ key, id: base.id, conversationId: base.conversationId, expectedRevision: base.revision, requestId: randomUUID(), operation, values: JSON.stringify(sent) });
       if (!result.ok) { setConflict(true); setNotice("Revision conflict. Your inputs are preserved; load the latest draft or explicitly keep yours."); }
-      else { setBase(result.artifact); if (operation !== "save" || same(currentValues.current, sent)) setValues(result.artifact.values); setNotice("Saved draft"); }
+      else {
+        const unchanged = same(currentValues.current, sent);
+        setBase(result.artifact);
+        if (unchanged) setValues(result.artifact.values);
+        setNotice(unchanged ? "Saved draft" : "Unsaved changes");
+      }
     } catch (error) { setNotice(`Save failed: ${error instanceof Error ? error.message : String(error)}. Your inputs are still here.`); }
     finally { saving.current = false; setSaveBusy(false); }
   }
   useEffect(() => {
-    if (!dirty || conflict || saving.current || sending || base.lifecycle === "answered") return;
+    if (!restored || !dirty || conflict || saving.current || sending || base.lifecycle === "answered") return;
     saveTimer.current = setTimeout(() => void persist("save"), 650);
     return () => clearTimeout(saveTimer.current);
-  }, [values, base.revision, base.lifecycle, dirty, conflict, sending]);
+  }, [restored, values, base.revision, base.lifecycle, dirty, conflict, sending]);
   const change = useCallback((id: string, value: Values[string]) => setValues((previous) => ({ ...previous, [id]: value })), []);
   const def = base.definition;
   if (def.view.kind === "question") {

@@ -181,10 +181,11 @@ try {
 
   // --- 2. A new chat inside the project, from its page -----------------------------------------------------------
   await click("main a", "New chat");
-  await waitFor(`document.body.innerText.includes("New chat in Hackonomics scripts")`, "the new chat in the project");
+  await waitFor(`document.body.innerText.includes("What should we work on in Hackonomics scripts?")`, "the new chat in the project");
   await shot("new-chat-in-project.png");
   const opening = "Draft the hook for the compound interest episode ZEPHYRQUILL";
-  await type('textarea[aria-label^="Message"]', opening);
+  await waitFor(`document.querySelector('[contenteditable="true"][aria-label^="Message"]')`, "the message editor");
+  await type('[contenteditable="true"][aria-label^="Message"]', opening);
   await click('button[aria-label="Send message"]');
   await waitFor(`/^\\/chat\\/[a-z0-9]+$/.test(location.pathname)`, "the new chat's address");
   const chatA = (await path()).split("/").pop()!;
@@ -396,13 +397,16 @@ try {
   check("noTeachFormOnBrain", teach.light === 0 && teach.dark === 0, teach);
   await go(`/projects/${project}`);
   await waitFor(`[...document.querySelectorAll("main li")].some((item) => item.innerText.includes("MARMOTLANTERN"))`, "the moved chat on the project's page");
+  const beforeLeaving = await conversation(outside);
   await evaluate(`(() => { const row = [...document.querySelectorAll("main li")].find((item) => item.innerText.includes("MARMOTLANTERN")); [...row.querySelectorAll("button")].find((button) => button.innerText.includes("Take out")).setAttribute("data-take-out", "yes"); return true; })()`);
   await click('button[data-take-out="yes"]');
   await until(async () => !(await conversation(outside)).projectId, "the chat to be taken out", 20);
   await exchange(outside, "And now?");
   const takenOut = contextOf("And now?");
-  check("takenOutIsTold", takenOut.includes("# No longer in a project") && !takenOut.includes("STAYBOLD-9") && !(await seenFrom(outside, "KESTRELBRIDGE")),
-    takenOut.slice(takenOut.indexOf("# No longer"), takenOut.indexOf("# No longer") + 200));
+  const afterLeaving = await conversation(outside);
+  const newSession = Boolean(beforeLeaving.resume?.cursor && afterLeaving.resume?.cursor && beforeLeaving.resume.cursor !== afterLeaving.resume.cursor);
+  check("leavingProjectClearsContext", (takenOut.includes("# No longer in a project") || newSession) && !takenOut.includes("# This project:") && !takenOut.includes("STAYBOLD-9") && !(await seenFrom(outside, "KESTRELBRIDGE")),
+    { newSession, context: takenOut.slice(0, 300) });
 
   // --- 15. The sidebar and the Memory page --------------------------------------------------------------------------
   await go(`/chat/${chatA}`);
@@ -474,6 +478,7 @@ try {
   notes.codexRealTurn = "not run: limit (the Codex weekly limit is used up until 4 Oct 03:01, and Claude is rate-limited); Codex gets the same turn row, and its runner puts `recalled` ahead of the message as the first text of the turn input (runner/codex.ts userInput)";
 } catch (error) {
   notes.stoppedAt = String(error instanceof Error ? error.stack ?? error.message : error);
+  notes.serverLog = p.logs.server.slice(-8000);
   check("completed", false);
 }
 process.exit(await p.finish() ? 0 : 1);

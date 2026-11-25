@@ -1,6 +1,8 @@
 "use client";
 
 import { CheckIcon } from "lucide-react";
+import { Radio } from "@base-ui/react/radio";
+import { RadioGroup } from "@/components/ui/radio-group";
 import { enginesOf, modelKey, modelsOf, type ModelOption } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { cn } from "@/lib/utils";
@@ -30,7 +32,7 @@ export function ModelMenu({ models, model, onModel, modelInfo, effort, onEffort 
     ...efforts.map((level) => ({ value: level as string | undefined, label: levelName(level), title: undefined }))];
   return (
     <div data-model-menu>
-      <div role="menu" aria-label="Model">
+      <RadioGroup aria-label="Model" value={model ?? ""} onValueChange={(value) => { if (typeof value === "string") onModel(value); }} className="gap-0">
         {enginesOf(models).map((engine, index) => (
           <div key={engine} role="group" aria-label={ENGINE_LABELS[engine]} className={cn(index > 0 && "mt-1.5 border-t pt-1.5")}>
             <p className="px-2.5 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">{ENGINE_LABELS[engine]}</p>
@@ -38,31 +40,31 @@ export function ModelMenu({ models, model, onModel, modelInfo, effort, onEffort 
               const key = modelKey(item.engine, item.id);
               const on = key === model;
               return (
-                <button key={key} type="button" role="menuitemradio" aria-checked={on} data-model={key} onClick={() => onModel(key)}
+                <Radio.Root key={key} value={key} data-model={key}
                   className="flex min-h-11 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent md:min-h-9">
                   <span className="min-w-0 flex-1 truncate">{item.name}</span>
                   {on && <CheckIcon className="size-4 shrink-0" aria-hidden />}
-                </button>
+                </Radio.Root>
               );
             })}
           </div>
         ))}
-      </div>
+      </RadioGroup>
       {efforts.length > 0 && (
         <div className="mt-1.5 border-t px-2.5 pb-1.5 pt-2.5">
-          <p id="model-menu-thinking" className="pb-2 text-xs font-medium text-muted-foreground">Thinking</p>
-          <div role="radiogroup" aria-labelledby="model-menu-thinking" className="grid auto-cols-fr grid-flow-col gap-1">
+          <p className="pb-2 text-xs font-medium text-muted-foreground">Thinking</p>
+          <RadioGroup aria-label="Thinking" value={effort ?? "default"} onValueChange={(value) => { if (typeof value === "string") onEffort(value === "default" ? undefined : value); }} className="grid auto-cols-fr grid-flow-col gap-1">
             {levels.map((level) => {
               const on = (effort ?? undefined) === level.value;
               return (
-                <button key={level.label} type="button" role="radio" aria-checked={on} title={level.title} data-effort={level.value ?? "default"} onClick={() => onEffort(level.value)}
+                <Radio.Root key={level.label} value={level.value ?? "default"} title={level.title} data-effort={level.value ?? "default"}
                   className={cn("min-h-11 truncate rounded-full border px-2 text-sm outline-none md:text-[0.8125rem] transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring md:min-h-8",
                     on ? "border-foreground bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
                   {level.label}
-                </button>
+                </Radio.Root>
               );
             })}
-          </div>
+          </RadioGroup>
         </div>
       )}
     </div>

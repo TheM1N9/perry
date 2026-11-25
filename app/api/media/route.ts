@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   }
 
   const release = requestSlot("upload");
-  if (!release) return busyResponse();
+  if (!release) return busyResponse("upload");
   try {
     const bytes = Buffer.from(await requestBytes(request, MAX_BYTES));
     if (bytes.length === 0 || bytes.length > MAX_BYTES) {
@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
 
     const extension = extname(decodeURIComponent(request.headers.get("x-file-name") ?? "")).slice(1).toLowerCase();
     const uploadId = request.headers.get("x-upload-id");
-    if (uploadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uploadId)) {
+    // Chat batches append the attachment index to their stable message UUID.
+    if (uploadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-\d{1,6})?$/i.test(uploadId)) {
       return Response.json({ error: "Invalid upload id." }, { status: 400 });
     }
     const path = join(uploadDir(), `${uploadId ?? randomUUID()}${/^[a-z0-9]{1,8}$/.test(extension) ? `.${extension}` : ""}`);

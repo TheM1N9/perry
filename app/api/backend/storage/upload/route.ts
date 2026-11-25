@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   const runtime = backend();
   if (!await runtime.uploadTicketValid(ticket)) return Response.json({ error: "This upload address has expired or was already used." }, { status: 403 });
   const release = requestSlot("upload");
-  if (!release) return busyResponse();
+  if (!release) return busyResponse("upload");
   try {
     const blob = new Blob([await requestBytes(request, 50 * 1024 * 1024)], { type: request.headers.get("content-type") ?? "" });
     const storageId = await runtime.acceptUpload(ticket, blob);

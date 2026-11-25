@@ -45,7 +45,7 @@ function TimeSegment({
       <NumberFieldPrimitive.Input
         aria-label={label}
         onFocus={(event) => event.currentTarget.select()}
-        className="w-[2.5ch] bg-transparent text-center tabular-nums outline-none selection:bg-primary/20 disabled:cursor-not-allowed"
+        className="w-[2.5ch] rounded-sm bg-transparent text-center tabular-nums outline-none selection:bg-primary/20 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
       />
     </NumberFieldPrimitive.Root>
   )

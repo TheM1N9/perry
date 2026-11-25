@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CheckIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, XIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -46,6 +46,14 @@ const NOTICE_THREAD: Partial<Record<InboxItem["kind"], string>> = { "task-failed
 /** The thread a notice is about, if the Board has one for it. */
 export const noticeThread = (item: InboxItem) => NOTICE_THREAD[item.kind] ? `${NOTICE_THREAD[item.kind]}:${item.id}` : undefined;
 
+export function MarkUpdateRead({ notice, className }: { notice: Notice; className?: string }) {
+  const { dashboardKey } = useSession();
+  const dismiss = useMutation(api.dashboard.dismissInbox);
+  return <ActionButton variant="outline" size="sm" className={className} aria-label={`Mark read: ${notice.title}`}
+    action={() => dismiss({ key: dashboardKey, items: [{ kind: notice.kind, id: notice.id, at: notice.at }] })}
+    success="Marked read. History is kept.">Mark read</ActionButton>;
+}
+
 /** A question first, then a destructive action, as Work asked it. */
 function useConfirm() {
   const [asking, setAsking] = useState<{ title: string; body: string; label: string; run: () => Promise<unknown>; success: string } | null>(null);
@@ -71,7 +79,7 @@ function useConfirm() {
 const NEW: Record<string, string> = { tasks: "new task", jobs: "new schedule", goals: "new goal", watches: "new watch" };
 
 /** The header's actions for the open channel or tab. `compact`: the icon alone, for a narrow header. */
-export function ChannelActions({ channel, needsYou, notices, compact, onCreated }: { channel?: string; needsYou: boolean; notices: Notice[]; compact: boolean; onCreated?: (id: Id<"tasks">) => void }) {
+export function ChannelActions({ channel, updates, notices, compact, onCreated }: { channel?: string; updates: boolean; notices: Notice[]; compact: boolean; onCreated?: (id: Id<"tasks">) => void }) {
   const { dashboardKey } = useSession();
   const [making, setMaking] = useState<string | null>(null);
   const work = useQuery(api.dashboard.getWork, making === "tasks" ? { key: dashboardKey } : "skip");
@@ -102,8 +110,8 @@ export function ChannelActions({ channel, needsYou, notices, compact, onCreated 
   if (channel === "watches") {
     menu.push(<DropdownMenuItem key="check" onClick={() => void attempt(() => checkNow({ key: dashboardKey }), { success: "Checked every watch that was due." })}><RefreshCwIcon />Check due watches now</DropdownMenuItem>);
   }
-  if (needsYou && notices.length > 0) {
-    menu.push(<DropdownMenuItem key="dismiss" onClick={() => void attempt(() => dismiss({ key: dashboardKey, items: notices.map(({ kind, id }) => ({ kind, id })) }), { success: "Cleared." })}><CheckIcon />Dismiss {notices.length === 1 ? "the update" : `all ${notices.length} updates`}</DropdownMenuItem>);
+  if (updates && notices.length > 0) {
+    menu.push(<DropdownMenuItem key="dismiss" onClick={() => void attempt(() => dismiss({ key: dashboardKey, items: notices.map(({ kind, id, at }) => ({ kind, id, at })) }), { success: "Updates marked read. History is kept." })}><CheckIcon />Mark {notices.length === 1 ? "this update" : `these ${notices.length} updates`} read</DropdownMenuItem>);
   }
 
   return (
@@ -152,7 +160,7 @@ export function ThreadActions({ thread, task, question, approval, notice, shown 
   const jobs = useQuery(api.jobs.listForDashboard, isJob ? { key: dashboardKey } : "skip");
   const models = useQuery(api.models.options, isJob ? { key: dashboardKey } : "skip")?.models;
   const preferred = useQuery(api.dashboard.getDefaultEngine, isJob ? { key: dashboardKey } : "skip");
-  const approvals = useQuery(api.approvals.pending, approval ? { key: dashboardKey } : "skip");
+  const selectedApproval = useQuery(api.approvals.active, approval ? { key: dashboardKey, id: rawId(approval) } : "skip");
   const now = useNow(1_000);
   const { ask, dialog } = useConfirm();
   const [editing, setEditing] = useState(false);
@@ -171,7 +179,7 @@ export function ThreadActions({ thread, task, question, approval, notice, shown 
   const goal = thread.kind === "goal" ? work?.goals.find((item) => item._id === id) : undefined;
   const monitor = thread.kind === "watch" ? work?.monitors.find((item) => item._id === id) : undefined;
   const job = isJob ? jobs?.jobs.find((item) => item.id === id) : undefined;
-  const pending = approval ? approvals?.find((item) => item.id === rawId(approval) && item.expiresAt > now) : undefined;
+  const pending = selectedApproval && selectedApproval.expiresAt > now ? selectedApproval : null;
   const chat: Action | undefined = thread.chatId ? { label: "open chat", href: `/chat/${thread.chatId}` } : undefined;
 
   let primary: Action | undefined;
@@ -214,7 +222,6 @@ export function ThreadActions({ thread, task, question, approval, notice, shown 
     primary = chat;
   }
   if (primary && chat && primary !== chat && !more.includes(chat)) more.unshift(chat);
-  if (notice) more.push({ label: "dismiss update", run: () => dismiss({ key: dashboardKey, items: [{ kind: notice.kind, id: notice.id }] }), success: "Dismissed." });
 
   const kindFields: ReactNode[] = [];
   if (job) kindFields.push(...jobFields(job, jobs!.timezone, now, { models: models ?? [], preferred, dashboardKey, setModel, keepOn }));
@@ -226,15 +233,20 @@ export function ThreadActions({ thread, task, question, approval, notice, shown 
   return (
     <>
       <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12px]">
-        {question && <Row label="question"><span className="whitespace-pre-wrap text-[13px]">{question}</span></Row>}
+        {question && <Row label="question">{task?.decision && question.startsWith("The approval expired without an answer:") ? <div className="space-y-2 text-[13px]">
+          <p>The previous approval expired. Choose whether to recheck this request, wait until tomorrow, or drop the follow-up.</p>
+          <details><summary className="min-h-11 cursor-pointer py-3 underline underline-offset-4">Original request</summary><p className="whitespace-pre-wrap">{question}</p></details>
+        </div> : <span className="whitespace-pre-wrap text-[13px]">{question}</span>}</Row>}
         {fields}
         {kindFields}
       </dl>
       {/* An approval is answered where it is read; one that has expired since says so. */}
       {approval && (pending
         ? <div className="rounded-lg border border-warning/35 py-1 text-[13px] [&_pre]:px-2.5 [&_pre]:py-2 [&_pre]:text-[13px] [&_pre]:[overflow-wrap:normal]" data-approval-card><ApprovalCard approval={pending} now={now} showChat={false} bare /></div>
-        : approvals && <p className="text-[12px] text-muted-foreground">That approval was answered or has expired.</p>)}
-      {question && task?.status === "blocked" && <Answer task={task} />}
+        : selectedApproval === undefined ? <p role="status" className="text-[12px] text-muted-foreground">Loading approval…</p> : <p className="text-[12px] text-muted-foreground">That approval was answered or has expired.</p>)}
+      {question && task?.status === "blocked" && <Answer key={task.decision?.version ?? task._id} task={task} />}
+      {task?.completion && task.status === "blocked" && <CompletionActions key={task.completion.version} task={task} />}
+      {notice && <MarkUpdateRead notice={notice} className="w-fit" />}
       {extra}
       {thread.chatId && <NativeQuestions conversationId={thread.chatId} />}
       {(primary || more.length > 0) && (
@@ -287,28 +299,76 @@ function Act({ action, primary = false }: { action: Action; primary?: boolean })
   return <ActionButton size="sm" variant={variant} data-action action={action.run!} {...(action.success ? { success: action.success } : {})}>{action.label}</ActionButton>;
 }
 
-/** A task's question, answered in place, as Work had it: it goes back to work with the answer. */
+/** A saved result is reviewable without replaying the work that produced it. */
+function CompletionActions({ task }: { task: Doc<"tasks"> }) {
+  const { dashboardKey } = useSession();
+  const resolve = useMutation(api.tasks.resolveCompletionFromDashboard);
+  const [sending, setSending] = useState(false);
+  const pending = useRef(false);
+  const version = task.completion!.version;
+  const perform = async (action: "complete" | "continue") => {
+    if (pending.current) throw new Error("Please wait for the current action to finish.");
+    pending.current = true;
+    setSending(true);
+    try { return await resolve({ key: dashboardKey, id: task._id, version, action }); }
+    finally { pending.current = false; setSending(false); }
+  };
+  return <div className="space-y-2" data-completion-actions>
+    <p className="text-[12px] text-muted-foreground">The result is saved. Perry stopped here because the checklist was not fully updated. Nothing is running, and the work will not repeat automatically.</p>
+    <div className="flex flex-wrap gap-2">
+      <ActionButton variant="outline" disabled={sending} action={() => perform("complete")}
+        confirm={{ title: "Mark this task complete?", body: "Confirm the saved result fulfills this task. Its recorded checklist is kept, and any dependent tasks may start.", label: "Mark complete" }}
+        success="Task marked complete. Its recorded checklist is kept.">Mark complete</ActionButton>
+      <ActionButton variant="outline" disabled={sending} action={() => perform("continue")}
+        confirm={{ title: "Continue the remaining work?", body: "Perry will continue this same task from its saved result. Existing approval rules still apply.", label: "Continue work" }}
+        success="Continuing the same task from its saved result.">Continue work</ActionButton>
+    </div>
+  </div>;
+}
+
+/** Answer the task's current question in place. */
 function Answer({ task }: { task: Doc<"tasks"> }) {
   const { dashboardKey } = useSession();
   const answerTask = useMutation(api.tasks.answerFromDashboard);
+  const snooze = useMutation(api.taskDecisions.snoozeFromDashboard);
+  const drop = useMutation(api.taskDecisions.dropFromDashboard);
   const [answer, setAnswer] = useState("");
   const [sending, setSending] = useState(false);
+  const pending = useRef(false);
+  const version = task.decision?.version;
+  const perform = async (action: () => Promise<unknown>) => {
+    if (pending.current) throw new Error("Please wait for your current answer to finish.");
+    pending.current = true;
+    setSending(true);
+    try { return await action(); }
+    finally { pending.current = false; setSending(false); }
+  };
   return (
+    <div className="space-y-3" data-decision-actions>
+      {version && <div className="flex flex-wrap gap-2">
+        <ActionButton disabled={sending} action={() => perform(() => answerTask({ key: dashboardKey, id: task._id, decisionVersion: version,
+          answer: "Recheck the current facts and whether this is still needed. Obtain a fresh execution approval before acting." }))}
+          success="Perry will recheck. A fresh approval is required before acting.">Recheck</ActionButton>
+        <ActionButton variant="outline" disabled={sending} action={() => perform(() => snooze({ key: dashboardKey, id: task._id, version, until: Date.now() + 86_400_000 }))}
+          success="Reminded tomorrow. The question stays saved.">Remind me tomorrow</ActionButton>
+        <ActionButton variant="outline" disabled={sending} action={() => perform(() => drop({ key: dashboardKey, id: task._id, version }))}
+          confirm={{ title: "Drop this follow-up?", body: "Perry will stop asking about this request. Completed work stays saved.", label: "Drop follow-up" }} success="Follow-up dropped.">Drop</ActionButton>
+      </div>}
     <form data-answer onSubmit={(event) => {
       event.preventDefault();
       const text = answer.trim();
-      if (!text || sending) return;
-      setSending(true);
-      void attempt(() => answerTask({ key: dashboardKey, id: task._id, answer: text, decisionVersion: task.decision?.version }), { success: "Answered. It carries on." })
-        .then((ok) => { if (ok) setAnswer(""); setSending(false); });
+      if (!text || pending.current) return;
+      void attempt(() => perform(() => answerTask({ key: dashboardKey, id: task._id, answer: text, decisionVersion: version })), { success: "Answered. It carries on." })
+        .then((ok) => { if (ok) setAnswer(current => current.trim() === text ? "" : current); });
     }}>
       <InputGroup className="h-9">
-        <InputGroupInput aria-label={`Answer for ${task.title}`} placeholder="Your answer" value={answer} onChange={(event) => setAnswer(event.target.value)} className="text-[13px]" />
+        <InputGroupInput aria-label={`Answer for ${task.title}`} placeholder="Or write a different answer" value={answer} readOnly={sending} onChange={(event) => setAnswer(event.target.value)} className="text-[13px]" />
         <InputGroupAddon align="inline-end">
           <InputGroupButton type="submit" size="xs" className="text-primary hover:text-primary" disabled={!answer.trim() || sending} aria-busy={sending || undefined}>answer</InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
     </form>
+    </div>
   );
 }
 

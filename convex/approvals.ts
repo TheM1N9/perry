@@ -11,6 +11,7 @@ import { targetOf, type Target } from "./channels";
 import { presenceOf } from "./todos";
 import { readPersona } from "./persona";
 import { posix, win32 } from "node:path";
+import { pausedAt } from "./pause";
 
 /**
  * Approvals for what a runner is asked to do on the owner's machine: a command
@@ -283,6 +284,7 @@ export const decision = query({
  * the outcome, whichever side answered.
  */
 async function settleRow(ctx: MutationCtx, row: Doc<"approvals">, answer: { approved: boolean; by: Person; always?: boolean; followUp?: boolean }) {
+  if (answer.approved && row.connectedAction && (answer.by === "telegram" || answer.by === "whatsapp") && (row.detail?.length ?? 0) > 800) return;
   const now = Date.now();
   const offer = answer.approved && answer.always && answer.by !== "timeout" ? row.alwaysAllow : undefined;
   const ruleId = offer
@@ -327,7 +329,7 @@ export async function accessChanged(ctx: MutationCtx, conversationId: Id<"conver
   const pending = await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).take(200);
   const now = Date.now();
   for (const row of pending) {
-    if (row.conversationId !== conversationId || row.kind === "tool") continue;
+    if (row.conversationId !== conversationId || (row.kind === "tool" && !row.connectedAction)) continue;
     await ctx.db.patch(row._id, { status: "auto", decidedBy: "trust", decidedAt: now });
     if (row.telegramMessageId) await ctx.scheduler.runAfter(0, internal.approvals.showOutcomeOnTelegram, { id: row._id });
   }
@@ -357,6 +359,74 @@ export const settle = mutation({
 });
 
 // --- Perry's browser ---------------------------------------------------
+
+/** Reserve a reviewable operation before any provider execution. The request id is scoped to its chat. */
+export const connected = internalMutation({
+  args: { conversationId: v.id("conversations"), turnId: v.id("codexTurns"), requestId: v.string(), scope: v.string(), slug: v.string() },
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.turnId);
+    const chat = await ctx.db.get(args.conversationId);
+    if (!turn || turn.conversationId !== args.conversationId || !chat || chat.contactId || !turn.runnerId
+      || !["running", "paused"].includes(turn.status) || turn.preparation) throw new Error("Connected writes need an active owner reply.");
+    if (args.scope.length > 12_000 || args.requestId.length > 160) throw new Error("This operation is too large to review. Prepare a smaller operation.");
+    const existing = await ctx.db.query("approvals").withIndex("by_connected_request", q => q.eq("conversationId", args.conversationId).eq("connectedAction.requestId", args.requestId)).unique();
+    if (existing) {
+      if (existing.connectedAction?.scope !== args.scope) return { error: "The account or arguments changed after this operation was prepared. Review a new operation with a new requestId; nothing was sent." };
+      return { id: existing._id };
+    }
+    const now = Date.now();
+    const full = chat.access === "full";
+    const id = await ctx.db.insert("approvals", {
+      runnerId: turn.runnerId, conversationId: args.conversationId, kind: "tool", title: `Run ${args.slug}`,
+      detail: args.scope, createdAt: now, status: full ? "auto" : "pending",
+      ...(full ? { decidedBy: "trust" as const, decidedAt: now } : {}),
+      connectedAction: { requestId: args.requestId, scope: args.scope, turnId: args.turnId, state: "ready" },
+    });
+    if (!full) await ask(ctx, id);
+    return { id };
+  },
+});
+
+/** Atomic claim: an approval can enter the provider once, including after a process crash. */
+export const claimConnected = internalMutation({
+  args: { id: v.id("approvals"), turnId: v.id("codexTurns") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    const action = row?.connectedAction;
+    if (!row || !action) return { state: "declined" };
+    if (action.state === "done") return { state: "done", result: action.result };
+    if (action.state === "executing" && (action.startedAt ?? 0) < Date.now() - 60_000) {
+      await ctx.db.patch(row._id, { connectedAction: { ...action, state: "unknown" } });
+      return { state: "unknown" };
+    }
+    if (action.state !== "ready") return { state: action.state };
+    if (row.status === "pending" && !answerable(row)) { await settleRow(ctx, row, { approved: false, by: "timeout" }); return { state: "expired" }; }
+    if (row.status !== "approved" && row.status !== "auto") return { state: row.status };
+    const turn = await ctx.db.get(args.turnId);
+    if (!turn || turn.conversationId !== row.conversationId || turn.status !== "running" || turn.preparation || turn.stopRequested || turn.stopped || await pausedAt(ctx)) return { state: "stopped" };
+    await ctx.db.patch(row._id, { connectedAction: { ...action, state: "executing", startedAt: Date.now() } });
+    return { state: "claimed" };
+  },
+});
+
+export const finishConnected = internalMutation({
+  args: { id: v.id("approvals"), result: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row?.connectedAction || !["executing", "unknown"].includes(row.connectedAction.state)) return;
+    await ctx.db.patch(row._id, { connectedAction: { ...row.connectedAction, state: args.result ? "done" : "unknown", ...(args.result ? { result: args.result } : {}) } });
+    if (args.result) await ctx.scheduler.runAfter(APPROVAL_TTL_MS, internal.approvals.forgetConnectedResult, { id: row._id });
+  },
+});
+
+/** Retain the idempotency record, not an unbounded archive of provider response bodies. */
+export const forgetConnectedResult = internalMutation({
+  args: { id: v.id("approvals") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (row?.connectedAction?.result) await ctx.db.patch(row._id, { connectedAction: { ...row.connectedAction, result: undefined } });
+  },
+});
 
 /**
  * A step in Perry's own browser that buys, sends, posts or the like (tools.ts,
@@ -404,7 +474,7 @@ export const cancelBrowser = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
-    if (row?.kind === "browser" && row.status === "pending") await settleRow(ctx, row, { approved: false, by: "timeout", followUp: false });
+    if (row && (row.kind === "browser" || row.connectedAction) && row.status === "pending") await settleRow(ctx, row, { approved: false, by: "timeout", followUp: false });
     return null;
   },
 });
@@ -522,6 +592,7 @@ function promptText(row: View): string {
     row.title.slice(0, 1500),
     row.cwd ? `in ${row.cwd}` : null,
     row.detail ? row.detail.slice(0, 800) : null,
+    row.connectedAction && (row.detail?.length ?? 0) > 800 ? "Open the dashboard to review the complete operation before approving." : null,
     row.review ? `Reviewer: ${row.review.verdict}. ${row.review.reason}` : null,
     row.alwaysAllow ? `Always allow saves a rule for ${describeRule(row.alwaysAllow, row.cwd)}.` : null,
   ].filter(Boolean).join("\n\n");
@@ -554,6 +625,7 @@ function outcomeText(row: View): string {
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/channels/telegram/hitl.ts
 /** Approve and Decline side by side, and Always allow under them when the request can be remembered. */
 function buttonsFor(row: View): Buttons {
+  if (row.connectedAction && (row.detail?.length ?? 0) > 800) return [[{ text: "Decline", data: `ap:${row._id}:n` }]];
   const rows: Buttons = [[{ text: "Approve", data: `ap:${row._id}:y` }, { text: "Decline", data: `ap:${row._id}:n` }]];
   if (row.alwaysAllow) rows.push([{ text: "Always allow", data: `ap:${row._id}:a` }]);
   return rows;
@@ -642,6 +714,7 @@ export const answerFromTelegram = internalMutation({
     }
     if (!answerable(row)) return "That was already answered.";
     const choice = match[2];
+    if (choice !== "n" && row.connectedAction && (row.detail?.length ?? 0) > 800) return "Review the complete operation in the dashboard before approving.";
     await settleRow(ctx, row, { approved: choice !== "n", by: "telegram", always: choice === "a" });
     return choice === "n" ? "Declined." : choice === "a" && row.alwaysAllow ? "Approved, and always allowed." : "Approved.";
   },
@@ -667,7 +740,7 @@ export const promptOnWhatsApp = internalAction({
       row.cwd ? `📁 \`${row.cwd}\`` : null,
       row.detail ? row.detail.slice(0, 800) : null,
       row.review ? `_Reviewer: ${row.review.verdict}. ${row.review.reason}_` : null,
-      `Reply **1** to approve, **2** to decline${row.alwaysAllow ? `, **3** to always allow (${describeRule(row.alwaysAllow, row.cwd)})` : ""}.`,
+      row.connectedAction && (row.detail?.length ?? 0) > 800 ? "Review the complete operation in the dashboard before approving. Reply **2** to decline." : `Reply **1** to approve, **2** to decline${row.alwaysAllow ? `, **3** to always allow (${describeRule(row.alwaysAllow, row.cwd)})` : ""}.`,
     ].filter(Boolean).join("\n\n");
     if (await ctx.runMutation(internal.whatsapp.send, { to: target.externalId, text: ask })) {
       await ctx.runMutation(internal.approvals.askedOnWhatsApp, { id: args.id, chatId: target.externalId });
@@ -705,6 +778,7 @@ export const answerFromWhatsApp = internalMutation({
       await settleRow(ctx, waiting, { approved: false, by: "timeout" });
       return "That request had expired, so it was declined.";
     }
+    if (choice !== "n" && waiting.connectedAction && (waiting.detail?.length ?? 0) > 800) return "Review the complete operation in the dashboard before approving.";
     await settleRow(ctx, waiting, { approved: choice !== "n", by: "whatsapp", always: choice === "a" });
     return choice === "n" ? "Declined." : choice === "a" && waiting.alwaysAllow ? "Approved, and always allowed from now on." : "Approved.";
   },
@@ -751,6 +825,52 @@ export type PendingApproval = {
   expiresAt: number;
 };
 
+async function forDashboard(ctx: QueryCtx, row: Doc<"approvals">): Promise<PendingApproval> {
+  const runner = await asker(ctx, row);
+  const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
+  const proposal = row.proposalId ? await ctx.db.get(row.proposalId) : null;
+  const page = proposal ? await ctx.db.get(proposal.rollupPageId ?? proposal.pageId) : null;
+  const target = proposal?.targetPageId ? await ctx.db.get(proposal.targetPageId) : null;
+  return {
+    id: row._id,
+    kind: row.kind,
+    title: row.title,
+    detail: row.detail,
+    cwd: row.cwd,
+    paths: row.paths,
+    runner: runner ?? "a runner",
+    chat: chat ? { id: chat._id, title: chat.title ?? "Untitled chat" } : undefined,
+    review: row.review,
+    alwaysAllow: row.alwaysAllow ? describeRule(row.alwaysAllow, row.cwd) : undefined,
+    ...(proposal ? { proposal: { kind: proposal.kind, before: proposal.before.map((line) => line.text), after: proposal.after, ...(page ? { page: { id: page._id, title: page.title } } : {}),
+      ...(target ? { target: { id: target._id, title: target.title } } : {}), ...(proposal.targetSection ? { targetSection: proposal.targetSection } : {}), ...(proposal.title ? { title: proposal.title } : {}) } } : {}),
+    createdAt: row.createdAt,
+    expiresAt: row.createdAt + ttlOf(row),
+  };
+}
+
+/** A selected approval remains reviewable even when it is outside the recent list. */
+export const active = query({
+  args: { key: v.string(), id: v.string() },
+  handler: async (ctx, args): Promise<PendingApproval | null> => {
+    assertDashboardKey(args.key);
+    const id = ctx.db.normalizeId("approvals", args.id);
+    const row = id ? await ctx.db.get(id) : null;
+    return row && answerable(row) ? await forDashboard(ctx, row) : null;
+  },
+});
+
+/** Count every active request; the recent review list is deliberately capped. */
+export const pendingCount = query({
+  args: { key: v.string() },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const rows = await ctx.db.query("approvals").withIndex("by_status", q => q.eq("status", "pending").gt("createdAt", Date.now() - BRAIN_TTL_MS)).collect();
+    return rows.filter(answerable).length;
+  },
+});
+
 /** What is waiting for the owner, newest first. */
 export const pending = query({
   args: { key: v.string() },
@@ -760,31 +880,9 @@ export const pending = query({
       .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", Date.now() - BRAIN_TTL_MS))
       .order("desc")
       .take(60))
-      .filter((row) => row.createdAt > Date.now() - ttlOf(row))
+      .filter(answerable)
       .slice(0, 20);
-    return await Promise.all(rows.map(async (row) => {
-      const runner = await asker(ctx, row);
-      const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
-      const proposal = row.proposalId ? await ctx.db.get(row.proposalId) : null;
-      const page = proposal ? await ctx.db.get(proposal.rollupPageId ?? proposal.pageId) : null;
-      const target = proposal?.targetPageId ? await ctx.db.get(proposal.targetPageId) : null;
-      return {
-        id: row._id,
-        kind: row.kind,
-        title: row.title,
-        detail: row.detail,
-        cwd: row.cwd,
-        paths: row.paths,
-        runner: runner ?? "a runner",
-        chat: chat ? { id: chat._id, title: chat.title ?? "Untitled chat" } : undefined,
-        review: row.review,
-        alwaysAllow: row.alwaysAllow ? describeRule(row.alwaysAllow, row.cwd) : undefined,
-        ...(proposal ? { proposal: { kind: proposal.kind, before: proposal.before.map((line) => line.text), after: proposal.after, ...(page ? { page: { id: page._id, title: page.title } } : {}),
-          ...(target ? { target: { id: target._id, title: target.title } } : {}), ...(proposal.targetSection ? { targetSection: proposal.targetSection } : {}), ...(proposal.title ? { title: proposal.title } : {}) } } : {}),
-        createdAt: row.createdAt,
-        expiresAt: row.createdAt + ttlOf(row),
-      };
-    }));
+    return await Promise.all(rows.map(row => forDashboard(ctx, row)));
   },
 });
 

@@ -42,7 +42,7 @@ import { GUEST_TOOLS } from "../../convex/lib/engines";
 //  10. The gallery does not show images as pictures (or videos as their first frame), the list misses size, who or
 //      source, the item view lacks the preview (image, video, audio, PDF, text, Markdown), the details, the link to
 //      the chat, or the download; the empty state is missing on a fresh Perry.
-//  11. The sidebar has no Library next to Brain; any page throws, in light or dark.
+//  11. The sidebar cannot open Library, the account menu cannot open Brain, or any page throws, in light or dark.
 // Deleting:
 //  12. Delete does not ask first; the file stays on disk (an upload, a stored Telegram file); the item stays in the
 //      Library; the chat still shows the file, or shows nothing instead of saying it was removed; a turn is still
@@ -252,7 +252,7 @@ function toolAnswer(name: string, args: object): any {
   const entry = fakeLog(fakeHome).filter((item) => item.mcp && item.tool === name && JSON.stringify(item.args) === JSON.stringify(args)).at(-1);
   if (!entry) return undefined;
   const text = JSON.parse(entry.answer).result?.content?.[0]?.text ?? "null";
-  try { return JSON.parse(text); } catch { return text; }
+  try { const value = JSON.parse(text); return value && typeof value === "object" && "untrusted" in value ? value.result : value; } catch { return text; }
 }
 async function tool(chat: string, name: string, args: object) {
   await exchange(chat, `TOOL ${name} ${JSON.stringify(args)}`);
@@ -294,7 +294,7 @@ try {
     await waitFor(test, what);
     await sleep(400);
   };
-  const centre = async (selector: string, at = 0.5) => await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x + r.width * ${at}, y: r.y + r.height / 2 }; })()`) as { x: number; y: number };
+  const centre = async (selector: string, at = 0.5) => await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({block:"center",inline:"nearest"}); const r = el.getBoundingClientRect(); const x=r.x+r.width*${at}, y=r.y+r.height/2; if(!el.contains(document.elementFromPoint(x,y))) throw new Error("Click target is covered: " + ${JSON.stringify(selector)}); return {x,y}; })()`) as { x: number; y: number };
   const clickAt = async ({ x, y }: { x: number; y: number }, count = 1) => {
     await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
     for (let n = 1; n <= count; n++) {
@@ -303,7 +303,7 @@ try {
     }
   };
   const click = async (selector: string, at = 0.5) => clickAt(await centre(selector, at));
-  const clickText = async (selector: string, text: string) => clickAt(await evaluate(`(() => { const r = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.innerText.trim() === ${JSON.stringify(text)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`));
+  const clickText = async (selector: string, text: string) => clickAt(await evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.innerText.trim() === ${JSON.stringify(text)}); el.scrollIntoView({block:"center",inline:"nearest"}); const r=el.getBoundingClientRect(); const x=r.x+r.width/2,y=r.y+r.height/2; if(!el.contains(document.elementFromPoint(x,y))) throw new Error("Text click target is covered"); return {x,y}; })()`));
   const press = async (key: string, code = key, keyCode = 0) => {
     await send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode: keyCode, ...(key.length === 1 ? { text: key } : {}) });
     await send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: keyCode });
@@ -312,7 +312,14 @@ try {
   await scheme("light");
   await go("/library", `document.querySelector("[data-empty]") && document.body.innerText.includes("No files yet")`, "the empty Library");
   const sidebar = await evaluate(`[...document.querySelectorAll("[data-sidebar=menu-button]")].map((b) => b.innerText.trim()).filter(Boolean)`) as string[];
-  check("sidebarLibraryNextToBrain", sidebar.indexOf("Library") === sidebar.indexOf("Brain") + 1 && (await evaluate(`document.querySelector('a[href="/library"]')?.getAttribute("data-active")`)) !== null, sidebar);
+  const libraryActive = await evaluate(`document.querySelector('a[href="/library"]')?.getAttribute("data-active")`);
+  await click('[aria-label="Account options"]');
+  await until(() => evaluate(`Boolean(document.querySelector('[data-you-brain]'))`), "Brain in the account menu", 15);
+  await click('[data-you-brain]');
+  await until(() => evaluate(`location.pathname === "/brain" && Boolean(document.querySelector('input[aria-label="Search Brain"]'))`), "the account menu to open Brain", 30);
+  await click('a[href="/library"]');
+  await until(() => evaluate(`location.pathname === "/library" && document.body.innerText.includes("No files yet")`), "the sidebar to open Library", 30);
+  check("libraryAndBrainNavigation", sidebar.includes("Library") && libraryActive !== null, sidebar);
   check("emptyStateOnAFreshPerry", (await evaluate(`document.querySelector("[data-empty]")?.innerText ?? ""`) as string).includes("Files you send Perry"));
   await shot("empty-light.png");
 
@@ -381,9 +388,21 @@ try {
   };
   const missing = join(FILES, "gone", "never-here.png");
   const now = Date.now();
-  const attach = (conversationId: string, messageKey: string, localPath: string, fileName: string, contentType: string, createdAt = now - 86_400_000 * 3) =>
-    seed("chatAttachments", { conversationId, messageKey, localPath, fileName, contentType, size: 0, createdAt });
+  const nativeToken = (JSON.parse(readFileSync(join(HOME, "runner.json"), "utf8")) as {token:string}).token;
+  const nativeRunner = rows("runners").find(row => row.token === nativeToken)!._id;
+  const legacyTurns = new Map<string, string>();
+  const attach = (conversationId: string, messageKey: string, localPath: string, fileName: string, contentType: string, createdAt = now - 86_400_000 * 3) => {
+    if (messageKey.startsWith("codex-")) {
+      if (!legacyTurns.has(messageKey)) {
+        const runId = seed("runs", {conversationId,prompt:"Legacy file",status:"ok",startedAt:createdAt,finishedAt:createdAt});
+        legacyTurns.set(messageKey, seed("codexTurns", {conversationId,runnerId:nativeRunner,runId,engine:"codex",prompt:"Legacy file",instructions:"",status:"done",createdAt,finishedAt:createdAt,finalizedAt:createdAt}));
+      }
+      messageKey = `codex-${legacyTurns.get(messageKey)}`;
+    }
+    return seed("chatAttachments", { conversationId, messageKey, localPath, fileName, contentType, size: 0, createdAt });
+  };
   const runId = seed("runs", { conversationId: general, prompt: "old", status: "ok", startedAt: now - 86_400_000 * 3 });
+  seed("codexTurns", { conversationId: general, runnerId: nativeRunner, runId, engine: "codex", prompt: "Legacy written file", instructions: "", status: "done", createdAt: now - 86_400_000 * 3, finishedAt: now - 86_400_000 * 3, finalizedAt: now - 86_400_000 * 3 });
   attach(general, "msg-old-1", old.upload, "receipt-march.png", "image/png", now - 86_400_000 * 40);
   attach(general, "msg-old-2", old.pet, "screen-2026-09-01-10-00-00.png", "image/png");
   attach(general, "codex-oldturn1", old.look, "old-look.png", "image/png");
@@ -465,10 +484,13 @@ try {
   const { nodeId } = await send("DOM.querySelector", { nodeId: root.nodeId, selector: "input[type=file]" }) as { nodeId: number };
   await send("DOM.setFileInputFiles", { nodeId, files: [join(OUTSIDE, "receipt-october.png")] });
   await waitFor(`document.querySelector('[aria-label="Attached files"]')`, "the picked file");
-  await evaluate(`document.querySelector('textarea[aria-label^="Message"]').focus(); true`);
+  await waitFor(`document.querySelector('[aria-label="Attached files"] img[alt="receipt-october.png"]')?.naturalWidth > 0`, "the picked image preview");
+  await evaluate(`document.querySelector('[contenteditable="true"][aria-label^="Message"]').focus(); true`);
   await send("Input.insertText", { text: "Here is the receipt" });
+  await waitFor(`document.querySelector('button[aria-label="Send message"]:not([disabled])')`, "Send to enable for the picked receipt");
   const runsBefore = rows("runs").length;
-  await evaluate(`document.querySelector('button[aria-label="Send message"]').click(); true`);
+  await click('button[aria-label="Send message"]');
+  await until(() => itemNamed("receipt-october.png").length === 1, "the receipt upload to register in Library", 30);
   await until(() => rows("runs").length > runsBefore && runsDone(), "the reply to the receipt", 120);
   const webChat = rows("runs").sort((a, b) => b.startedAt - a.startedAt)[0].conversationId as string;
   const receipt = itemNamed("receipt-october.png")[0];
@@ -529,9 +551,11 @@ try {
   const sitePort = await new Promise<number>((done) => site.listen(0, "127.0.0.1", () => done((site.address() as { port: number }).port)));
   const PAGE = `http://127.0.0.1:${sitePort}/`;
   await exchange(general, `STEPS ${JSON.stringify({ dir: stepsDir, page: PAGE, secretPage: `${PAGE}secret`, gap: 300 })}`, 180);
-  await tool(general, "browser", { action: "open", url: PAGE });
-  const screenshot = await tool(general, "browser", { action: "screenshot" });
-  await tool(general, "browser", { action: "close" });
+  const initialBrowser = await tool(general, "browser", { action: "look" });
+  const openedBrowser = await tool(general, "browser", { action: "open", url: PAGE, identity: initialBrowser.identity });
+  const screenshot = await tool(general, "browser", { action: "screenshot", identity: openedBrowser.identity });
+  const finalBrowser = await tool(general, "browser", { action: "look" });
+  await tool(general, "browser", { action: "close", identity: finalBrowser.identity });
   site.close();
 
   // A generated image, as the runner reports one when a turn ends (codex.finishTurn), and one stored for Telegram
@@ -567,7 +591,7 @@ try {
     "photo.jpg": { by: "owner", from: "telegram", how: "upload", kind: "image", stored: true },
     "voice-note.ogg": { by: "owner", from: "telegram", how: "upload", kind: "media", stored: true },
     "invoice-42.pdf": { by: "owner", from: "telegram", how: "upload", kind: "document", stored: true },
-    "trip-plan.md": { by: "perry", from: "web", how: "shared", kind: "document" },
+    "trip-plan.md": { by: "perry", from: "web", how: "shared", kind: "document", stored: true },
     "Warranty card": { by: "perry", from: "web", how: "added", kind: "document" },
     "notes.md": { by: "perry", from: "web", how: "written", kind: "document" },
     "ig_sunset.png": { by: "perry", from: "web", how: "generated", kind: "image" },
@@ -590,8 +614,8 @@ try {
   const stepPictures = rows("chatAttachments").filter((row) => row.messageKey === "steps");
   check("stepPicturesStayWithTheirSteps", stepPictures.length >= 1 && stepPictures.every((row) => !library().some((item) => item.localPath === row.localPath && item.how !== "screenshot")),
     { stepPictures: stepPictures.length });
-  check("sharedTwiceIsOneItem", one("trip-plan.md").length === 1 && shared1?.shared === true && shared2?.shared === true
-    && rows("chatAttachments").filter((row) => row.localPath === plan).length === 2, { shared1, shared2 });
+  check("sharedTwiceIsOneItem", one("trip-plan.md").length === 1 && shared1?.attached === true && shared1.delivery === "pending" && shared2?.attached === true && shared2.delivery === "pending"
+    && rows("chatAttachments").filter((row) => row.fileName === "trip-plan.md").length === 2, { shared1, shared2 });
   check("addedNotCopied", added?.added === true && itemAt(keep)?.name === "Warranty card" && existsSync(keep), added);
   check("generatedFoundOnce", library().filter((row) => row.localPath === generatedPath).length === 1 && itemAt(generatedPath)?.how === "generated", itemAt(generatedPath)?.how);
   check("guestFilesNotInLibrary", !library().some((row) => row.conversationId === guestChat || row.localPath === old.guest));
@@ -660,7 +684,7 @@ try {
   const sendBack = await tool(general, "share_file", { id: tgVoiceId });
   const lastReply = (await call<{ page: Array<{ role: string; attachments: Array<{ fileName: string; url: string }> }> }>("dashboard:getChatMessages", { key: KEY, id: general, paginationOpts: { numItems: 5, cursor: null } }))
     .page.find((message) => message.role === "assistant");
-  check("shareFromLibraryById", sendBack?.shared === true && lastReply?.attachments.some((file) => file.fileName === "voice-note.ogg") === true
+  check("shareFromLibraryById", sendBack?.attached === true && sendBack.delivery === "pending" && lastReply?.attachments.some((file) => file.fileName === "voice-note.ogg") === true
     && library().filter((row) => row.name === "voice-note.ogg" && row.from === "telegram").length === 1, { sendBack, files: lastReply?.attachments.map((file) => file.fileName) });
 
   // A chat with someone else: a turn of theirs is running; the MCP server gives it no Library and no way to share one.
@@ -692,7 +716,7 @@ try {
   const gallery = await evaluate(`(() => { const tiles = [...document.querySelectorAll('[data-view="gallery"] li')];
     return { tiles: tiles.length, images: tiles.filter((li) => li.dataset.kind === "image" && li.querySelector("img")?.naturalWidth > 0).length, imageTiles: tiles.filter((li) => li.dataset.kind === "image").length,
       videos: tiles.filter((li) => li.querySelector("video")).length, audio: document.querySelectorAll('[data-view="gallery"] [data-media-player="audio"]').length }; })()`) as Record<string, number>;
-  check("galleryShowsPictures", gallery.tiles === asListed.length && gallery.images === gallery.imageTiles && gallery.images > 5 && gallery.videos === 1 && gallery.audio >= 3, gallery);
+  check("galleryShowsPictures", gallery.tiles === (await listed()).length && gallery.images === gallery.imageTiles && gallery.images > 5 && gallery.videos === 1 && gallery.audio >= 3, gallery);
 
   // The list, by its toggle.
   await click('[aria-label="List"]');
@@ -807,6 +831,8 @@ try {
   await press(" ", "Space", 32);
   const pipButton = await evaluate(`Boolean(document.querySelector('[data-media-player="video"] button[aria-label="Picture-in-picture"]'))`);
   const pipEnabled = await evaluate(`document.pictureInPictureEnabled === true`);
+  await send("Page.bringToFront");
+  const fullState = await evaluate(`(() => {document.querySelector('[data-media-player="video"]').focus(); window.__fullscreenError = null; const native = Element.prototype.requestFullscreen; Element.prototype.requestFullscreen = function(...args) {return native.apply(this,args).catch(error=>{window.__fullscreenError=error.message;throw error;});}; return {active:document.activeElement?.outerHTML.slice(0,160),enabled:document.fullscreenEnabled,focused:document.hasFocus(),visibility:document.visibilityState,activation:navigator.userActivation.isActive};})()`);
   await press("f", "KeyF", 70);
   await until(() => evaluate(`document.fullscreenElement?.dataset.mediaPlayer === "video"`), "f for full screen", 5).catch(() => {});
   const fullscreen = await evaluate(`document.fullscreenElement?.dataset.mediaPlayer === "video"`);
@@ -816,7 +842,7 @@ try {
     && Math.abs(afterLeft - (seekedTo - 5)) < 0.6 && afterJ < 0.6 && (Math.abs(afterL - 10 - afterJ) < 0.6 || afterL >= duration - 0.6),
   { poster, playing, duration, seekedTo, afterLeft, afterJ, afterL });
   check("videoControls", mutedNow === true && Math.abs(volume - 0.9) < 0.02 && rate === 1.25 && (pipEnabled ? pipButton === true : true) && fullscreen === true,
-    { mutedNow, volume, rate, pipButton, pipEnabled, fullscreen });
+    { mutedNow, volume, rate, pipButton, pipEnabled, fullscreen, fullState, error: await evaluate(`window.__fullscreenError`) });
 
   // --- 17, 18. Audio and voice notes ---------------------------------------------------------------------------------
   const audioPlayer = `document.querySelector('[data-media-player="audio"]')`;
@@ -863,6 +889,7 @@ try {
   check("voiceNotesGetThePlayer", tgVoice.some((label) => /voice-note/.test(label)) && waVoice.some((label) => /voice-note/.test(label)), { tgVoice, waVoice });
   // One at a time: the project chat has a voice memo and a video.
   await go(`/chat/${inProject}`, `document.querySelector('[data-media-player="audio"]') && document.querySelector('[data-media-player="video"]')`, "the project chat's media");
+  await until(() => evaluate(`document.querySelector('[data-media-player="audio"] audio').readyState >= 2`), "the memo ready to play", 30);
   await click(`[data-media-player="audio"] button[aria-label^="Play"]`);
   await until(() => evaluate(`!document.querySelector('[data-media-player="audio"] audio').paused`), "the memo to play in the chat", 10);
   await click(`[data-media-player="video"] [data-big-play]`);
@@ -955,6 +982,11 @@ try {
   check("noPageErrors", errors.length === 0, errors.slice(0, 10));
 } catch (error) {
   notes.stoppedAt = String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 2000);
+  notes.serverLog = p.logs.server.slice(-8000);
+  if (p.browser()) {
+    notes.browserState = await p.browser()!.evaluate(`({ path: location.pathname, text: document.body.innerText.slice(-5000), composer: document.querySelector('[contenteditable="true"][aria-label^="Message"]')?.textContent, sendDisabled: document.querySelector('button[aria-label="Send message"]')?.disabled })`).catch(() => null);
+    await p.shot("failure.png").catch(() => {});
+  }
   check("completed", false);
 } finally {
   tgServer.close();

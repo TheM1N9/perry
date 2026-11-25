@@ -34,8 +34,10 @@ const messages = async (id: string) => (await call<{ page: ChatMessage[] }>("das
 const user = async (id: string) => (await messages(id)).filter((message) => message.role === "user" && !message.pending).at(0)!;
 const idle = (id: string) => until(async () => !(await p.getChat(id)).isRunning && (await messages(id)).some((message) => message.role === "assistant"), "idle reply");
 const names = (message: ChatMessage) => message.attachments.map((item) => item.fileName).join(",");
-async function refuses(args: object, text: string) {
-  try { await call("dashboard:rewindChat", args); return false; } catch (cause) { return cause instanceof Error && cause.message.includes(text); }
+async function refuses(args: object, text: string, status = 400) {
+  const response = await fetch(`${BASE}/api/backend/call`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "dashboard:rewindChat", args }) });
+  const body = await response.json() as { error?: string };
+  return response.status === status && Boolean(body.error?.includes(text));
 }
 
 try {
@@ -47,11 +49,18 @@ try {
   const browser = await p.openBrowser();
   const evaluate = browser.evaluate;
   const click = async (label: string) => {
+    await until(() => evaluate(`(() => { const button=[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === ${JSON.stringify(label)} || b.textContent.trim() === ${JSON.stringify(label)}); return Boolean(button && !button.disabled); })()`), `enabled ${label}`);
     const clicked = await evaluate(`(() => { const buttons = [...document.querySelectorAll('button')]; const button = buttons.find(b => b.getAttribute('aria-label') === ${JSON.stringify(label)} || b.textContent.trim() === ${JSON.stringify(label)}); if (!button || button.disabled) return false; button.click(); return true; })()`);
     if (!clicked) throw new Error(`No enabled button: ${label}`);
     await sleep(150);
   };
-  const fill = async (selector: string, value: string) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('missing input'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  const fillEditor = async (target: Awaited<ReturnType<typeof openChat>>, selector: string, value: string) => {
+    await target.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('missing input'); el.focus(); if (el.select) el.select(); else { const range=document.createRange();range.selectNodeContents(el);const selection=getSelection();selection.removeAllRanges();selection.addRange(range); } return true; })()`);
+    await target.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+    await target.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+    if (value) await target.send("Input.insertText", { text: value });
+  };
+  const fill = (selector: string, value: string) => fillEditor(browser, selector, value);
   const add = async (files: string[], editing = true) => {
     const root = await browser.send("DOM.getDocument");
     const found = await browser.send("DOM.querySelector", { nodeId: root.root.nodeId, selector: `${editing ? '[role="dialog"] ' : ""}input[type=file]` });
@@ -60,7 +69,7 @@ try {
   };
   const edit = async () => { await click("Edit and resend"); await until(() => evaluate(`Boolean(document.querySelector('#edit-composer'))`), "editor"); };
   const isDisabled = () => evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save and resend')?.disabled`);
-  const navigate = async (id: string) => { await browser.send("Page.navigate", { url: `${BASE}/chat/${id}` }); await until(() => evaluate(`Boolean(document.querySelector('#composer'))`), "chat page"); };
+  const navigate = async (id: string) => { await browser.send("Page.navigate", { url: `${BASE}/chat/${id}` }); await until(() => evaluate(`location.pathname === ${JSON.stringify(`/chat/${id}`)} && Boolean(document.querySelector('#composer'))`), "chat page"); };
 
   const fixtures = join(p.home, "fixtures"); mkdirSync(fixtures);
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jcoUAAAAASUVORK5CYII=", "base64");
@@ -83,7 +92,7 @@ try {
   check("Markdown preserves skill links and code", await evaluate(`document.querySelectorAll('[data-role=user] [data-skill-mention="e2e-skill"]').length === 1 && document.querySelector('[data-role=user] code').textContent === '$e2e-skill'`));
   const branchId = await call<string>("dashboard:branchChat", { key: KEY, id, messageId: original.id });
   await edit();
-  check("edit opens existing text and files", await evaluate(`document.querySelector('#edit-composer').value.includes('Original') && document.querySelector('[aria-label="Remove original.png"]') !== null && document.querySelector('[aria-label="Remove note.txt"]') !== null`));
+  check("edit opens existing text and files", await evaluate(`document.querySelector('#edit-composer').textContent.includes('Original') && document.querySelector('[aria-label="Remove original.png"]') !== null && document.querySelector('[aria-label="Remove note.txt"]') !== null`));
   await click("Remove original.png"); await add([replacement, otherImage, video, audio, pdf]);
   await fill("#edit-composer", "Cancelled draft"); await click("Cancel");
   check("cancel preserves original and shared branch", JSON.stringify(await user(id)) === JSON.stringify(original) && names(await user(branchId)) === names(original));
@@ -93,17 +102,18 @@ try {
   await evaluate(`(() => { const real=window.fetch;let uploads=0;window.fetch=async (...args)=>{ if (String(args[0]) === '/api/media' && ++uploads === 2) {window.fetch=real;throw new Error('Test upload failure');}return real(...args);};return true; })()`);
   await click("Save and resend");
   await until(() => evaluate(`document.body.innerText.includes('Test upload failure')`), "upload error");
-  check("failed upload preserves original and draft", JSON.stringify(await user(id)) === JSON.stringify(original) && await evaluate(`document.querySelector('#edit-composer').value.includes('Edited')`));
+  check("failed upload preserves original and draft", JSON.stringify(await user(id)) === JSON.stringify(original) && await evaluate(`document.querySelector('#edit-composer').textContent.includes('Edited')`));
   const stagedBefore = p.rows("chatAttachments").filter((row) => row.editOf === original.id).length;
   check("first successful upload retained", stagedBefore === 1);
   await evaluate(`(() => { const real=window.fetch;window.fetch=async (...args)=>{ if (String(args[0]).includes('/api/backend/call') && String(args[1]?.body).includes('dashboard:rewindChat')) {window.fetch=real;throw new Error('Test save failure');}return real(...args);};return true; })()`);
-  await click("Save and resend"); await until(() => evaluate(`document.body.innerText.includes('Test save failure')`), "save error");
+  await click("Save and resend"); await until(() => evaluate(`document.body.innerText.includes('It may have been saved')`), "unknown save outcome");
   const staged = p.rows("chatAttachments").filter((row) => row.editOf === original.id).length;
   check("failed save preserves original without reupload", staged === 5 && JSON.stringify(await user(id)) === JSON.stringify(original));
   await evaluate(`(() => {const real=window.fetch;window.fetch=async(...args)=>{if(String(args[0]).includes('/api/backend/call') && String(args[1]?.body).includes('dashboard:rewindChat')) {window.lastEdit=JSON.parse(args[1].body).args;window.fetch=real;}return real(...args);};return true;})()`);
   await click("Save and resend"); await idle(id); await until(() => evaluate(`!document.querySelector('#edit-composer')`), "editor closes");
   const edited = await user(id);
   const expected = "note.txt,replacement.png,other.png,clip.webm,sound.wav,file.pdf";
+  p.notes.editedMessage = { text: edited.text, files: edited.attachments.map(file => file.fileName) };
   check("replace/add keeps final ordered files", names(edited) === expected && edited.text.startsWith("**Edited**"));
   check("retry does not duplicate uploads", p.rows("chatAttachments").filter((row) => row.editOf === original.id).length === staged);
   const sameRequest = await evaluate("window.lastEdit");
@@ -143,17 +153,21 @@ try {
   await edit(); await fill("#edit-composer", "Stale first tab draft");
   await second.evaluate(`document.querySelector('[aria-label="Edit and resend"]').click()`);
   await until(() => second!.evaluate(`Boolean(document.querySelector('#edit-composer'))`), "second tab editor");
-  await second.evaluate(`(() => { const el=document.querySelector('#edit-composer'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'Second tab saved');el.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
+  await fillEditor(second, "#edit-composer", "Second tab saved");
   await second.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Save and resend').click()`);
+  await until(async () => (await user(id)).text === "Second tab saved", "second tab edit committed");
+  await evaluate(`(() => { const real=window.fetch; window.fetch=async(...args)=>{const response=await real(...args);if(String(args[1]?.body).includes('dashboard:rewindChat'))window.staleEditStatus=response.status;return response;};return true;})()`);
   await idle(id); await click("Save and resend");
   await until(() => evaluate(`document.body.innerText.includes('That message changed')`), "stale revision error");
-  check("stale edit rejected and draft retained", (await user(id)).text === "Second tab saved" && await evaluate(`document.querySelector('#edit-composer').value === 'Stale first tab draft'`));
+  check("stale edit rejected with HTTP 400 and draft retained", (await user(id)).text === "Second tab saved" && await evaluate(`window.staleEditStatus === 400 && document.querySelector('#edit-composer').textContent === 'Stale first tab draft'`));
+  const staleUpload = await fetch(`${BASE}/api/backend/call`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "dashboard:registerAttachment", args: { key: KEY, conversationId: id, messageKey: "stale-edit-upload", editOf: original.id, localPath: originalImage, fileName: "original.png", contentType: "image/png", size: png.length } }) });
+  check("stale edit upload returns actionable HTTP 400", staleUpload.status === 400 && (await staleUpload.json() as { error: string }).error.includes("That message changed"));
   await click("Cancel"); second.close(); second = undefined;
 
   const current = await user(id);
   const foreign = (await user(branchId)).attachments[0].id!;
   check("foreign attachment rejected atomically", await refuses({ key: KEY, id, messageId: current.id, text: "unauthorized", attachmentIds: [foreign], requestId: crypto.randomUUID() }, "no longer available") && JSON.stringify(await user(id)) === JSON.stringify(current));
-  check("wrong owner key rejected", await refuses({ key: "wrong", id, messageId: current.id, text: "unauthorized" }, "Wrong dashboard key"));
+  check("wrong owner key rejected", await refuses({ key: "wrong", id, messageId: current.id, text: "unauthorized" }, "Wrong dashboard key", 401));
   await call("dashboard:sendChat", { key: KEY, id, text: "SLOW" });
   await until(async () => p.turnsOf(id).some((row) => row.status === "running"), "active reply");
   await edit(); await fill("#edit-composer", "Edited after stopping");
@@ -177,6 +191,7 @@ try {
   await fill("#edit-composer", "Text without files");
   await evaluate(`document.querySelector('#edit-composer').focus()`);
   await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter" });
+  await until(async () => (await user(id)).text === "Text without files", "keyboard edit committed");
   await idle(id);
   check("keyboard saves a text-only edit", (await user(id)).text === "Text without files" && (await user(id)).attachments.length === 0);
   await navigate(id); await click("Write this reply again"); await idle(id);

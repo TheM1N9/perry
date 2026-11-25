@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import ts from "typescript";
 import { replayRunnerLifecycle } from "./runner-lifecycle";
 
-const out = resolve("artifacts/parallel-sessions");
+const out = resolve(process.env.PERRY_E2E_OUTPUT ?? "artifacts/parallel-sessions");
 const scratch = resolve("node_modules/.cache/perry-parallel-sessions", `run-${Date.now()}`);
 mkdirSync(scratch, { recursive: true });
 process.env.PERRY_HOME = join(scratch, "home");

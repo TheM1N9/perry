@@ -18,6 +18,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { TimePicker } from "@/components/ui/time-picker";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { TaskDependency } from "@/convex/tasks";
 
 /**
@@ -296,6 +297,8 @@ export function GoalDialog({ editing, onClose }: { editing: Editing<Doc<"goals">
   const [description, setDescription] = useState(goal?.description ?? "");
   const [milestones, setMilestones] = useState(() => (goal?.milestones ?? []).map((milestone) => milestone.title).join("\n"));
   const [status, setStatus] = useState<Doc<"goals">["status"]>(goal?.status ?? "active");
+  const [basedOn, setBasedOn] = useState(goal?.updatedAt);
+  const changed = goal && basedOn !== goal.updatedAt;
   // A milestone kept by name keeps its tick.
   const done = new Set((goal?.milestones ?? []).filter((milestone) => milestone.done).map((milestone) => milestone.title.trim()));
   const list = milestones.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => ({ title: line, done: done.has(line) }));
@@ -303,7 +306,10 @@ export function GoalDialog({ editing, onClose }: { editing: Editing<Doc<"goals">
   return (
     <FormDialog open={editing !== null} onClose={onClose} saving={saving} action={goal ? "Save" : "Create"}
       title={goal ? `Change “${goal.title}”` : "New goal"}
-      onSave={() => void save(() => saveGoal({ key: dashboardKey, ...(goal ? { id: goal._id, status } : {}), title, description, milestones: list }), goal ? "Goal saved." : "Goal made.")}>
+      onSave={() => void save(() => saveGoal({ key: dashboardKey, ...(goal ? { id: goal._id, status, expectedUpdatedAt: basedOn } : {}), title, description, milestones: list }), goal ? "Goal saved." : "Goal made.")}>
+      {changed && !saving && <Alert variant="quiet"><AlertTitle>This goal was updated</AlertTitle><AlertDescription>Your draft is still here. Load the latest goal to review it before saving.</AlertDescription>
+        <Button type="button" variant="outline" size="sm" className="mt-2 w-fit" onClick={() => { setTitle(goal.title); setDescription(goal.description ?? ""); setMilestones(goal.milestones.map(item => item.title).join("\n")); setStatus(goal.status); setBasedOn(goal.updatedAt); }}>Load latest</Button>
+      </Alert>}
       <Field>
         <FieldLabel htmlFor="goal-title">Goal</FieldLabel>
         <Input id="goal-title" value={title} maxLength={160} placeholder="Run a half marathon by March" autoFocus required onChange={(event) => setTitle(event.target.value)} />

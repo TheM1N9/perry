@@ -8,7 +8,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { kindOf, libraryFileUrl, previewOf, SINCE, type LibraryBy, type LibraryFrom, type LibraryHow, type LibraryKind, type LibrarySince } from "./lib/library";
 import { ABSOLUTE_PATH, describePath } from "./media";
 import { vLibraryFrom, vLibraryKind } from "./schema";
-import { HOME, PATHS } from "../runner/home";
+import { HOME, PATHS, readRunnerConfig } from "../runner/home";
 import { associate, workspaceSafe } from "./lib/workspace";
 
 /**
@@ -67,8 +67,43 @@ function fromChat(chat: Doc<"conversations">): LibraryFrom {
   return chat.jobId ? "job" : chat.taskId ? "task" : chat.channel;
 }
 
+export async function localRunnerId(ctx: QueryCtx): Promise<Id<"runners"> | undefined> {
+  const token = readRunnerConfig().token;
+  const runner = token ? await ctx.db.query("runners").withIndex("by_token", q => q.eq("token", token)).first() : null;
+  return runner && !runner.revoked ? runner._id : undefined;
+}
+async function producerRunner(ctx: QueryCtx, row: Pick<Doc<"chatAttachments">, "messageKey" | "conversationId" | "originRunnerId">): Promise<Id<"runners"> | undefined> {
+  if (row.originRunnerId) return row.originRunnerId;
+  if (row.messageKey.startsWith("codex-")) {
+    const id = ctx.db.normalizeId("codexTurns", row.messageKey.slice(6));
+    return id ? (await ctx.db.get(id))?.runnerId : undefined;
+  }
+  if (row.messageKey.startsWith("steps-")) {
+    const id = ctx.db.normalizeId("runs", row.messageKey.slice(6));
+    const turns = id ? await ctx.db.query("codexTurns").withIndex("by_run", q => q.eq("runId", id)).collect() : [];
+    const runner = turns[0]?.runnerId;
+    return runner && turns.every(turn => turn.runnerId === runner && turn.conversationId === row.conversationId) ? runner : undefined;
+  }
+  return await localRunnerId(ctx);
+}
+export async function isLocalAttachment(ctx: QueryCtx, row: Pick<Doc<"chatAttachments">, "messageKey" | "libraryId" | "conversationId" | "originRunnerId">): Promise<boolean> {
+  if (row.libraryId) {
+    const item = await ctx.db.get(row.libraryId);
+    if (!item) return false;
+    return item.originRunnerId ? item.originRunnerId === await localRunnerId(ctx) : Boolean(item.localPath);
+  }
+  if (!row.originRunnerId && !row.messageKey.startsWith("codex-") && !row.messageKey.startsWith("steps-")) return true;
+  const runner = await producerRunner(ctx, row);
+  return Boolean(runner && runner === await localRunnerId(ctx));
+}
+async function byOrigin(ctx: QueryCtx, runner: Id<"runners">, path: string) {
+  return await ctx.db.query("library").withIndex("by_origin", q => q.eq("originRunnerId", runner).eq("originPath", path)).first();
+}
 async function byPath(ctx: QueryCtx, path: string) {
-  return await ctx.db.query("library").withIndex("by_path", (q) => q.eq("localPath", path)).first();
+  const local = await ctx.db.query("library").withIndex("by_path", (q) => q.eq("localPath", path)).first();
+  if (local) return local;
+  const runner = await localRunnerId(ctx);
+  return runner ? await byOrigin(ctx, runner, path) : null;
 }
 async function byStorage(ctx: QueryCtx, id: Id<"_storage">) {
   return await ctx.db.query("library").withIndex("by_storage", (q) => q.eq("storageId", id)).first();
@@ -89,11 +124,21 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
   if (row.messageKey === "steps") return;
   const chat = await ctx.db.get(row.conversationId);
   if (!chat || chat.contactId) return;
-  if (!workspaceSafe(row.localPath, row.fileName)) return;
   const written = row.messageKey.startsWith("steps-");
   if (written && !(row.localPath && within(row.localPath, PATHS.files))) return;
 
-  const existing = (row.localPath ? await byPath(ctx, row.localPath) : null) ?? (row.storageId ? await byStorage(ctx, row.storageId) : null);
+  const localRunner = row.localPath ? await localRunnerId(ctx) : undefined;
+  const linked = row.libraryId ? await ctx.db.get(row.libraryId) : null;
+  if (row.libraryId && !linked) return;
+  const sourceRunner = linked ? linked.originRunnerId ?? (linked.localPath ? localRunner : undefined) : await producerRunner(ctx, row);
+  const localSource = await isLocalAttachment(ctx, row);
+  if (!workspaceSafe(row.localPath, row.fileName, localSource)) return;
+  const originPath = linked?.originPath ?? linked?.localPath ?? row.localPath;
+  const origin = originPath && sourceRunner ? { originPath, originRunnerId: sourceRunner } : {};
+  const existing = linked
+    ?? (row.localPath && sourceRunner ? await byOrigin(ctx, sourceRunner, row.localPath) : null)
+    ?? (row.localPath && localSource ? await byPath(ctx, row.localPath) : null)
+    ?? (row.storageId ? await byStorage(ctx, row.storageId) : null);
   const perry = written || row.messageKey.startsWith("codex-");
   const look = hint.how === "look" || Boolean(row.localPath && looks?.has(row.localPath));
   const how: LibraryHow = hint.how ?? (look ? "look"
@@ -111,6 +156,8 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
     ...(chat.taskId ? { taskId: chat.taskId } : {}),
   };
   if (existing) {
+    if (row.libraryId !== existing._id || (row.localPath && !row.originPath)) await ctx.db.patch(row._id, { libraryId: existing._id, ...(row.localPath ? { originPath: row.localPath } : {}) });
+    if (origin.originPath && !existing.originPath) await ctx.db.patch(existing._id, origin);
     if (!existing.conversationId) {
       // Only folder discoveries gain new provenance; attributed files just regain a chat link.
       await ctx.db.patch(existing._id, existing.how === "folder"
@@ -120,7 +167,7 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
     await associate(ctx, existing, chat, { role: written ? "working" : perry ? "output" : "input", provenance: perry ? "produced" : "uploaded", messageKey: row.messageKey }, !written);
     return;
   }
-  const size = row.localPath ? sizeHere(row.localPath) : row.size;
+  const size = row.localPath && localSource ? sizeHere(row.localPath) : row.size;
   if (size === null) return;
   const name = row.fileName || describePath(row.localPath ?? "file").fileName;
   const libraryId = await ctx.db.insert("library", {
@@ -128,13 +175,15 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
     contentType: row.contentType,
     kind: kindOf(row.contentType, name),
     size,
-    ...(row.localPath ? { localPath: row.localPath } : { storageId: row.storageId }),
+    ...(row.storageId ? { storageId: row.storageId } : row.localPath && localSource ? { localPath: row.localPath } : {}),
+    ...origin,
     by: hint.by ?? (perry || look ? "perry" : "owner"),
     how,
     ...source,
     search: name.toLowerCase(),
     createdAt: row.createdAt,
   });
+  await ctx.db.patch(row._id, { libraryId, ...(row.localPath ? { originPath: row.localPath } : {}) });
   const item = await ctx.db.get(libraryId);
   if (item) await associate(ctx, item, chat, { role: written ? "working" : perry ? "output" : "input", provenance: perry ? "produced" : "uploaded", messageKey: row.messageKey });
 }
@@ -304,7 +353,7 @@ export const sync = internalAction({
     for (let at = 0; at < files.length; at += 250) added += await ctx.runMutation(internal.library.addFound, { files: files.slice(at, at + 250) });
     const missing: Id<"library">[] = [];
     for (const item of await ctx.runQuery(internal.library.syncItems, {})) {
-      const here = item.localPath ? sizeHere(item.localPath) !== null : item.storageId ? Boolean(await ctx.storage.getMetadata(item.storageId)) : false;
+      const here = item.storageId ? Boolean(await ctx.storage.getMetadata(item.storageId)) : item.localPath ? sizeHere(item.localPath) !== null : false;
       if (!here) missing.push(item.id);
     }
     const dropped: number = await ctx.runMutation(internal.library.dropMissing, { ids: missing });
@@ -452,7 +501,7 @@ export const file = query({
     const id = ctx.db.normalizeId("library", args.id);
     const item = id ? await ctx.db.get(id) : null;
     if (!item || (item.conversationId && (await ctx.db.get(item.conversationId))?.contactId)) return null;
-    const path = item.localPath ?? (item.storageId ? join(HOME, "storage", item.storageId) : null);
+    const path = item.storageId ? join(HOME, "storage", item.storageId) : item.localPath ?? null;
     return path ? { path, name: item.name, contentType: item.contentType } : null;
   },
 });
@@ -466,12 +515,28 @@ export const find = internalQuery({
     const items = await listed(ctx, filter, Math.min(Math.max(limit ?? 20, 1), 100));
     return await Promise.all(items.map(async (item) => {
       const row = await ctx.db.get(item.id);
-      return { ...item, ...(row?.localPath ? { path: row.localPath } : {}) };
+      const path = row?.storageId ? join(HOME, "storage", row.storageId) : row?.localPath;
+      return { ...item, ...(path ? { path } : {}) };
     }));
   },
 });
 
 // --- Deleting ----------------------------------------------------------------------------------
+
+async function attachmentsOf(ctx: QueryCtx, item: Doc<"library">): Promise<Doc<"chatAttachments">[]> {
+  const rows = [
+    ...await ctx.db.query("chatAttachments").withIndex("by_library", q => q.eq("libraryId", item._id)).collect(),
+    ...(item.localPath ? await ctx.db.query("chatAttachments").withIndex("by_path", q => q.eq("localPath", item.localPath)).collect() : []),
+    ...(item.storageId ? await ctx.db.query("chatAttachments").withIndex("by_storage", q => q.eq("storageId", item.storageId)).collect() : []),
+  ];
+  const found: Doc<"chatAttachments">[] = [];
+  for (const row of new Map(rows.map(row => [row._id, row])).values()) {
+    if (row.libraryId && row.libraryId !== item._id) continue;
+    if (!row.libraryId && row.localPath && !await isLocalAttachment(ctx, row)) continue;
+    found.push(row);
+  }
+  return found;
+}
 
 /**
  * Take an item out of the Library and out of every chat that showed it: each
@@ -486,17 +551,18 @@ export const forget = internalMutation({
     const item = await ctx.db.get(args.id);
     if (!item) return null;
     if (item.conversationId && (await ctx.db.get(item.conversationId))?.contactId) throw new Error("A chat with someone else has no Library.");
-    const rows = [
-      ...(item.localPath ? await ctx.db.query("chatAttachments").withIndex("by_path", (q) => q.eq("localPath", item.localPath)).collect() : []),
-      ...(item.storageId ? await ctx.db.query("chatAttachments").withIndex("by_storage", (q) => q.eq("storageId", item.storageId)).collect() : []),
-    ];
+    const rows = await attachmentsOf(ctx, item);
     const stored = new Set<Id<"_storage">>(item.storageId ? [item.storageId] : []);
     const at = Date.now();
     for (const row of rows) {
       if (row.storageId) stored.add(row.storageId);
-      if (!row.removedAt) await ctx.db.patch(row._id, { localPath: undefined, storageId: undefined, removedAt: at });
+      if (!row.removedAt) await ctx.db.patch(row._id, { ...(row.localPath && !row.originPath ? { originPath: row.localPath } : {}), localPath: undefined, storageId: undefined, removedAt: at });
     }
-    for (const id of stored) await ctx.storage.delete(id);
+    for (const id of stored) {
+      const otherItem = (await ctx.db.query("library").withIndex("by_storage", q => q.eq("storageId", id)).collect()).some(other => other._id !== item._id);
+      const otherAttachment = (await ctx.db.query("chatAttachments").withIndex("by_storage", q => q.eq("storageId", id)).collect()).some(other => !other.removedAt);
+      if (!otherItem && !otherAttachment) await ctx.storage.delete(id);
+    }
     await ctx.db.delete(item._id);
     return { ...(item.localPath ? { path: item.localPath } : {}), deletes: !item.localPath || ours(item.localPath) };
   },
@@ -524,17 +590,14 @@ export const remove = action({
  */
 export async function chatDeleted(ctx: MutationCtx, conversationId: Id<"conversations">) {
   for (const item of await ctx.db.query("library").withIndex("by_conversation", (q) => q.eq("conversationId", conversationId)).collect()) {
-    const others = [
-      ...(item.localPath ? await ctx.db.query("chatAttachments").withIndex("by_path", (q) => q.eq("localPath", item.localPath)).collect() : []),
-      ...(item.storageId ? await ctx.db.query("chatAttachments").withIndex("by_storage", (q) => q.eq("storageId", item.storageId)).collect() : []),
-    ].filter((row) => row.conversationId !== conversationId && !row.removedAt);
+    const others = (await attachmentsOf(ctx, item)).filter((row) => row.conversationId !== conversationId && !row.removedAt);
     const other = others[0] ? await ctx.db.get(others[0].conversationId) : null;
     if (other && !other.contactId) {
       await ctx.db.patch(item._id, {
         conversationId: other._id, messageKey: others[0].messageKey,
         projectId: other.projectId, jobId: other.jobId, taskId: other.taskId,
       });
-    } else if (item.localPath) {
+    } else if (item.localPath || item.originPath) {
       await ctx.db.patch(item._id, { conversationId: undefined, messageKey: undefined });
     } else {
       await ctx.db.delete(item._id);
@@ -544,6 +607,7 @@ export async function chatDeleted(ctx: MutationCtx, conversationId: Id<"conversa
 
 /** Whether a stored file is still shown in a chat other than this one, so deleting this chat must keep it. */
 export async function storedElsewhere(ctx: QueryCtx, storageId: Id<"_storage">, conversationId: Id<"conversations">): Promise<boolean> {
+  if (await byStorage(ctx, storageId)) return true;
   const rows = await ctx.db.query("chatAttachments").withIndex("by_storage", (q) => q.eq("storageId", storageId)).collect();
   return rows.some((row) => row.conversationId !== conversationId);
 }

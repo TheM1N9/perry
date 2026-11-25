@@ -17,15 +17,12 @@ process.env.DASHBOARD_KEY = "task-steering-synthetic-key";
 process.env.PERRY_ENGINE = "codex";
 process.env.PERRY_CREDENTIAL_KEY = "22".repeat(32);
 // Set isolation before any project module import (runner/home freezes HOME at import).
-const [{ Runtime }, { default: schema }, tasks, codex, runs, work, { steerRunningTurn, createSteerDelivery }, routing, recovery, dashboard, approvals] = await Promise.all([
-  import("../../server/runtime"), import("../../convex/schema"), import("../../convex/tasks"),
-  import("../../convex/codex"), import("../../convex/runs"), import("../../convex/work"), import("../../runner/task-steering"),
-  import("../../convex/routing"), import("../../convex/recovery"),
-  import("../../convex/dashboard"),
-  import("../../convex/approvals"),
+const [{ Runtime }, { default: schema }, { steerRunningTurn, createSteerDelivery }, { modules }] = await Promise.all([
+  import("../../server/runtime"), import("../../convex/schema"),
+  import("../../runner/task-steering"), import("../../server/modules"),
 ]);
 const sql = new DatabaseSync(join(scratch, "test.sqlite"));
-const runtime = new Runtime(sql, schema as never, { tasks, codex, runs, work, routing, recovery, dashboard, approvals }, { storageDir: join(scratch, "storage") });
+const runtime = new Runtime(sql, schema as never, modules, { storageDir: join(scratch, "storage") });
 await runtime.stop(); // Deterministic: no cron/action can call any model or integration.
 const call = async (path: string, args: object) => (await runtime.call(path, args, { internal: true })).value as any;
 const db = runtime.store;
@@ -275,7 +272,7 @@ try {
   await refuses("paused Perry rejects new instruction", "tasks:steerFromDashboard", { key, id: next.id, text: "Run later", requestId: "paused-update-001" });
   // A queued fallback preserves its receipt through another agent plan update and process restart.
   const before = await call("tasks:steeringFromDashboard", { key, id: next.id });
-  const restarted = new Runtime(sql, schema as never, { tasks, codex, runs, work, routing, recovery, dashboard, approvals }, { storageDir: join(scratch, "storage") });
+  const restarted = new Runtime(sql, schema as never, modules, { storageDir: join(scratch, "storage") });
   await restarted.stop();
   check("receipt and acknowledgement survive runtime restart", JSON.stringify((await restarted.call("tasks:steeringFromDashboard", { key, id: next.id })).value) === JSON.stringify(before));
 } catch (cause) {

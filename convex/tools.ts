@@ -962,11 +962,13 @@ const brain_write = createTool({
     "goes in the project). mode=replace_section replaces one section's body; mode=replace_all the whole page: both " +
     "need expectedRevision from brain_read, and if the owner or anyone saved since, nothing is saved and you get the " +
     "page as it is now. About me is the owner's own account of themselves (USER.md): change it with replace_section, " +
-    "keeping their words. Never drop words the owner wrote unless they asked. Never write a secret into a page.",
+    "keeping their words. In a Riff document, replacing existing words creates a proposal for the owner to accept or reject; " +
+    "the saved document stays unchanged until acceptance. No separate approval tool is needed. " +
+    "Never drop words the owner wrote unless they asked. Never write a secret into a page.",
   inputSchema: z.object({
     mode: z.enum(["create", "replace_section", "replace_all"]),
     page: pageRef.optional().describe("The page to change; not for create."),
-    title: z.string().min(1).max(160).optional().describe("For create: the new page's title."),
+    title: z.string().min(1).max(160).optional().describe("For create: the new page's title. With a replacement: an optional new title."),
     content: z.string().max(100_000).describe("Markdown: the page, or the section's new body."),
     section: z.string().max(200).optional().describe("For replace_section: the heading, as the page writes it, without the #s."),
     expectedRevision: z.number().int().positive().optional(),
@@ -981,6 +983,7 @@ const brain_write = createTool({
     return await ctx.runMutation(internal.notes.updateForAgent, {
       ...writerOf(ctx), id: input.page, mode: input.mode, content: input.content,
       ...(input.section ? { section: input.section } : {}), ...(input.expectedRevision ? { expectedRevision: input.expectedRevision } : {}),
+      ...(input.title ? { title: input.title } : {}),
     });
   },
 });
@@ -1400,9 +1403,10 @@ const run_action = createTool({
     "and the arguments its schema asks for. This reaches the owner's real " +
     "accounts: it sends real email, creates real calendar events, and edits " +
     "real documents. Anything that sends, deletes, publishes or spends needs " +
-    "the owner's explicit go-ahead in chat first. Reading does not.",
+    "an exact operation approval from the owner. Reading does not. Keep the same requestId when retrying an operation; a changed operation needs a new requestId. A timed-out or unknown write must be checked at its destination before preparing another.",
   inputSchema: z.object({
     slug: z.string().min(1).describe("Exact action slug from find_action."),
+    requestId: z.string().min(1).max(160).optional().describe("Stable id for this one operation. Reuse it for retries; use a new id for a deliberate new operation."),
     args: z
       .record(z.string(), z.unknown())
       .optional()
@@ -1411,12 +1415,32 @@ const run_action = createTool({
   execute: async (
     ctx,
     input,
-  ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
-    return await ctx.runAction(internal.composio.execute, {
+  ): Promise<{ ok: boolean; data?: unknown; error?: string; state?: string; requestId?: string }> => {
+    const active = async () => {
+      ctx.signal?.throwIfAborted();
+      if (ctx.turnId && !await ctx.runQuery(internal.codex.internetMayRead, { turnId: ctx.turnId })) throw new Error("This reply was stopped. Send a new message to continue.");
+    };
+    await active();
+    const operation = {
       slug: input.slug,
       args: input.args ?? {},
       readOnly: ctx.readOnly,
-    });
+      conversationId: ctx.conversationId, turnId: ctx.turnId, requestId: input.requestId,
+    };
+    const result = await ctx.runAction(internal.composio.execute, operation);
+    if (!result.approvalId) return result;
+    let status = "pending";
+    try {
+      while (status === "pending") {
+        await active();
+        await delay(APPROVAL_POLL_MS, undefined, { signal: ctx.signal });
+        status = await ctx.runMutation(internal.approvals.decisionOf, { id: result.approvalId });
+      }
+      await active();
+      return await ctx.runAction(internal.composio.execute, { ...operation, requestId: result.requestId });
+    } finally {
+      if (status === "pending") await ctx.runMutation(internal.approvals.cancelBrowser, { id: result.approvalId });
+    }
   },
 });
 
@@ -1427,6 +1451,8 @@ type Snapshot = {
   tasks: Array<{
     id: string;
     chatId?: string;
+    sourceChatId?: string;
+    completion?: Doc<"tasks">["completion"];
     title: string;
     status: string;
     goalId?: string;
@@ -1488,6 +1514,7 @@ const start_task = createTool({
       title: input.title,
       prompt: input.prompt,
       ...(ctx.conversationId ? { origin: ctx.conversationId } : {}),
+      ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
     });
     return { taskId };
   },
@@ -1576,12 +1603,12 @@ const resume_task = createTool({
   description:
     "Continue the same background task when the owner answers its question (status blocked) or asks to retry it " +
     "after failure (status failed). Requeues its existing task and chat, preserving its plan and model selection. " +
-    "Use this instead of creating a replacement or changing models. Any owner channel can answer the same task. Task ids come from status_report. Silence is never an answer; an explicit decline means manage_task_decision drop, not resume.",
-  inputSchema: z.object({ taskId: z.string(), answer: z.string().min(1).max(4000).describe("The owner's answer or instruction to continue, in their words."), decisionVersion: z.string().optional().describe("Current decision.version from status_report, when present.") }),
+    "Use this instead of creating a replacement or changing models. Any owner channel can answer the same task. Task ids come from status_report. A result-ready background task requires its current completion.version. For a tracked plan without a task chat, continue in sourceChatId and update its plan with set_plan, preserving existing deliverables. Silence is never an answer; an explicit decline means manage_task_decision drop, not resume.",
+  inputSchema: z.object({ taskId: z.string(), answer: z.string().min(1).max(4000).describe("The owner's answer or instruction to continue, in their words."), decisionVersion: z.string().optional().describe("Current decision.version from status_report, when present."), completionVersion: z.string().optional().describe("Exact current completion.version from status_report for a result-ready background task. Re-read before retrying a changed receipt.") }),
   execute: async (ctx, input): Promise<{ resumed: boolean; note?: string; error?: string }> => {
     if (!ctx.conversationId || ctx.fromJob || ctx.outside) return { resumed: false, error: "Only a fresh owner instruction can resume a background task." };
-    const resumed: boolean = await ctx.runMutation(internal.tasks.resume, { id: input.taskId, answer: input.answer, conversationId: ctx.conversationId, decisionVersion: input.decisionVersion });
-    return resumed ? { resumed, note: NO_WAIT } : { resumed, error: "That question changed, its goal is paused, or its previous turn has not settled. Check status_report before trying again." };
+    const resumed: boolean = await ctx.runMutation(internal.tasks.resume, { id: input.taskId, answer: input.answer, conversationId: ctx.conversationId, decisionVersion: input.decisionVersion, completionVersion: input.completionVersion });
+    return resumed ? { resumed, note: NO_WAIT } : { resumed, error: "That result/question changed, its goal is paused, or its previous turn has not settled. Read status_report for the exact task and receipt before retrying. A tracked plan without a task chat continues in its source chat with set_plan." };
   },
 });
 
@@ -1645,6 +1672,7 @@ const set_plan = createTool({
     await ctx.runMutation(internal.work.setPlan, {
       taskId: input.taskId,
       plan: input.steps,
+      ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
     });
     return { ok: true };
   },

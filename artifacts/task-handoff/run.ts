@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 
 // bun artifacts/task-handoff/run.ts <outDir>
@@ -41,6 +42,7 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 //  12. Simultaneous sibling results still create separate relay turns.
 //  13. Hidden/outside flags are lost when a result joins a turn or falls back to the queue.
 //  14. A deferred report cannot reach Perry after the owner returns to its chat.
+// Extended safety/restart/browser inventory: failure-cases.md.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/task-handoff/run.ts <outDir>");
@@ -84,9 +86,13 @@ const p = await perry({
     writeFileSync(join(fakeHome, "grok-signed-in"), "yes");
     mkdirSync(join(home, "no-codex"), { recursive: true });
     mkdirSync(join(home, "no-claude"), { recursive: true });
-    return { PERRY_GROK_COMMAND: `${process.execPath} ${FAKE_AGENT} --profile grok`, FAKE_ACP_HOME: fakeHome, CODEX_HOME: join(home, "no-codex"), CLAUDE_CONFIG_DIR: join(home, "no-claude") };
+    return { PERRY_GROK_COMMAND: `${process.execPath} ${FAKE_AGENT} --profile grok`, PERRY_OPENCODE_COMMAND: join(home, "no-opencode"), FAKE_ACP_HOME: fakeHome, CODEX_HOME: join(home, "no-codex"), CLAUDE_CONFIG_DIR: join(home, "no-claude") };
   },
-  env: { TELEGRAM_BOT_TOKEN: "123456:handoff-e2e", TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}` },
+  env: {
+    TELEGRAM_BOT_TOKEN: "123456:handoff-e2e", TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}`,
+    PERRY_EMBED_MODEL: "task-handoff-fixture", NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(fileURLToPath(new URL("./preload.mjs", import.meta.url))).href}`,
+    OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "", GEMINI_API_KEY: "", GOOGLE_API_KEY: "", GROQ_API_KEY: "", XAI_API_KEY: "", PERRY_WAKE_DISABLED: "1",
+  },
 });
 const { KEY, BASE, call, check, notes, until, rows, getChat, messagesOf, turnsOf } = p;
 
@@ -96,7 +102,7 @@ const taskNamed = (title: string) => tasks().find((task) => task.title === title
 const handoffsOf = (taskId: string) => rows("taskHandoffs").filter((row) => row.taskId === taskId);
 const notices = (title: string) => rows("sent").filter((row) => String(row.text).includes(title));
 const queue = (title: string, prompt: string) => `TOOL queue_task ${JSON.stringify({ title, prompt })}`;
-/** Wait for every handover of the task to settle (answered, or the owner told by fallback) and the chat to be quiet. */
+/** Wait for every handover to finish or defer, and for the originating chat to be quiet. */
 const settled = async (chat: string, taskId: string, seconds = 120) => {
   await until(async () => {
     const rowsNow = handoffsOf(taskId);
@@ -105,22 +111,39 @@ const settled = async (chat: string, taskId: string, seconds = 120) => {
 };
 const fromTask = (messages: Array<{ role: string; text: string }>) => messages.filter((message) => message.role === "assistant" && /Back from the task/.test(message.text));
 const raw = (messages: Array<{ role: string; text: string }>, title: string) => messages.filter((message) => message.text.includes(`**${title}**`));
+let browser: Awaited<ReturnType<typeof p.openBrowser>> | undefined;
+const browserSend = async (text: string) => {
+  await until(() => browser!.evaluate(`Boolean(document.querySelector('[contenteditable="true"][aria-label^="Message"]'))`), "the current message editor", 30);
+  await browser!.evaluate(`document.querySelector('[contenteditable="true"][aria-label^="Message"]').focus()`);
+  await browser!.send("Input.insertText", { text });
+  await until(() => browser!.evaluate(`Boolean(document.querySelector('button[aria-label="Send message"]:not(:disabled)'))`), "enabled Send", 15);
+  const point = await browser!.evaluate(`(()=>{const el=document.querySelector('button[aria-label="Send message"]');el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await browser!.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+  await browser!.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+};
+const visibleReplies = () => browser!.evaluate(`Array.from(document.querySelectorAll('[data-role="assistant"] > [data-slot="message-content"] > div > [data-cite-text]')).map(el=>el.innerText)` ) as Promise<string[]>;
+let server: ReturnType<typeof p.start> | null = null, runner: ReturnType<typeof p.start> | null = null;
 
 let ok = false;
 try {
-  p.start("server");
+  server = p.start("server");
   await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 90);
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
-  p.start("runner");
+  runner = p.start("runner");
   await until(async () => (await call<Array<{ online: boolean; engines: Array<{ kind: string; signedIn: boolean }> }>>("engines:list", { key: KEY }))
     .some((item) => item.online && item.engines.some((engine) => engine.kind === "grok" && engine.signedIn)), "the runner with Grok signed in", 120);
+  const engines = await p.computers();
+  check("onlyFakeEngineSignedIn", engines.every(computer => computer.engines.every(engine => engine.kind === "grok" || !engine.signedIn)), engines.map(computer => computer.engines.map(engine => ({ kind: engine.kind, signedIn: engine.signedIn }))));
+  if (!p.checks.onlyFakeEngineSignedIn) throw new Error("A non-fixture engine is signed in; refusing relay acceptance");
   await call("dashboard:setDefaultAccess", { key: KEY, access: "full" });
   const chat = await call<string>("dashboard:createChat", { key: KEY });
   await call("dashboard:setChatModel", { key: KEY, id: chat, model: "grok-fake-fast", engine: "grok" });
+  browser = await p.openBrowser();
+  await browser.send("Page.navigate", { url: `${BASE}/chat/${chat}` });
 
   // --- 1-3. Done: back to Perry, and the owner hears once ---------------------------------------
   const DONE = "Write the summary";
-  await call("dashboard:sendChat", { key: KEY, id: chat, text: queue(DONE, `Write a summary of the notes.\nFINISH done Wrote summary.md in the notes folder.`) });
+  await browserSend(queue(DONE, `Write a summary of the notes.\nFINISH done Wrote summary.md in the notes folder.`));
   await until(() => taskNamed(DONE)?.status === "done", "the task to finish", 120);
   const done = taskNamed(DONE)!;
   await settled(chat, done._id);
@@ -135,6 +158,8 @@ try {
   const handoverTurn = parentTurns.find((turn) => String(turn.prompt ?? "").includes("came back"));
   check("handoverReadsAsOutside", Boolean(handoverTurn && handoverTurn.outsideAt !== undefined), handoverTurn && { outsideAt: handoverTurn.outsideAt, hidden: handoverTurn.hidden });
   check("handoverAnswered", handoffsOf(done._id).length === 1 && handoffsOf(done._id)[0]!.state === "answered" && handoffsOf(done._id)[0]!.tries === 1);
+  await until(async () => (await visibleReplies()).some(text => text.includes("Back from the task:") && text.includes("Wrote summary.md")), "the actual owner-visible task result", 30);
+  check("browserOwnerSeesExactlyOneRelay", (await visibleReplies()).filter(text => text.includes("Back from the task:") && text.includes("Wrote summary.md")).length === 1);
 
   // Final replies close tasks directly; keep their words and verification beyond the old 4 KB cap.
   const AUTO = "Automatic final result";
@@ -182,7 +207,8 @@ try {
   const asked = await messagesOf(chat);
   check("questionThroughPerry", fromTask(asked).some((message) => message.text.includes("the 12th or the 19th")) && raw(asked, BLOCKED).length === 0 && notices(BLOCKED).length === 0);
   // The owner answers Perry; Perry passes it on with resume_task (here, as the fake, by the tool itself).
-  await call("dashboard:sendChat", { key: KEY, id: chat, text: `TOOL resume_task ${JSON.stringify({ taskId: blocked._id, answer: "the 19th", decisionVersion: blocked.decision?.version })}` });
+  await until(async () => (await visibleReplies()).some(text => text.includes("the 12th or the 19th")), "the owner-visible blocked question", 30);
+  await browserSend(`TOOL resume_task ${JSON.stringify({ taskId: blocked._id, answer: "the 19th", decisionVersion: blocked.decision?.version })}`);
   await until(() => taskNamed(BLOCKED)?.status === "done", "the resumed task to finish", 120);
   await settled(chat, blocked._id);
   const resumed = taskNamed(BLOCKED)!;
@@ -190,11 +216,18 @@ try {
   const answers = await messagesOf(chat);
   check("answerResumesOnce", resumed.turns === 2 && blockedTurns.length === 2 && fromTask(answers).some((message) => message.text.includes("Carried on with the 19th.")), { turns: resumed.turns, chatTurns: blockedTurns.length });
   check("blockedThenDoneEachOnce", handoffsOf(blocked._id).length === 2 && handoffsOf(blocked._id).map((row) => row.outcome).join() === "blocked,done");
+  await until(async () => (await visibleReplies()).some(text => text.includes("Carried on with the 19th.")), "the resumed result visible to its owner", 30);
+  check("browserAnswerReturnsSameTaskResult", resumed.conversationId === blocked.conversationId && (await visibleReplies()).filter(text => text.includes("Back from the task:") && text.includes("Carried on with the 19th.")).length === 1);
 
   // --- 6. Two at once: both come back, one after the other ---------------------------------------
   const [ONE, TWO] = ["Sort the photos", "Tidy the downloads"];
+  writeFileSync(join(p.home, "hold-task-relay"), "hold until both real task results exist");
   await call("dashboard:sendChat", { key: KEY, id: chat, text: `TOOLS ${JSON.stringify([["queue_task", { title: ONE, prompt: "Sort the photos by year.\nFINISH done Sorted 120 photos into folders by year." }], ["queue_task", { title: TWO, prompt: "Tidy the downloads folder.\nFINISH done Moved 40 old files to the archive." }]])}` });
   await until(() => taskNamed(ONE)?.status === "done" && taskNamed(TWO)?.status === "done", "both tasks to finish", 180);
+  await until(() => [...handoffsOf(taskNamed(ONE)!._id), ...handoffsOf(taskNamed(TWO)!._id)].length === 2, "both durable sibling reports before dispatch", 30);
+  check("siblingsBothReadyBeforeAdmission", [...handoffsOf(taskNamed(ONE)!._id), ...handoffsOf(taskNamed(TWO)!._id)].every(row => row.state === "pending" && !row.runId));
+  notes.siblingAdmission = [taskNamed(ONE), taskNamed(TWO)].map(task => ({ taskId: task!._id, handoff: handoffsOf(task!._id)[0] }));
+  rmSync(join(p.home, "hold-task-relay"));
   await settled(chat, taskNamed(ONE)!._id);
   await settled(chat, taskNamed(TWO)!._id);
   const both = await messagesOf(chat);
@@ -217,6 +250,61 @@ try {
     && fromTask(workPageMessages).some(message => message.text.includes("All three backups are there."))
     && raw(workPageMessages, WORKPAGE).length === 0 && notices(WORKPAGE).length === 0);
 
+  const PREREQUISITE = "Verify the source choice", DEPENDENT = "Use verified prerequisite", CANCELLED = "Cancel queued dependency";
+  await browserSend(queue(PREREQUISITE, "Prepare the source choice.\nFINISH blocked Which verified source should be used?"));
+  await until(() => taskNamed(PREREQUISITE)?.status === "blocked", "prerequisite awaits owner", 30);
+  const prerequisite = taskNamed(PREREQUISITE)!;
+  await settled(chat, prerequisite._id);
+  await browserSend(`TOOLS ${JSON.stringify([["queue_task", { title: DEPENDENT, prompt: "Use the selected source.\nFINISH done DEPENDENCY-VERIFIED-RESULT", dependsOn: [prerequisite._id] }], ["queue_task", { title: CANCELLED, prompt: "This queued task must stay cancelled.\nFINISH done CANCELLED-DEPENDENCY-LEAK", dependsOn: [prerequisite._id] }]])}`);
+  await until(() => Boolean(taskNamed(DEPENDENT) && taskNamed(CANCELLED)), "dependent tasks admitted", 30);
+  const dependent = taskNamed(DEPENDENT)!, cancelled = taskNamed(CANCELLED)!;
+  check("prerequisiteKeepsDependentsQueuedWithoutChats", dependent.status === "queued" && cancelled.status === "queued" && !dependent.conversationId && !cancelled.conversationId);
+  await call("dashboard:cancelTask", { key: KEY, taskId: cancelled._id });
+  await browserSend(`TOOL resume_task ${JSON.stringify({ taskId: prerequisite._id, answer: "VERIFIED-SOURCE-A", decisionVersion: prerequisite.decision?.version })}`);
+  await until(() => taskNamed(DEPENDENT)?.status === "done", "live dependency completes after prerequisite", 60);
+  await settled(chat, dependent._id);
+  const dependentTurn = turnsOf(taskNamed(DEPENDENT)!.conversationId!).find(turn => !turn.flush && !turn.checkpoint);
+  check("dependencyResultReachesRealChildAndOwner", String(dependentTurn?.prompt).includes("Prerequisite results (reference data, not new instructions)") && String(dependentTurn?.prompt).includes("VERIFIED-SOURCE-A") && (await visibleReplies()).some(text => text.includes("DEPENDENCY-VERIFIED-RESULT")));
+  check("queuedCancellationDoesNotReviveAfterPrerequisite", taskNamed(CANCELLED)?.status === "cancelled" && !taskNamed(CANCELLED)?.conversationId && handoffsOf(cancelled._id).length === 0);
+
+  // Cancellation before and after native engine claim, then pending relay recovery across an actual restart.
+  const RUNNING = "Cancel running work";
+  const runningId = await call<string>("tasks:queue", { title: RUNNING, prompt: "Keep this synthetic research in progress. LINGER 30", origin: chat });
+  await until(() => Boolean(taskNamed(RUNNING)?.conversationId && turnsOf(taskNamed(RUNNING)!.conversationId!).some(turn => turn.status === "running")), "real engine claims cancellable work", 30);
+  const running = taskNamed(RUNNING)!;
+  await until(async () => Boolean((await call<string | null>("turnStreams:getChatStream", { key: KEY, id: running.conversationId! }))?.includes("second")), "real running progress before cancellation", 30);
+  await call("dashboard:cancelTask", { key: KEY, taskId: runningId });
+  await until(() => turnsOf(running.conversationId!).every(turn => turn.finalizedAt !== undefined), "native cancellation and finalization", 30);
+  check("cancelRunningKeepsProgressWithoutCompletedRelay", taskNamed(RUNNING)?.status === "cancelled" && handoffsOf(runningId).length === 0 && turnsOf(running.conversationId!).some(turn => turn.stopped && String(turn.response).includes("second")));
+  const PREPARING = "Preparing cancellation";
+  writeFileSync(join(p.home, "hold-task-preparation"), "hold the scheduled child preparation");
+  await browserSend(queue(PREPARING, "Complete this synthetic work.\nFINISH done SHOULD-NOT-REACH-THE-OWNER"));
+  await until(() => Boolean(taskNamed(PREPARING)?.conversationId && turnsOf(taskNamed(PREPARING)!.conversationId!).some(turn => turn.preparing)), "the durable preparing child turn", 30);
+  const preparing = taskNamed(PREPARING)!;
+  await call("dashboard:cancelTask", { key: KEY, taskId: preparing._id });
+  rmSync(join(p.home, "hold-task-preparation"));
+  await until(() => turnsOf(preparing.conversationId!).every(turn => turn.finalizedAt !== undefined), "the cancelled preparation to settle", 30);
+  check("cancelPreparingNeverInvokesEngineOrRelays", taskNamed(PREPARING)?.status === "cancelled" && handoffsOf(preparing._id).length === 0 && turnsOf(preparing.conversationId!).every(turn => turn.startedAt === undefined) && !p.fakeLog(fakeHome).some(entry => entry.prompt?.startsWith(`🧩 ${PREPARING}`)), { status: taskNamed(PREPARING)?.status, handoffs: handoffsOf(preparing._id), turns: turnsOf(preparing.conversationId!), matchingPrompts: p.fakeLog(fakeHome).filter(entry => entry.prompt?.includes("SHOULD-NOT-REACH-THE-OWNER")).map(entry => String(entry.prompt).slice(0, 100)) });
+
+  const RESTART = "Persist pending relay";
+  writeFileSync(join(p.home, "hold-task-relay"), "hold until server restarts");
+  await browserSend(queue(RESTART, "Prepare the verified result.\nFINISH done RESTART-VERIFIED-RESULT"));
+  await until(() => taskNamed(RESTART)?.status === "done" && handoffsOf(taskNamed(RESTART)!._id).length === 1, "the durable unadmitted relay", 30);
+  const pending = taskNamed(RESTART)!, pendingHandoff = handoffsOf(pending._id)[0]!;
+  check("restartBeginsWithRealDurablePendingRelay", pendingHandoff.state === "pending" && !pendingHandoff.runId);
+  p.stop(runner); p.stop(server);
+  await until(() => fetch(`${BASE}/api/backend/http/health`).then(() => false, () => true), "isolated server stopped", 15);
+  rmSync(join(p.home, "hold-task-relay"));
+  server = p.start("server");
+  await until(() => fetch(`${BASE}/api/backend/http/health`).then(response => response.ok, () => false), "isolated server restarted", 90);
+  runner = p.start("runner");
+  await settled(chat, pending._id);
+  await until(async () => (await visibleReplies()).some(text => text.includes("RESTART-VERIFIED-RESULT")), "reconnected browser receives pending relay", 30);
+  check("restartPreservesOriginAndSingleRelay", taskNamed(RESTART)?.conversationId === pending.conversationId && taskNamed(RESTART)?.origin === chat && handoffsOf(pending._id).length === 1 && handoffsOf(pending._id)[0]!._id === pendingHandoff._id && (await messagesOf(chat)).filter(message => message.role === "assistant" && message.text.includes("RESTART-VERIFIED-RESULT")).length === 1);
+  check("restartKeepsPreparingCancellationTerminal", taskNamed(PREPARING)?.status === "cancelled" && handoffsOf(preparing._id).length === 0);
+  check("restartKeepsQueuedCancellationTerminal", taskNamed(CANCELLED)?.status === "cancelled" && !taskNamed(CANCELLED)?.conversationId && handoffsOf(cancelled._id).length === 0);
+  check("restartKeepsRunningCancellationTerminal", taskNamed(RUNNING)?.status === "cancelled" && handoffsOf(runningId).length === 0);
+
   // --- 7. A Telegram chat's task is answered on Telegram, once ------------------------------------
   const { code } = await call<{ code: string }>("installation:startPairing");
   ownerSays(code);
@@ -235,6 +323,58 @@ try {
   check("telegramAnsweredOnce", told.filter((text) => text.includes("Found it: receipts/hotel-march.pdf")).length === 1 && !told.some((text) => text.includes(`${PHONE}`) && /is done/.test(text)));
   check("telegramNoWebCopy", (await messagesOf(chat)).every((message) => !message.text.includes("hotel-march")));
   notes.telegramChat = telegramChat;
+
+  // A delayed question must not be asked again after its owner answered from another paired channel.
+  const STALE = "Cross-channel answered decision";
+  writeFileSync(join(p.home, "hold-task-relay"), "hold the question until its owner answers elsewhere");
+  await browserSend(queue(STALE, "Prepare the concrete choices.\nFINISH blocked OBSOLETE-RELAY-QUESTION: choose A or B?"));
+  await until(() => taskNamed(STALE)?.status === "blocked" && handoffsOf(taskNamed(STALE)!._id).length === 1, "unadmitted blocked report", 30);
+  const stale = taskNamed(STALE)!;
+  ownerSays(`TOOL resume_task ${JSON.stringify({ taskId: stale._id, answer: "PHONE-ANSWERED-RESULT", decisionVersion: stale.decision?.version })}`);
+  await until(() => taskNamed(STALE)?.status === "done" && handoffsOf(stale._id).length === 2, "phone answer completes original task", 30);
+  check("crossChannelAnswerKeepsSourceIdentity", taskNamed(STALE)?.origin === chat && taskNamed(STALE)?.conversationId === stale.conversationId && handoffsOf(stale._id).every(row => row.conversationId === chat && row.state === "pending" && !row.runId));
+  rmSync(join(p.home, "hold-task-relay"));
+  await settled(chat, stale._id);
+  await until(async () => (await visibleReplies()).some(text => text.includes("PHONE-ANSWERED-RESULT")), "current cross-channel result is rendered", 30);
+  const staleVisible = (await visibleReplies()).filter(text => text.includes("Back from the task:") && (text.includes("OBSOLETE-RELAY-QUESTION") || text.includes("PHONE-ANSWERED-RESULT")));
+  notes.staleDecision = { task: taskNamed(STALE), handoffs: handoffsOf(stale._id), visible: staleVisible };
+  check("answeredDecisionDoesNotReaskObsoleteQuestion", staleVisible.some(text => text.includes("PHONE-ANSWERED-RESULT")) && !staleVisible.some(text => text.includes("OBSOLETE-RELAY-QUESTION")));
+  check("obsoleteQuestionRetainsTruthfulSupersededReceipt", handoffsOf(stale._id).some(row => row.outcome === "blocked" && row.state === "superseded" && !row.runId && row.report?.includes("OBSOLETE-RELAY-QUESTION")) && handoffsOf(stale._id).some(row => row.outcome === "done" && row.state === "answered"));
+  const obsolete = handoffsOf(stale._id).find(row => row.outcome === "blocked")!;
+  await call("tasks:resumeHandoffs", { conversationId: chat });
+  await call("tasks:checkHandoff", { id: obsolete._id });
+  await call("tasks:handOff", { id: obsolete._id });
+  check("recoveryCannotResurrectSupersededQuestion", handoffsOf(stale._id).find(row => row._id === obsolete._id)?.state === "superseded" && !handoffsOf(stale._id).find(row => row._id === obsolete._id)?.runId);
+
+  const CHANGED = "Changed pending question";
+  writeFileSync(join(p.home, "hold-task-relay"), "hold old wording until the task records its new question");
+  await browserSend(queue(CHANGED, "Prepare verified choices.\nFINISH blocked OLD-PENDING-QUESTION: which old draft?"));
+  await until(() => taskNamed(CHANGED)?.status === "blocked" && handoffsOf(taskNamed(CHANGED)!._id).length === 1, "old question awaiting relay", 30);
+  const changed = taskNamed(CHANGED)!;
+  await browserSend(`TOOL resume_task ${JSON.stringify({ taskId: changed._id, answer: "REBLOCK CURRENT-PENDING-QUESTION: which verified replacement?", decisionVersion: changed.decision?.version })}`);
+  await until(() => handoffsOf(changed._id).length === 2, "real task MCP records replacement question", 30);
+  check("changedQuestionGetsDistinctGeneration", taskNamed(CHANGED)?.decision?.version !== changed.decision?.version && handoffsOf(changed._id).some(row => row.decisionVersion === changed.decision?.version) && handoffsOf(changed._id).some(row => row.decisionVersion === taskNamed(CHANGED)?.decision?.version));
+  rmSync(join(p.home, "hold-task-relay"));
+  await settled(chat, changed._id);
+  await until(async () => (await visibleReplies()).some(text => text.includes("CURRENT-PENDING-QUESTION")), "only current question visible to originating owner", 30);
+  check("changedQuestionSupersedesOnlyItsOldReport", handoffsOf(changed._id).filter(row => row.state === "superseded").length === 1 && handoffsOf(changed._id).filter(row => row.state === "answered").length === 1 && !(await visibleReplies()).some(text => text.includes("OLD-PENDING-QUESTION")));
+  await call("dashboard:cancelTask", { key: KEY, taskId: changed._id });
+
+  const SNOOZED = "Snoozed pending question";
+  writeFileSync(join(p.home, "hold-task-relay"), "hold the initial question until explicit phone snooze");
+  await browserSend(queue(SNOOZED, "Prepare the exact options.\nFINISH blocked SNOOZED-SAME-WORDING: choose A or B?"));
+  await until(() => taskNamed(SNOOZED)?.status === "blocked" && handoffsOf(taskNamed(SNOOZED)!._id).length === 1, "question before phone snooze", 30);
+  const snoozed = taskNamed(SNOOZED)!, snoozedReport = handoffsOf(snoozed._id)[0]!;
+  ownerSays(`/decision ${snoozed.decision!.version} tomorrow`);
+  await until(() => taskNamed(SNOOZED)?.decision?.version !== snoozed.decision?.version, "paired phone changes decision generation", 30);
+  rmSync(join(p.home, "hold-task-relay"));
+  await until(() => handoffsOf(snoozed._id)[0]?.state !== "pending", "snoozed report settles without relay", 30);
+  notes.snoozedDecision = { task: rows("tasks").find(task => task._id === snoozed._id), handoff: handoffsOf(snoozed._id)[0], replies: (await visibleReplies()).filter(text => text.includes("SNOOZED-SAME-WORDING")), retainedTaskCards: await browser.evaluate(`Array.from(document.querySelectorAll('[data-agent-status="blocked"]')).filter(el=>el.innerText.includes('SNOOZED-SAME-WORDING')).map(el=>el.innerText)`) };
+  check("sameWordingNewGenerationDoesNotLeakOldQuestion", rows("tasks").find(task => task._id === snoozed._id)?.question === rows("taskHandoffs").find(row => row._id === snoozedReport._id)?.report && handoffsOf(snoozed._id)[0]!.state === "superseded" && !handoffsOf(snoozed._id)[0]!.runId && !(await visibleReplies()).some(text => text.includes("SNOOZED-SAME-WORDING")));
+  await call("tasks:resumeHandoffs", { conversationId: chat });
+  await call("tasks:handOff", { id: snoozedReport._id });
+  check("snoozedSupersededReportStaysTerminal", handoffsOf(snoozed._id)[0]!.state === "superseded" && taskNamed(SNOOZED)?.status === "blocked");
+  await call("dashboard:cancelTask", { key: KEY, taskId: snoozed._id });
 
   // --- 8. No engine can take the handover: retained for Perry, with no raw report to the owner ------
   // The task finishes, then the fake's plan is used up: every turn after it, the handover's included, hits the limit.
@@ -263,9 +403,19 @@ try {
   const recoveredMessages = await messagesOf(chat);
   check("deferredReportReturnsOnlyThroughPerry", handoffsOf(limited._id).length === 1 && notices(LIMITED).length === 0
     && fromTask(recoveredMessages).filter(message => message.text.includes("Drafted invite.md")).length === 1);
+  notes.browserErrors = browser.errors;
+  check("browserHasNoRuntimeErrors", browser.errors.length === 0);
+  const fixtureDispatchErrors = p.logs.server.split("\n").filter(line => /Task relay fixture gate|Scheduled tasks:handOff failed/.test(line));
+  notes.fixtureDispatchErrors = fixtureDispatchErrors;
+  check("fixtureDispatchHasNoTimeout", fixtureDispatchErrors.length === 0);
+  await p.shot("owner-visible-relay.png", "main");
   ok = true;
 } catch (error) {
   notes.stoppedAt = String(error);
+  try {
+    notes.failureState = { tasks: rows("tasks"), handoffs: rows("taskHandoffs"), turns: rows("codexTurns").slice(-20), fake: p.fakeLog(fakeHome).slice(-30) };
+    await p.shot("failure.png", "main");
+  } catch { /* Process teardown must still run if failure evidence is unavailable. */ }
   check("completed", false);
 } finally {
   stub.close();

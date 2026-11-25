@@ -7,6 +7,7 @@ const originalFetch = globalThis.fetch;
 const clients = new Set(); const streams = new Set(); const checks = [];
 let content = 'before'; let hold = null; let waiting = null; let requestSignal;
 let timeouts = 0; let ordinaryCalls = 0;
+let argumentEcho = false; let capturedArgs = [];
 globalThis.fetch = async (url, options = {}) => {
   if (String(url).endsWith('/events')) {
     let current;
@@ -17,8 +18,10 @@ globalThis.fetch = async (url, options = {}) => {
     }, cancel() { streams.delete(current); } }));
   }
   ordinaryCalls++;
+  const incomingArgs = JSON.parse(options.body).args;
+  if (argumentEcho) capturedArgs.push(incomingArgs);
   if (timeouts > 0) { timeouts--; throw new DOMException('Synthetic live-query deadline', 'TimeoutError'); }
-  const value = { page: [{ text: content }], isDone: true, continueCursor: '' };
+  const value = { page: [{ text: argumentEcho ? incomingArgs.id : content }], isDone: true, continueCursor: '' };
   if (hold) {
     requestSignal = options.signal; waiting?.();
     let abort;
@@ -111,6 +114,22 @@ try {
       off(); stop(); c.close();
     }
     return { protectionPassed: true, teardownPaths: 3 };
+  });
+  await check('Queued subscriptions retain immutable chat and key arguments', async () => {
+    const c = client(); const offs = []; let release;
+    hold = new Promise(done => { release = done; }); argumentEcho = true; capturedArgs = [];
+    const original = { ...args, id: 'immutable-A' }; const mutable = { ...original };
+    try {
+      for (let index = 0; index < 4; index++) offs.push(c.subscribe(name, { ...args, id: `held-${index}` }, () => {}));
+      offs.push(c.subscribe(name, mutable, () => {}));
+      mutable.id = 'wrong-B'; mutable.key = 'changed-after-subscribe';
+      await delay(30); assert.equal(capturedArgs.length, 4);
+      release(); hold = null;
+      await until(() => c.snapshot(name, original).loaded);
+      assert.equal(c.snapshot(name, original).value.page[0].text, original.id);
+      assert.ok(!capturedArgs.some(value => value.id === 'wrong-B' || value.key !== args.key));
+      return { protectionPassed: true, immutableScope: true };
+    } finally { release(); hold = null; argumentEcho = false; capturedArgs = []; for (const off of offs) off(); c.close(); }
   });
   await check('Removing the final subscriber cancels its pending request', async () => {
     const c = client(); let release; hold = new Promise(done => { release = done; });

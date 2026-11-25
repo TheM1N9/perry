@@ -15,6 +15,7 @@ import { authenticate } from "./runner";
 import { liveRunners, usageByEngine } from "./usage";
 import { vEngine, vPerryPick, vRoute } from "./schema";
 import { hide, savedValues } from "./vault";
+import { ArgumentError } from "../server/validate";
 
 /**
  * Where each piece of work runs (issue #189): the rule is in lib/routing.ts,
@@ -61,7 +62,7 @@ export async function choose(ctx: QueryCtx, ask: Ask): Promise<Choice | null> {
   const engines = ENGINES.filter((engine) => here.some((runner) => engineUsable(runner, engine)));
   const lockable = ask.lockdown ? ENGINES.filter(engine => here.some(runner => engineLockable(runner, engine))) : undefined;
   const home = ask.owner?.engine ?? ask.perry?.engine ?? ask.current ?? preferred;
-  if (lockable && home && !lockable.includes(home) && !engines.some(engine => lockable.includes(engine))) throw new Error("No signed-in engine can disable native tools for preparation. Sign in to Codex or Claude Code.");
+  if (lockable && home && !lockable.includes(home) && !engines.some(engine => lockable.includes(engine))) throw new ArgumentError("No signed-in engine can disable native tools for preparation. Sign in to Codex or Claude Code.");
   const timeZone = (await ctx.db.query("installation").first())?.timezone;
   return route({ ...ask, ...(preferred ? { preferred } : {}), engines, ...(lockable ? { lockable } : {}), models: await engineModels(ctx), usage: usageByEngine(runners), now: Date.now(), ...(timeZone ? { timeZone } : {}) });
 }
