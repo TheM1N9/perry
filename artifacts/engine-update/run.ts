@@ -44,6 +44,7 @@ import { FAKE_AGENT, REPO, perry, sleep } from "../engine-acp/harness";
 //  11. The pages throw.
 //  12. An unrelated installed engine or inherited API key becomes a live fallback, or embeddings download during this isolated run.
 //  13. A runner killed during an update leaves its installer alive, replays an uncertain update on restart, or strands held replies and explicit retry.
+//  14. Backend recovery finishes before Settings receives it; clicking the old running details must not be mistaken for inspecting the recovered failure.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/engine-update/run.ts <outDir>");
@@ -359,8 +360,11 @@ try {
   check("interruptedInstallerCannotOutliveRunner", interruptedPids.length === 1 && interruptedPids.every(pid => !alive(pid)), interruptedPids);
   runner = p.start("runner");
   await until(async () => (await engines()).all.codex.updating?.status === "error" && /restarted/.test((await engines()).all.codex.updating?.error ?? ""), "interrupted outcome retained after runner restart", 45);
+  await until(() => browser.evaluate(`Boolean(document.querySelector('[aria-label="Codex on ${NAME}"] [data-engine-update="error"]'))`), "interrupted recovery state on the page", 15);
   await until(() => click("Codex", "Technical details"), "interrupted update recovery details", 15);
+  await until(async () => /restarted/.test(await rowText("Codex")), "interrupted recovery explanation on the page", 15);
   check("restartRetainsUnknownUpdateWithoutReplay", /restarted/.test(await rowText("Codex")) && fakeLog().filter(entry => entry.cli === "npm" && entry.mode === "hang").length === 1, await rowText("Codex"));
+  await shot("interrupted-recovery.png", "Codex");
   await until(async () => (await p.lastReply(interruptedChat)).startsWith("Fake Codex 0.150.0 reply"), "held reply recovers on compatible installed version", 45);
   check("restartReleasesHeldReply", (await p.lastReply(interruptedChat)) === "Fake Codex 0.150.0 reply to: Continue after updater interruption");
   setState("npm-mode", "ok");
