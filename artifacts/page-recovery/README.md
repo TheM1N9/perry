@@ -75,6 +75,13 @@ key rejection and replacement, and a failed note-creation request sent once.
 The fixture note retained its identity and content, no runner/model work was
 started, and the isolated home was removed normally.
 
+The navigation scenario waits for the failed response to finish and observes
+the browser scheduling its retry before leaving. A distinct `Retry-After`
+delay identifies that timer; the observer preserves native timer behavior and
+is removed before navigation. No further note request may occur after the
+retry deadline. This distinguishes backoff cleanup from aborting a request
+that has not yet failed. The strengthened journey passed all 26 checks again.
+
 Only read queries retry server errors, with at most two additional attempts.
 Authentication, missing-function and dashboard-key configuration errors retain
 their existing handling. Mutation/action replay rules are unchanged. This

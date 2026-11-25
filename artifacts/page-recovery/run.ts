@@ -14,7 +14,8 @@ const app = await perry({ name: "page-recovery", outDir: output, engine: "codex"
 const { BASE, KEY, check, notes } = app;
 const title = "Recovery fixture note", content = "Confirmed data survives recovery.";
 let connected: any, page: any, browser: Awaited<ReturnType<typeof app.openBrowser>> | undefined;
-let fault: { path: string; status: number; error: string; remaining?: number } | undefined;
+let fault: { path: string; status: number; error: string; remaining?: number; retryAfter?: string } | undefined;
+let beforeFaultResponse: (() => Promise<void>) | undefined;
 const requests: Array<{ path: string; fault?: number }> = [];
 const writes: Array<{ path: string; tables: string[] }> = [];
 const retries: Array<{ name: string; before: number; after: number; elapsedMs: number; status: number }> = [];
@@ -63,7 +64,10 @@ try {
       const path = route.request().postDataJSON().path, injected = fault && fault.path === path && (fault.remaining === undefined || fault.remaining > 0) ? fault : undefined;
       requests.push({ path, ...(injected ? { fault: injected.status } : {}) });
       if (injected?.remaining !== undefined) injected.remaining--;
-      if (injected) return route.fulfill({ status: injected.status, contentType: "application/json", body: JSON.stringify({ error: injected.error }) });
+      if (injected) {
+        await beforeFaultResponse?.();
+        return route.fulfill({ status: injected.status, contentType: "application/json", headers: injected.retryAfter ? { "retry-after": injected.retryAfter } : {}, body: JSON.stringify({ error: injected.error }) });
+      }
       return route.continue();
     });
     const pendingResponses = new Set<Promise<void>>();
@@ -101,13 +105,33 @@ try {
       assert.equal(count("dashboard:getChatMessages") - beforeChat, 2);
       check("transientChatHistoryReadRestoresComposerWithoutBoundary", true);
 
-      fault = { path: "notes:list", status: 500, error: "Synthetic failure before navigation" };
+      fault = { path: "notes:list", status: 500, error: "Synthetic failure before navigation", retryAfter: "2.137" };
       const beforeLeave = count("notes:list");
-      await gotoBrain();
-      await app.until(() => count("notes:list") > beforeLeave, "first failed read before navigation", 5);
+      beforeFaultResponse = () => page.evaluate(() => {
+        const nativeTimeout = window.setTimeout;
+        (window as any).__restoreNavigationTimer = () => { window.setTimeout = nativeTimeout; };
+        window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: any[]) => {
+          const timer = nativeTimeout(handler, delay, ...args);
+          if (delay === 2_137) (window as any).__navigationRetryScheduled = true;
+          return timer;
+        }) as typeof window.setTimeout;
+      });
+      const failedBeforeLeave = page.waitForResponse((reply: any) => reply.url().endsWith("/api/backend/call") && reply.request().postDataJSON()?.path === "notes:list" && reply.status() === 500);
+      try {
+        await gotoBrain(); await (await failedBeforeLeave).finished();
+        await page.waitForFunction(() => (window as any).__navigationRetryScheduled === true);
+        assert.equal(count("notes:list") - beforeLeave, 1);
+      } finally {
+        beforeFaultResponse = undefined;
+        await page.evaluate(() => {
+          (window as any).__restoreNavigationTimer?.();
+          delete (window as any).__restoreNavigationTimer;
+          delete (window as any).__navigationRetryScheduled;
+        });
+      }
       await library().click(); await page.getByRole("heading", { name: "Library", exact: true }).waitFor();
       const afterLeave = count("notes:list");
-      await page.waitForTimeout(1_200);
+      await page.waitForTimeout(2_400);
       assert.equal(count("notes:list"), afterLeave);
       check("navigationCancelsPendingReadBackoff", true);
 
