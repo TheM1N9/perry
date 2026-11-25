@@ -23,6 +23,8 @@ jobs:
           cache: pnpm
       - uses: oven-sh/setup-bun@v2
       - run: pnpm install --frozen-lockfile
+      - run: pnpm codegen
+      - run: git diff --exit-code -- convex/_generated/api.d.ts server/modules.ts
       - run: pnpm exec node artifacts/macos-git-preflight/run.mjs
       - if: always()
         uses: actions/upload-artifact@v4

@@ -56,6 +56,7 @@ import type * as lib_provenance from "../lib/provenance.js";
 import type * as lib_recall from "../lib/recall.js";
 import type * as lib_riffStyles from "../lib/riffStyles.js";
 import type * as lib_routing from "../lib/routing.js";
+import type * as lib_run_turn from "../lib/run-turn.js";
 import type * as lib_scroll_index from "../lib/scroll/index.js";
 import type * as lib_scroll_merge from "../lib/scroll/merge.js";
 import type * as lib_scroll_net from "../lib/scroll/net.js";
@@ -186,6 +187,7 @@ declare const fullApi: ApiFromModules<{
   "lib/recall": typeof lib_recall;
   "lib/riffStyles": typeof lib_riffStyles;
   "lib/routing": typeof lib_routing;
+  "lib/run-turn": typeof lib_run_turn;
   "lib/scroll/index": typeof lib_scroll_index;
   "lib/scroll/merge": typeof lib_scroll_merge;
   "lib/scroll/net": typeof lib_scroll_net;
