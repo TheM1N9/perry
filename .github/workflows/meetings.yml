@@ -20,6 +20,7 @@ on:
       - 'artifacts/welcome/**'
       - 'components/dashboard/screens/welcome.tsx'
       - 'components/dashboard/chat/chat-screen.tsx'
+      - 'components/dashboard/chat/render-isolation.ts'
       - 'components/dashboard/chat/composer.tsx'
       - 'components/dashboard/chat/prompt-editor.tsx'
       - 'artifacts/browser.ts'
@@ -45,6 +46,7 @@ on:
       - 'artifacts/welcome/**'
       - 'components/dashboard/screens/welcome.tsx'
       - 'components/dashboard/chat/chat-screen.tsx'
+      - 'components/dashboard/chat/render-isolation.ts'
       - 'components/dashboard/chat/composer.tsx'
       - 'components/dashboard/chat/prompt-editor.tsx'
       - 'artifacts/browser.ts'
@@ -77,6 +79,7 @@ jobs:
       - run: git diff --exit-code -- convex/_generated/api.d.ts server/modules.ts
       - run: pnpm run build
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/run.mjs "${{ runner.temp }}/meeting-backend" --backend-only
+      - run: pnpm exec bun build artifacts/meetings/deadline-probe.tsx --target browser --format iife --minify --outfile node_modules/.cache/meeting-deadline-probe.js
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/ui.mjs "${{ runner.temp }}/meeting-ui"
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/welcome/ui.mjs "${{ runner.temp }}/welcome-ui"
       - if: always()

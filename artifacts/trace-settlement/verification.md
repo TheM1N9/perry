@@ -28,4 +28,6 @@ The prior harness registered only Codex, recovery and routing. It had become sta
 
 The imported-turn case also gives two turns identical queue positions and creation timestamps. It reproduced a regression in the initial optimization: concatenating queued turns before errors changed the winner of a complete comparator tie. Reading the error partition first preserves the previous index order. Both the original query baseline and the final indexed implementation pass this behavior check.
 
+The review follow-up keeps a later retrying error with a reset wait eligible while checking that an earlier ordinary queued turn suppresses it. This distinguishes choosing the first queued turn from incorrectly choosing the first turn with waiting state. All 68 checks still pass.
+
 Generated reports and synthetic homes are disposable after their results are recorded here. Automatic approval review rejected removing `node_modules/.cache/performance-backend` with `blocked by policy`; its synthetic reports remain, with all runtime resources closed. No alternative removal mechanism was used. The maintained suite and this record remain reproducible.

@@ -317,9 +317,10 @@ try {
   sql.prepare("UPDATE doc_codexTurns SET _creationTime = ? WHERE _id = ?").run(runtime.store.get(queuedWait)!._creationTime, errorWait);
   check("waiting:identical-imported-positions-preserve-index-order", (await readWaiting()).waiting?.why === "error");
   sql.prepare("UPDATE doc_codexTurns SET _creationTime = ? WHERE _id = ?").run(errorCreatedAt, errorWait);
-  runtime.store.patch(errorWait, { retrying: false });
+  runtime.store.patch(errorWait, { retrying: true, queueOrder: 20 });
   runtime.store.patch(queuedWait, { waiting: undefined });
   check("waiting:ordinary-queue-suppresses-later-wait", (await readWaiting()).waiting === undefined);
+  runtime.store.patch(errorWait, { retrying: false });
   runtime.store.patch(queuedWait, { finalizedAt: now });
   check("waiting:finalized-and-nonretrying-excluded", (await readWaiting()).waiting === undefined);
   runtime.store.patch(queuedWait, { status: "running", finalizedAt: undefined });

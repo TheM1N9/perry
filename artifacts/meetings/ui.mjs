@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { createServer } from "node:net";
@@ -193,6 +193,15 @@ try {
   await until("document.body.innerText.includes('Turning your call into a two-minute read')");
   report.checks.missingEndDoesNotInventDuration = await browser.evaluate("!document.querySelector('span.tabular-nums') && window.__meetingSecondTimers.size === 0");
   report.checks.differentMeetingDoesNotKeepWritingWarning = await browser.evaluate("!document.body.innerText.includes('This is taking longer than usual.')");
+  const probeBundle = readFileSync(resolve(process.env.PERRY_DEADLINE_PROBE_BUNDLE ?? "node_modules/.cache/meeting-deadline-probe.js"), "utf8");
+  await browser.evaluate(`(() => {
+    const frame = document.createElement('iframe');
+    frame.id = 'deadline-probe'; document.body.append(frame);
+    frame.contentWindow.eval(${JSON.stringify(probeBundle)});
+  })()`);
+  report.deadlineProbe = await browser.evaluate("document.querySelector('#deadline-probe').contentWindow.runDeadlineProbe()");
+  for (const [name, passed] of Object.entries(report.deadlineProbe.checks)) report.checks[`deadline:${name}`] = passed;
+  await browser.evaluate("document.querySelector('#deadline-probe').remove()");
   await browser.send("Page.navigate", { url: `${base}/settings/desktop-pet` });
   await until("document.querySelector('#speech-provider')");
   await browser.evaluate("(()=>{const input=document.querySelector('#speech-provider');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(input,'large-v3-turbo');input.dispatchEvent(new Event('change',{bubbles:true}));})()");

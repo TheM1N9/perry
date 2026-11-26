@@ -18,6 +18,8 @@ The macOS job runs the same Electron pipeline. A system-audio permission refusal
 
 ## Failure inventory, before implementing the checks
 
+- The writing deadline passes after render but before passive effects run. The page must still wake once, without polling or repeated expired-deadline wakes. A native React/Chrome consumer of the actual shared hook advances its isolated clock in a layout effect to reproduce that sequence without a query update masking it.
+- Deadline selection must handle expired, missing and nonfinite times; select the earliest future deadline and then the next; replace an old deadline; clamp delays beyond the browser timer limit; and clear its pending timer on unmount. The browser probe uses native timers, with timer tracking and an isolated wall-clock offset.
 - Completed or failed meeting pages keep a one-second React timer running; active duration stops advancing, a finished duration keeps changing, or leaving the page leaks its elapsed-time clock. The five-minute writing warning disappears, appears early, survives a different meeting, or leaves a deadline scheduled after unmount.
 - A writing row with no end timestamp invents a frozen call duration. The warning deadline is tested just before and after five minutes by offsetting only the disposable browser's wall clock; the real timer and production page still run normally. The synthetic server's clock and the owner's Perry stay unchanged.
 - A short viewport plus an expanded queue and long draft clips the composer controls, or creates a second page scrollbar. The footer must scroll independently while Send and the permission notice remain reachable.
@@ -56,6 +58,17 @@ CI uploads reports even after failure and writes coverage to the job summary. Ge
 
 The UI journey passed 27 checks on Windows against production build `288c776c-a66b-41f9-be6f-ddba8978e288` on 2026-11-27, with no uncaught browser errors. Completed and failed details had no one-second intervals. The live detail and meeting list each used one shared elapsed-time clock; the duration advanced during recording, stayed fixed after completion, and the shared clock stopped after navigating from the live detail through the list to a failed meeting. The writing warning stayed hidden before five minutes and appeared after the deadline using a real five-second timeout with only the disposable browser's wall clock offset. A writing row without an end time showed no invented duration. Existing note editing, transcript search, mobile layout and saved speech settings passed in the same journey. The fixture backend, Chrome profile and temporary home were closed and removed.
 
-Reproduce after a production build with `pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/ui.mjs <output-directory>`. The output includes `ui.json` and a screenshot of the deadline warning. These checks use synthetic meetings and do not call paid model APIs or record the owner's microphone.
+Reproduce after a production build:
+
+```shell
+pnpm exec bun build artifacts/meetings/deadline-probe.tsx --target browser --format iife --minify --outfile node_modules/.cache/meeting-deadline-probe.js
+pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/ui.mjs <output-directory>
+```
+
+The output includes `ui.json` and a screenshot of the deadline warning. These checks use synthetic meetings and do not call paid model APIs or record the owner's microphone.
+
+The review follow-up passed 40 checks on production build `7b06a11d-acda-4eef-8aca-11fe3c6d3f45`, with no uncaught browser errors and the temporary home removed. Thirteen checks exercise the actual shared hook in native React and Chrome inside a disposable frame. Advancing its wall clock in a layout effect guarantees the deadline crosses after render and before passive effect setup. The previous hook failed only `crossedDeadlineWakesOnce`, scheduling no wake; the fixed hook scheduled exactly one 1 ms wake and then stayed idle. The same probe covers expired/nonfinite times, successive deadlines, replacement, unmount cleanup and the browser's maximum timer delay. The full meeting journey still checks the visible writing warning and active/completed clocks. Its ordinary note-query updates can incidentally rerender the page, which is why the isolated lifecycle replay is needed to expose the race.
 
 Automatic approval review rejected removal of the fresh report directory, `node_modules/.cache/performance-meetings-20261127`, with `blocked by policy`. The synthetic fixture home was removed automatically; only the report, screenshots and server log remain in that output directory.
+
+The same review blocked cleanup of the follow-up `performance-deadline-*` and `performance-meetings-commit-baseline` report directories under `node_modules/.cache`. Their fixture homes and browser profiles were removed automatically. Temporary baseline source copies and generated probe bundles were removed separately; the maintained probe source remains.
