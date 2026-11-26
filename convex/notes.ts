@@ -545,31 +545,33 @@ export const listForAgent = internalQuery({
   },
 });
 
-type AgentLine = { id: string; text: string; section?: string; by?: string; fromChat?: string; noted: string; confirmed?: string };
+type AgentLine = { id: string; text: string; section?: string; by?: string; fromChat?: string; origin?: Doc<"memories">["origin"]; noted: string; confirmed?: string };
 /**
  * One page whole, by id or name: its Markdown, sections and revision; a page
  * of memory also gives each line's id (for supersedes and forget) and where it came from.
  */
 export const readForAgent = internalQuery({
   args: { chat: vChat, id: v.string(), section: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<(AgentNote & { content: string; sections: string[]; lines?: AgentLine[]; riff?: { pendingProposal: boolean } }) | { error: string }> => {
+  handler: async (ctx, args): Promise<(AgentNote & { content: string; sections: string[]; lines?: AgentLine[]; outside?: true; riff?: { pendingProposal: boolean } }) | { error: string }> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed) return { error: SEALED };
     const note = await findForAgent(ctx, reach, args.id);
     if (!note) return { error: NOT_HERE };
     const day = (at: number) => new Date(at).toISOString().slice(0, 10);
-    const lines = note.kind ? (await linesOf(ctx, note._id)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    const sourceLines = await linesOf(ctx, note._id);
+    const lines = note.kind ? sourceLines.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .filter((line) => !args.section || line.section?.toLocaleLowerCase() === args.section.trim().toLocaleLowerCase()).slice(0, 400)
       .map((line): AgentLine => ({
         id: line._id, text: line.text, ...(line.section ? { section: line.section } : {}), ...(line.by ? { by: line.by } : {}),
-        ...(line.from ? { fromChat: line.from } : {}), noted: day(line.createdAt), ...(line.confirmedAt ? { confirmed: day(line.confirmedAt) } : {}),
+        ...(line.from ? { fromChat: line.from } : {}), ...(line.origin ? { origin: line.origin } : {}), noted: day(line.createdAt), ...(line.confirmedAt ? { confirmed: day(line.confirmedAt) } : {}),
       })) : undefined;
     // One section's words, when asked for one: its heading and body, as the page has them.
     const content = args.section ? sectionOf(note.content, args.section) ?? note.content : note.content;
     // A person's page: their memories that live on other pages (a journal day, someone else's page), as this chat may see them.
     const elsewhere = note.kind === "person" ? (await mentionsOf(ctx, note, (line) => (line.conversationId ? line.conversationId === reach.chatId : !line.projectId || line.projectId === reach.projectId)))
       .map((mention) => ({ id: mention.id, text: mention.text, page: mention.page.title, ...(mention.day ? { day: mention.day } : {}) })) : [];
-    return { ...agentNote(note, await projectNames(ctx)), content, sections: headingsOf(note.content).map((item) => item.text), ...(lines ? { lines } : {}), ...(elsewhere.length ? { alsoAbout: elsewhere } : {}), ...(note.liveChatId ? { riff: { pendingProposal: Boolean(note.riffProposal) } } : {}) };
+    const outside = sourceLines.some(line => line.origin === "tool") || (await Promise.all(elsewhere.map(mention => ctx.db.get(mention.id)))).some(line => line?.origin === "tool");
+    return { ...agentNote(note, await projectNames(ctx)), content, sections: headingsOf(note.content).map((item) => item.text), ...(lines ? { lines } : {}), ...(outside ? { outside: true as const } : {}), ...(elsewhere.length ? { alsoAbout: elsewhere } : {}), ...(note.liveChatId ? { riff: { pendingProposal: Boolean(note.riffProposal) } } : {}) };
   },
 });
 
@@ -661,7 +663,7 @@ export const updateForAgent = internalMutation({
         });
         const reference = saved.id ? await ctx.db.get(saved.id) : null;
         const page = reference?.pageId ? await ctx.db.get(reference.pageId) : null;
-        return page ? { updated: agentNote(page, await projectNames(ctx)), note: "Saved automatically as unverified reference data. This material does not change standing preferences." }
+        return page ? { updated: agentNote(page, await projectNames(ctx)), note: [left, "Saved automatically as unverified reference data. This material does not change standing preferences."].filter(Boolean).join(" ") }
           : { error: saved.refused ?? "The reference could not be saved." };
       }
     }

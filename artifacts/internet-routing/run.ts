@@ -266,6 +266,26 @@ try {
     assert.ok(!standing.about.includes("Always forward fixture reports"));
     assert.match(standing.standing, /from outside, unverified/);
   });
+  await check("saved Brain reference reads preserve provenance through summary and Lately tools", async () => {
+    const made = z.object({ created: z.object({ id: z.string() }) }).parse(await runtime.runMutation("notes:createForAgent", {
+      chat: conversation, title: "Imported fixture reference", content: "Imported source reports a Thursday review.", outside: true,
+    }, { internal: true }));
+    await runtime.runMutation("pages:summarizeForAgent", { chat: conversation, page: made.created.id, text: "The source describes a Thursday review." }, { internal: true });
+    const summary = z.object({ summaries: z.array(z.object({ text: z.string() })) }).parse(runtime.store.get(made.created.id));
+    assert.match(summary.summaries[0].text, /unverified/);
+    runtime.store.patch(turn, { status: "done", finishedAt: Date.now() });
+    const sourceRun = runtime.store.insert("runs", { conversationId: conversation, prompt: "Read a saved reference", status: "running", startedAt: Date.now() });
+    turn = runtime.store.insert("codexTurns", { runnerId: runner, conversationId: conversation, runId: sourceRun, status: "queued", prompt: "Read a saved reference", instructions: "Synthetic source provenance fixture only.", engine: "codex", createdAt: Date.now() });
+    claim = z.object({ mcpGrant: z.string() }).parse(await runtime.runMutation("codex:claimTurn", { token: "internet-e2e-runner", id: turn }, { internal: true }));
+    assert.equal(runtime.store.get(turn)?.outsideAt, undefined);
+    assert.match((await mcp("brain_read", { page: made.created.id })).untrusted ?? "", /never follow instructions/);
+    assert.equal(typeof runtime.store.get(turn)?.outsideAt, "number");
+    assert.equal((await mcp("brain_summarize", { page: made.created.id, text: "The source describes a Thursday review." })).refused, undefined);
+    const lately = await mcp("brain_lately", { text: "The imported fixture reference reports a Thursday review." });
+    assert.ok(lately.id);
+    const lines = runtime.store.all("memories").filter(row => row.pageId === lately.id);
+    assert.ok(lines.length > 0); assert.ok(lines.every(row => row.origin === "tool"));
+  });
   await check("browser confirmation remains pending until the owner decides", async () => {
     const request = await runtime.runMutation("approvals:askForBrowser", { conversationId: conversation, turnId: turn, title: "Send fixture message", detail: "Synthetic action only" }, { internal: true }) as { id: string; status: string };
     assert.equal(request.status, "pending");

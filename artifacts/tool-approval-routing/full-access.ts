@@ -177,10 +177,13 @@ try {
     assert.equal(requested.status, "allowed");
     assert.equal(rt.store.get(known)?.status, "known");
     assert.equal(rt.store.all("approvals").length, before);
-    const queued = await mutate("whatsapp:send", { to: "15550000001@s.whatsapp.net", text: "Synthetic authorized message", authorizationTurnId: turnId });
-    assert.equal(queued, true);
+    const delivered = await rt.runAction("contacts:deliver", { contactId: requested.contactId, text: "Synthetic authorized message", turnId }, { internal: true });
+    assert.deepEqual(delivered, { sent: true });
+    assert.equal(rt.store.get(known)?.status, "known");
+    assert.equal(rt.store.all("approvals").length, before);
     const row = rt.store.all("whatsappOutbox").find((row: any) => row.to === "15550000001@s.whatsapp.net");
     assert.ok(row); assert.equal(row.turnId, undefined);
+    assert.equal(row.text, "Synthetic authorized message");
   });
   await check("Full does not bypass an explicit contact block", async () => {
     const requested = await mutate("contacts:requestSend", { contactId: blocked, text: "Synthetic blocked message", conversationId: chat, turnId });

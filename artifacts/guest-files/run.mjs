@@ -9,6 +9,7 @@ import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { crc32, deflateRawSync } from "node:zlib";
 import { createCipheriv } from "node:crypto";
+import { open, truncate } from "node:fs/promises";
 import { getMediaKeys } from "baileys";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 
@@ -394,6 +395,103 @@ try {
     assert.deepEqual(files.attachments, [original]);
     assert.match(files.text, /Automatic extraction is not available/);
     assert.match(files.text, /opaque\.bin/);
+  });
+
+  await check("short native reads preserve complete UTF-8 and UTF-16 attachment contents", async () => {
+    for (const [name, bytes, marker] of [
+      ["short-utf8.txt", Buffer.from("Start αβ 🦉\nAttachment code: SHORT-UTF8-84"), "SHORT-UTF8-84"],
+      ["short-utf16.txt", Buffer.concat([Buffer.from([255, 254]), Buffer.from("Start 🦉\nAttachment code: SHORT-UTF16-73", "utf16le")]), "SHORT-UTF16-73"],
+    ]) {
+      const original = file(name, bytes, "text/plain");
+      const probe = await open(original.localPath, "r"), prototype = Object.getPrototypeOf(probe);
+      const nativeRead = prototype.read;
+      await probe.close();
+      const chunks = [];
+      let observedHandle;
+      prototype.read = async function (buffer, offset, length, position) {
+        observedHandle = this;
+        const result = await nativeRead.call(this, buffer, offset, Math.min(length, 3), position);
+        chunks.push({ offset, position, bytesRead: result.bytesRead });
+        return result;
+      };
+      try {
+        const files = await readable([original], UPLOADS, { soffice: null });
+        const engineText = userInput(`Read this attachment.\n\n${files.text}`, files.attachments).map(item => item.text ?? "").join("\n");
+        assert.match(engineText, /Start 🦉|Start αβ 🦉/);
+        assert.ok(engineText.includes(marker), "the final chunk must reach the engine");
+        assert.ok(chunks.length > 1, "native short reads must continue");
+        let consumed = 0;
+        for (const chunk of chunks) { assert.equal(chunk.offset, consumed); assert.equal(chunk.position, consumed); consumed += chunk.bytesRead; }
+        assert.equal(consumed, bytes.length);
+        assert.equal(observedHandle.fd, -1, "the native attachment handle is closed");
+      } finally { prototype.read = nativeRead; }
+    }
+  });
+
+  await check("short reads retain the text byte cap and tolerate a partial UTF-8 character at it", async () => {
+    const original = file("short-bounded.txt", Buffer.from("Start" + "🦉".repeat(1000)), "text/plain");
+    const probe = await open(original.localPath, "r"), prototype = Object.getPrototypeOf(probe);
+    const nativeRead = prototype.read;
+    await probe.close();
+    let consumed = 0, observedHandle;
+    prototype.read = async function (buffer, offset, length, position) {
+      observedHandle = this;
+      assert.equal(buffer.length, 32 * 4 + 4);
+      assert.equal(offset, consumed); assert.equal(position, consumed);
+      const result = await nativeRead.call(this, buffer, offset, Math.min(length, 7), position);
+      consumed += result.bytesRead;
+      return result;
+    };
+    try {
+      const files = await readable([original], UPLOADS, { maxChars: 32, soffice: null });
+      assert.equal(consumed, 32 * 4 + 4);
+      assert.match(files.text, /rest of its text is left out/);
+      assert.ok(!files.text.includes("Automatic extraction failed"));
+      assert.equal(observedHandle.fd, -1);
+    } finally { prototype.read = nativeRead; }
+  });
+
+  await check("EOF after a file shrinks ends short-read extraction and closes its handle", async () => {
+    const original = file("short-shrinking.txt", Buffer.from("SHORT-EOF-62 with a tail that disappears before reading"), "text/plain");
+    const probe = await open(original.localPath, "r"), prototype = Object.getPrototypeOf(probe);
+    const nativeRead = prototype.read;
+    await probe.close();
+    let reads = 0, zeroReads = 0, observedHandle;
+    prototype.read = async function (buffer, offset, length, position) {
+      observedHandle = this;
+      if (reads++ === 0) await truncate(original.localPath, "SHORT-EOF-62".length);
+      const result = await nativeRead.call(this, buffer, offset, Math.min(length, 3), position);
+      if (!result.bytesRead) zeroReads++;
+      return result;
+    };
+    try {
+      const files = await readable([original], UPLOADS, { soffice: null });
+      assert.match(files.text, /SHORT-EOF-62/);
+      assert.ok(!files.text.includes("disappears"));
+      assert.equal(zeroReads, 1, "the first EOF read ends the loop");
+      assert.equal(observedHandle.fd, -1);
+    } finally { prototype.read = nativeRead; }
+  });
+
+  await check("a failed later chunk closes the handle and reports unread attachment contents", async () => {
+    const original = file("short-failed.txt", Buffer.from("Partial content must not be claimed as complete."), "text/plain");
+    const probe = await open(original.localPath, "r"), prototype = Object.getPrototypeOf(probe);
+    const nativeRead = prototype.read;
+    await probe.close();
+    let reads = 0, observedHandle;
+    prototype.read = async function (buffer, offset, length, position) {
+      observedHandle = this;
+      if (++reads === 2) throw new Error("Synthetic later-chunk failure");
+      return nativeRead.call(this, buffer, offset, Math.min(length, 3), position);
+    };
+    try {
+      const files = await readable([original], UPLOADS, { soffice: null });
+      assert.deepEqual(files.attachments, [original]);
+      assert.match(files.text, /Automatic extraction failed/);
+      assert.ok(!files.text.includes("Partial content"));
+      assert.equal(reads, 2);
+      assert.equal(observedHandle.fd, -1);
+    } finally { prototype.read = nativeRead; }
   });
 
   await check("\"$name\" and \"@path\" in a file's name and text name nothing", async () => {

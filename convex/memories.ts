@@ -232,6 +232,9 @@ export const add = internalMutation({
       // A line of one of the owner's other pages changes with its page, never by a memory replacing it.
       if (memory && !isPageLine(memory) && !replaced.some((other) => other._id === memory!._id)) replaced.push(memory);
     }
+    if (replaced.some(memory => memory.projectId !== (place.kind === "journey" ? undefined : args.projectId) || memory.conversationId !== args.conversationId)) {
+      return { duplicate: false, superseded: 0, refused: "Nothing was replaced: the old memory is visible in a different scope. Keep a shared correction in scope everywhere, or save a separate project/chat fact without supersedes." };
+    }
     // A new version of a note behind a to-do goes on following it.
     const follows = todoId ?? replaced.find((memory) => memory.todoId)?.todoId;
 
@@ -241,7 +244,7 @@ export const add = internalMutation({
     // In a Journey, under today's heading, newest last.
     const section = place.kind === "journey" ? journalTitle(today) : args.section?.trim()
       || (kind === "profile" ? PREFERENCES_SECTION : place.kind === "remember" ? sectionFor(text, tags, about) : undefined);
-    const author: Author = { by: args.by ?? (args.origin === "job" ? "job" : "assistant"), ...(args.from ? { from: args.from } : {}) };
+    const author: Author = { by: args.by ?? (args.origin === "job" ? "job" : "assistant"), ...(args.from ? { from: args.from } : {}), ...(origin === "tool" ? { outside: true } : {}) };
     // What it replaces leaves its page; one on this page is changed where it stands. Each stays, superseded.
     const inPlace = replaced.find((memory) => memory.pageId === page._id);
     for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: old._id });

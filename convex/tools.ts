@@ -61,7 +61,7 @@ const memoryKind = z.enum(["profile", "core", "daily"]);
 
 const shape = (m: MemoryRow) => m.kind === "page"
   // A line of one of the owner's notes: which note, and where in it, to read the rest with read_note; and the lines around it.
-  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.section ? { section: m.section } : {}), ...(m.excerpt ? { around: m.excerpt } : {}) }
+  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.origin ? { origin: m.origin } : {}), ...(m.section ? { section: m.section } : {}), ...(m.excerpt ? { around: m.excerpt } : {}) }
   : {
     id: m.id,
     text: m.text,

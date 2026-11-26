@@ -339,7 +339,10 @@ async function handleRpc(ctx: ActionCtx, request: Request): Promise<Response> {
         const theirs = (name === "read_chat" && await ctx.runQuery(internal.contacts.isTheirs, { chatId: String((parsed.data as { chatId?: string }).chatId ?? "") }))
           // What someone told Perry about themselves is their word too.
           || ((name === "recall" || name === "brain_search" || name === "search_memory") && Boolean((output as { theySaid?: unknown[] } | null)?.theySaid?.length));
-        if (READS_OUTSIDE.has(name) || theirs) {
+        const savedSource = output as { outside?: boolean; memories?: Array<{ origin?: string }> } | null;
+        const savedOutside = (["brain_read", "read_note"].includes(name) && savedSource?.outside === true)
+          || (["recall", "brain_search", "search_memory", "read_memory"].includes(name) && savedSource?.memories?.some(memory => memory.origin === "tool"));
+        if (READS_OUTSIDE.has(name) || theirs || savedOutside) {
           await ctx.runMutation(internal.codex.markOutside, { turnId: access.turnId });
           const succeeded = output && typeof output === "object" && !("error" in output) && (!("ok" in output) || output.ok === true);
           const routed = name === "internet_read" ? z.object({ status: z.enum(["ok", "partial"]), items: z.array(z.unknown()).min(1), canonicalUrl: z.string().optional(), requestedUrl: z.string().optional(), backend: z.string().nullable() }).safeParse(output) : null;

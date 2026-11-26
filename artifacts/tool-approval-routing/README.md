@@ -20,7 +20,9 @@ It uses real backend handlers/SQLite, the production Codex adapter and extracted
 runner dispatch, and the production Claude SDK elicitation callback. It starts
 no model, agent or real message. All 31 checks passed, including native request
 scopes, chat/turn isolation, Stop and downgrade, malformed/authentication requests,
-Claude abort listener teardown and new-contact outbox authorization. The initial
+Claude abort listener teardown and new-contact delivery through the real
+`contacts.deliver` action into the synthetic WhatsApp outbox, without permanently
+allowing the contact. The initial
 28-case baseline failed nine cases; the later scope-specific baseline reproduced
 Full's silent refusal of a native scope longer than 800 characters.
 

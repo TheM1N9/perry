@@ -127,7 +127,12 @@ async function openFile(file: EngineAttachment, out: string, options: ReadableOp
     const handle = await open(path, "r");
     try {
       const bytes = Buffer.alloc(Math.min(size, maxChars * 4 + 4));
-      const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+      let bytesRead = 0;
+      while (bytesRead < bytes.length) {
+        const chunk = await handle.read(bytes, bytesRead, bytes.length - bytesRead, bytesRead);
+        if (chunk.bytesRead === 0) break;
+        bytesRead += chunk.bytesRead;
+      }
       const content = bytes.subarray(0, bytesRead);
       const encoding = content[0] === 255 && content[1] === 254 ? "utf-16le" : content[0] === 254 && content[1] === 255 ? "utf-16be" : "utf-8";
       if (encoding === "utf-8" && content.includes(0)) throw new Error("Attachment contains binary data.");

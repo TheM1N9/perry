@@ -9,6 +9,10 @@ Recorded before extending the synthetic end-to-end journey or implementation.
   native turn access.
 - A Full first-contact send silently grants permanent inbound/outbound contact
   permission, or bypasses an owner's explicit block.
+- A direct requestSend/outbox check passes while the real contacts.deliver
+  action drops the live turn authorization, refuses the first message or
+  permanently allows the contact. Verify delivery through the production action
+  with only a synthetic WhatsApp outbox and all network blocked.
 - A structured form, URL sign-in or identity challenge receives fabricated data
   merely because Full access was selected.
 - The Claude SDK auto-declines elicitation because its supported callback is

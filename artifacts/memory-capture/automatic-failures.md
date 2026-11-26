@@ -12,6 +12,9 @@ Written before implementation or the isolated replay.
 - Ask-mode Riff loses its explicit review behavior when Full access is enabled elsewhere.
 - Secret redaction, guest isolation or persistence after reopening SQLite regresses.
 - Scheduled summary/Lately saves are blocked after reading source material, or lose their unverified provenance.
+- A multiline imported save creates several blocks, but only one row gets tool provenance; a redaction notice is lost when About me redirects to reference data.
+- A scheduled project job supersedes a globally visible fact with a project-only replacement, hiding it from other chats. Reject incompatible scope before superseding, and allow an explicit shared-scope correction.
+- Reading a saved imported reference through Brain tools fails to mark the turn as outside-derived, so a later summary or Lately save loses provenance.
 - Verification invokes a real model, sends a message, writes to the installed home, leaves a runtime alive, or reports setup as acceptance.
 
 Use the actual registered runtime handlers and native SQLite in a disposable home,
@@ -23,11 +26,19 @@ contracts; it does not prove that a live model chooses to call a memory tool.
 
 The original handlers saved the owner preference, then failed the imported
 reference case by creating a pending proposal instead of saving. The repaired
-journey passed 15 checks: owner/reference saves, provenance-compatible deduplication, instruction/data
+journey passed 19 checks: owner/reference saves, provenance-compatible deduplication, instruction/data
 separation, About me preservation, project scope, immediate Full Riff edits and
 history, stale revision refusal, Ask review, no pending save approvals, Lately
 provenance, guest isolation, tool-level project scope and SQLite restart persistence. No network/model
 was used; the final fixture home was removed normally.
+
+Review replay reproduced a multiline imported save with only one tool-origin
+row. Every created block now receives provenance and metadata, and the receipt
+keeps the earlier redaction notice. Project jobs cannot supersede a shared fact
+into a narrower scope; an explicit shared-scope correction saves without asking
+permission. The authenticated MCP routing replay separately verifies that a
+fresh turn reading a saved imported page marks its summary and Lately output
+as unverified/tool-origin.
 
 ```powershell
 pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/memory-capture/automatic.mjs "$env:TEMP/automatic-brain"
