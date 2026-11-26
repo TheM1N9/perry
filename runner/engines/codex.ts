@@ -6,7 +6,7 @@ import {
   type ItemEvent, type RateLimitSnapshot, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
 } from "../codex";
 import {
-  FULL_ACCESS_INSTRUCTIONS, optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
+  FULL_ACCESS_INSTRUCTIONS, isConfirmationRequest, optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
   type ItemStatus, type LoginFlow, type NamedSkill, type PlanLimits, type PlanWindow, type QuickTurn, type TokenUsage, type TurnHandle,
   type TurnInput, type TurnResult, type TurnSink, type ProviderAgentUpdate,
 } from "../engine";
@@ -470,16 +470,7 @@ export class CodexEngine implements Engine {
       // Approve/Decline supplies consent, not arbitrary user data. Accept only
       // schemas for an empty confirmation; a form, URL or identity challenge
       // needs its own input flow and must never receive fabricated content.
-      const schema = params.requestedSchema;
-      const allowedKeys = ["$schema", "type", "properties", "required", "additionalProperties", "title", "description"];
-      const confirmation = [undefined, "form", "openai/form", "openaiForm"].includes(params.mode)
-        && schema && typeof schema === "object" && !Array.isArray(schema) && schema.type === "object"
-        && schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
-        && Object.keys(schema.properties).length === 0
-        && (schema.required === undefined || (Array.isArray(schema.required) && schema.required.length === 0))
-        && (schema.additionalProperties === undefined || typeof schema.additionalProperties === "boolean")
-        && Object.keys(schema).every((key) => allowedKeys.includes(key));
-      if (!confirmation) {
+      if (!isConfirmationRequest(params.mode, params.requestedSchema)) {
         app.rejectRequest(request.id, "This tool requires input or verification that Perry cannot collect yet. Confirmation-only tool requests are supported.");
         return;
       }

@@ -425,7 +425,7 @@ export async function putLine(ctx: Writer, page: Note, input: { text: string; se
   const id = added.get(sameKey(text)) ?? [...added.values()].at(-1) ?? (await linesOf(ctx, page._id)).filter((line) => sameKey(line.text) === sameKey(text)).at(-1)?._id;
   if (!id) throw new Error("The memory could not be written into its page.");
   const fields = Object.fromEntries(Object.entries(meta).filter(([, value]) => value !== undefined));
-  await ctx.db.patch(id, fields);
+  for (const rowId of new Set([id, ...added.values()])) await ctx.db.patch(rowId, fields);
   return id;
 }
 
@@ -1203,7 +1203,7 @@ export async function summariesDue(ctx: Reader): Promise<SummaryDue[]> {
  * which is what that section is sent as while it is too big to send whole.
  */
 export const summarizeForAgent = internalMutation({
-  args: { chat: v.optional(v.id("conversations")), page: v.optional(v.string()), section: v.optional(v.string()), text: v.optional(v.string()) },
+  args: { chat: v.optional(v.id("conversations")), page: v.optional(v.string()), section: v.optional(v.string()), text: v.optional(v.string()), outside: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<{ due?: SummaryDue[]; saved?: { page: string; section?: string }; error?: string; note?: string }> => {
     const chat = args.chat ? await ctx.db.get(args.chat) : null;
     if (chat?.contactId) return { error: "Not from a chat with someone else." };
@@ -1217,7 +1217,8 @@ export const summarizeForAgent = internalMutation({
     if (!size) return { error: `"${page.title}" has no section "${section ?? "(top)"}".` };
     const clean = await scrubbed(ctx, args.text);
     if (clean.empty) return { error: clean.note };
-    const text = clean.text.trim().replace(/\s+/g, " ").slice(0, SUMMARY_LIMIT);
+    const outside = args.outside || (await linesOf(ctx, page._id)).some(line => line.origin === "tool" && (!section || line.section?.toLocaleLowerCase() === section.toLocaleLowerCase()));
+    const text = `${outside ? "Source-derived reference data, unverified: " : ""}${clean.text.trim().replace(/\s+/g, " ")}`.slice(0, SUMMARY_LIMIT);
     const summaries = (page.summaries ?? []).filter((item) => (item.section ?? "") !== (size.section ?? ""));
     summaries.push({ ...(size.section ? { section: size.section } : {}), text, lines: size.lines, at: Date.now() });
     await ctx.db.patch(page._id, { summaries });
@@ -1231,7 +1232,7 @@ export const summarizeForAgent = internalMutation({
  * About me (standingFor). Made the first time.
  */
 export const writeLately = internalMutation({
-  args: { chat: v.optional(v.id("conversations")), text: v.string() },
+  args: { chat: v.optional(v.id("conversations")), text: v.string(), outside: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<{ id?: Id<"notes">; error?: string; note?: string }> => {
     const chat = args.chat ? await ctx.db.get(args.chat) : null;
     if (chat?.contactId) return { error: "Not from a chat with someone else." };
@@ -1241,10 +1242,10 @@ export const writeLately = internalMutation({
     const left = clean.note ? { note: clean.note } : {};
     const found = (await ctx.db.query("notes").withIndex("by_title", (q) => q.eq("title", "Lately")).collect()).find((page) => page.lately && !page.projectId);
     if (found) {
-      await writePage(ctx, found, { content }, { by: "job" });
+      await writePage(ctx, found, { content }, { by: "job", ...(args.outside ? { outside: true } : {}) });
       return { id: found._id, ...left };
     }
-    const id = await insertPage(ctx, { title: "Lately", content, author: { by: "job" } });
+    const id = await insertPage(ctx, { title: "Lately", content, author: { by: "job", ...(args.outside ? { outside: true } : {}) } });
     await ctx.db.patch(id, { lately: true, pinned: true, pinnedAt: Date.now() });
     return { id, ...left };
   },

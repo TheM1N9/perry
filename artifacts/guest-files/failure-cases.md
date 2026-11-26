@@ -32,6 +32,15 @@ Making it readable
 18. A broken PDF fails the turn instead of passing the file on as it came.
 19. A zip bomb dressed as a DOCX exhausts memory.
 20. The engine (Codex, locked down for a guest) does not take local pictures, so it still cannot see the pages.
+21. Persisting a plain WhatsApp envelope changes its Uint8Array media key into an object; downloading then derives the wrong cipher key and the engine never receives the PDF's contents.
+22. Automatic extraction fails silently, leaving only a file name/path and no explanation of what was not read. A corrupt, encrypted or oversized document must keep its original attachment and tell the engine that automatic extraction failed.
+23. Text, CSV, JSON, source code and UTF-16 text attachments reach the engine only by path. Their actual bounded text must be included automatically, with truncation disclosed and attachment instructions treated as data.
+24. An unknown binary attachment is mistaken for readable text, or is silently presented as already read. Keep the original and explain that automatic extraction did not support its format.
+25. A scan after the shared page-image budget is exhausted tells the engine to read pictures that were never included. Report the missing visual content explicitly.
+26. One native file read returns fewer bytes than requested before EOF. Continue at the correct file and buffer offsets until the byte cap or EOF, retaining complete UTF-8 and BOM-marked UTF-16 text across chunk boundaries.
+27. Repeated short reads overrun the existing bounded text buffer, or a multibyte character at its byte limit is reported as an invalid attachment. Keep the byte cap and disclose character truncation.
+28. A file becomes shorter after its size was measured. A zero-byte read must end extraction without looping, inventing zero padding or losing handle cleanup.
+29. A later chunk read fails after earlier chunks succeeded. Close the handle, retain the original attachment and report extraction failure rather than presenting the partial text as complete.
 
 Two runs:
 - run.mjs, in CI: the real backend on SQLite (WhatsApp in, contacts, brain, the runner's claim), the

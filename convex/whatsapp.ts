@@ -5,7 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { chunkWhatsApp, toWhatsApp } from "./lib/whatsappFormat";
-import { callsBy, whatsappHandle } from "./contacts";
+import { callsBy, fullAccessSend, whatsappHandle } from "./contacts";
 import { readPersona } from "./persona";
 import type { GuestTarget } from "./reactions";
 import { vFileDelivery, vGuestMessage } from "./schema";
@@ -214,12 +214,12 @@ export const stop = internalMutation({
  * Who a message may go to: the owner, or someone the owner allowed Perry to
  * talk with (contacts.ts). Nobody else, ever. Their jid, or null.
  */
-async function recipient(ctx: QueryCtx, to: string): Promise<string | null> {
+async function recipient(ctx: QueryCtx, to: string, authorizationTurnId?: Id<"codexTurns">): Promise<string | null> {
   const owner = await install(ctx);
   const jid = bareJid(to);
   if (owner?.whatsappOwner && jid === owner.whatsappOwner) return jid;
   const contact = await ctx.db.query("contacts").withIndex("by_channel_external", (q) => q.eq("channel", "whatsapp").eq("externalId", jid)).unique();
-  return contact?.status === "allowed" ? jid : null;
+  return contact && contact.status !== "blocked" && (contact.status === "allowed" || await fullAccessSend(ctx, authorizationTurnId)) ? jid : null;
 }
 
 async function nextOutboxTime(ctx: QueryCtx): Promise<number> {
@@ -231,8 +231,8 @@ async function nextOutboxTime(ctx: QueryCtx): Promise<number> {
  * Queue a message for a WhatsApp chat: Markdown turned into WhatsApp's
  * formatting and split to its length. Only the owner, or someone they allowed.
  */
-export async function queueText(ctx: MutationCtx, to: string, markdown: string, notificationId?: Id<"sent">, turnId?: Id<"codexTurns">, approvalId?: Id<"approvals">): Promise<boolean> {
-  const jid = await recipient(ctx, to);
+export async function queueText(ctx: MutationCtx, to: string, markdown: string, notificationId?: Id<"sent">, turnId?: Id<"codexTurns">, approvalId?: Id<"approvals">, authorizationTurnId?: Id<"codexTurns">): Promise<boolean> {
+  const jid = await recipient(ctx, to, authorizationTurnId);
   if (!jid) return false;
   const now = await nextOutboxTime(ctx);
   for (const [index, text] of chunkWhatsApp(toWhatsApp(markdown)).entries()) {
@@ -242,9 +242,9 @@ export async function queueText(ctx: MutationCtx, to: string, markdown: string, 
 }
 
 export const send = internalMutation({
-  args: { to: v.string(), text: v.string(), approvalId: v.optional(v.id("approvals")) },
+  args: { to: v.string(), text: v.string(), approvalId: v.optional(v.id("approvals")), authorizationTurnId: v.optional(v.id("codexTurns")) },
   returns: v.boolean(),
-  handler: async (ctx, args) => await queueText(ctx, args.to, args.text, undefined, undefined, args.approvalId),
+  handler: async (ctx, args) => await queueText(ctx, args.to, args.text, undefined, undefined, args.approvalId, args.authorizationTurnId),
 });
 
 export const reserveMessageId = internalMutation({

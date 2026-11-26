@@ -14,7 +14,7 @@ import type {
   Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
   LoginFlow, PlanLimits, PlanWindow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
 } from "../engine";
-import { FULL_ACCESS_INSTRUCTIONS, toolsOfChat } from "../engine";
+import { FULL_ACCESS_INSTRUCTIONS, isConfirmationRequest, toolsOfChat } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
 import { updateCommand } from "../versions";
@@ -622,6 +622,27 @@ export class ClaudeEngine implements Engine {
           allowedTools: [...(perry ? [`mcp__${perry}`] : []), "WebSearch"],
           disallowedTools: DISALLOWED,
           ...servers,
+          onElicitation: async (request, options) => {
+            const turn = live.turn;
+            if (!turn || turn.interrupted || options.signal.aborted) return { action: "cancel" };
+            if (!isConfirmationRequest(request.mode, request.requestedSchema)) return { action: "decline" };
+            let onAbort: (() => void) | undefined;
+            try {
+              const answer = await Promise.race([
+                turn.sink.onRequest({
+                  type: "tool_user_input", detail: { server: request.serverName, message: request.message },
+                  options: [{ id: "accept", kind: "accept", label: "Accept" }, { id: "decline", kind: "decline", label: "Decline" }], raw: request,
+                }),
+                new Promise<string>(done => {
+                  onAbort = () => done("cancel");
+                  options.signal.addEventListener("abort", onAbort, { once: true });
+                  if (options.signal.aborted) onAbort();
+                }),
+              ]);
+              if (turn.interrupted || options.signal.aborted || live.turn !== turn) return { action: "cancel" };
+              return answer === "accept" ? { action: "accept", content: {} } : { action: "decline" };
+            } finally { if (onAbort) options.signal.removeEventListener("abort", onAbort); }
+          },
           canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
             if (tool === "AskUserQuestion") {
               const turn = live.turn;

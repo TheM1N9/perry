@@ -70,6 +70,14 @@ RSS publication and Atom modification timestamps remain separate (`publishedAt` 
 
 ## Reproduce and inspect
 
+Saved-search excerpt provenance replay failures to cover:
+
+- An owner-origin match includes a tool-origin neighboring line, but search does not mark the returned excerpt as outside-derived.
+- Either ordinary-page or memory-shaped results drop the excerpt marker; recall, brain_search or search_memory fails to mark a fresh authenticated turn.
+- Lately saves derived from that excerpt lose tool provenance or the source warning is omitted from the MCP result.
+- An owner-only excerpt is incorrectly marked outside, or a hidden/superseded tool-origin neighbor affects content or provenance despite being excluded from the excerpt.
+- Verification starts a real model, uses owner data, leaves a fixture home, or only exercises an already-marked turn.
+
 Run from the checkout with its installed dependencies:
 
 ```sh

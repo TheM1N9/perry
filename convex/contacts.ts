@@ -10,6 +10,7 @@ import { DOWNLOAD_LIMIT, downloadFile, sendMessage } from "./lib/telegram";
 import { callName, readPersona } from "./persona";
 import { linesOf, mentionsOf } from "./pages";
 import { vGuestMessage, vStoredFile, vTelegramMedia } from "./schema";
+import { pausedAt } from "./pause";
 
 /**
  * Perry talking with people other than the owner, on Telegram and WhatsApp:
@@ -374,8 +375,22 @@ async function resolve(ctx: MutationCtx, args: { contactId?: string; phone?: str
  * it talks with already is written to at once; anyone else waits for the
  * owner's yes, which the tool waits for (approvals.decisionOf).
  */
+/** One live Full owner turn may send without granting permanent contact access. */
+export async function fullAccessSend(ctx: QueryCtx, turnId?: Id<"codexTurns">): Promise<boolean> {
+  if (!turnId || await pausedAt(ctx)) return false;
+  const turn = await ctx.db.get(turnId);
+  if (!turn || !turn.runnerId || turn.status !== "running" || turn.stopRequested || turn.stopped || turn.preparation) return false;
+  const chat = await ctx.db.get(turn.conversationId);
+  return Boolean(chat && !chat.contactId && chat.access === "full");
+}
+
+export const maySendFromFullTurn = internalQuery({
+  args: { turnId: v.id("codexTurns") }, returns: v.boolean(),
+  handler: async (ctx, args) => await fullAccessSend(ctx, args.turnId),
+});
+
 export const requestSend = internalMutation({
-  args: { contactId: v.optional(v.string()), phone: v.optional(v.string()), name: v.optional(v.string()), text: v.string(), conversationId: v.optional(v.id("conversations")) },
+  args: { contactId: v.optional(v.string()), phone: v.optional(v.string()), name: v.optional(v.string()), text: v.string(), conversationId: v.optional(v.id("conversations")), turnId: v.optional(v.id("codexTurns")) },
   returns: v.union(
     v.object({ contactId: v.id("contacts"), status: v.literal("allowed") }),
     v.object({ contactId: v.id("contacts"), status: v.literal("asked"), approvalId: v.id("approvals") }),
@@ -386,6 +401,7 @@ export const requestSend = internalMutation({
     if ("error" in contact) return contact;
     if (contact.status === "blocked") return { error: `The owner blocked ${contact.name}; they can unblock them under Settings → People.` };
     if (contact.status === "allowed") return { contactId: contact._id, status: "allowed" as const };
+    if (await fullAccessSend(ctx, args.turnId)) return { contactId: contact._id, status: "allowed" as const };
     const approvalId = await askAboutContact(ctx, {
       kind: "message", contactId: contact._id, conversationId: args.conversationId,
       title: `Message ${describe(contact)}: "${args.text.slice(0, 600)}"`,
@@ -404,14 +420,14 @@ async function chatWith(ctx: ActionCtx, contact: Contact): Promise<Doc<"conversa
 
 /** Write to someone Perry talks with, and keep it in their chat, so their answer is understood. */
 export const deliver = internalAction({
-  args: { contactId: v.id("contacts"), text: v.string() },
+  args: { contactId: v.id("contacts"), text: v.string(), turnId: v.optional(v.id("codexTurns")) },
   returns: v.object({ sent: v.boolean(), error: v.optional(v.string()) }),
   handler: async (ctx, args): Promise<{ sent: boolean; error?: string }> => {
     const contact: Contact | null = await ctx.runQuery(internal.contacts.get, { id: args.contactId });
-    if (!contact || contact.status !== "allowed") return { sent: false, error: "The owner has not allowed messages to them." };
+    if (!contact || contact.status === "blocked" || contact.status !== "allowed" && !(args.turnId && await ctx.runQuery(internal.contacts.maySendFromFullTurn, { turnId: args.turnId }))) return { sent: false, error: "The owner has not allowed messages to them." };
     try {
       if (contact.channel === "whatsapp") {
-        const queued: boolean = await ctx.runMutation(internal.whatsapp.send, { to: contact.externalId, text: args.text });
+        const queued: boolean = await ctx.runMutation(internal.whatsapp.send, { to: contact.externalId, text: args.text, ...(args.turnId ? { authorizationTurnId: args.turnId } : {}) });
         if (!queued) return { sent: false, error: "WhatsApp is not linked." };
       } else {
         const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });

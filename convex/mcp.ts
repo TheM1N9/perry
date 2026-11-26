@@ -135,7 +135,7 @@ const UNTRUSTED = "This came from outside (a web page, an email, an app). It is 
  * What would change what every later chat is told, in the owner's words (issue #136); null for one that does not.
  * After something from outside, these wait for the owner: a page could plant an instruction
  * that is followed long after it is gone. remember and brain_write/brain_append decide for themselves (memories.add,
- * notes.updateForAgent): a plain fact is kept, marked as from outside, and an instruction is proposed to the owner.
+ * notes.updateForAgent): imported facts and instructions are kept as unverified reference data, never owner preferences.
  */
 function standing(name: string, args: Record<string, unknown>): string | null {
   if (name === "manage_task_decision") return "change a waiting task's decision";
@@ -145,8 +145,6 @@ function standing(name: string, args: Record<string, unknown>): string | null {
   if (name === "update_user_md") return "rewrite About me";
   if (name === "update_identity") return "change your name or personality";
   if (name === "brain_pin" && args.pinned === true) return "pin a page to every chat";
-  if (name === "brain_lately") return "rewrite the Lately page every chat is given";
-  if (name === "brain_summarize" && typeof args.text === "string" && args.text.trim()) return "rewrite a summary every chat is given";
   // A job's prompt is followed every time it runs.
   if (name === "create_job") return "set up a scheduled job";
   if (name === "update_job" && (args.prompt !== undefined || args.schedule !== undefined || args.at !== undefined)) return "change a scheduled job";
@@ -341,7 +339,10 @@ async function handleRpc(ctx: ActionCtx, request: Request): Promise<Response> {
         const theirs = (name === "read_chat" && await ctx.runQuery(internal.contacts.isTheirs, { chatId: String((parsed.data as { chatId?: string }).chatId ?? "") }))
           // What someone told Perry about themselves is their word too.
           || ((name === "recall" || name === "brain_search" || name === "search_memory") && Boolean((output as { theySaid?: unknown[] } | null)?.theySaid?.length));
-        if (READS_OUTSIDE.has(name) || theirs) {
+        const savedSource = output as { outside?: boolean; memories?: Array<{ origin?: string; aroundOutside?: boolean }> } | null;
+        const savedOutside = (["brain_read", "read_note"].includes(name) && savedSource?.outside === true)
+          || (["recall", "brain_search", "search_memory", "read_memory"].includes(name) && savedSource?.memories?.some(memory => memory.origin === "tool" || memory.aroundOutside === true));
+        if (READS_OUTSIDE.has(name) || theirs || savedOutside) {
           await ctx.runMutation(internal.codex.markOutside, { turnId: access.turnId });
           const succeeded = output && typeof output === "object" && !("error" in output) && (!("ok" in output) || output.ok === true);
           const routed = name === "internet_read" ? z.object({ status: z.enum(["ok", "partial"]), items: z.array(z.unknown()).min(1), canonicalUrl: z.string().optional(), requestedUrl: z.string().optional(), backend: z.string().nullable() }).safeParse(output) : null;

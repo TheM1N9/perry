@@ -256,7 +256,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
   const keepProtocolMessage = async (message: { key?: { id?: string | null; remoteJid?: string | null }; message?: object | null }) => {
     if (!message.key?.id || !message.key.remoteJid || !message.message || !account) return;
     if (/viewOnceMessage|ephemeralMessage/.test(JSON.stringify(Object.keys(message.message)))) return;
-    await runtime.runMutation("whatsappInbox:keepMessage", { key: JSON.stringify([account, bare(message.key.remoteJid), message.key.id]), value: JSON.stringify({ key: message.key, message: message.message }) }, internal);
+    const { BufferJSON } = await import("baileys");
+    await runtime.runMutation("whatsappInbox:keepMessage", { key: JSON.stringify([account, bare(message.key.remoteJid), message.key.id]), value: JSON.stringify({ key: message.key, message: message.message }, BufferJSON.replacer) }, internal);
   };
   const track = (work: Promise<unknown>) => {
     const pending = work.catch(error => console.error(`[perry] WhatsApp message failed: ${String(error)}`));
@@ -292,7 +293,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
             if (row.file?.delivery?.replyTo) {
               const saved = (await runtime.runQuery("whatsappInbox:message", { key: JSON.stringify([account, bare(row.to), row.file.delivery.replyTo]) }, internal)).value;
               if (typeof saved !== "string") throw new Error("That quoted message is unavailable in this WhatsApp chat. Share without replyTo or use a recent message id.");
-              quoted = JSON.parse(saved, (_key, value) => value?.type === "Buffer" && Array.isArray(value.data) ? Buffer.from(value.data) : value);
+              const { BufferJSON } = await import("baileys");
+              quoted = JSON.parse(saved, (key, value) => value?.type === "Buffer" && Array.isArray(value.data) ? Buffer.from(value.data) : BufferJSON.reviver(key, value));
             }
             attempted = true;
             const result = await current.sendMessage(row.to, content, { messageId, ...(quoted ? { quoted } : {}) });
@@ -519,7 +521,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
         if (!row) { await sleep(250, stop.signal); continue; }
         let error: string | undefined;
         try {
-          const message = JSON.parse(row.payload ?? "{}", (_key, value) => value?.type === "Buffer" && Array.isArray(value.data) ? Buffer.from(value.data) : value);
+          const { BufferJSON } = await import("baileys");
+          const message = JSON.parse(row.payload ?? "{}", (key, value) => value?.type === "Buffer" && Array.isArray(value.data) ? Buffer.from(value.data) : BufferJSON.reviver(key, value));
           await handle(message, row.mode, current, row._id);
         } catch (cause) { seen.delete(row.messageId); error = cause instanceof Error ? cause.message : String(cause); }
         await runtime.runMutation("whatsappInbox:finish", { id: row._id, ...(error ? { error } : {}) }, internal);
@@ -656,7 +659,8 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
                 if ((await runtime.runQuery("whatsapp:mayDownload", { chatId: wanted.mode === "self" ? bare(current.user?.id) : jid }, internal)).value !== true) return;
               }
               const envelope = messageContext(message.message).privateMedia ? { key: message.key, pushName: message.pushName, message: { conversation: "Disappearing or view-once content was not retained. Send a regular copy if you want Perry to analyze it." } } : message;
-              await runtime.runMutation("whatsappInbox:enqueue", { account, remote: key.remoteJid, messageId: key.id, payload: JSON.stringify({ ...envelope, ...(event.type === "append" ? { catchup: true } : {}) }), mode: wanted.mode }, internal);
+              const { BufferJSON } = await import("baileys");
+              await runtime.runMutation("whatsappInbox:enqueue", { account, remote: key.remoteJid, messageId: key.id, payload: JSON.stringify({ ...envelope, ...(event.type === "append" ? { catchup: true } : {}) }, BufferJSON.replacer), mode: wanted.mode }, internal);
             })());
           }
         });

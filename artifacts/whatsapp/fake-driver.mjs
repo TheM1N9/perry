@@ -2,6 +2,8 @@
 // loads it through PERRY_WHATSAPP_DRIVER instead of Baileys. It takes what to
 // do (a QR, the connection opening, a message arriving, a logout) from the
 // test's control server, and reports what Perry sends back to it.
+import { createDecipheriv } from "node:crypto";
+import { extractMessageContent, getMediaKeys } from "baileys";
 const base = process.env.PERRY_WHATSAPP_CONTROL;
 const post = (path, body) => fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
 const describe = (content) => {
@@ -56,7 +58,16 @@ export default {
     })();
     return socket;
   },
-  async download(message) { await post("/download", { id: message.key?.id }); return Buffer.from(message.fakeBytes ?? "", "base64"); },
+  async download(message) {
+    await post("/download", { id: message.key?.id });
+    if (message.fakeEncryptedBytes) {
+      const media = extractMessageContent(message.message)?.documentMessage;
+      const { cipherKey, iv } = await getMediaKeys(media?.mediaKey, "document");
+      const decipher = createDecipheriv("aes-256-cbc", cipherKey, iv);
+      return Buffer.concat([decipher.update(Buffer.from(message.fakeEncryptedBytes, "base64")), decipher.final()]);
+    }
+    return Buffer.from(message.fakeBytes ?? "", "base64");
+  },
   loggedOut(update) { return update?.lastDisconnect?.error?.output?.statusCode === 401; },
   async qrPng(qr) { return `data:image/png;base64,${Buffer.from(qr).toString("base64")}`; },
 };
