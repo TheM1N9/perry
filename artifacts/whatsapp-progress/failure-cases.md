@@ -4,6 +4,8 @@ Write these cases before the implementation. Exercise the registered handlers,
 native SQLite and runner trace collector in a disposable Perry home. The scheduler
 stays stopped, no engine/model is started, and no real phone or provider is used.
 
+- A matching final fallback can arrive after progress is reserved but before its send outcome is recorded. It must wait on that outcome rather than dispatch twice; confirmed success settles one final record, known failure preserves final delivery, and an ambiguous send remains unconfirmed rather than being blindly replayed.
+
 - Partial assistant text, reasoning, tool output, final answers and child-agent
   messages must not be published as progress. Only explicit completed progress
   events may enter the outbox.

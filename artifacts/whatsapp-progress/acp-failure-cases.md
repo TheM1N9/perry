@@ -2,6 +2,8 @@
 
 Inventory before adding the replay:
 
+- A replay timeout while runTurn or interrupt is pending must cancel the active engine and await its subprocess before another scenario or temporary-home removal begins.
+
 - The first assistant chunk or a final-only answer is published prematurely as progress.
 - Thinking, tool results, user replay or another session's messages become owner progress.
 - A tool call after complete user-facing text fails to close that progress segment, or repeated tool updates publish it twice.

@@ -358,6 +358,12 @@ export const queueTurn = internalMutation({
       if (row.state === "pending") await ctx.db.patch(row._id, { state: "failed", error: "Superseded by the final reply." });
     }
     const last = progress.sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!args.files.length && last?.state === "sending" && last.text === toWhatsApp(args.text)) {
+      // The existing send owns this final's outcome; its acknowledgement settles delivery.
+      await ctx.db.patch(last._id, { turnId: turn._id });
+      await ctx.db.patch(turn._id, { outgoingQueuedAt: Date.now() });
+      return null;
+    }
     // Some engines finish with their last commentary when no final message was emitted.
     if (!args.files.length && last?.state === "sent" && last.sentAt !== undefined && last.text === toWhatsApp(args.text)) {
       await ctx.db.patch(last._id, { progressTurnId: undefined, turnId: turn._id });
@@ -469,6 +475,14 @@ export const sent = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row || !["pending", "sending", "uncertain"].includes(row.state)) return null;
+    if (row.progressTurnId && row.turnId) {
+      if (args.error && !args.uncertain && await recipient(ctx, row.to)) {
+        await ctx.db.patch(row._id, { turnId: undefined, state: "failed", attempts: row.attempts + 1, error: args.error.slice(0, 500) });
+        await ctx.db.insert("whatsappOutbox", { to: row.to, kind: "text", text: hide(row.text ?? "", await savedValues(ctx)), turnId: row.turnId, messageId: randomBytes(16).toString("hex").toUpperCase(), state: "pending", createdAt: await nextOutboxTime(ctx), attempts: 0 });
+        return null;
+      }
+      await ctx.db.patch(row._id, { progressTurnId: undefined });
+    }
     if (!args.error) await ctx.db.patch(row._id, { state: "sent", sentAt: Date.now() });
     else if (row.progressTurnId || args.uncertain || args.permanent || row.attempts + 1 >= 3) {
       await ctx.db.patch(row._id, { state: args.uncertain ? "uncertain" : "failed", attempts: row.attempts + 1, error: args.error.slice(0, 500) });

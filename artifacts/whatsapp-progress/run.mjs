@@ -310,6 +310,33 @@ try {
     await mutate("whatsapp:sent", { id: finals[0]._id });
     assert.equal(typeof rt.store.get(turn).deliveredAt, "number");
   });
+  for (const outcome of ["success", "failure", "uncertain"]) await check(`an identical final waits for in-flight progress outcome ${outcome}`, async () => {
+    const turn = newTurn();
+    const text = "I checked **the source**.";
+    await publish(turn, text);
+    const row = pending(turn)[0];
+    await reserve(row);
+    const args = { turnId: turn, to: OWNER, text, files: [] };
+    await mutate("whatsapp:queueTurn", args);
+    await mutate("whatsapp:queueTurn", args);
+    assert.equal(rt.store.all("whatsappOutbox").filter(item => item.turnId === turn && item.state === "pending").length, 0);
+    assert.equal(rt.store.get(turn).deliveredAt, undefined);
+    await mutate("whatsapp:sent", { id: row._id, ...(outcome !== "success" ? { error: "Synthetic in-flight failure", ...(outcome === "uncertain" ? { uncertain: true } : { permanent: true }) } : {}) });
+    const finals = rt.store.all("whatsappOutbox").filter(item => item.turnId === turn);
+    assert.equal(finals.length, 1);
+    if (outcome === "success") {
+      assert.equal(finals[0]._id, row._id); assert.equal(finals[0].state, "sent");
+      assert.equal(typeof rt.store.get(turn).deliveredAt, "number");
+    } else if (outcome === "failure") {
+      assert.equal(finals[0].state, "pending"); assert.equal(finals[0].text, "I checked *the source*.");
+      assert.equal(typeof await reserve(finals[0]), "string");
+      await mutate("whatsapp:sent", { id: finals[0]._id });
+      assert.equal(typeof rt.store.get(turn).deliveredAt, "number");
+    } else {
+      assert.equal(finals[0].state, "uncertain"); assert.equal(rt.store.get(turn).deliveredAt, undefined);
+      assert.ok(rt.store.get(turn).deliveryError);
+    }
+  });
   await check("a sent progress message reused as the final fallback is delivered only once", async () => {
     const turn = newTurn();
     const text = "The checked **outline** is ready.";
@@ -384,6 +411,42 @@ try {
     advance();
     await publish(turn, "The next verification milestone is complete.");
     assert.equal(rows(turn).length, 2);
+  });
+  await check("production WhatsApp transport reconciles a final arriving before the progress acknowledgement", async () => {
+    for (const row of rt.store.all("whatsappOutbox")) if (row.state === "pending") rt.store.delete(row._id);
+    const turn = newTurn();
+    const text = "I checked **the complete source**.";
+    await publish(turn, text);
+    const commands = [{ user: { id: "15550003333@s.whatsapp.net" }, event: "connection.update", data: { connection: "open" } }];
+    const sent = [];
+    globalThis.fetch = async (input, options) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.startsWith("http://whatsapp-progress.invalid/")) throw Error("Unexpected external request");
+      if (url.endsWith("/next")) {
+        if (!commands.length) await new Promise(done => setTimeout(done, 50));
+        return Response.json(commands.splice(0));
+      }
+      if (url.endsWith("/sent")) {
+        sent.push(JSON.parse(options.body));
+        if (sent.length === 1) {
+          assert.equal(rows(turn)[0].state, "sending");
+          await mutate("whatsapp:queueTurn", { turnId: turn, to: OWNER, text, files: [] });
+          assert.equal(rt.store.get(turn).deliveredAt, undefined);
+        }
+      }
+      return Response.json(true);
+    };
+    const { runWhatsApp } = await import("../../server/whatsapp.ts");
+    const stop = runWhatsApp(rt);
+    try {
+      const until = nativeNow() + 10_000;
+      while (!rt.store.get(turn).deliveredAt && nativeNow() < until) await new Promise(done => setTimeout(done, 50));
+      assert.equal(typeof rt.store.get(turn).deliveredAt, "number");
+      assert.equal(sent.length, 1); assert.equal(sent[0].text, "I checked *the complete source*.");
+    } finally {
+      await stop();
+      globalThis.fetch = async () => { throw Error("External network disabled in WhatsApp progress replay"); };
+    }
   });
   for (const scenario of ["coalesce", "finalize"]) await check(scenario === "coalesce"
     ? "production WhatsApp transport sends the current redacted reservation instead of its stale snapshot"

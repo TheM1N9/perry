@@ -16,15 +16,16 @@ const [{ GrokEngine }, { OpenCodeEngine }, { AntigravityEngine }, { TurnTrace }]
 const report = { at: new Date().toISOString(), passed: false, results: [], modelTurns: 0, externalCalls: 0, homeRemoved: false };
 const save = () => writeFileSync(join(out, "result.json"), JSON.stringify(report, null, 2));
 save();
-async function check(name, work) {
-  let timer;
-  try { await Promise.race([work(), new Promise((_, reject) => { timer = setTimeout(() => reject(Error("ACP replay exceeded 15 seconds")), 15_000); })]); report.results.push({ name, passed: true }); }
+async function check(name, work, timeoutMs = 15_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(Error("ACP replay deadline exceeded")), timeoutMs);
+  try { await work(controller.signal); report.results.push({ name, passed: true }); }
   catch (error) { report.results.push({ name, passed: false, error: String(error.stack ?? error) }); }
   finally { clearTimeout(timer); }
   save(); console.log(JSON.stringify(report.results.at(-1)));
 }
 const input = scenario => ({ prompt: `SCENARIO:${scenario}`, instructions: "Synthetic progress fixture only", cwd: home, access: "full", attachments: [] });
-async function run(Engine, scenario, inspect) {
+async function run(Engine, scenario, inspect, signal) {
   const engine = new Engine();
   engine.launch = () => ({ command: process.execPath, args: [resolve("artifacts/whatsapp-progress/fake-agent.mjs")], env: { PERRY_PROGRESS_ACP_LOG: logPath } });
   const events = []; const trace = new TurnTrace();
@@ -36,25 +37,41 @@ async function run(Engine, scenario, inspect) {
       if (event.type === "progress") trace.progress(event.itemId, event.text, event.atMs);
     },
   };
-  const children = [];
+  const children = new Set();
+  const stop = () => {
+    for (const child of engine.children) children.add(child);
+    engine.kill();
+  };
+  let aborted;
+  const cancelled = new Promise((_, reject) => {
+    aborted = () => { stop(); reject(signal.reason); };
+    signal.addEventListener("abort", aborted, { once: true });
+    if (signal.aborted) aborted();
+  });
   try {
+    await Promise.race([(async () => {
     const pending = engine.runTurn(input(scenario), sink);
-    if (scenario === "hold") {
+    if (scenario === "hold" || scenario === "stuck-interrupt") {
       const handle = await begun;
       await new Promise(done => setTimeout(done, 30));
+      if (scenario === "stuck-interrupt") engine.interrupt = () => new Promise(() => {});
       await engine.interrupt(handle);
     }
     const result = await pending;
     const conn = engine.conn;
     if (conn) {
-      children.push(conn.child);
+      children.add(conn.child);
       assert.ok([...conn.sessions.values()].every(session => !session.turn), "no active ACP turn after completion");
     }
     await inspect({ result, events, trace });
+    })(), cancelled]);
   } finally {
-    for (const child of engine.children) if (!children.includes(child)) children.push(child);
-    const exited = children.map(child => child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise(done => { child.once("exit", done); child.once("error", done); }));
-    engine.kill();
+    signal.removeEventListener("abort", aborted);
+    stop();
+    const exited = [...children].map(child => child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise(resolve => {
+      const done = () => { child.off("exit", done); child.off("error", done); resolve(); };
+      child.once("exit", done); child.once("error", done);
+    }));
     let timeout;
     try { await Promise.race([Promise.all(exited), new Promise((_, reject) => { timeout = setTimeout(() => reject(Error("ACP child did not exit after kill")), 5_000); })]); }
     finally { clearTimeout(timeout); }
@@ -64,10 +81,10 @@ async function run(Engine, scenario, inspect) {
 try {
   for (const Engine of [GrokEngine, OpenCodeEngine, AntigravityEngine]) {
     const label = Engine.name;
-    await check(`${label}: final-only chunks and reasoning never publish progress`, () => run(Engine, "final", async ({ result, events }) => {
+    await check(`${label}: final-only chunks and reasoning never publish progress`, signal => run(Engine, "final", async ({ result, events }) => {
       assert.equal(result.state, "completed"); assert.equal(result.text, "Final answer."); assert.equal(events.filter(event => event.type === "progress").length, 0);
-    }));
-    await check(`${label}: two tool boundaries preserve distinct progress and final-only result`, () => run(Engine, "two", async ({ result, events, trace }) => {
+    }, signal));
+    await check(`${label}: two tool boundaries preserve distinct progress and final-only result`, signal => run(Engine, "two", async ({ result, events, trace }) => {
       assert.equal(result.state, "completed"); assert.equal(result.text, "Final answer.");
       const progress = events.filter(event => event.type === "progress");
       assert.deepEqual(progress.map(event => event.text), ["Checking the first source.", "Comparing the second source."]);
@@ -75,26 +92,29 @@ try {
       const spans = trace.take().spans;
       assert.equal(spans.filter(span => span.progress).length, 2);
       assert.ok(!spans.some(span => span.progress && span.output.includes("Final")));
-    }));
-    await check(`${label}: tools/reasoning/output without assistant text produce no progress`, () => run(Engine, "tools-only", async ({ result, events }) => {
+    }, signal));
+    await check(`${label}: tools/reasoning/output without assistant text produce no progress`, signal => run(Engine, "tools-only", async ({ result, events }) => {
       assert.equal(result.state, "completed"); assert.equal(result.text, ""); assert.equal(events.filter(event => event.type === "progress").length, 0);
-    }));
-    await check(`${label}: missing final text retains the last assistant segment`, () => run(Engine, "no-final", async ({ result, events }) => {
+    }, signal));
+    await check(`${label}: missing final text retains the last assistant segment`, signal => run(Engine, "no-final", async ({ result, events }) => {
       assert.equal(result.text, "Checking the original source."); assert.equal(events.filter(event => event.type === "progress").length, 1);
-    }));
-    await check(`${label}: an update-only tool cannot publish a partial final`, () => run(Engine, "update-only", async ({ result, events }) => {
+    }, signal));
+    await check(`${label}: an update-only tool cannot publish a partial final`, signal => run(Engine, "update-only", async ({ result, events }) => {
       assert.equal(result.text, "An unfinished final sentence"); assert.equal(events.filter(event => event.type === "progress").length, 0);
-    }));
-    await check(`${label}: native cancellation leaves no progress or active child`, () => run(Engine, "hold", async ({ result, events }) => {
+    }, signal));
+    await check(`${label}: native cancellation leaves no progress or active child`, signal => run(Engine, "hold", async ({ result, events }) => {
       assert.equal(result.state, "interrupted"); assert.equal(events.filter(event => event.type === "progress").length, 0);
-    }));
-    await check(`${label}: provider failure leaves no progress or active child`, () => run(Engine, "failure", async ({ result, events }) => {
+    }, signal));
+    await check(`${label}: provider failure leaves no progress or active child`, signal => run(Engine, "failure", async ({ result, events }) => {
       assert.equal(result.state, "failed"); assert.equal(events.filter(event => event.type === "progress").length, 0);
-    }));
+    }, signal));
+    for (const scenario of ["never", "stuck-interrupt"]) await check(`${label}: deadline awaits child termination during ${scenario}`, async signal => {
+      await assert.rejects(run(Engine, scenario, async () => assert.fail("A stuck scenario cannot complete normally"), signal), /deadline exceeded/);
+    }, 1000);
   }
   report.protocol = readFileSync(logPath, "utf8").trim().split("\n").map(line => JSON.parse(line)).reduce((counts, row) => { counts[row.event] = (counts[row.event] ?? 0) + 1; return counts; }, {});
 } finally {
   await rm(home, { recursive: true, force: true }); report.homeRemoved = true;
-  report.passed = report.results.length === 21 && report.results.every(row => row.passed); save();
+  report.passed = report.results.length === 27 && report.results.every(row => row.passed); save();
 }
 process.exitCode = report.passed ? 0 : 1;

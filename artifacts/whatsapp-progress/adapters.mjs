@@ -171,6 +171,31 @@ try {
     const events = output.events.filter(event => event.type === "progress"); assert.equal(events.length, 1); assert.equal(events[0].text, "Checking the original figures.");
     assert.equal(output.trace.take().spans[0].progress, true);
   }));
+  await check("Claude split completed blocks retain parent progress until its tool block", () => claude({ events: [
+    claudeMessage("split", [textBlock("Checking the original source.")], { uuid: "split-text" }),
+    claudeMessage("split", [{ type: "tool_use", id: "split-read", name: "Read", input: {} }], { uuid: "split-tool" }),
+  ] }, async ({ output }) => {
+    const events = output.events.filter(event => event.type === "progress");
+    assert.equal(events.length, 1); assert.equal(events[0].text, "Checking the original source.");
+    assert.equal(events[0].itemId, "split:0");
+  }));
+  await check("Claude split thinking and text blocks keep stable distinct indices under replay", () => claude({ events: [
+    claudeMessage("blocks", [{ type: "thinking", thinking: "Private reasoning", signature: "synthetic" }], { uuid: "blocks-thinking" }),
+    claudeMessage("blocks", [textBlock("First complete update.")], { uuid: "blocks-first" }),
+    claudeMessage("blocks", [textBlock("Second complete update.")], { uuid: "blocks-second" }),
+    claudeMessage("blocks", [{ type: "tool_use", id: "blocks-read", name: "Read", input: {} }], { uuid: "blocks-tool" }),
+    claudeMessage("blocks", [textBlock("First complete update.")], { uuid: "blocks-first" }),
+    claudeMessage("blocks", [{ type: "tool_use", id: "blocks-read", name: "Read", input: {} }], { uuid: "blocks-tool" }),
+  ] }, async ({ output }) => {
+    const events = output.events.filter(event => event.type === "progress");
+    assert.deepEqual(events.map(event => event.itemId), ["blocks:1", "blocks:2"]);
+  }));
+  await check("Claude progress cannot cross message IDs or publish aborted and child text", () => claude({ events: [
+    claudeMessage("old", [textBlock("A final-only answer must stay private until final.")]),
+    claudeMessage("new", [{ type: "tool_use", id: "new-read", name: "Read", input: {} }]),
+    claudeMessage("aborted", [textBlock("Unfinished tex"), { type: "tool_use", id: "aborted-read", name: "Read", input: {} }], { aborted: true }),
+    claudeMessage("agent", [textBlock("Child private update"), { type: "tool_use", id: "agent-read", name: "Read", input: {} }], { agent_id: "child-agent" }),
+  ] }, async ({ output }) => assert.equal(output.events.filter(event => event.type === "progress").length, 0)));
   await check("Claude child text/tool use and pure final answer never emit owner progress", () => claude({ events: [
     claudeMessage("child", [textBlock("Child private update"), { type: "tool_use", id: "child-read", name: "Read", input: {} }], { parent_tool_use_id: "agent-1" }),
     claudeMessage("final", [textBlock("Final synthetic answer")]),
@@ -181,7 +206,7 @@ try {
   for (const query of sdkQueries) query.close();
   await rm(home, { recursive: true, force: true });
   report.homeRemoved = true;
-  report.passed = report.results.length === 9 && report.results.every(row => row.passed);
+  report.passed = report.results.length === 12 && report.results.every(row => row.passed);
   save();
 }
 process.exitCode = report.passed ? 0 : 1;

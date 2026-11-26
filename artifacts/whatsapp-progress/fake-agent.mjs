@@ -45,6 +45,9 @@ connection = agent({ name: "synthetic-progress-agent" })
     } else if (scenario === "no-final") {
       await say(text("Checking the original source."));
       await say(tool("read-1")); await say(tool("read-1", true, "completed"));
+    } else if (scenario === "never" || scenario === "stuck-interrupt") {
+      await say(text("An unfinished sentence"));
+      await new Promise(() => {});
     } else if (scenario === "hold") {
       await say(text("An unfinished sentence"));
       await new Promise(done => pending.set(params.sessionId, done));
