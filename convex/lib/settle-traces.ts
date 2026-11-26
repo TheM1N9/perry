@@ -30,11 +30,10 @@ export async function settleRunSpans(
 ): Promise<number> {
   if (!Number.isFinite(endedAt)) throw new Error("Trace settlement requires a finite end time.");
   const spans = await ctx.db.query("runSpans")
-    .withIndex("by_run", (q) => q.eq("runId", runId))
+    .withIndex("by_run_status", (q) => q.eq("runId", runId).eq("status", "running"))
     .collect();
   let settled = 0;
   for (const span of spans) {
-    if (span.status !== "running") continue;
     // A runner's clock may be ahead of the server's. Never record a negative
     // duration or an end before the recorded start.
     const end = Math.max(span.startedAt, endedAt);

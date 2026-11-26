@@ -13,7 +13,7 @@ import type { MeetingSummary, MeetingView } from "@/convex/meetings";
 import type { NoteView } from "@/convex/notes";
 import { noteHref } from "@/convex/lib/notes";
 import { useSession } from "@/lib/session";
-import { errorText, useNow } from "@/lib/format";
+import { errorText, tickText, useNow } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "../chat/markdown";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,13 +24,15 @@ import { NoteEditor } from "@/components/notes/editor";
 import { inspectMarkdown } from "@/components/notes/markdown";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, StatusBadge } from "../common";
 import { useNoteSaves } from "./notes";
+import { useChatDeadline } from "../chat/render-isolation";
 
 const labels = { asked: "Waiting for the pet", listening: "Listening", writing: "Writing notes", done: "Ready", failed: "Needs attention" } as const;
 
-function MeetingStatus({ meeting, now }: { meeting: MeetingSummary; now: number }) {
+function MeetingStatus({ meeting }: { meeting: MeetingSummary }) {
+  const live = meeting.endedAt === undefined && (meeting.status === "asked" || meeting.status === "listening");
   return <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
     <StatusBadge tone={meeting.status === "failed" ? "warning" : meeting.status === "listening" ? "success" : undefined}>{labels[meeting.status]}</StatusBadge>
-    <span className="tabular-nums">{clockOf((meeting.endedAt ?? now) - meeting.startedAt)}</span>
+    {(live || meeting.endedAt !== undefined) && <span className="tabular-nums" ref={tickText((now) => clockOf((meeting.endedAt ?? now) - meeting.startedAt), live)} />}
   </span>;
 }
 
@@ -39,7 +41,6 @@ export function Meetings() {
   const meetings = useQuery(api.meetings.list, { key });
   const ask = useMutation(api.meetings.ask);
   const router = useRouter();
-  const now = useNow(1000);
   return <Page title="Meetings" description="Your conversations, notes, and next steps."
     actions={<ActionButton action={async () => {
       const result = await ask({ key });
@@ -53,7 +54,7 @@ export function Meetings() {
       <HeadphonesIcon className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
       <div className="min-w-0 flex-1"><Link href={`/meetings/${meeting.id}`} className="font-medium hover:underline underline-offset-2">{meeting.title}</Link>
         {meeting.preview && <p className="mt-1 truncate text-sm text-muted-foreground">{meeting.preview}</p>}
-        <div className="mt-2"><MeetingStatus meeting={meeting} now={now} /></div>
+        <div className="mt-2"><MeetingStatus meeting={meeting} /></div>
       </div><RelativeTime at={meeting.startedAt} />
     </li>)}</List>}
   </Page>;
@@ -117,7 +118,6 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
   const add = useMutation(api.meetings.addAction);
   const createChat = useMutation(api.dashboard.createChat);
   const sendChat = useMutation(api.dashboard.sendChat);
-  const now = useNow(1000);
   const [template, setTemplate] = useState(meeting.template);
   const [title, setTitle] = useState(meeting.title);
   const [renaming, setRenaming] = useState(false);
@@ -137,8 +137,10 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
   useEffect(() => { document.title = `${meeting.title} · Perry`; }, [meeting.title]);
   const live = meeting.status === "listening" || meeting.status === "asked";
   const writing = meeting.status === "writing";
+  useChatDeadline([writing && meeting.writingSince !== undefined ? meeting.writingSince + 5 * 60_000 + 1 : undefined]);
+  const now = Date.now();
   const thoughts = meeting.thoughts;
-  const minutes = Math.max(1, Math.round(((meeting.endedAt ?? now) - meeting.startedAt) / 60_000));
+  const minutes = meeting.endedAt === undefined ? null : Math.max(1, Math.round((meeting.endedAt - meeting.startedAt) / 60_000));
   // Five minutes on is longer than a write-up takes: then it is waiting for an engine, and says so.
   const waiting = meeting.writingSince !== undefined && now - meeting.writingSince > 5 * 60_000;
   return <Page title={meeting.title} wide="full" actions={<>
@@ -146,7 +148,7 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
     {meeting.status === "listening" && <ActionButton disabled={meeting.stopAsked} action={() => stop({ key, id: meeting.id })}><SquareIcon />{meeting.stopAsked ? "Stopping…" : "Stop Notetaker"}</ActionButton>}
   </>}>
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <MeetingStatus meeting={meeting} now={now} />
+      <MeetingStatus meeting={meeting} />
       {!editingTitle && <Button size="sm" variant="ghost" onClick={() => setEditingTitle(true)}>Rename meeting</Button>}
       {editingTitle && <form className="flex items-center gap-2" onSubmit={(event) => {
         event.preventDefault();
@@ -177,7 +179,7 @@ function MeetingDetail({ meeting }: { meeting: MeetingView }) {
         <TabsTrigger className="flex-none px-0" value="tasks">Tasks{meeting.actions.length > 0 && <span className="text-muted-foreground">{meeting.actions.length}</span>}</TabsTrigger>
       </TabsList>
       <TabsContent value="summary" className="min-h-80">
-        {writing || live ? <div className="py-12 text-center"><FileTextIcon className="mx-auto mb-4 size-7 text-muted-foreground" aria-hidden /><h2 className="text-lg font-medium">{writing ? `Turning your ${minutes}-minute call into a two-minute read` : "Stay in the conversation"}</h2><p role="status" className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{writing ? waiting ? "This is taking longer than usual. Perry needs a connected engine to write it, and will finish as soon as one is free." : "Perry is writing the summary and next steps from the transcript and your thoughts." : "Add your thoughts as you go. When you finish, Perry will write the summary and next steps."}</p></div>
+        {writing || live ? <div className="py-12 text-center"><FileTextIcon className="mx-auto mb-4 size-7 text-muted-foreground" aria-hidden /><h2 className="text-lg font-medium">{writing ? `Turning your ${minutes === null ? "call" : `${minutes}-minute call`} into a two-minute read` : "Stay in the conversation"}</h2><p role="status" className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{writing ? waiting ? "This is taking longer than usual. Perry needs a connected engine to write it, and will finish as soon as one is free." : "Perry is writing the summary and next steps from the transcript and your thoughts." : "Add your thoughts as you go. When you finish, Perry will write the summary and next steps."}</p></div>
           : meeting.summary ? <>{note && <div className="mb-6 flex justify-end"><Button variant="ghost" size="sm" render={<Link href={noteHref(note.id)} />}>Edit in Brain</Button></div>}<Markdown text={meeting.summary} /></> : <EmptyState title="No summary yet">Your transcript is still available. Try writing up the meeting again.</EmptyState>}
       </TabsContent>
       <TabsContent value="thoughts" className="min-h-80">

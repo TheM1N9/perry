@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { createServer } from "node:net";
@@ -47,6 +47,13 @@ try {
     await call("meetings:finishNotes", { token, id: failed.id, claim: pending.claim, error: "Synthetic engine unavailable" });
     await call("meetings:retryNotes", { id: failed.id, claim: pending.claim });
   }
+  const writing = await call("meetings:start", { key, title: "Writing deadline" });
+  await call("meetings:appendSegments", { key, id: writing.id, segments: [{ seq: 0, source: "you", startMs: 0, endMs: 1000, text: "Write up these decisions." }] });
+  await call("meetings:finish", { key, id: writing.id });
+  const writingSince = (await call("meetings:get", { key, id: writing.id })).writingSince;
+  assert.equal(typeof writingSince, "number");
+  const missingEnd = await call("meetings:start", { key, title: "Writing without an end time" });
+  await runtime.exclusive(() => runtime.store.patch(missingEnd.id, { status: "writing" }));
   const live = await call("meetings:start", { key, title: "Live planning" });
   await call("meetings:appendSegments", { key, id: live.id, segments: [{ seq: 0, source: "them", startMs: 0, endMs: 3000, text: "Please confirm the launch date." }] });
   const chat = await call("conversations:create", { channel: "web", externalId: "composer-overflow-fixture", threadId: "composer-overflow-fixture", title: "Composer overflow" });
@@ -73,6 +80,17 @@ try {
   }
   process.env.PERRY_E2E_BROWSER ??= process.platform === "linux" ? "/usr/bin/google-chrome" : process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "C:/Program Files/Google/Chrome/Application/chrome.exe";
   browser = await openChat(base, key);
+  await browser.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+    const active = new Set();
+    const interval = window.setInterval, clear = window.clearInterval;
+    window.__meetingSecondTimers = active;
+    window.setInterval = function (callback, delay, ...args) {
+      const id = interval.call(this, callback, delay, ...args);
+      if (delay === 1000) active.add(id);
+      return id;
+    };
+    window.clearInterval = function (id) { active.delete(id); return clear.call(this, id); };
+  })();` });
   const until = async (expression) => {
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
@@ -102,6 +120,11 @@ try {
   await browser.send("Page.navigate", { url: `${base}/meetings/${meeting.id}` });
   await until("document.body.innerText.includes('Launch on Friday.')");
   report.checks.summaryReadable = true;
+  await sleep(250);
+  report.checks.completedMeetingHasNoSecondTimer = await browser.evaluate("window.__meetingSecondTimers.size === 0");
+  const completedDuration = await browser.evaluate("document.querySelector('span.tabular-nums')?.textContent");
+  await sleep(1200);
+  report.checks.completedDurationStaysFixed = await browser.evaluate(`Boolean(${JSON.stringify(completedDuration)}) && document.querySelector('span.tabular-nums')?.textContent === ${JSON.stringify(completedDuration)}`);
   report.checks.summaryExcludesPersonalNotes = await browser.evaluate("!document.querySelector('[role=tabpanel]')?.textContent.includes('Confirm the proposal deadline.')");
   await screenshot("summary.png");
   await tab("My thoughts"); await until("document.body.innerText.includes('Confirm the proposal deadline.')");
@@ -121,6 +144,11 @@ try {
   await browser.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await browser.send("Page.navigate", { url: `${base}/meetings/${live.id}` });
   await until("document.querySelector('[contenteditable=true]')");
+  await sleep(250);
+  report.checks.liveMeetingUsesOneSharedClock = await browser.evaluate("window.__meetingSecondTimers.size === 1");
+  const duration = await browser.evaluate("document.querySelector('span.tabular-nums')?.textContent");
+  await sleep(1200);
+  report.checks.liveDurationAdvances = await browser.evaluate(`document.querySelector('span.tabular-nums')?.textContent !== ${JSON.stringify(duration)}`);
   await browser.evaluate("document.querySelector('[contenteditable=true]').focus()");
   await browser.send("Input.insertText", { text: "Keep this important detail." });
   await tab("Transcript"); await until("document.body.innerText.includes('confirm the launch date')");
@@ -131,15 +159,49 @@ try {
   await until("document.querySelector('#meeting-template') && document.body.innerText.includes('Perry writes the notes this way when the call ends.')");
   await browser.evaluate("(()=>{const select=document.querySelector('#meeting-template');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'standup');select.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await sleep(1_000);
+  const beforeLiveReload = await browser.evaluate("performance.timeOrigin");
   await browser.send("Page.reload");
-  await until("document.querySelector('#meeting-template')?.value === 'standup'");
+  await until(`performance.timeOrigin !== ${beforeLiveReload} && document.querySelector('#meeting-template')?.value === 'standup'`);
   report.checks.liveTemplateChoiceSaved = true;
-  await browser.send("Page.navigate", { url: `${base}/meetings/${failed.id}` });
+  await browser.evaluate("document.querySelector('a[href=\"/meetings\"]').click()");
+  await until(`document.querySelector('a[href="/meetings/${failed.id}"]')`);
+  await sleep(250);
+  report.checks.meetingListUsesOneSharedClock = await browser.evaluate("window.__meetingSecondTimers.size === 1");
+  report.checks.listKeepsCompletedDuration = await browser.evaluate(`document.querySelector('a[href="/meetings/${meeting.id}"]').closest('li').querySelector('span.tabular-nums')?.textContent === ${JSON.stringify(completedDuration)}`);
+  await browser.evaluate(`document.querySelector('a[href="/meetings/${failed.id}"]').click()`);
   await until("document.body.innerText.includes('No summary yet')");
+  await sleep(250);
+  report.checks.failedMeetingHasNoSecondTimer = await browser.evaluate("window.__meetingSecondTimers.size === 0");
   await tab("My thoughts");
   await until("document.body.innerText.includes('Keep the personal fallback.')");
   report.checks.failedWriteUpKeepsThoughts = true;
   await screenshot("failed-write-up.png");
+  const clock = await browser.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+    const nativeNow = Date.now;
+    const offset = ${writingSince} + 5 * 60_000 - nativeNow() - 5000;
+    Date.now = () => nativeNow() + offset;
+  })();` });
+  await browser.send("Page.navigate", { url: `${base}/meetings/${writing.id}` });
+  await until("document.body.innerText.includes('Perry is writing the summary and next steps')");
+  report.checks.writingWarningNotEarly = await browser.evaluate(`Date.now() <= ${writingSince} + 5 * 60_000 && !document.body.innerText.includes('This is taking longer than usual.')`);
+  await until("document.body.innerText.includes('This is taking longer than usual.')");
+  report.checks.writingWarningAtDeadline = await browser.evaluate(`Date.now() > ${writingSince} + 5 * 60_000`);
+  report.checks.writingDoesNotPollEverySecond = await browser.evaluate("window.__meetingSecondTimers.size === 0");
+  await screenshot("writing-deadline.png");
+  await browser.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: clock.identifier });
+  await browser.send("Page.navigate", { url: `${base}/meetings/${missingEnd.id}` });
+  await until("document.body.innerText.includes('Turning your call into a two-minute read')");
+  report.checks.missingEndDoesNotInventDuration = await browser.evaluate("!document.querySelector('span.tabular-nums') && window.__meetingSecondTimers.size === 0");
+  report.checks.differentMeetingDoesNotKeepWritingWarning = await browser.evaluate("!document.body.innerText.includes('This is taking longer than usual.')");
+  const probeBundle = readFileSync(resolve(process.env.PERRY_DEADLINE_PROBE_BUNDLE ?? "node_modules/.cache/meeting-deadline-probe.js"), "utf8");
+  await browser.evaluate(`(() => {
+    const frame = document.createElement('iframe');
+    frame.id = 'deadline-probe'; document.body.append(frame);
+    frame.contentWindow.eval(${JSON.stringify(probeBundle)});
+  })()`);
+  report.deadlineProbe = await browser.evaluate("document.querySelector('#deadline-probe').contentWindow.runDeadlineProbe()");
+  for (const [name, passed] of Object.entries(report.deadlineProbe.checks)) report.checks[`deadline:${name}`] = passed;
+  await browser.evaluate("document.querySelector('#deadline-probe').remove()");
   await browser.send("Page.navigate", { url: `${base}/settings/desktop-pet` });
   await until("document.querySelector('#speech-provider')");
   await browser.evaluate("(()=>{const input=document.querySelector('#speech-provider');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(input,'large-v3-turbo');input.dispatchEvent(new Event('change',{bubbles:true}));})()");
@@ -152,6 +214,7 @@ try {
   await browser.evaluate("document.querySelector('#speech-provider').scrollIntoView({block:'center', behavior:'instant'})");
   await screenshot("speech-settings.png");
   report.errors = browser.errors;
+  assert.deepEqual(report.errors, [], "The meeting journey must not raise uncaught browser errors");
   assert.ok(Object.values(report.checks).every(Boolean), JSON.stringify(report.checks));
 } catch (error) { report.error = String(error.stack ?? error); process.exitCode = 1; }
 finally {
