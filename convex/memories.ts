@@ -98,6 +98,7 @@ function view(memory: Memory) {
   };
 }
 export type MemoryView = ReturnType<typeof view> & { page?: { id: string; title: string } };
+type MemoryExcerpt = { lines: string[]; outside: boolean };
 
 /** A whole layer, newest first, or its newest `limit`. */
 async function layer(ctx: QueryCtx, kind: Kind, limit?: number): Promise<Memory[]> {
@@ -444,7 +445,7 @@ export const recall = internalAction({
     /** The archive too (archive.ts): Perry's recall with deep, Brain's "Include archive". */
     deep: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<Array<MemoryView & { score: number; excerpt?: string[] }>> => {
+  handler: async (ctx, args): Promise<Array<MemoryView & { score: number; excerpt?: string[]; excerptOutside?: boolean }>> => {
     const limit = Math.min(args.limit ?? 6, MAX_RESULTS);
     const query = args.query.trim();
     const where = { chat: args.chat, ...(args.everywhere ? { everywhere: true } : {}), ...(args.deep ? { deep: true } : {}) };
@@ -487,8 +488,8 @@ export const recall = internalAction({
     if (args.parts) return [{ parts, lines: Object.fromEntries(known), range, now } as never];
     const ranked = rankRecall(query, parts, known, now, range).slice(0, limit);
     if (!args.excerpts) return ranked;
-    const around: Record<string, string[]> = await ctx.runQuery(internal.memories.excerpts, { ids: ranked.filter((memory) => memory.pageId).map((memory) => memory.id as Id<"memories">), chat: args.chat, ...(args.everywhere ? { everywhere: true } : {}) });
-    return ranked.map((memory) => (around[memory.id]?.length ? { ...memory, excerpt: around[memory.id] } : memory));
+    const around: Record<string, MemoryExcerpt> = await ctx.runQuery(internal.memories.excerpts, { ids: ranked.filter((memory) => memory.pageId).map((memory) => memory.id as Id<"memories">), chat: args.chat, ...(args.everywhere ? { everywhere: true } : {}) });
+    return ranked.map((memory) => (around[memory.id]?.lines.length ? { ...memory, excerpt: around[memory.id].lines, excerptOutside: around[memory.id].outside } : memory));
   },
 });
 
@@ -594,15 +595,16 @@ export const ofPagesNamed = internalQuery({
 /** The lines just before and after each of these, in its page: what a search result came from. */
 export const excerpts = internalQuery({
   args: { ids: v.array(v.id("memories")), chat: vChat, everywhere: v.optional(v.boolean()) },
-  handler: async (ctx, args): Promise<Record<string, string[]>> => {
+  handler: async (ctx, args): Promise<Record<string, MemoryExcerpt>> => {
     // Only lines the chat may see: a line of one page can belong to a project or a chat of its own.
     const seen = args.everywhere ? () => true : await seenFrom(ctx, args.chat);
-    const out: Record<string, string[]> = {};
+    const out: Record<string, MemoryExcerpt> = {};
     for (const id of args.ids) {
       const line = await ctx.db.get(id);
       if (!line?.pageId || line.order === undefined) continue;
       const near = await ctx.db.query("memories").withIndex("by_page", (q) => q.eq("pageId", line.pageId).gte("order", line.order! - 1).lte("order", line.order! + 1)).collect();
-      out[id] = near.filter((other) => !other.supersededBy && seen(other)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((other) => (other._id === id ? `> ${other.text}` : other.text));
+      const visible = near.filter((other) => !other.supersededBy && seen(other)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      out[id] = { lines: visible.map((other) => (other._id === id ? `> ${other.text}` : other.text)), outside: visible.some((other) => other.origin === "tool") };
     }
     return out;
   },

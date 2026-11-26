@@ -339,9 +339,9 @@ async function handleRpc(ctx: ActionCtx, request: Request): Promise<Response> {
         const theirs = (name === "read_chat" && await ctx.runQuery(internal.contacts.isTheirs, { chatId: String((parsed.data as { chatId?: string }).chatId ?? "") }))
           // What someone told Perry about themselves is their word too.
           || ((name === "recall" || name === "brain_search" || name === "search_memory") && Boolean((output as { theySaid?: unknown[] } | null)?.theySaid?.length));
-        const savedSource = output as { outside?: boolean; memories?: Array<{ origin?: string }> } | null;
+        const savedSource = output as { outside?: boolean; memories?: Array<{ origin?: string; aroundOutside?: boolean }> } | null;
         const savedOutside = (["brain_read", "read_note"].includes(name) && savedSource?.outside === true)
-          || (["recall", "brain_search", "search_memory", "read_memory"].includes(name) && savedSource?.memories?.some(memory => memory.origin === "tool"));
+          || (["recall", "brain_search", "search_memory", "read_memory"].includes(name) && savedSource?.memories?.some(memory => memory.origin === "tool" || memory.aroundOutside === true));
         if (READS_OUTSIDE.has(name) || theirs || savedOutside) {
           await ctx.runMutation(internal.codex.markOutside, { turnId: access.turnId });
           const succeeded = output && typeof output === "object" && !("error" in output) && (!("ok" in output) || output.ok === true);

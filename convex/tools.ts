@@ -44,7 +44,7 @@ import { HELD_FOR_OWNER } from "./lib/provenance";
 
 type MemoryRow = {
   id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily" | "page"; day?: string; origin?: string; createdAt: number;
-  pageId?: string; page?: { id: string; title: string }; section?: string; eventAt?: number; excerpt?: string[]; archivedAt?: number;
+  pageId?: string; page?: { id: string; title: string }; section?: string; eventAt?: number; excerpt?: string[]; excerptOutside?: boolean; archivedAt?: number;
 };
 
 type RecallResult = {
@@ -61,7 +61,7 @@ const memoryKind = z.enum(["profile", "core", "daily"]);
 
 const shape = (m: MemoryRow) => m.kind === "page"
   // A line of one of the owner's notes: which note, and where in it, to read the rest with read_note; and the lines around it.
-  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.origin ? { origin: m.origin } : {}), ...(m.section ? { section: m.section } : {}), ...(m.excerpt ? { around: m.excerpt } : {}) }
+  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.origin ? { origin: m.origin } : {}), ...(m.section ? { section: m.section } : {}), ...(m.excerpt ? { around: m.excerpt, aroundOutside: m.excerptOutside === true } : {}) }
   : {
     id: m.id,
     text: m.text,
@@ -75,7 +75,7 @@ const shape = (m: MemoryRow) => m.kind === "page"
     // When what it says happens, when that is not the day it was said.
     ...(m.eventAt ? { happens: new Date(m.eventAt).toISOString().slice(0, 10) } : {}),
     // The lines around it in its page, "> " before its own: where it came from.
-    ...(m.excerpt ? { around: m.excerpt } : {}),
+    ...(m.excerpt ? { around: m.excerpt, aroundOutside: m.excerptOutside === true } : {}),
     // From the archive: cite it in your reply if you use it, and it comes back.
     ...(m.archivedAt ? { archived: true } : {}),
   };
