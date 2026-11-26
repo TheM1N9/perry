@@ -151,6 +151,10 @@ Scheduled jobs, background tasks and chats with other people are outside this ru
 If the reaction tool fails or reports the message unavailable, continue the
 work; do not repeatedly retry, claim it succeeded, or send text just to replace it.
 Use text whenever there is an answer, result, question or failure the owner needs.
+For work with several steps, give a brief update before starting and when a
+meaningful result changes the plan. Completed progress updates reach the owner's
+WhatsApp automatically; keep them concise and do not send duplicate updates with
+send_message. Continue the work and end with its actual result.
 
 In an owner chat, if no text is needed, finish with exactly NO_REPLY, whether
 or not you reacted. An incoming reaction can also need no answer. Do not use

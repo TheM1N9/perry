@@ -196,6 +196,8 @@ type Turn = {
   reply: string;
   /** The message a chunk joins; a tool call between two ends the first. */
   replyBreak: boolean;
+  replyStart: number;
+  progressEnd: number;
   thought: { id: string; text: string } | null;
   thoughts: number;
   tools: Map<string, ToolCall>;
@@ -689,7 +691,7 @@ ${line}`.slice(-4000); this.onText(line); });
     }
     if (session.turn) throw new Error(`${this.label} is still working on this chat's last message.`);
     const turn: Turn = {
-      id: randomUUID(), sink, access: input.access, cwd: input.cwd, reply: "", replyBreak: false, thought: null, thoughts: 0,
+      id: randomUUID(), sink, access: input.access, cwd: input.cwd, reply: "", replyBreak: false, replyStart: 0, progressEnd: 0, thought: null, thoughts: 0,
       tools: new Map(), declined: new Set(), prompts: new Set(), lastActivity: Date.now(), asking: 0,
       stop: new AbortController(), interrupted: false, stalled: false,
     };
@@ -730,7 +732,7 @@ ${line}`.slice(-4000); this.onText(line); });
     } else {
       sink.onEvent?.({ type: "usage", state: "unavailable" });
     }
-    const result = (state: TurnState, error?: string): TurnResult => ({ state, cursor: session.id, text: turn.reply, images: [], ...(error ? { error } : {}) });
+    const result = (state: TurnState, error?: string): TurnResult => ({ state, cursor: session.id, text: turn.reply.slice(turn.replyStart), images: [], ...(error ? { error } : {}) });
     if (turn.stalled) return { ...result("failed", `${this.label} stopped responding, so Perry stopped it. Send another message to carry on; the chat's session is kept.`), errorCode: "idle_timeout" };
     if (turn.interrupted) return result("interrupted");
     if (failure && !last) return result("failed", this.explain(failure).message);
@@ -848,10 +850,12 @@ ${line}`.slice(-4000); this.onText(line); });
       case "agent_message_chunk": {
         this.endThought(turn);
         if (update.content.type !== "text" || !update.content.text) return;
-        const delta = `${turn.replyBreak && turn.reply ? "\n\n" : ""}${update.content.text}`;
+        const separator = turn.replyBreak && turn.reply ? "\n\n" : "";
+        if (turn.replyBreak) turn.replyStart = turn.reply.length + separator.length;
+        const delta = `${separator}${update.content.text}`;
         turn.replyBreak = false;
         turn.reply += delta;
-        sink.onEvent?.({ type: "text", stream: "assistant", itemId: `${turn.id}:reply`, delta, text: turn.reply });
+        sink.onEvent?.({ type: "text", stream: "assistant", itemId: `${turn.id}:reply:${turn.replyStart}`, delta: update.content.text, text: turn.reply.slice(turn.replyStart) });
         return;
       }
       case "agent_thought_chunk": {
@@ -864,9 +868,15 @@ ${line}`.slice(-4000); this.onText(line); });
       case "tool_call":
       case "tool_call_update": {
         this.endThought(turn);
-        turn.replyBreak = true;
         const { sessionUpdate: _, ...fields } = update;
         const before = turn.tools.get(update.toolCallId);
+        if (!before && update.sessionUpdate === "tool_call") {
+          if (!turn.interrupted && !turn.stalled && turn.reply.length > turn.progressEnd) {
+            sink.onEvent?.({ type: "progress", itemId: `${turn.id}:reply:${turn.replyStart}`, text: turn.reply.slice(turn.replyStart), atMs: now });
+            turn.progressEnd = turn.reply.length;
+          }
+          turn.replyBreak = true;
+        }
         const call = { ...before, ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined && value !== null)) } as ToolCall;
         call.title ??= before?.title ?? "tool";
         turn.tools.set(call.toolCallId, call);

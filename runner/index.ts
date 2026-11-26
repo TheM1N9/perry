@@ -1107,6 +1107,9 @@ ${text}` } : asked;
                 latest = event.text;
                 stream.update(latest);
                 schedule();
+              } else if (event.type === "progress") {
+                trace.progress(event.itemId, event.text, event.atMs);
+                schedule();
               } else if (event.type === "item") {
                 if (trace.item(event.phase, event.item, event.atMs)) schedule();
               } else if (event.state !== "unavailable") {

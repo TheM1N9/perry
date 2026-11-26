@@ -238,6 +238,8 @@ export type TokenUsage = { inputTokens: number; cachedInputTokens: number; outpu
 export type TurnEvent =
   /** Text of one message as it is written: `text` is all of it so far. */
   | { type: "text"; stream: "assistant" | "reasoning"; itemId: string; delta: string; text: string }
+  /** A completed user-facing update explicitly followed by more work, never a final answer. */
+  | { type: "progress"; itemId: string; text: string; atMs: number }
   | { type: "item"; phase: "started" | "updated" | "completed"; item: EngineItem; atMs: number }
   /** contextWindow: the model's, when the engine says, so how full the session is can be told (convex/brain.ts checkpoints). */
   | { type: "usage"; state: "complete" | "partial"; usage: TokenUsage; contextWindow?: number }

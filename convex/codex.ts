@@ -1,4 +1,5 @@
 import { deliverTurnInOrder } from "./lib/turn-delivery";
+import { queueProgress } from "./whatsapp";
 import { createHash, randomBytes } from "node:crypto";
 import { ArgumentError } from "../server/validate";
 import { REACTION_ONLY } from "./reactions";
@@ -785,6 +786,7 @@ const vTrace = v.object({
     status: v.union(v.literal("running"), v.literal("done"), v.literal("failed"), v.literal("cancelled")),
   }))),
   spans: v.array(v.object({
+    progress: v.optional(v.boolean()),
     callId: v.string(),
     kind: vSpanKind,
     name: v.string(),
@@ -904,6 +906,9 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
     // Old starts, retries and completions cannot reopen or rewrite a finished step.
     if (existing && existing.status !== "running") continue;
     if (row.kind === "fileChange" && row.status === "ok") await linkFiles(ctx, job.conversationId, run._id, row, job.runnerId);
+    if (span.progress && span.kind === "commentary" && span.status === "ok" && !span.agent && row.output) {
+      await queueProgress(ctx, job._id, callId, row.output);
+    }
     if (existing) {
       await ctx.db.patch(existing._id, row);
       continue;
@@ -1548,7 +1553,7 @@ export const finalizeTurn = internalAction({
       // Marked even when sending failed part-way, so a retry never sends a reply twice.
       await done("deliveredAt");
     }
-    // WhatsApp gets the finished reply, then its files, through the connection's outbox; it showed "typing…" meanwhile.
+    // The final reply and files use the same durable outbox as progress updates.
     if (conversation.channel === "whatsapp" && !job.deliveredAt && !guest) {
       const files: TurnFile[] = job.mediaKey
         ? await ctx.runQuery(internal.codex.turnFiles, { conversationId: conversation._id, messageKey: job.mediaKey })

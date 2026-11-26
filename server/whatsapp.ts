@@ -148,7 +148,7 @@ async function loadDriver(runtime: Runtime): Promise<Driver> {
 }
 
 type Link = { mode: "self" | "separate"; wanted: boolean; phone?: string; status: string; me?: string } | null;
-type Outgoing = { _id: string; attempts: number; to: string; kind: "text" | "typing" | "file" | "reaction" | "album"; album?: { images: number; videos: number }; albumParentId?: string; messageId?: string; text?: string; reaction?: { id: string; fromMe: boolean; remoteJid?: string; participant?: string; emoji: string }; file?: { storageId?: string; localPath?: string; fileName: string; contentType: string; delivery?: { caption?: string; replyTo?: string; voiceNote?: boolean } } };
+type Outgoing = { _id: string; attempts: number; progressTurnId?: string; to: string; kind: "text" | "typing" | "file" | "reaction" | "album"; album?: { images: number; videos: number }; albumParentId?: string; messageId?: string; text?: string; reaction?: { id: string; fromMe: boolean; remoteJid?: string; participant?: string; emoji: string }; file?: { storageId?: string; localPath?: string; fileName: string; contentType: string; delivery?: { caption?: string; replyTo?: string; voiceNote?: boolean } } };
 
 const bare = (jid?: string | null) => (jid ?? "").replace(/:\d+(?=@)/, "");
 const sleep = (ms: number, signal: AbortSignal) => delay(ms, undefined, { signal })
@@ -286,9 +286,15 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
           if (!(await runtime.runQuery("whatsapp:canSend", { id: row._id }, internal)).value) continue;
           let error: string | undefined;
           let attempted = false, accepted = false;
+          const markedText = (text: string) => sendingMode === "self" && [bare(current.user?.id), bare(current.user?.lid)].includes(bare(row.to)) ? `${SELF_MARK}${text}` : text;
           const send = async (content: object) => {
-            const messageId = await runtime.runMutation("whatsapp:reserveMessageId", { id: row._id }, internal) as string | null;
-            if (!messageId) throw new Error("This message was revoked before sending.");
+            const reservation = await runtime.runMutation("whatsapp:reserveMessageId", { id: row._id }, internal) as string | { messageId: string; text: string } | null;
+            if (!reservation) throw new Error("This message was revoked before sending.");
+            const messageId = typeof reservation === "string" ? reservation : reservation.messageId;
+            if (typeof reservation !== "string") {
+              row.text = reservation.text;
+              content = { ...content, text: markedText(reservation.text) };
+            }
             let quoted: object | undefined;
             if (row.file?.delivery?.replyTo) {
               const saved = (await runtime.runQuery("whatsappInbox:message", { key: JSON.stringify([account, bare(row.to), row.file.delivery.replyTo]) }, internal)).value;
@@ -311,8 +317,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
               if (isCurrent()) await current.sendPresenceUpdate("paused", row.to).catch(() => {});
             } else if (row.kind === "text" && row.text) {
               // Only in the owner's own chat, where it tells Perry's messages from theirs; to anyone else it writes as it is.
-              const own = [bare(current.user?.id), bare(current.user?.lid)].filter(Boolean);
-              const text = sendingMode === "self" && own.includes(bare(row.to)) ? `${SELF_MARK}${row.text}` : row.text;
+              const text = markedText(row.text);
               const sent = await send({ text }) as { key?: { id?: string } } | undefined;
               if (sent?.key?.id) {
                 await keepProtocolMessage(sent);
@@ -359,7 +364,7 @@ export function runWhatsApp(runtime: Runtime): () => Promise<void> {
           await runtime.runMutation("whatsapp:sent", { id: row._id, ...(error && !accepted ? { error, uncertain: attempted, permanent: !attempted } : {}) }, internal);
           if (error && !connected) return;
           // Retry this row before later files, so a carousel cannot arrive 1, 3, 2.
-          if (error && row.attempts + 1 < 3) break;
+          if (error && !row.progressTurnId && row.attempts + 1 < 3) break;
         }
       }
     })().catch(error => console.error(`[perry] WhatsApp outbox could not be processed: ${String(error)}`)).finally(() => { flushing = null; });

@@ -8,7 +8,7 @@ import type { EngineItem, ItemStatus, ItemType, ProviderAgentUpdate, TokenUsage 
  * what changed since the last one.
  */
 
-export type Span = Pick<Doc<"runSpans">, "callId" | "kind" | "name" | "status" | "startedAt" | "endedAt" | "durationMs" | "input" | "output" | "agent">;
+export type Span = Pick<Doc<"runSpans">, "callId" | "kind" | "name" | "status" | "startedAt" | "endedAt" | "durationMs" | "input" | "output" | "agent" | "progress">;
 export type TraceReport = {
   spans: Span[];
   agents?: ProviderAgentUpdate[];
@@ -92,10 +92,22 @@ export class TurnTrace {
     if (this.closed) return;
     const callId = `assistant:${itemId}`;
     const known = this.spans.get(callId);
+    if (known && known.status !== "running") return;
     this.spans.set(callId, {
       callId, kind: "commentary", name: "Assistant update", status: "running",
       startedAt: known?.startedAt ?? atMs, output: truncate(text, 32_768),
     });
+    this.dirty.add(callId);
+  }
+
+  progress(itemId: string, text: string, atMs: number) {
+    if (this.closed) return;
+    const callId = `assistant:${itemId}`;
+    const known = this.spans.get(callId);
+    if (known && known.status !== "running") return;
+    const startedAt = known?.startedAt ?? atMs;
+    this.spans.set(callId, { callId, kind: "commentary", name: "Assistant update", status: "ok", progress: true,
+      startedAt, endedAt: Math.max(startedAt, atMs), durationMs: Math.max(0, atMs - startedAt), output: truncate(text, 32_768) });
     this.dirty.add(callId);
   }
 

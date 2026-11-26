@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -9,6 +9,7 @@ import { callsBy, fullAccessSend, whatsappHandle } from "./contacts";
 import { readPersona } from "./persona";
 import type { GuestTarget } from "./reactions";
 import { vFileDelivery, vGuestMessage } from "./schema";
+import { hide, savedValues } from "./vault";
 
 /**
  * WhatsApp, as a linked device (Baileys, the WhatsApp Web protocol), the way
@@ -241,6 +242,44 @@ export async function queueText(ctx: MutationCtx, to: string, markdown: string, 
   return true;
 }
 
+async function progressRecipient(ctx: QueryCtx, turn: Doc<"codexTurns">): Promise<string | null> {
+  if (turn.status !== "running" || turn.stopRequested || turn.outgoingQueuedAt !== undefined || turn.flush || turn.checkpoint || turn.kind === "compact" || turn.guest || turn.preparation) return null;
+  const owner = await install(ctx);
+  if (owner?.paused || !owner?.whatsappOwner || !(await linkRow(ctx))?.wanted) return null;
+  const chat = await ctx.db.get(turn.conversationId);
+  return chat?.channel === "whatsapp" && !chat.contactId && !chat.jobId && !chat.taskId && bareJid(chat.externalId) === owner.whatsappOwner ? owner.whatsappOwner : null;
+}
+
+function progressText(text: string): string {
+  const clean = text.trim().replace(/(?:^|\n)[ \t]*(?:<!--[ \t]*)?memories:[^\n]*$/i, "").trim();
+  if (!clean || /^NO_REPLY\b/.test(clean)) return "";
+  const characters = Array.from(clean);
+  return characters.length > 600 ? characters.slice(0, 599).join("") + "…" : characters.join("");
+}
+
+/** Completed commentary only: keep one pending update and bound chatter durably per turn. */
+export async function queueProgress(ctx: MutationCtx, turnId: Id<"codexTurns">, callId: string, text: string) {
+  const turn = await ctx.db.get(turnId);
+  const to = turn && await progressRecipient(ctx, turn);
+  if (!turn || !to) return;
+  const body = progressText(toWhatsApp(progressText(hide(text, await savedValues(ctx)))));
+  if (!body) return;
+  const hash = createHash("sha256").update(body).digest("hex");
+  const before = turn.whatsappProgress;
+  if (before?.callId === callId || before?.hash === hash) return;
+  const rows = await ctx.db.query("whatsappOutbox").withIndex("by_progress_turn", q => q.eq("progressTurnId", turnId)).collect();
+  const pending = rows.find(row => row.state === "pending");
+  if (pending) {
+    await ctx.db.patch(pending._id, { text: body });
+    await ctx.db.patch(turnId, { whatsappProgress: { at: before?.at ?? pending.createdAt, count: before?.count ?? rows.length, callId, hash } });
+    return;
+  }
+  if (before && (Date.now() - before.at < 60_000 || before.count >= 6)) return;
+  const at = Date.now();
+  await ctx.db.insert("whatsappOutbox", { to, kind: "text", text: body, progressTurnId: turnId, messageId: randomBytes(16).toString("hex").toUpperCase(), state: "pending", createdAt: await nextOutboxTime(ctx), attempts: 0 });
+  await ctx.db.patch(turnId, { whatsappProgress: { at, callId, hash, count: (before?.count ?? 0) + 1 } });
+}
+
 export const send = internalMutation({
   args: { to: v.string(), text: v.string(), approvalId: v.optional(v.id("approvals")), authorizationTurnId: v.optional(v.id("codexTurns")) },
   returns: v.boolean(),
@@ -249,13 +288,24 @@ export const send = internalMutation({
 
 export const reserveMessageId = internalMutation({
   args: { id: v.id("whatsappOutbox") },
-  returns: v.union(v.string(), v.null()),
+  returns: v.union(v.string(), v.object({ messageId: v.string(), text: v.string() }), v.null()),
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row || row.state !== "pending") return null;
+    let text: string | undefined;
+    if (row.progressTurnId) {
+      const turn = await ctx.db.get(row.progressTurnId);
+      const to = turn && await progressRecipient(ctx, turn);
+      text = progressText(hide(row.text ?? "", await savedValues(ctx)));
+      if (!to || to !== row.to || !text) {
+        await ctx.db.patch(row._id, { state: "failed", error: "This progress update is no longer current." });
+        return null;
+      }
+      if (turn?.whatsappProgress) await ctx.db.patch(turn._id, { whatsappProgress: { ...turn.whatsappProgress, at: Date.now() } });
+    }
     const messageId = row.messageId ?? randomBytes(16).toString("hex").toUpperCase();
-    await ctx.db.patch(row._id, { messageId, state: "sending" });
-    return messageId;
+    await ctx.db.patch(row._id, { messageId, state: "sending", ...(text !== undefined ? { text } : {}) });
+    return text !== undefined ? { messageId, text } : messageId;
   },
 });
 
@@ -303,6 +353,23 @@ export const queueTurn = internalMutation({
     const chat = await ctx.db.get(turn.conversationId);
     if (chat?.channel !== "whatsapp" || bareJid(chat.externalId) !== bareJid(args.to)) throw new Error("This reply belongs to a different WhatsApp chat.");
     if (!await recipient(ctx, args.to)) throw new Error("This WhatsApp recipient is no longer authorized.");
+    const progress = await ctx.db.query("whatsappOutbox").withIndex("by_progress_turn", q => q.eq("progressTurnId", turn._id)).collect();
+    for (const row of progress) {
+      if (row.state === "pending") await ctx.db.patch(row._id, { state: "failed", error: "Superseded by the final reply." });
+    }
+    const last = progress.sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!args.files.length && last?.state === "sending" && last.text === toWhatsApp(args.text)) {
+      // The existing send owns this final's outcome; its acknowledgement settles delivery.
+      await ctx.db.patch(last._id, { turnId: turn._id });
+      await ctx.db.patch(turn._id, { outgoingQueuedAt: Date.now() });
+      return null;
+    }
+    // Some engines finish with their last commentary when no final message was emitted.
+    if (!args.files.length && last?.state === "sent" && last.sentAt !== undefined && last.text === toWhatsApp(args.text)) {
+      await ctx.db.patch(last._id, { progressTurnId: undefined, turnId: turn._id });
+      await ctx.db.patch(turn._id, { outgoingQueuedAt: Date.now(), deliveredAt: last.sentAt });
+      return null;
+    }
     if (args.text) await queueText(ctx, args.to, args.text, undefined, args.turnId);
     const queueFile = async (file: typeof args.files[number], albumParentId?: Id<"whatsappOutbox">) => {
       if (file.contentType.startsWith("audio/") && file.delivery?.caption) await queueText(ctx, args.to, file.delivery.caption, undefined, args.turnId);
@@ -408,8 +475,16 @@ export const sent = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row || !["pending", "sending", "uncertain"].includes(row.state)) return null;
+    if (row.progressTurnId && row.turnId) {
+      if (args.error && !args.uncertain && await recipient(ctx, row.to)) {
+        await ctx.db.patch(row._id, { turnId: undefined, state: "failed", attempts: row.attempts + 1, error: args.error.slice(0, 500) });
+        await ctx.db.insert("whatsappOutbox", { to: row.to, kind: "text", text: hide(row.text ?? "", await savedValues(ctx)), turnId: row.turnId, messageId: randomBytes(16).toString("hex").toUpperCase(), state: "pending", createdAt: await nextOutboxTime(ctx), attempts: 0 });
+        return null;
+      }
+      await ctx.db.patch(row._id, { progressTurnId: undefined });
+    }
     if (!args.error) await ctx.db.patch(row._id, { state: "sent", sentAt: Date.now() });
-    else if (args.uncertain || args.permanent || row.attempts + 1 >= 3) {
+    else if (row.progressTurnId || args.uncertain || args.permanent || row.attempts + 1 >= 3) {
       await ctx.db.patch(row._id, { state: args.uncertain ? "uncertain" : "failed", attempts: row.attempts + 1, error: args.error.slice(0, 500) });
       if (row.reaction) {
         const message = await ctx.db.query("channelMessages").withIndex("by_message", q => q.eq("channel", "whatsapp").eq("externalId", row.to).eq("messageId", row.reaction!.id)).unique();

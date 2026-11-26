@@ -304,6 +304,7 @@ type Turn = {
   written: Map<string, string>;
   latest: string;
   messageId: string;
+  commentary?: { messageId: string; nextIndex: number; events: Set<string>; texts: Map<number, { text: string; sent: boolean }>; tools: boolean };
   replies: string[];
   failures: string[];
   results: number;
@@ -722,6 +723,7 @@ export class ClaudeEngine implements Engine {
     turn.finish = () => {
       if (live.turn === turn) live.turn = null;
       turn.ending = true;
+      turn.commentary = undefined;
       // Unread, as when the turn was stopped first: the runner makes each the next turn.
       for (const steer of turn.steers.splice(0)) steer.missed(new Error("The turn ended before Claude Code read the message."));
       finish();
@@ -795,6 +797,24 @@ export class ClaudeEngine implements Engine {
               turn.sink.onEvent?.({ type: "item", phase: "started", item: shown, atMs: at });
             }
             continue;
+          }
+          if (!event.aborted && !event.agent_id) {
+            if (turn.commentary?.messageId !== event.message.id) turn.commentary = { messageId: event.message.id, nextIndex: 0, events: new Set(), texts: new Map(), tools: false };
+            const commentary = turn.commentary;
+            if (!commentary.events.has(event.uuid)) {
+              const start = commentary.nextIndex;
+              commentary.events.add(event.uuid);
+              commentary.nextIndex += event.message.content.length;
+              event.message.content.forEach((block, index) => {
+                if (block.type === "text") commentary.texts.set(start + index, { text: block.text, sent: false });
+                if (block.type === "tool_use") commentary.tools = true;
+              });
+            }
+            if (commentary.tools) for (const [index, block] of commentary.texts) {
+              if (block.sent) continue;
+              block.sent = true;
+              turn.sink.onEvent?.({ type: "progress", itemId: `${commentary.messageId}:${index}`, text: block.text, atMs: Date.now() });
+            }
           }
           for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {
             if (block.type !== "tool_use" || !block.id || !block.name) continue;
