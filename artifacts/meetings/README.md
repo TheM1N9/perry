@@ -18,6 +18,8 @@ The macOS job runs the same Electron pipeline. A system-audio permission refusal
 
 ## Failure inventory, before implementing the checks
 
+- Completed or failed meeting pages keep a one-second React timer running; active duration stops advancing, a finished duration keeps changing, or leaving the page leaks its elapsed-time clock. The five-minute writing warning disappears, appears early, survives a different meeting, or leaves a deadline scheduled after unmount.
+- A writing row with no end timestamp invents a frozen call duration. The warning deadline is tested just before and after five minutes by offsetting only the disposable browser's wall clock; the real timer and production page still run normally. The synthetic server's clock and the owner's Perry stay unchanged.
 - A short viewport plus an expanded queue and long draft clips the composer controls, or creates a second page scrollbar. The footer must scroll independently while Send and the permission notice remain reachable.
 - Successful write-ups repeat personal notes in Summary; a failed write-up hides personal notes; editing the combined Brain page or regenerating loses the separation.
 - Disabling desktop heads-ups stops scheduled calendar refreshes, or refreshing while Perry is paused bypasses the pause.
@@ -49,3 +51,11 @@ The macOS job runs the same Electron pipeline. A system-audio permission refusal
 - CI accidentally uses the owner's home, credentials or installed pet; audio-driver setup runs on a persistent machine; a downloaded driver archive differs from the pinned checksum.
 
 CI uploads reports even after failure and writes coverage to the job summary. Generated audio, databases and profiles are not committed or uploaded. The source harness is permanent CI coverage requested for this feature.
+
+## Dashboard performance verification
+
+The UI journey passed 27 checks on Windows against production build `288c776c-a66b-41f9-be6f-ddba8978e288` on 2026-11-27, with no uncaught browser errors. Completed and failed details had no one-second intervals. The live detail and meeting list each used one shared elapsed-time clock; the duration advanced during recording, stayed fixed after completion, and the shared clock stopped after navigating from the live detail through the list to a failed meeting. The writing warning stayed hidden before five minutes and appeared after the deadline using a real five-second timeout with only the disposable browser's wall clock offset. A writing row without an end time showed no invented duration. Existing note editing, transcript search, mobile layout and saved speech settings passed in the same journey. The fixture backend, Chrome profile and temporary home were closed and removed.
+
+Reproduce after a production build with `pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/meetings/ui.mjs <output-directory>`. The output includes `ui.json` and a screenshot of the deadline warning. These checks use synthetic meetings and do not call paid model APIs or record the owner's microphone.
+
+Automatic approval review rejected removal of the fresh report directory, `node_modules/.cache/performance-meetings-20261127`, with `blocked by policy`. The synthetic fixture home was removed automatically; only the report, screenshots and server log remain in that output directory.

@@ -37,6 +37,17 @@ jobs:
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec tsc --noEmit -p artifacts
       - run: pnpm build
+      - name: Verify indexed recovery and chat history reads
+        id: indexed_reads
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/trace-settlement/run.ts
+      - if: always() && steps.indexed_reads.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: indexed-reads-${{ runner.os }}
+          path: node_modules/.cache/performance-backend/results/result.json
+          if-no-files-found: error
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/library/lifecycle.mjs "${{ runner.temp }}/library-lifecycle"
       - if: always()
         uses: actions/upload-artifact@v4

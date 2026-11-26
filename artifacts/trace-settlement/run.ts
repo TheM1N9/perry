@@ -7,14 +7,37 @@
  * markFinalized; only the runner and input documents are synthetic fixtures.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 
-const scratch = resolve(".batch-work/batch-1/245");
+const scratch = resolve("node_modules/.cache/performance-backend");
 const out = resolve(process.argv[2] ?? join(scratch, "results"));
 const within = relative(scratch, out);
-if (within.startsWith("..") || isAbsolute(within)) throw new Error("Output must stay inside #245 scratch.");
+if (within.startsWith("..") || isAbsolute(within)) throw new Error("Output must stay inside performance-backend scratch.");
+const baseline = process.argv.includes("--baseline");
+// The baseline runs the previous query shapes in a child process, never edits
+// project files, and keeps the same Runtime, schema, fixtures and assertions.
+if (baseline) registerHooks({
+  load(url, context, nextLoad) {
+    const loaded = nextLoad(url, context);
+    const replacements = url.endsWith("/convex/lib/settle-traces.ts") ? [
+      ['.withIndex("by_run_status", (q) => q.eq("runId", runId).eq("status", "running"))', '.withIndex("by_run", (q) => q.eq("runId", runId))'],
+      ['for (const span of spans) {', 'for (const span of spans) {\n    if (span.status !== "running") continue;'],
+    ] : url.endsWith("/convex/dashboard.ts") ? [[
+      '(await Promise.all((["error", "queued"] as const).map(status => ctx.db.query("codexTurns")\n      .withIndex("by_conversation_status", q => q.eq("conversationId", args.id).eq("status", status)).collect()))).flat()',
+      '(await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", args.id)).collect())',
+    ]] : [];
+    if (!replacements.length) return loaded;
+    let source = (typeof loaded.source === "string" ? loaded.source : new TextDecoder().decode(loaded.source as Uint8Array)).replace(/\r\n/g, "\n");
+    for (const [before, after] of replacements) {
+      if (!source.includes(before)) throw new Error(`Baseline source no longer matches ${url}`);
+      source = source.replace(before, after);
+    }
+    return { ...loaded, source };
+  },
+});
 process.env.PERRY_HOME = join(out, "home");
 process.env.DASHBOARD_KEY = "trace-settlement-synthetic-key";
 process.env.PERRY_CREDENTIAL_KEY = "22".repeat(32);
@@ -22,17 +45,24 @@ process.env.CODEX_HOME = join(out, "fake-codex");
 process.env.CLAUDE_CONFIG_DIR = join(out, "fake-claude");
 process.env.PERRY_ENGINE = "";
 mkdirSync(out, { recursive: true });
+globalThis.fetch = async () => { throw new Error("Network disabled in trace settlement E2E"); };
 
 // No project runtime imports before isolation environment is installed.
-const [{ Runtime }, { default: schema }, codex, recovery, routing, { settleRunSpans }, { TurnTrace }] = await Promise.all([
+const [{ Runtime }, { default: schema }, { modules }, { settleRunSpans }, { TurnTrace }] = await Promise.all([
   import("../../server/runtime"), import("../../convex/schema"),
-  import("../../convex/codex"), import("../../convex/recovery"), import("../../convex/routing"),
+  import("../../server/modules"),
   import("../../convex/lib/settle-traces"), import("../../runner/trace"),
 ]);
 const sql = new DatabaseSync(":memory:");
+// Reproduce an old, nonempty table before Runtime creates new schema indexes.
+sql.exec("CREATE TABLE doc_runSpans (_id TEXT PRIMARY KEY, _creationTime REAL NOT NULL, doc TEXT NOT NULL)");
+const oldSpan = JSON.stringify({ runId: "pre-index-run", callId: "old", kind: "command", name: "old completed row", status: "ok", startedAt: 1, output: "preserve this row" });
+sql.prepare("INSERT INTO doc_runSpans VALUES (?, ?, ?)").run("pre-index-span", 1, oldSpan);
 const runtime = new Runtime(sql, schema as never, {
-  codex, recovery, routing,
+  ...modules,
   fixture: {
+    settle: { perryFunction: true, visibility: "internal", kind: "mutation",
+      handler: async (ctx: Parameters<typeof settleRunSpans>[0], args: { runId: Id<"runs">; endedAt: number }) => settleRunSpans(ctx, args.runId, args.endedAt) },
     rollback: { perryFunction: true, visibility: "internal", kind: "mutation",
       handler: async (ctx: Parameters<typeof settleRunSpans>[0], args: { runId: Id<"runs">; endedAt: number }) => {
         await settleRunSpans(ctx, args.runId, args.endedAt);
@@ -56,6 +86,38 @@ const insert = <T extends "runners" | "conversations" | "runs" | "codexTurns" | 
 const runnerId = insert("runners", { name: "trace fake", token, createdAt: now, lastSeenAt: now });
 const rows = async (runId: Id<"runs">) => (await runtime.store.query("runSpans").withIndex("by_run", (q) => q.eq("runId", runId)).collect()) as Doc<"runSpans">[];
 const snapshot = (value: unknown) => JSON.stringify(value);
+const performanceCheck = (name: string, ok: boolean) => {
+  checks[name] = ok;
+  if (!ok && !baseline) throw new Error(name);
+};
+type Hydration = { rows: number; bytes: number; sql: string[] };
+const hydration = new Map<string, Hydration>();
+const originalRows = runtime.store.rows.bind(runtime.store);
+let measuring = false;
+runtime.store.rows = (text, parameters) => {
+  const source = originalRows(text, parameters);
+  return (function* () {
+    for (const doc of source) {
+      const table = /FROM "doc_(\w+)"/.exec(text)?.[1];
+      if (measuring && table) {
+        const measure = hydration.get(table) ?? { rows: 0, bytes: 0, sql: [] };
+        measure.rows++;
+        measure.bytes += Buffer.byteLength(JSON.stringify(doc));
+        if (!measure.sql.includes(text)) measure.sql.push(text);
+        hydration.set(table, measure);
+      }
+      yield doc;
+    }
+  })();
+};
+async function measured<T>(work: () => Promise<T>) {
+  hydration.clear();
+  measuring = true;
+  try {
+    const value = await work();
+    return { value, hydration: Object.fromEntries(hydration) };
+  } finally { measuring = false; }
+}
 
 function fixture(label: string, startedAt = now - 1000) {
   const conversationId = insert("conversations", {
@@ -80,6 +142,11 @@ async function start(f: ReturnType<typeof fixture>) {
 }
 
 try {
+  check("index:creates-on-existing-table", Boolean(sql.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='i_runSpans_by_run_status'").get()));
+  check("index:preserves-existing-row", (sql.prepare("SELECT doc FROM doc_runSpans WHERE _id='pre-index-span'").get() as { doc: string }).doc === oldSpan);
+  const plan = sql.prepare("EXPLAIN QUERY PLAN SELECT _id, _creationTime, doc FROM doc_runSpans WHERE json_extract(doc,'$.runId') IS ? AND json_extract(doc,'$.status') IS ? ORDER BY json_extract(doc,'$.runId'), json_extract(doc,'$.status'), _creationTime").all("pre-index-run", "running") as Array<{ detail: string }>;
+  check("index:sqlite-uses-run-status-bounds", plan.some(row => row.detail.includes("i_runSpans_by_run_status") && row.detail.includes("<expr>=? AND <expr>=?")));
+  evidence.indexPlan = plan;
   for (const [label, result] of [
     ["success", { response: "Synthetic finished reply." }],
     ["failure", { error: "Synthetic engine failure.", errorCode: "engine_failed" }],
@@ -205,6 +272,63 @@ try {
   trace.retry(drained);
   check("runner:failed-report-retries-terminal-state", snapshot(trace.take()) === snapshot(drained));
   evidence.runner = drained;
+
+  const payload = fixture("completed payload cost");
+  const completedIds = Array.from({ length: 256 }, (_, i) => insert("runSpans", {
+    runId: payload.runId, callId: `complete-${i}`, kind: "command", name: "large completed fixture",
+    status: i % 2 ? "ok" : "error", startedAt: payload.startedAt, endedAt: now, output: "x".repeat(8192),
+  }));
+  const completedBefore = completedIds.map(id => snapshot(runtime.store.get(id)));
+  for (let i = 0; i < 3; i++) insert("runSpans", { runId: payload.runId, callId: `open-${i}`, kind: "command", name: "small open fixture", status: "running", startedAt: payload.startedAt });
+  const firstSettlement = await measured(() => call("fixture:settle", { runId: payload.runId, endedAt: now }));
+  check("performance:settlement-closes-open-steps", firstSettlement.value === 3);
+  performanceCheck("performance:settlement-hydrates-only-open-spans", firstSettlement.hydration.runSpans?.rows === 3 && firstSettlement.hydration.runSpans.bytes < 2000);
+  check("performance:large-terminal-siblings-unchanged", completedIds.every((id, i) => snapshot(runtime.store.get(id)) === completedBefore[i]));
+  const repeatSettlement = await measured(() => call("fixture:settle", { runId: payload.runId, endedAt: now + 1000 }));
+  check("performance:repeated-settlement-changes-nothing", repeatSettlement.value === 0);
+  performanceCheck("performance:repeated-settlement-hydrates-no-spans", !repeatSettlement.hydration.runSpans);
+  evidence.settlementHydration = { first: firstSettlement.hydration.runSpans, repeat: repeatSettlement.hydration.runSpans ?? { rows: 0, bytes: 0 }, completedRows: completedIds.length };
+
+  const waitingChat = fixture("waiting lookup");
+  runtime.store.patch(waitingChat.conversationId, { pendingTurns: 0, engine: "codex" });
+  runtime.store.patch(waitingChat.turnId, { status: "done", finalizedAt: now });
+  runtime.store.patch(waitingChat.runId, { status: "ok", finishedAt: now });
+  for (let i = 0; i < 300; i++) insert("codexTurns", {
+    runnerId, conversationId: waitingChat.conversationId, runId: waitingChat.runId, engine: "codex", prompt: "x".repeat(4096), instructions: "synthetic",
+    status: "done", createdAt: now - 5000 - i, finalizedAt: now,
+  });
+  const addWaiting = (status: "queued" | "error", fields: Record<string, unknown> = {}) => insert("codexTurns", {
+    runnerId, conversationId: waitingChat.conversationId, runId: waitingChat.runId, engine: "codex", prompt: "small waiting fixture", instructions: "synthetic",
+    status, createdAt: now, queueOrder: 10, waiting: { until: now + 60000, why: status }, ...fields,
+  });
+  const errorWait = addWaiting("error", { retrying: true, queueOrder: 20 });
+  const queuedWait = addWaiting("queued");
+  const finalizedWait = addWaiting("queued", { finalizedAt: now, queueOrder: -10 });
+  const nonRetrying = addWaiting("error", { queueOrder: -20 });
+  const readWaiting = async () => (await runtime.runQuery("dashboard:getChat", { key: process.env.DASHBOARD_KEY, id: waitingChat.conversationId })).value as { waiting?: { why: string }; isRunning: boolean };
+  const waitingRead = await measured(readWaiting);
+  check("waiting:queued-before-retrying-error", waitingRead.value.waiting?.why === "queued");
+  performanceCheck("performance:waiting-excludes-completed-history", waitingRead.hydration.codexTurns?.rows === 4 && waitingRead.hydration.codexTurns.bytes < 5000);
+  runtime.store.patch(errorWait, { queueOrder: 0 });
+  check("waiting:retrying-error-before-queued", (await readWaiting()).waiting?.why === "error");
+  runtime.store.patch(errorWait, { queueOrder: 10 });
+  check("waiting:equal-position-keeps-creation-order", (await readWaiting()).waiting?.why === "error");
+  const errorCreatedAt = runtime.store.get(errorWait)!._creationTime;
+  sql.prepare("UPDATE doc_codexTurns SET _creationTime = ? WHERE _id = ?").run(runtime.store.get(queuedWait)!._creationTime, errorWait);
+  check("waiting:identical-imported-positions-preserve-index-order", (await readWaiting()).waiting?.why === "error");
+  sql.prepare("UPDATE doc_codexTurns SET _creationTime = ? WHERE _id = ?").run(errorCreatedAt, errorWait);
+  runtime.store.patch(errorWait, { retrying: false });
+  runtime.store.patch(queuedWait, { waiting: undefined });
+  check("waiting:ordinary-queue-suppresses-later-wait", (await readWaiting()).waiting === undefined);
+  runtime.store.patch(queuedWait, { finalizedAt: now });
+  check("waiting:finalized-and-nonretrying-excluded", (await readWaiting()).waiting === undefined);
+  runtime.store.patch(queuedWait, { status: "running", finalizedAt: undefined });
+  runtime.store.patch(waitingChat.conversationId, { pendingTurns: 1 });
+  runtime.store.patch(errorWait, { retrying: true });
+  const activeRead = await measured(readWaiting);
+  check("waiting:active-running-suppresses-wait", activeRead.value.isRunning && activeRead.value.waiting === undefined);
+  performanceCheck("performance:running-reads-one-turn", activeRead.hydration.codexTurns?.rows === 1);
+  evidence.waitingHydration = { idle: waitingRead.hydration.codexTurns, running: activeRead.hydration.codexTurns, completedRows: 301, excluded: [finalizedWait, nonRetrying].length };
 } catch (error) {
   checks.completed = false;
   evidence.failure = error instanceof Error ? { message: error.message, stack: error.stack } : String(error);
@@ -212,7 +336,8 @@ try {
 } finally {
   await runtime.stop();
   sql.close();
-  const result = { scope: "Backend E2E: production mutation handlers and SQLite runtime; fake data, no network, no models, no UI", checks, pass: Object.values(checks).every(Boolean), evidence };
+  const result = { scope: "Backend E2E: production mutation handlers and SQLite runtime; fake data, no network, no models, no UI", baseline, checks, pass: Object.values(checks).every(Boolean), evidence };
+  if (!result.pass) process.exitCode = 1;
   writeFileSync(join(out, "result.json"), JSON.stringify(result, null, 2) + "\n");
   console.log(JSON.stringify({ pass: result.pass, checks, result: join(out, "result.json") }, null, 2));
 }

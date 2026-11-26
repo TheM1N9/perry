@@ -14,9 +14,14 @@
 12. A runner's clock is ahead of the server's settlement clock. End must not precede start and duration must not be negative.
 13. One run settles beside another running run. The other run must remain untouched.
 14. A step already has partial output. Settlement must preserve it, use a fixed safe fallback only when output is absent/empty, and avoid storing unredacted turn error text.
-15. Large traces must be read via the existing by_run index, not a global scan or arbitrary take limit that leaves open steps behind.
+15. Large traces must be read via a run/status index, not a global scan or arbitrary take limit that leaves open steps behind. Completed step payloads must not be hydrated just to discover there is nothing to settle.
 16. A transaction fails after settlement. Real runtime rollback must undo settlement, so a partial terminal write cannot leak.
 17. Local trace receives a late start/update/completion or usage event after drain. It must remain closed and not schedule new activity; failed reports may retry their latest terminal state.
 18. After #244 integration, a limit fixture omits the authoritative errorCode and accidentally expects message-text classification. The coded limit must retry, while a legacy text-only limit must settle its spans without claiming a coded limit or authorizing retry.
+19. An existing, nonempty runSpans table predates the run/status index. Opening the actual Runtime must create the index without losing its rows, and SQLite must use it for run/status bounds.
+20. A run has hundreds of large completed payloads beside a few open steps, then is settled again. The first pass must hydrate only open steps; the repeat must hydrate no span documents, while preserving terminal siblings byte for byte.
+21. An idle chat has large completed history plus queued and retrying-error turns. The waiting lookup must hydrate only queued/error partitions and preserve the selected queue position, including ties resolved by creation time.
+22. A finalized queued/error turn or a nonretrying error must not supply waiting state. An earlier ordinary queued turn without waiting must suppress a later waiting turn, and a running turn must suppress waiting entirely.
+23. Imported turns can share both queue position and creation time. Combining indexed status partitions must preserve the previous index order when the queue comparator ties completely.
 
 Scope: production mutation handlers + local SQLite/transaction runtime, synthetic runner/turn rows only; no network, engines, browser, scheduler start, or installed Perry data. Integrated build/E2E is the coordinator's responsibility. Each run must emit compact result.json with explicit assertions and before/after span rows.

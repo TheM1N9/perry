@@ -1497,6 +1497,7 @@ export default defineSchema({
     agent: v.optional(v.string()),
   })
     .index("by_run", ["runId", "callId"])
+    .index("by_run_status", ["runId", "status"])
     /** A run's steps in the order they started, so the newest are read first (dashboard.getRunSteps). */
     .index("by_run_started", ["runId", "startedAt"]),
 

@@ -551,7 +551,8 @@ export const getChat = query({
       : null;
     const runner = running?.runnerId ? await ctx.db.get(running.runnerId) : null;
     const health = running ? turnHealth(running, runner, Date.now()) : null;
-    const waiting = running ? undefined : (await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", args.id)).collect())
+    const waiting = running ? undefined : (await Promise.all((["error", "queued"] as const).map(status => ctx.db.query("codexTurns")
+      .withIndex("by_conversation_status", q => q.eq("conversationId", args.id).eq("status", status)).collect()))).flat()
       .filter(turn => turn.finalizedAt === undefined && (turn.status === "queued" || turn.status === "error" && turn.retrying))
       .sort(byQueuePosition)[0]?.waiting;
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
