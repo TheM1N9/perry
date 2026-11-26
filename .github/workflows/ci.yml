@@ -127,6 +127,34 @@ jobs:
         id: automatic_brain
         timeout-minutes: 3
         run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/memory-capture/automatic.mjs "${{ runner.temp }}/automatic-brain"
+      - name: Verify WhatsApp progress delivery
+        id: whatsapp_progress
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/whatsapp-progress/run.mjs "${{ runner.temp }}/whatsapp-progress"
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+      - name: Verify native progress adapters
+        id: progress_adapters
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/whatsapp-progress/adapters.mjs "${{ runner.temp }}/progress-adapters"
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+      - name: Verify ACP progress adapters
+        id: acp_progress
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/whatsapp-progress/acp.mjs "${{ runner.temp }}/acp-progress"
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+      - if: always() && (steps.whatsapp_progress.outcome != 'skipped' || steps.progress_adapters.outcome != 'skipped' || steps.acp_progress.outcome != 'skipped')
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: whatsapp-progress-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/whatsapp-progress/result.json
+            ${{ runner.temp }}/progress-adapters/result.json
+            ${{ runner.temp }}/acp-progress/result.json
+          if-no-files-found: error
       - name: Verify Full access approvals
         id: full_access_approvals
         timeout-minutes: 3

@@ -796,6 +796,11 @@ export class ClaudeEngine implements Engine {
             }
             continue;
           }
+          if (event.message.content.some(block => block.type === "tool_use")) {
+            event.message.content.forEach((block, index) => {
+              if (block.type === "text") turn.sink.onEvent?.({ type: "progress", itemId: `${event.message.id}:${index}`, text: block.text, atMs: Date.now() });
+            });
+          }
           for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {
             if (block.type !== "tool_use" || !block.id || !block.name) continue;
             const item = { id: block.id, ...describe(block.name, block.input ?? {}, perry), status: "running" as ItemStatus, raw: block, at: Date.now() };

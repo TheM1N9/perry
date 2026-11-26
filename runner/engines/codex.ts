@@ -608,8 +608,11 @@ export class CodexEngine implements Engine {
       return listener;
     };
     const item = (phase: "started" | "completed") => ofTurn((event: ItemEvent) => {
-      const normalized = toItem(event.item, phase);
       const atMs = (phase === "started" ? event.startedAtMs : event.completedAtMs) ?? Date.now();
+      if (phase === "completed" && event.item.type === "agentMessage" && event.item.phase === "commentary" && typeof event.item.text === "string") {
+        sink.onEvent?.({ type: "progress", itemId: event.item.id, text: event.item.text, atMs });
+      }
+      const normalized = toItem(event.item, phase);
       for (const agent of normalized?.agents ?? []) this.trackAgent(app, agent, sink);
       if (normalized) sink.onEvent?.({ type: "item", phase, item: normalized, atMs });
     });

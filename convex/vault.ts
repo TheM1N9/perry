@@ -155,6 +155,9 @@ async function hideInChat(ctx: MutationCtx, conversationId: Id<"conversations">,
   const turns = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", conversationId)).collect();
   for (const turn of turns) {
     if (await scrubStream(ctx, turn._id, scrub)) changed++;
+    for (const row of await ctx.db.query("whatsappOutbox").withIndex("by_progress_turn", q => q.eq("progressTurnId", turn._id)).collect()) {
+      if (row.text?.includes(value)) { await ctx.db.patch(row._id, { text: scrub(row.text) }); changed++; }
+    }
     const patch: Partial<Pick<Doc<"codexTurns">, "prompt" | "history" | "partial" | "response">> = {};
     for (const field of ["prompt", "history", "partial", "response"] as const) {
       const text = turn[field];

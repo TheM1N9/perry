@@ -1477,6 +1477,8 @@ export default defineSchema({
    * and result, cut to about 2 KB.
    */
   runSpans: defineTable({
+    /** Completed provider commentary eligible for a bounded owner progress update. */
+    progress: v.optional(v.boolean()),
     runId: v.id("runs"),
     kind: vSpanKind,
     name: v.string(),
@@ -1668,6 +1670,8 @@ export default defineSchema({
   }).index("by_key", ["key"]).index("by_created", ["createdAt"]),
 
   whatsappOutbox: defineTable({
+    /** Progress is separate from final-reply delivery accounting. */
+    progressTurnId: v.optional(v.id("codexTurns")),
     seenAt: v.optional(v.number()),
     approvalId: v.optional(v.id("approvals")),
     turnId: v.optional(v.id("codexTurns")),
@@ -1688,7 +1692,7 @@ export default defineSchema({
     sentAt: v.optional(v.number()),
     attempts: v.number(),
     error: v.optional(v.string()),
-  }).index("by_state", ["state", "createdAt"]).index("by_notification", ["notificationId"]).index("by_turn", ["turnId"]).index("by_message", ["messageId"]).index("by_approval", ["approvalId"]),
+  }).index("by_state", ["state", "createdAt"]).index("by_progress_turn", ["progressTurnId"]).index("by_notification", ["notificationId"]).index("by_turn", ["turnId"]).index("by_message", ["messageId"]).index("by_approval", ["approvalId"]),
 
   /** What a runner asked the owner before acting on their machine. See approvals.ts. */
   approvals: defineTable({
@@ -1768,6 +1772,7 @@ export default defineSchema({
 
   /** Subscription turns are queued for the owner's outbound local runner. */
   codexTurns: defineTable({
+    whatsappProgress: v.optional(v.object({ at: v.number(), callId: v.string(), hash: v.string(), count: v.number() })),
     deliverySeenAt: v.optional(v.number()),
     deliveryNoticeAt: v.optional(v.number()),
     outgoingQueuedAt: v.optional(v.number()),
