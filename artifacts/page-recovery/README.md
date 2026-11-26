@@ -79,9 +79,13 @@ started, and the isolated home was removed normally.
 The navigation scenario waits for the failed response to finish and observes
 the browser scheduling its retry before leaving. A distinct `Retry-After`
 delay identifies that timer; the observer preserves native timer behavior and
-is removed before navigation. No further note request may occur after the
-retry deadline. This distinguishes backoff cleanup from aborting a request
-that has not yet failed. The strengthened journey passed all 26 checks again.
+retains its ID through client navigation. Acceptance requires a matching
+native `clearTimeout` call within two seconds and exactly one note request.
+Both timer observers are restored in `finally`. This directly verifies timer
+cancellation even if a stale callback would suppress its own network request;
+it uses no fixed delay to infer cleanup. The report records
+`navigationRetryCancelled: true`. The strengthened journey passed all 26
+checks again.
 
 The first hosted Windows run passed 24 checks, then reached GitHub's six-hour
 job limit while collecting response bodies from pages that had navigated away.

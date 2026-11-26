@@ -113,31 +113,36 @@ try {
       fault = { path: "notes:list", status: 500, error: "Synthetic failure before navigation", retryAfter: "2.137" };
       const beforeLeave = count("notes:list");
       beforeFaultResponse = () => page.evaluate(() => {
-        const nativeTimeout = window.setTimeout;
-        (window as any).__restoreNavigationTimer = () => { window.setTimeout = nativeTimeout; };
+        const nativeTimeout = window.setTimeout, nativeClearTimeout = window.clearTimeout;
+        const observation = { timer: undefined as number | undefined, cancelled: false };
+        (window as any).__navigationRetry = observation;
+        (window as any).__restoreNavigationTimer = () => { window.setTimeout = nativeTimeout; window.clearTimeout = nativeClearTimeout; };
         window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: any[]) => {
           const timer = nativeTimeout(handler, delay, ...args);
-          if (delay === 2_137) (window as any).__navigationRetryScheduled = true;
+          if (delay === 2_137) observation.timer = timer;
           return timer;
         }) as typeof window.setTimeout;
+        window.clearTimeout = ((timer?: number) => {
+          nativeClearTimeout(timer);
+          if (observation.timer !== undefined && timer === observation.timer) observation.cancelled = true;
+        }) as typeof window.clearTimeout;
       });
       const failedBeforeLeave = page.waitForResponse((reply: any) => reply.url().endsWith("/api/backend/call") && reply.request().postDataJSON()?.path === "notes:list" && reply.status() === 500);
       try {
         await gotoBrain(); await (await failedBeforeLeave).finished();
-        await page.waitForFunction(() => (window as any).__navigationRetryScheduled === true);
+        await page.waitForFunction(() => (window as any).__navigationRetry.timer !== undefined, undefined, { timeout: 5_000 });
+        await library().click(); await page.getByRole("heading", { name: "Library", exact: true }).waitFor();
+        await page.waitForFunction(() => (window as any).__navigationRetry.cancelled === true, undefined, { timeout: 2_000 });
+        notes.navigationRetryCancelled = true;
         assert.equal(count("notes:list") - beforeLeave, 1);
       } finally {
         beforeFaultResponse = undefined;
         await page.evaluate(() => {
           (window as any).__restoreNavigationTimer?.();
           delete (window as any).__restoreNavigationTimer;
-          delete (window as any).__navigationRetryScheduled;
+          delete (window as any).__navigationRetry;
         });
       }
-      await library().click(); await page.getByRole("heading", { name: "Library", exact: true }).waitFor();
-      const afterLeave = count("notes:list");
-      await page.waitForTimeout(2_400);
-      assert.equal(count("notes:list"), afterLeave);
       check("navigationCancelsPendingReadBackoff", true);
 
       for (const name of ["immediatePageRetryFetchesOnce", "repeatedPageRetryFetchesOnce"]) {
