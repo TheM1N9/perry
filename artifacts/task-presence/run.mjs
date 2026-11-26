@@ -1,4 +1,4 @@
-// Inventory: failure-cases.md. Real Runtime/SQLite/backend HTTP; no engine, scheduler or personal data.
+// Inventory: failure-cases.md. Real Runtime/SQLite/backend HTTP, plus bounded scheduler admission; no engine or personal data.
 // pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/task-presence/run.mjs <outDir>
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 
 const out = resolve(process.argv[2] ?? 'node_modules/.cache/task-presence');
+const admissionBaseline = process.argv.includes('--admission-baseline');
 mkdirSync(out, { recursive: true });
 const home = mkdtempSync(join(tmpdir(), 'perry-task-presence-'));
 process.env.PERRY_HOME = home;
@@ -25,7 +26,7 @@ const [{ Runtime }, { default: schema }, { modules }] = await Promise.all([
 const sql = new DatabaseSync(join(home, 'fixture.sqlite'));
 let runtime = new Runtime(sql, schema, modules, { storageDir: join(home, 'storage') });
 await runtime.stop();
-const report = { checkedAt: new Date().toISOString(), mode: 'backend-projection-proof', cases: [], evidence: {}, passed: false };
+const report = { checkedAt: new Date().toISOString(), mode: 'backend-projection-proof', admissionBaseline, cases: [], evidence: {}, passed: false };
 const save = () => writeFileSync(join(out, 'result.json'), JSON.stringify(report, null, 2) + '\n');
 const insert = (table, doc) => runtime.exclusive(() => runtime.store.insert(table, doc));
 const get = id => runtime.exclusive(() => runtime.store.get(id));
@@ -74,6 +75,28 @@ const fixture = async (name, { tracked = false, age = 0, status = 'running', run
   const turn = turnStatus ? await insert('codexTurns', { conversationId: chat, runId: run, runnerId: runner, engine: 'codex', prompt: 'Synthetic task execution.', instructions: 'No external calls.', status: turnStatus, createdAt: started, ...(preparing ? { preparing: true } : {}) }) : undefined;
   return { id, chat, run, turn };
 };
+
+const admissionJourney = async (name, run) => journey(name, async () => {
+  const previous = runtime, admissionSql = new DatabaseSync(':memory:');
+  let unexpectedActions = 0;
+  runtime = new Runtime(admissionSql, schema, {
+    ...modules,
+    // Replay the previous single-mutation admission boundary without editing source.
+    ...(admissionBaseline ? { tasks: { ...modules.tasks, work: modules.tasks.admitTurn } } : {}),
+    brain: { ...modules.brain, handleTurn: { ...modules.brain.handleTurn, handler: () => { unexpectedActions++; throw Error('Preparation actions are forbidden in admission replay'); } } },
+  }, { storageDir: join(home, 'admission-storage') });
+  await runtime.stop();
+  try {
+    await insert('installation', { createdAt: Date.now(), defaultEngine: 'codex', onboarding: 'skipped' });
+    const origin = await insert('conversations', { channel: 'web', externalId: 'admission-origin', threadId: 'synthetic-admission-origin' });
+    const seed = (title, fields = {}) => insert('tasks', { title, prompt: 'Synthetic admission task.', origin, status: 'queued', plan: [], createdAt: Date.now(), updatedAt: Date.now(), ...fields });
+    const result = await run({ sql: admissionSql, origin, seed });
+    assert.equal(unexpectedActions, 0, 'Admission checks must not execute a preparation action');
+    return result;
+  } finally {
+    await runtime.stop(); admissionSql.close(); runtime = previous;
+  }
+});
 
 try {
   const now = Date.now();
@@ -212,6 +235,86 @@ try {
   await call('pause:set', { key, paused: true });
   await check('paused queued task is not classified as executing', paused, thread => assert.notEqual(thread.status, 'working'));
   report.taskDataPreservedAcrossRestart = true;
+  await admissionJourney('failed scheduled admissions release task capacity', async ({ sql, seed }) => {
+    const rejected = [await seed('Admission rejected A'), await seed('Admission rejected B')], later = await seed('Later queued task');
+    sql.exec(`CREATE TEMP TRIGGER reject_admission BEFORE INSERT ON doc_agentThreads
+      WHEN json_extract(NEW.doc, '$.title') LIKE '%Admission rejected%'
+      BEGIN SELECT RAISE(ABORT, 'synthetic-private-admission-reason'); END`);
+    await call('tasks:tick');
+    let watchdog, finished = false, resolveDone;
+    const done = new Promise((resolve, reject) => { resolveDone = resolve; watchdog = setTimeout(() => reject(Error('Admission scheduler did not settle')), 5000); });
+    const onChange = () => {
+      const failedTasks = rejected.every(id => runtime.store.get(id)?.status === 'failed');
+      const failedSchedules = sql.prepare("SELECT count(*) AS n FROM doc_scheduledFailures WHERE json_extract(doc,'$.functionName')='tasks:work'").get().n;
+      if (!finished && (failedTasks || failedSchedules === 2)) { finished = true; void runtime.stop(); resolveDone(); }
+    };
+    runtime.events.on('change', onChange);
+    try { runtime.start(); await done; await runtime.stop(); }
+    finally { clearTimeout(watchdog); runtime.events.off('change', onChange); await runtime.stop(); }
+    await call('tasks:tick');
+    const observed = { rejected: await Promise.all(rejected.map(get)), later: await get(later), handoffs: await rows('taskHandoffs'), scheduledFailures: await rows('scheduledFailures') };
+    report.evidence.admissionFailure = observed;
+    assert.ok(observed.rejected.every(task => task.status === 'failed'), 'Rejected starts must not remain running');
+    assert.equal(observed.later.status, 'running', 'A later task must obtain a released slot');
+    assert.equal(observed.scheduledFailures.length, 0, 'Handled admission errors must not leave failed scheduled callbacks');
+    for (const task of observed.rejected) {
+      assert.ok(task.error && !task.error.includes('synthetic-private-admission-reason'));
+      assert.equal(observed.handoffs.filter(row => row.taskId === task._id && row.outcome === 'failed').length, 1);
+      await call('tasks:work', { id: task._id });
+    }
+    assert.equal((await rows('taskHandoffs')).length, 2, 'Repeated callbacks must not duplicate failure reports');
+    return observed;
+  });
+  await admissionJourney('partial task admission rolls back with a failed preparation schedule', async ({ sql, seed }) => {
+    const id = await seed('Late admission failure', { status: 'running', turns: 1, result: 'Earlier saved work.', plan: [{ title: 'Keep prior work', status: 'done' }] });
+    const before = Object.fromEntries(await Promise.all(['agentThreads', 'conversations', 'runs', 'codexTurns'].map(async table => [table, (await rows(table)).length])));
+    sql.exec("CREATE TEMP TRIGGER reject_preparation BEFORE INSERT ON _scheduled WHEN NEW.name='brain:handleTurn' BEGIN SELECT RAISE(ABORT, 'synthetic-private-admission-reason'); END");
+    let error; try { await call('tasks:work', { id }); } catch (cause) { error = String(cause); }
+    const task = await get(id), after = Object.fromEntries(await Promise.all(Object.keys(before).map(async table => [table, (await rows(table)).length])));
+    report.evidence.partialAdmission = { task, before, after, error };
+    assert.equal(error, undefined, 'Startup failure must be contained by its admission boundary');
+    assert.equal(task.status, 'failed'); assert.equal(task.result, 'Earlier saved work.'); assert.equal(task.plan[0].status, 'done');
+    assert.equal(task.conversationId, undefined); assert.deepEqual(after, before);
+    assert.equal(sql.prepare("SELECT count(*) AS n FROM _scheduled WHERE name='brain:handleTurn'").get().n, 0);
+    return { task, before, after };
+  });
+  await admissionJourney('existing durable work survives a later admission fault', async ({ sql, seed, origin }) => {
+    const id = await seed('Existing admitted work', { status: 'running', turns: 1 });
+    await call('tasks:work', { id });
+    const task = await get(id), turns = await rows('codexTurns'), pending = sql.prepare("SELECT count(*) AS n FROM _scheduled WHERE name='brain:handleTurn'").get().n;
+    assert.equal(turns.length, 1); assert.equal(pending, 1);
+    sql.exec("CREATE TEMP TRIGGER reject_route BEFORE UPDATE ON doc_tasks WHEN NEW._id=OLD._id BEGIN SELECT RAISE(ABORT, 'synthetic-private-admission-reason'); END");
+    await call('tasks:work', { id });
+    assert.deepEqual(await get(id), task); assert.deepEqual(await rows('codexTurns'), turns);
+    assert.equal(sql.prepare("SELECT count(*) AS n FROM _scheduled WHERE name='brain:handleTurn'").get().n, pending);
+    assert.equal((await rows('taskHandoffs')).length, 0);
+    return { task, turns, origin };
+  });
+  await admissionJourney('pending accepted steering survives an admission fault', async ({ sql, seed }) => {
+    const id = await seed('Admitted task awaiting steering', { status: 'running', turns: 1 });
+    await call('tasks:work', { id });
+    const task = await get(id), turn = (await rows('codexTurns'))[0];
+    await patch(turn._id, { status: 'done', finalizedAt: Date.now() });
+    const machine = await insert('runners', { token: 'synthetic-admission-runner', name: 'Admission replay', createdAt: Date.now(), lastSeenAt: Date.now() });
+    const steer = await insert('codexSteers', { turnId: turn._id, runnerId: machine, conversationId: task.conversationId, runId: turn.runId, prompt: 'Keep the accepted owner correction.', instructions: '', status: 'pending', createdAt: Date.now() });
+    await patch(id, { steering: [{ requestId: 'admission-steer', text: 'Keep the accepted owner correction.', deliveryId: steer, createdAt: Date.now() }] });
+    const before = await get(id), beforeSteers = await rows('codexSteers');
+    sql.exec("CREATE TEMP TRIGGER reject_route BEFORE UPDATE ON doc_tasks WHEN NEW._id=OLD._id BEGIN SELECT RAISE(ABORT, 'synthetic-private-admission-reason'); END");
+    await call('tasks:work', { id });
+    assert.deepEqual(await get(id), before); assert.deepEqual(await rows('codexSteers'), beforeSteers);
+    assert.equal((await rows('taskHandoffs')).length, 0);
+    return { task: before, steering: beforeSteers };
+  });
+  await admissionJourney('cancelled paused and dependent task holds remain holds', async ({ seed }) => {
+    const cancelled = await seed('Cancelled before callback', { status: 'cancelled', turns: 1 });
+    const saved = await get(cancelled); await call('tasks:work', { id: cancelled }); assert.deepEqual(await get(cancelled), saved);
+    const prerequisite = await seed('Prerequisite not finished'), dependent = await seed('Wait for prerequisite', { status: 'running', turns: 1, dependsOn: [prerequisite] });
+    await call('tasks:work', { id: dependent }); assert.equal((await get(dependent)).status, 'queued'); assert.equal((await get(dependent)).turns, 0);
+    const paused = await seed('Paused before callback', { status: 'running', turns: 1 });
+    await call('pause:set', { key, paused: true }); await call('tasks:work', { id: paused });
+    assert.equal((await get(paused)).status, 'blocked'); assert.match((await get(paused)).question, /paused/); assert.equal((await rows('codexTurns')).length, 0); assert.equal((await rows('taskHandoffs')).length, 0);
+    return { cancelled: await get(cancelled), dependent: await get(dependent), paused: await get(paused) };
+  });
 } catch (error) { report.setupError = String(error); }
 finally {
   await runtime.stop(); await new Promise(done => server.close(done)); server.closeAllConnections(); sql.close(); globalThis.fetch = nativeFetch;

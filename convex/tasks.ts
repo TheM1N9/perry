@@ -301,8 +301,30 @@ export const chatFor = internalMutation({
   },
 });
 
-/** One turn of the task, in its own chat. */
+/** Failed admission releases capacity without replaying any external work. */
 export const work = internalMutation({
+  args: { id: v.id("tasks") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    try {
+      // A nested mutation rolls back its partial chat/turn/schedule writes together.
+      await ctx.runMutation(internal.tasks.admitTurn, args);
+    } catch {
+      const task = await ctx.db.get(args.id);
+      if (!task || task.status !== "running") return null;
+      if (task.conversationId && await hasPendingWork(ctx, task.conversationId)
+        || await ctx.runQuery(internal.tasks.awaitingSteering, { id: task._id })) return null;
+      await ctx.runMutation(internal.tasks.afterTurn, {
+        id: task._id,
+        error: "The next task turn could not start. Saved work was kept. Review its Board entry and Perry's setup before continuing.",
+      });
+    }
+    return null;
+  },
+});
+
+/** Admit one turn atomically; only its scheduled wrapper handles a failed start. */
+export const admitTurn = internalMutation({
   args: { id: v.id("tasks") },
   returns: v.null(),
   handler: async (ctx, args) => {

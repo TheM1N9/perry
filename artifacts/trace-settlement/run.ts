@@ -17,18 +17,23 @@ const out = resolve(process.argv[2] ?? join(scratch, "results"));
 const within = relative(scratch, out);
 if (within.startsWith("..") || isAbsolute(within)) throw new Error("Output must stay inside performance-backend scratch.");
 const baseline = process.argv.includes("--baseline");
+const activityBaseline = process.argv.includes("--activity-baseline");
 // The baseline runs the previous query shapes in a child process, never edits
 // project files, and keeps the same Runtime, schema, fixtures and assertions.
-if (baseline) registerHooks({
+if (baseline || activityBaseline) registerHooks({
   load(url, context, nextLoad) {
     const loaded = nextLoad(url, context);
-    const replacements = url.endsWith("/convex/lib/settle-traces.ts") ? [
+    const replacements = !baseline ? [] : url.endsWith("/convex/lib/settle-traces.ts") ? [
       ['.withIndex("by_run_status", (q) => q.eq("runId", runId).eq("status", "running"))', '.withIndex("by_run", (q) => q.eq("runId", runId))'],
       ['for (const span of spans) {', 'for (const span of spans) {\n    if (span.status !== "running") continue;'],
     ] : url.endsWith("/convex/dashboard.ts") ? [[
       '(await Promise.all((["error", "queued"] as const).map(status => ctx.db.query("codexTurns")\n      .withIndex("by_conversation_status", q => q.eq("conversationId", args.id).eq("status", status)).collect()))).flat()',
       '(await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", args.id)).collect())',
     ]] : [];
+    if (activityBaseline && url.endsWith("/convex/dashboard.ts")) replacements.push([
+      'await ctx.db.query("runs").withIndex("by_status_started", (q) => q.eq("status", "running")).order("desc").first()',
+      '(await ctx.db.query("runs").withIndex("by_started").order("desc").take(20)).find((item) => item.status === "running") ?? null',
+    ]);
     if (!replacements.length) return loaded;
     let source = (typeof loaded.source === "string" ? loaded.source : new TextDecoder().decode(loaded.source as Uint8Array)).replace(/\r\n/g, "\n");
     for (const [before, after] of replacements) {
@@ -330,6 +335,38 @@ try {
   check("waiting:active-running-suppresses-wait", activeRead.value.isRunning && activeRead.value.waiting === undefined);
   performanceCheck("performance:running-reads-one-turn", activeRead.hydration.codexTurns?.rows === 1);
   evidence.waitingHydration = { idle: waitingRead.hydration.codexTurns, running: activeRead.hydration.codexTurns, completedRows: 301, excluded: [finalizedWait, nonRetrying].length };
+
+  for (const run of await runtime.store.query("runs").collect()) runtime.store.patch(run._id, { status: "ok", finishedAt: now });
+  const activity = async (id?: Id<"conversations">) => (await runtime.runQuery("dashboard:getActivity", {
+    key: process.env.DASHBOARD_KEY, ...(id ? { id } : {}),
+  })).value as import("../../convex/dashboard").Activity | null;
+  check("activity:idle-without-running-runs", await activity() === null);
+  const oldActive = fixture("long-running activity", now - 7_200_000);
+  const activitySpan = insert("runSpans", { runId: oldActive.runId, callId: "active-step", kind: "command", name: "echo activity", status: "running", startedAt: oldActive.startedAt });
+  const newerRunCount = 30;
+  for (let i = 0; i < newerRunCount; i++) insert("runs", {
+    conversationId: oldActive.conversationId, prompt: "completed history ".repeat(400),
+    status: (["ok", "error", "rejected"] as const)[i % 3], startedAt: now - 1000 + i, finishedAt: now,
+  });
+  const oldActivity = await measured(() => activity());
+  check("activity:completed-history-does-not-hide-long-running-work", oldActivity.value?.conversationId === oldActive.conversationId && oldActivity.value.running);
+  check("activity:live-step-preserved", oldActivity.value?.step?.live === true && oldActivity.value.summary === "");
+  check("activity:only-active-run-hydrated", oldActivity.hydration.runs?.rows === 1);
+  const laterStart = fixture("later activity start", oldActive.startedAt + 2000);
+  const laterInsert = fixture("later activity insertion", oldActive.startedAt + 1000);
+  check("activity:latest-start-wins-over-insertion-order", (await activity())?.conversationId === laterStart.conversationId);
+  runtime.store.patch(laterStart.runId, { status: "error", finishedAt: now });
+  check("activity:error-run-no-longer-selected", (await activity())?.conversationId === laterInsert.conversationId);
+  runtime.store.patch(laterInsert.runId, { status: "rejected", finishedAt: now });
+  check("activity:rejected-run-no-longer-selected", (await activity())?.conversationId === oldActive.conversationId);
+  runtime.store.patch(oldActive.runId, { status: "ok", finishedAt: now });
+  runtime.store.patch(activitySpan, { status: "ok", endedAt: now, durationMs: now - oldActive.startedAt });
+  check("activity:terminal-only-history-is-idle", await activity() === null);
+  const scoped = await activity(oldActive.conversationId);
+  check("activity:chat-specific-completed-run-still-visible", scoped?.running === false && scoped.startedAt === now - 1000 + newerRunCount - 1);
+  const planActive = sql.prepare("EXPLAIN QUERY PLAN SELECT _id FROM doc_runs WHERE json_extract(doc,'$.status') IS ? ORDER BY json_extract(doc,'$.status') DESC, json_extract(doc,'$.startedAt') DESC, _creationTime DESC LIMIT 1").all("running") as Array<{ detail: string }>;
+  check("activity:sqlite-uses-status-start-index", planActive.some(row => row.detail.includes("i_runs_by_status_started")));
+  evidence.activityHydration = oldActivity.hydration.runs;
 } catch (error) {
   checks.completed = false;
   evidence.failure = error instanceof Error ? { message: error.message, stack: error.stack } : String(error);
@@ -337,7 +374,7 @@ try {
 } finally {
   await runtime.stop();
   sql.close();
-  const result = { scope: "Backend E2E: production mutation handlers and SQLite runtime; fake data, no network, no models, no UI", baseline, checks, pass: Object.values(checks).every(Boolean), evidence };
+  const result = { scope: "Backend E2E: production mutation handlers and SQLite runtime; fake data, no network, no models, no UI", baseline, activityBaseline, checks, pass: Object.values(checks).every(Boolean), evidence };
   if (!result.pass) process.exitCode = 1;
   writeFileSync(join(out, "result.json"), JSON.stringify(result, null, 2) + "\n");
   console.log(JSON.stringify({ pass: result.pass, checks, result: join(out, "result.json") }, null, 2));

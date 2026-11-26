@@ -24,5 +24,8 @@
 22. A finalized queued/error turn or a nonretrying error must not supply waiting state. An earlier ordinary queued turn without waiting must suppress a later waiting turn, and a running turn must suppress waiting entirely.
 23. Imported turns can share both queue position and creation time. Combining indexed status partitions must preserve the previous index order when the queue comparator ties completely.
 24. The ordinary-queue suppression case must keep a later retrying error with a real reset wait eligible. Otherwise a broken first-waiting-turn lookup can pass without honoring the first queued turn.
+25. A long-running job falls behind more than twenty newer completed runs. Global pet activity must still find the active run, without hydrating completed run history.
+26. Multiple active runs have creation order different from start order. Global activity must choose the latest start, while terminal runs of any status are excluded. No active runs must return null.
+27. The selected active run retains its live step, approval and heartbeat behavior. A chat-specific query must still return its latest completed run and summary rather than adopting the global active-only filter.
 
 Scope: production mutation handlers + local SQLite/transaction runtime, synthetic runner/turn rows only; no network, engines, browser, scheduler start, or installed Perry data. Integrated build/E2E is the coordinator's responsibility. Each run must emit compact result.json with explicit assertions and before/after span rows.
