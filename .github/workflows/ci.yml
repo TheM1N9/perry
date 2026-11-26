@@ -244,7 +244,7 @@ jobs:
         run: pnpm exec bun artifacts/connector-accounts/run.ts "${{ runner.temp }}/connector-accounts" --stand-in
       - if: runner.os == 'Windows'
         run: pnpm exec bun artifacts/connector-details/run.ts "${{ runner.temp }}/connector-details"
-      - name: Prepare task-presence browser driver
+      - name: Prepare browser verification driver
         if: runner.os == 'Windows'
         shell: pwsh
         env:
@@ -267,6 +267,22 @@ jobs:
           retention-days: 14
           name: task-presence-browser-${{ runner.os }}
           path: ${{ runner.temp }}/task-presence-browser
+          if-no-files-found: error
+      - name: Verify dashboard read recovery
+        id: page_recovery
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/page-recovery/run.ts "${{ runner.temp }}/page-recovery"
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+          PERRY_E2E_PLAYWRIGHT: ${{ runner.temp }}/task-presence-browser-tools/node_modules/playwright/index.mjs
+          PERRY_E2E_BROWSER: C:/Program Files/Google/Chrome/Application/chrome.exe
+      - if: always() && runner.os == 'Windows' && steps.page_recovery.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: page-recovery-${{ runner.os }}
+          path: ${{ runner.temp }}/page-recovery
           if-no-files-found: error
       - if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@v4

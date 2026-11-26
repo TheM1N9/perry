@@ -13,6 +13,15 @@ Failure inventory, written before the journey:
 - Repeated error/retry cycles add duplicate subscriptions or issue more than one replacement request.
 - Unlock again keeps the rejected key in localStorage; a wrong replacement key admits private content or poisons the subsequent correct-key retry.
 - The manual `--serve` mode reports setup as if recovery controls had been exercised.
+- A transient HTTP 500/502/503/504 read failure replaces a healthy page instead of recovering within two retries; a persistent failure retries forever instead of presenting recovery controls after three total attempts.
+- Leaving the page during read backoff leaves a timer or starts another request; authentication, missing-function and configuration errors are incorrectly retried.
+- A failed mutation is replayed by read-recovery logic, creating duplicate owner data. One-off unlock queries must recover from a transient server error without retrying a wrong key.
+- Navigation cancels a response after its headers arrive; collecting its body waits forever and prevents the report and teardown. Inspect upstream response bodies before delivering them to the browser, bound upstream requests, and fail explicitly if inspection fails.
+
+The chat-history recovery scenario opens only a newly created synthetic chat.
+Its normal read receipt and the browser timezone are the only accepted browser
+writes. An injected failed **New page** request must occur exactly once and
+must leave the fixture note unchanged.
 
 Use a production build and an isolated home. The fixture blocks external server fetches and uses the existing deterministic embedder. It never launches an engine or uses the owner's Perry. The automated mode attaches Playwright to the one native Chrome/profile already opened by the existing Perry harness.
 
@@ -54,3 +63,44 @@ Every retry restored the same note and dismissed the boundary. Native client nav
 The report recorded no response writes, no owner note/chat mutation calls, one unchanged fixture note, no browser runtime errors, no runner/model turns and `tempHomeRemoved: true`. The server/browser stopped normally. The final screenshot was inspected and shows the recovered note with the healthy sidebar. Main and artifact typechecks plus `git diff --check` passed. The report/PNG remain under the supplied cache output path; explicit diagnostic cleanup was not retried in this wave after prior policy rejections. Native Temp home/profile cleanup completed normally.
 
 Faults are injected at the actual browser HTTP boundary; key replacement uses the real backend validator. This verifies these particular recovery contracts, not live provider/account behavior or a new long-duration leak soak. No product source changed during this fixture run and root's separate manual fixture was neither driven nor stopped.
+
+## Transient read acceptance, 26 November 2026
+
+The extended production-browser journey passed 26 checks using Playwright
+1.62.1 and real HTTP/SQLite with synthetic data. The unmodified client failed
+the first transient-500 scenario; the repaired client restored the note and
+chat composer after the next successful read, without presenting a page error.
+The journey also covers transient 502/503/504 responses, a shared-sidebar read,
+three-attempt exhaustion, navigation during backoff, immediate manual recovery,
+key rejection and replacement, and a failed note-creation request sent once.
+The fixture note retained its identity and content, no runner/model work was
+started, and the isolated home was removed normally.
+
+The navigation scenario waits for the failed response to finish and observes
+the browser scheduling its retry before leaving. A distinct `Retry-After`
+delay identifies that timer; the observer preserves native timer behavior and
+retains its ID through client navigation. Acceptance requires a matching
+native `clearTimeout` call within two seconds and exactly one note request.
+Both timer observers are restored in `finally`. This directly verifies timer
+cancellation even if a stale callback would suppress its own network request;
+it uses no fixed delay to infer cleanup. The report records
+`navigationRetryCancelled: true`. The strengthened journey passed all 26
+checks again.
+
+The first hosted Windows run passed 24 checks, then reached GitHub's six-hour
+job limit while collecting response bodies from pages that had navigated away.
+Local replay also exposed Chrome discarding those bodies. The route handler
+now reads each real upstream response with Playwright's `route.fetch` before
+fulfilling the browser request, with a five-second deadline, no automatic
+retries or redirects, and response disposal after fulfillment. Inspection
+errors fail acceptance and appear in the report. The repaired journey passed
+all 26 checks with no body-inspection failures and normal home teardown.
+The hosted recovery step also has a five-minute limit.
+
+Only read queries retry server errors, with at most two additional attempts.
+Authentication, missing-function and dashboard-key configuration errors retain
+their existing handling. Mutation/action replay rules are unchanged. This
+recovers from a temporary failure; it does not identify an earlier server
+exception whose diagnostics were discarded. Background mode now retains only
+the sanitized operation/class diagnostic, without request arguments or private
+exception details. CI runs this journey on Windows and uploads its evidence.
