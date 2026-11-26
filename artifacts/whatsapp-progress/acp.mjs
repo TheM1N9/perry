@@ -10,6 +10,7 @@ const out = resolve(process.argv[2] ?? "node_modules/.cache/whatsapp-progress-ac
 mkdirSync(out, { recursive: true });
 const home = mkdtempSync(join(process.env.PERRY_E2E_DIR ?? tmpdir(), "perry-progress-acp-"));
 const terminationProbe = process.argv[3];
+const probeMode = terminationProbe?.replace(/^(?:deadline|wrapped)-/, "");
 process.env.PERRY_HOME = home;
 const logPath = join(home, "agent.jsonl");
 globalThis.fetch = async () => { throw Error("External network is disabled in ACP progress replay"); };
@@ -30,7 +31,10 @@ async function awaitExit(children, timeoutMs = 5000) {
       detach.push(() => { child.off("exit", done); child.off("error", error); });
       child.once("exit", done); child.on("error", error);
     }));
-    await Promise.race([Promise.all(exited), new Promise((_, reject) => { timer = setTimeout(() => reject(new TerminationUnconfirmed("ACP child termination was not confirmed; replay stopped and home retained")), timeoutMs); })]);
+    await Promise.race([Promise.all(exited), new Promise((_, reject) => { timer = setTimeout(() => {
+      report.cleanupDeferred = true;
+      reject(new TerminationUnconfirmed("ACP child termination was not confirmed; replay stopped and home retained"));
+    }, timeoutMs); })]);
   } finally {
     clearTimeout(timer);
     for (const remove of detach) remove();
@@ -39,15 +43,23 @@ async function awaitExit(children, timeoutMs = 5000) {
 async function check(name, work, timeoutMs = 15_000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(Error("ACP replay deadline exceeded")), timeoutMs);
-  try { await work(controller.signal); report.results.push({ name, passed: true }); }
+  try {
+    await work(controller.signal);
+    if (report.cleanupDeferred) throw new TerminationUnconfirmed("ACP termination was not confirmed; subsequent scenarios stopped");
+    report.results.push({ name, passed: true });
+  }
   catch (error) {
     report.results.push({ name, passed: false, error: String(error.stack ?? error) });
-    if (error instanceof TerminationUnconfirmed) { report.cleanupDeferred = true; save(); throw error; }
+    if (error instanceof TerminationUnconfirmed || report.cleanupDeferred) { report.cleanupDeferred = true; save(); throw error; }
   }
   finally { clearTimeout(timer); }
   save(); console.log(JSON.stringify(report.results.at(-1)));
 }
 const input = scenario => ({ prompt: `SCENARIO:${scenario}`, instructions: "Synthetic progress fixture only", cwd: home, access: "full", attachments: [] });
+const expectedDeadline = error => {
+  if (error instanceof TerminationUnconfirmed) throw error;
+  return /deadline exceeded/.test(error.message);
+};
 async function run(Engine, scenario, inspect, signal) {
   const engine = new Engine();
   engine.launch = () => ({ command: process.execPath, args: [resolve("artifacts/whatsapp-progress/fake-agent.mjs")], env: { PERRY_PROGRESS_ACP_LOG: logPath } });
@@ -98,7 +110,7 @@ async function run(Engine, scenario, inspect, signal) {
       const observed = Object.assign(new EventEmitter(), { pid: -1, exitCode: null, signalCode: null });
       let confirmation;
       const errorNotice = setTimeout(() => observed.emit("error", Error("Synthetic process error without exit")), 10);
-      if (terminationProbe === "delayed") confirmation = setTimeout(() => { report.probeConfirmationObserved = true; observed.emit("exit"); }, 40);
+      if (probeMode === "delayed") confirmation = setTimeout(() => { report.probeConfirmationObserved = true; observed.emit("exit"); }, 40);
       try { await awaitExit([observed], 100); }
       finally {
         clearTimeout(confirmation);
@@ -111,7 +123,11 @@ async function run(Engine, scenario, inspect, signal) {
 }
 try {
   if (terminationProbe) {
-    await check("termination confirmation gate", signal => run(GrokEngine, "final", async () => {}, signal));
+    if (terminationProbe.startsWith("deadline-")) {
+      await check("deadline termination confirmation gate", signal => assert.rejects(run(GrokEngine, "never", async () => {}, signal), expectedDeadline), 1000);
+    } else if (terminationProbe.startsWith("wrapped-")) {
+      await check("wrapped termination confirmation gate", signal => assert.rejects(run(GrokEngine, "final", async () => {}, signal), /deadline exceeded/));
+    } else await check("termination confirmation gate", signal => run(GrokEngine, "final", async () => {}, signal));
     await check("next scenario after confirmation", async () => {});
   } else {
   for (const Engine of [GrokEngine, OpenCodeEngine, AntigravityEngine]) {
@@ -144,10 +160,10 @@ try {
       assert.equal(result.state, "failed"); assert.equal(events.filter(event => event.type === "progress").length, 0);
     }, signal));
     for (const scenario of ["never", "stuck-interrupt"]) await check(`${label}: deadline awaits child termination during ${scenario}`, async signal => {
-      await assert.rejects(run(Engine, scenario, async () => assert.fail("A stuck scenario cannot complete normally"), signal), /deadline exceeded/);
+      await assert.rejects(run(Engine, scenario, async () => assert.fail("A stuck scenario cannot complete normally"), signal), expectedDeadline);
     }, 1000);
   }
-  for (const mode of ["delayed", "unconfirmed"]) await check(`termination observation ${mode} gates subsequent scenarios and cleanup`, async () => {
+  for (const mode of ["delayed", "unconfirmed", "deadline-delayed", "deadline-unconfirmed", "wrapped-unconfirmed"]) await check(`termination observation ${mode} gates subsequent scenarios and cleanup`, async () => {
     const destination = join(home, `probe-${mode}`);
     const result = spawnSync(process.execPath, [...process.execArgv, import.meta.filename, destination, mode], {
       env: { ...process.env, PERRY_E2E_DIR: home }, encoding: "utf8", windowsHide: true, timeout: 15_000,
@@ -156,16 +172,17 @@ try {
     const probe = JSON.parse(readFileSync(join(destination, "result.json"), "utf8"));
     assert.equal(probe.nativeChildrenConfirmed, true);
     assert.equal(probe.probeListenersRemaining, 0);
-    assert.equal(probe.probeConfirmationObserved === true, mode === "delayed");
-    assert.equal(probe.homeRemoved, mode === "delayed");
-    assert.equal(probe.results.length, mode === "delayed" ? 2 : 1);
-    assert.equal(probe.cleanupDeferred === true, mode === "unconfirmed");
-    assert.equal(result.status, mode === "delayed" ? 0 : 1);
+    const confirmed = mode.endsWith("delayed");
+    assert.equal(probe.probeConfirmationObserved === true, confirmed);
+    assert.equal(probe.homeRemoved, confirmed);
+    assert.equal(probe.results.length, confirmed ? 2 : 1);
+    assert.equal(probe.cleanupDeferred === true, !confirmed);
+    assert.equal(result.status, confirmed ? 0 : 1);
   });
   }
   report.protocol = readFileSync(logPath, "utf8").trim().split("\n").map(line => JSON.parse(line)).reduce((counts, row) => { counts[row.event] = (counts[row.event] ?? 0) + 1; return counts; }, {});
 } finally {
   if (!report.cleanupDeferred) { await rm(home, { recursive: true, force: true }); report.homeRemoved = true; }
-  report.passed = !report.cleanupDeferred && report.results.length === (terminationProbe ? 2 : 29) && report.results.every(row => row.passed); save();
+  report.passed = !report.cleanupDeferred && report.results.length === (terminationProbe ? 2 : 32) && report.results.every(row => row.passed); save();
 }
 process.exitCode = report.passed ? 0 : 1;
