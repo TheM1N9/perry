@@ -625,7 +625,7 @@ async function main() {
    * the answer is the id of the engine's own option to allow once or decline,
    * never one that allows for the rest of the session.
    */
-  const answer = async (request: EngineRequest, conversationId: Id<"conversations">, engine: EngineKind, turnId: Id<"codexTurns">): Promise<string> => {
+  const answer = async (request: EngineRequest, conversationId: Id<"conversations">, engine: EngineKind, turnId: Id<"codexTurns">, access?: Access): Promise<string> => {
     const { detail } = request;
     if (request.type === "exec_command_approval") {
       const command = detail.command ?? "command";
@@ -660,11 +660,12 @@ async function main() {
       return optionOf(request, approved ? "accept" : "decline");
     }
     if (request.type === "permission_approval") {
-      // Phone prompts display 800 detail characters. Keep the whole scope
-      // first, shorten only the reason, and never approve an invisible tail.
+      // Ask/Auto must display the complete scope. Full already authorizes the
+      // turn and can record a larger scope without using the phone prompt.
       const scope = detail.permissionSummary;
-      if (!scope || scope.length > 800) return optionOf(request, "decline");
-      const reason = detail.reason?.slice(0, Math.max(0, 800 - scope.length - 2));
+      const limit = access === "full" ? 64_000 : 800;
+      if (!scope || scope.length > limit) return optionOf(request, "decline");
+      const reason = detail.reason?.slice(0, Math.max(0, limit - scope.length - 2));
       const approved = await approve({
         kind: "permission",
         what: "Grant additional computer access for this turn",
@@ -1115,7 +1116,7 @@ ${text}` } : asked;
             },
             onRequest: (request) => {
               turn.asking += 1;
-              return answer(request, job.conversationId, kind, job._id).finally(() => { turn.asking -= 1; dog?.active(); });
+              return answer(request, job.conversationId, kind, job._id, turn.access).finally(() => { turn.asking -= 1; dog?.active(); });
             },
             onQuestions: async (nativeId, questions) => {
               turn.asking += 1;

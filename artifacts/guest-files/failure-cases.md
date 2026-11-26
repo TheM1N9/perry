@@ -32,6 +32,11 @@ Making it readable
 18. A broken PDF fails the turn instead of passing the file on as it came.
 19. A zip bomb dressed as a DOCX exhausts memory.
 20. The engine (Codex, locked down for a guest) does not take local pictures, so it still cannot see the pages.
+21. Persisting a plain WhatsApp envelope changes its Uint8Array media key into an object; downloading then derives the wrong cipher key and the engine never receives the PDF's contents.
+22. Automatic extraction fails silently, leaving only a file name/path and no explanation of what was not read. A corrupt, encrypted or oversized document must keep its original attachment and tell the engine that automatic extraction failed.
+23. Text, CSV, JSON, source code and UTF-16 text attachments reach the engine only by path. Their actual bounded text must be included automatically, with truncation disclosed and attachment instructions treated as data.
+24. An unknown binary attachment is mistaken for readable text, or is silently presented as already read. Keep the original and explain that automatic extraction did not support its format.
+25. A scan after the shared page-image budget is exhausted tells the engine to read pictures that were never included. Report the missing visual content explicitly.
 
 Two runs:
 - run.mjs, in CI: the real backend on SQLite (WhatsApp in, contacts, brain, the runner's claim), the

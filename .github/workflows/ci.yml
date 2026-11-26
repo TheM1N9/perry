@@ -123,6 +123,21 @@ jobs:
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/run.mjs
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/client-replay.mjs
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/lifecycle-replay.mjs
+      - name: Verify automatic Brain saves
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/memory-capture/automatic.mjs "${{ runner.temp }}/automatic-brain"
+      - name: Verify Full access approvals
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/tool-approval-routing/full-access.ts "${{ runner.temp }}/full-access-approvals"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: automatic-brain-full-access-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/automatic-brain/result.json
+            ${{ runner.temp }}/full-access-approvals/result.json
+          if-no-files-found: error
       - if: always()
         uses: actions/upload-artifact@v4
         with:

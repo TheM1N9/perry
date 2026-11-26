@@ -181,7 +181,8 @@ export const request = mutation({
     if (args.conversationId && !args.turnId) throw new Error("A computer approval must name its active turn. Update the runner.");
     const turn = args.turnId ? await ctx.db.get(args.turnId) : null;
     if (args.turnId && (!turn || turn.runnerId !== runner._id || turn.conversationId !== args.conversationId || turn.status !== "running" || turn.stopRequested || turn.stopped)) throw new Error("This turn has ended or was stopped.");
-    if (args.kind === "permission" && (!args.detail || args.detail.length > 800)) throw new Error("The complete computer permission scope must fit in the approval details.");
+    const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
+    if (args.kind === "permission" && (!args.detail || args.detail.length > 800 && chat?.access !== "full")) throw new Error("The complete computer permission scope must fit in the approval details.");
     const request: Request = { kind: args.kind, title: args.title, cwd: args.cwd, paths: args.paths, cwdVerified: args.cwdVerified, pathsVerified: args.pathsVerified };
     const row = {
       runnerId: runner._id,
@@ -196,12 +197,11 @@ export const request = mutation({
       createdAt: now,
     };
 
-    // Computer permission grants follow Full access; explicit tool consent
-    // still asks. Neither can be supplied by a saved command/file rule.
+    // Full access is the owner's standing authorization for this live turn.
+    // Neither permission grants nor tool confirmations use command/file rules.
     if (args.kind === "tool" || args.kind === "permission") {
-      const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
       if (!chat || chat.contactId) throw new Error("Tool confirmations require an owner's chat.");
-      if (args.kind === "permission" && chat.access === "full") {
+      if (chat.access === "full") {
         const id = await ctx.db.insert("approvals", { ...row, status: "auto", decidedBy: "trust", decidedAt: now });
         return { id, next: "run" };
       }
@@ -221,7 +221,6 @@ export const request = mutation({
 
     // The chat's access decides (lib/commands.ts): Ask asks, Auto has Codex review first, Full access runs.
     // Only a request from no chat, sent to the runner itself, follows the computer's own policy.
-    const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
     const access = chat ? chat.access ?? "supervised" : null;
     const policy: Policy = access === "full" ? "trust" : access === "auto" ? "review" : access === "supervised" ? "ask" : policyOf(runner);
     if (policy === "trust") {
@@ -336,7 +335,7 @@ export async function accessChanged(ctx: MutationCtx, conversationId: Id<"conver
   const pending = await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).take(200);
   const now = Date.now();
   for (const row of pending) {
-    if (row.conversationId !== conversationId || (row.kind === "tool" && !row.connectedAction) || !await activeRequest(ctx, row)) continue;
+    if (row.conversationId !== conversationId || !await activeRequest(ctx, row)) continue;
     await ctx.db.patch(row._id, { status: "auto", decidedBy: "trust", decidedAt: now });
     if (row.telegramMessageId) await ctx.scheduler.runAfter(0, internal.approvals.showOutcomeOnTelegram, { id: row._id });
   }
@@ -464,7 +463,7 @@ export const askForBrowser = internalMutation({
     if (args.title.length > 64_000 || (args.detail?.length ?? 0) > 64_000) throw new Error("Split this operation into smaller reviewable steps.");
     const row = { runnerId, conversationId: args.conversationId, turnId: args.turnId, kind: args.explicit ? "tool" as const : "browser" as const, title: args.title, detail: args.detail, createdAt: now };
     if (!args.turnId || !await activeRequest(ctx, row)) throw new Error("This operation requires its active turn.");
-    if (chat?.access === "full" && !args.explicit) {
+    if (chat?.access === "full") {
       const id = await ctx.db.insert("approvals", { ...row, status: "auto", decidedBy: "trust", decidedAt: now });
       return { id, status: "auto" };
     }

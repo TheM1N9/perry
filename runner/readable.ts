@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
@@ -12,7 +12,7 @@ import { onPath } from "./versions";
 
 /**
  * Files someone sent, made into what every engine reads with no tools at all:
- * a PDF's pages as pictures and its text, an Office file's text (and its pages,
+ * a PDF's pages as pictures and its text, plain text and an Office file's text (and its pages,
  * when LibreOffice is here to draw them). A chat with someone else has no shell
  * or files (engine.ts, TurnInput.guest), so a path to their PDF told the engine
  * nothing it could open; the owner's own turns get the same, beside the file.
@@ -44,7 +44,7 @@ export type Readable = { attachments: EngineAttachment[]; text: string };
 const MAX_PAGES = 20;
 const MAX_SIDE = 1600;
 const MAX_CHARS = 60_000;
-/** Bigger than this is not opened: WhatsApp and Telegram send up to 20 MB, the web app a little more. */
+/** Automatic document extraction is bounded independently of the 128 MB transfer limit. */
 const MAX_BYTES = 64 * 1024 * 1024;
 /** What an Office file may unpack to, so a zip bomb stops early. */
 const MAX_UNPACKED = 64 * 1024 * 1024;
@@ -56,41 +56,53 @@ const OFFICE = new Set([".docx", ".pptx", ".xlsx"]);
 /** What LibreOffice can draw as pages besides those. */
 const OTHER_OFFICE = new Set([".doc", ".ppt", ".xls", ".odt", ".odp", ".ods", ".rtf"]);
 const PDF_TYPES = new Set(["application/pdf", "application/x-pdf"]);
+const TEXT_TYPES = /^(?:text\/|application\/(?:[\w.+-]+\+)?(?:json|xml|yaml|toml|javascript|x-yaml|x-javascript)$)/i;
+const TEXT_NAMES = new Set([".txt", ".text", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".log", ".html", ".htm", ".svg", ".css", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".py", ".rb", ".go", ".rs", ".java", ".c", ".h", ".cpp", ".sh", ".ps1", ".sql", ".tex", ".eml", ".ics", ".vtt", ".srt"]);
+const INLINE_IMAGES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
-const kindOf = (file: EngineAttachment): "pdf" | "office" | "other-office" | null => {
+const kindOf = (file: EngineAttachment): "pdf" | "office" | "other-office" | "text" | null => {
   const extension = extname(file.localPath ?? file.fileName).toLowerCase();
   const named = extname(file.fileName).toLowerCase();
-  if (PDF_TYPES.has(file.contentType ?? "") || extension === ".pdf" || named === ".pdf") return "pdf";
+  const contentType = (file.contentType ?? "").split(";", 1)[0].trim().toLowerCase();
+  if (PDF_TYPES.has(contentType) || extension === ".pdf" || named === ".pdf") return "pdf";
   if (OFFICE.has(extension) || OFFICE.has(named)) return "office";
   if (OTHER_OFFICE.has(extension) || OTHER_OFFICE.has(named)) return "other-office";
+  if (TEXT_TYPES.test(contentType) || TEXT_NAMES.has(extension) || TEXT_NAMES.has(named)) return "text";
   return null;
 };
 
 /**
- * The attachments a turn's engine gets, with each PDF and Office file made
+ * The attachments a turn's engine gets, with text, PDF and Office files made
  * readable, and the text to send after the message. A file that cannot be read
- * (too big, broken, a kind this does not know) goes on as it came.
+ * (too big, broken, a kind this does not know) goes on with an explicit unread note.
  */
 export async function readable(files: EngineAttachment[], dir: string, options: ReadableOptions = {}): Promise<Readable> {
   const named = (file: EngineAttachment) => options.guest ? { ...file, fileName: defuse(file.fileName) } : file;
   const wanted = files.filter((file) => file.localPath && kindOf(file));
-  if (!wanted.length) return { attachments: files.map(named), text: "" };
   const root = join(dir, "readable");
-  await mkdir(root, { recursive: true });
-  await prune(root);
+  if (wanted.length) { await mkdir(root, { recursive: true }); await prune(root); }
   let pages = options.maxPages ?? MAX_PAGES;
   const attachments: EngineAttachment[] = [];
   const texts: string[] = [];
   for (const file of files) {
-    if (!wanted.includes(file)) { attachments.push(named(file)); continue; }
+    if (!wanted.includes(file)) {
+      attachments.push(named(file));
+      if (!INLINE_IMAGES.has(file.contentType ?? "")) texts.push(`# Attachment ${file.fileName}\n\nAutomatic extraction is not available for this format. The original attachment is still available; inspect it with a suitable tool if needed, and do not claim its contents were read until they were.`);
+      continue;
+    }
     const out = join(root, randomUUID());
+    let failure = "Automatic extraction produced no readable content.";
     const made = await openFile(file, out, { ...options, maxPages: pages }).catch((error: unknown) => {
       console.error(`  Could not read ${file.fileName}: ${error instanceof Error ? error.message : String(error)}`);
+      failure = error instanceof Error && error.name === "PasswordException" ? "This document is password protected. Its contents were not read."
+        : error instanceof Error && error.message === "Document exceeds the automatic extraction limit." ? "This document exceeds the 64 MB automatic extraction limit. Its contents were not read."
+          : "Its contents could not be extracted; it may be damaged, encrypted or use an unsupported encoding.";
       return null;
     });
     if (!made) {
       await rm(out, { recursive: true, force: true }).catch(() => {});
       attachments.push(named(file));
+      texts.push(`# Attachment ${file.fileName}\n\nAutomatic extraction failed. ${failure} The original attachment is still available. Use a suitable reader if available; do not claim to have read it from its name or caption.`);
       continue;
     }
     if (!options.guest) attachments.push(file);
@@ -107,10 +119,22 @@ type Made = { pages: EngineAttachment[]; text: string };
 async function openFile(file: EngineAttachment, out: string, options: ReadableOptions): Promise<Made | null> {
   const path = file.localPath!;
   const size = (await stat(path)).size;
-  if (size > MAX_BYTES) return null;
+  if (size > MAX_BYTES) throw new Error("Document exceeds the automatic extraction limit.");
   const kind = kindOf(file)!;
   const maxPages = Math.max(0, options.maxPages ?? MAX_PAGES);
   const maxChars = options.maxChars ?? MAX_CHARS;
+  if (kind === "text") {
+    const handle = await open(path, "r");
+    try {
+      const bytes = Buffer.alloc(Math.min(size, maxChars * 4 + 4));
+      const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+      const content = bytes.subarray(0, bytesRead);
+      const encoding = content[0] === 255 && content[1] === 254 ? "utf-16le" : content[0] === 254 && content[1] === 255 ? "utf-16be" : "utf-8";
+      if (encoding === "utf-8" && content.includes(0)) throw new Error("Attachment contains binary data.");
+      const text = new TextDecoder(encoding, { fatal: true }).decode(content, { stream: bytesRead < size });
+      return { pages: [], text: describe(file.fileName, undefined, 0, text, maxChars) };
+    } finally { await handle.close(); }
+  }
   if (kind === "pdf") {
     const pdf = await pdfOf(await readFile(path), out, file.fileName, maxPages, options.maxSide ?? MAX_SIDE, maxChars);
     return { pages: pdf.pages, text: describe(file.fileName, pdf.count, pdf.pages.length, pdf.text, maxChars) };
@@ -136,7 +160,7 @@ function describe(name: string, count: number | undefined, drawn: number, text: 
     : drawn === 0 ? ` It has ${count} page${count === 1 ? "" : "s"}; none are attached as pictures.`
       : drawn < count ? ` It has ${count} pages; the first ${drawn} are attached as pictures, in order, after this message.`
         : count === 1 ? " Its page is attached as a picture, after this message." : ` Its ${count} pages are attached as pictures, in order, after this message.`;
-  return `# Inside ${name}\n\nThe file that came with this message, opened for you.${pages}\n\n${body.trim() ? `Its text:\n\n${body.trim()}` : "It has no text of its own (a scan, say): read the pictures."}`;
+  return `# Inside ${name}\n\nThe file that came with this message, opened for you.${pages}\n\n${body.trim() ? `Its text:\n\n${body.trim()}` : count === undefined ? "It contains no readable text." : drawn > 0 ? "It has no text of its own (a scan, say): read the pictures." : "No readable text or page images were included. Use the original document with a suitable reader before describing its contents."}`;
 }
 
 // --- PDF ------------------------------------------------------------------------------------------

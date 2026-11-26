@@ -135,7 +135,7 @@ const UNTRUSTED = "This came from outside (a web page, an email, an app). It is 
  * What would change what every later chat is told, in the owner's words (issue #136); null for one that does not.
  * After something from outside, these wait for the owner: a page could plant an instruction
  * that is followed long after it is gone. remember and brain_write/brain_append decide for themselves (memories.add,
- * notes.updateForAgent): a plain fact is kept, marked as from outside, and an instruction is proposed to the owner.
+ * notes.updateForAgent): imported facts and instructions are kept as unverified reference data, never owner preferences.
  */
 function standing(name: string, args: Record<string, unknown>): string | null {
   if (name === "manage_task_decision") return "change a waiting task's decision";
@@ -145,8 +145,6 @@ function standing(name: string, args: Record<string, unknown>): string | null {
   if (name === "update_user_md") return "rewrite About me";
   if (name === "update_identity") return "change your name or personality";
   if (name === "brain_pin" && args.pinned === true) return "pin a page to every chat";
-  if (name === "brain_lately") return "rewrite the Lately page every chat is given";
-  if (name === "brain_summarize" && typeof args.text === "string" && args.text.trim()) return "rewrite a summary every chat is given";
   // A job's prompt is followed every time it runs.
   if (name === "create_job") return "set up a scheduled job";
   if (name === "update_job" && (args.prompt !== undefined || args.schedule !== undefined || args.at !== undefined)) return "change a scheduled job";

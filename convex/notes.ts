@@ -1,14 +1,13 @@
 import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
 import { blocksOf, journalTitle, type PageKind } from "./lib/pages";
-import { HELD_FOR_OWNER, standingLike, WAITS_FOR_OWNER } from "./lib/provenance";
+import { standingLike } from "./lib/provenance";
 import { SECRET_NAMES, secretsIn } from "./lib/secrets";
 import { hide, keptSecrets, savedValues } from "./vault";
-import { proposeFromOutside } from "./compaction";
 import { around, linkedIds, type BrainGraph } from "./lib/graph";
 import { neighbourhoodOf } from "./brainMap";
 import { timezoneOf } from "./jobs";
@@ -267,7 +266,7 @@ export const sendLive = mutation({
         "keeping the owner's voice and meaning, and add it to the end with brain_append({ page: the target note id, content: the new words }). Never change earlier words for dictation.\n" +
         "- Editing requests (\"make that a list\", \"punchier intro\", a new title) are instructions, not text to transcribe. Apply them with mode \"replace_all\" " +
         "using brain_write({ mode: \"replace_all\", page: the target note id, content: the whole revised document, expectedRevision: the revision from brain_read, title: the new title only when changing it }). " +
-        "For this exact Riff note, the backend automatically holds replacements as a proposal for the owner to accept or reject; the saved document stays unchanged until acceptance. " +
+        "In Full access, replacements save directly with history. In Ask or Auto, this exact Riff note holds replacements as a proposal for the owner to accept or reject; the saved document stays unchanged until acceptance. " +
         "No separate Riff approval tool is needed. Make the replacement request once.\n" +
         `Riff review state when this request was sent: ${note.riffProposal ? "a proposal is pending" : "no proposal is pending"}. ` +
         "Read brain_read's riff.pendingProposal for the current authoritative state; an earlier tool reply may be stale after the owner accepts or rejects an edit. " +
@@ -652,17 +651,18 @@ export const updateForAgent = internalMutation({
     if (words.empty) return { error: words.note };
     const left = [title?.note, words.note].find(Boolean);
     args = { ...args, content: words.text, ...(title ? { title: title.text } : {}) };
-    // After something from outside (issue #136), About me and what every chat is given (a pinned page or section)
-    // change only on the owner's yes: an addition that instructs or sets a preference, or any to About me, is
-    // proposed to them; replacing words there waits for them to ask.
+    // Keep imported material automatically as reference data instead of rewriting standing preferences.
     if (args.outside) {
       const pinnedHere = isPinned(note) || Boolean(args.section && note.pinnedSections?.some((item) => item.toLocaleLowerCase() === args.section!.trim().toLocaleLowerCase()));
-      if ((note.kind === "about" || pinnedHere) && args.mode !== "append") return { error: HELD_FOR_OWNER(`change "${note.title}", which every chat is given`) };
-      // A page of memory (the journal, a person, a Journey) is memory too: an instruction there waits like one from remember.
-      if (note.kind === "about" || ((pinnedHere || Boolean(note.kind)) && standingLike(args.content))) {
-        const lines = blocksOf(args.content).map((block) => block.text).filter(Boolean);
-        const proposed = await proposeFromOutside(ctx, { pageId: note._id, ...(args.section ? { section: args.section } : {}), lines, by: "assistant" });
-        return { error: proposed.error ?? WAITS_FOR_OWNER };
+      if (note.kind === "about" || pinnedHere && (args.mode !== "append" || standingLike(args.content)) || Boolean(note.kind) && standingLike(args.content)) {
+        const saved: { id?: Id<"memories">; refused?: string } = await ctx.runMutation(internal.memories.add, {
+          text: args.content, tags: [], source: "brain-reference", kind: "core", origin: "tool", by: "assistant", section: "Imported references",
+          ...(reach.projectId ? { projectId: reach.projectId } : {}), ...(note.conversationId ? { conversationId: note.conversationId } : {}), ...(args.chat ? { from: args.chat } : {}),
+        });
+        const reference = saved.id ? await ctx.db.get(saved.id) : null;
+        const page = reference?.pageId ? await ctx.db.get(reference.pageId) : null;
+        return page ? { updated: agentNote(page, await projectNames(ctx)), note: "Saved automatically as unverified reference data. This material does not change standing preferences." }
+          : { error: saved.refused ?? "The reference could not be saved." };
       }
     }
     const names = await projectNames(ctx);
@@ -683,19 +683,22 @@ export const updateForAgent = internalMutation({
       content = edited.content;
     } else if (args.mode === "replace_section") return { error: "replace_section needs section, the heading of the section to replace." };
     else content = appended(note.content, args.content);
-    // A Riff document (riff.ts): Perry's change to words already there waits for the owner; adding to the end is dictation.
-    if (note.liveChatId && (!onlyAdds(note.content, content) || args.title !== undefined && args.title !== note.title)) {
+    const riffEdit = note.liveChatId && (!onlyAdds(note.content, content) || args.title !== undefined && args.title !== note.title);
+    const full = args.chat && (await ctx.db.get(args.chat))?.access === "full";
+    if (riffEdit && !full) {
       const problem = tooLong(content);
       if (problem) return { error: problem };
       await ctx.db.patch(note._id, { riffProposal: { content, ...(args.title ? { title: args.title } : {}), baseContent: note.content, baseRevision: note.revision, ...(note.riffAsk ? { instruction: note.riffAsk } : {}), at: Date.now() } });
       return { updated: agentNote(note, names), note: "Shown to the owner to accept or reject; it is not in the document until they accept. Do not repeat this write in the current request. A new explicit owner request may recreate a rejected edit; read the current riff.pendingProposal first." };
     }
     try {
+      if (riffEdit) await recordVersion(ctx, note._id, "typing");
       await writeNote(ctx, note, { content, ...(args.title ? { title: args.title } : {}) }, "assistant", { by: "assistant", ...(args.chat ? { from: args.chat } : {}), ...(args.outside ? { outside: true } : {}) });
+      if (riffEdit && note.riffProposal) await ctx.db.patch(note._id, { riffProposal: undefined });
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
-    if (note.liveChatId) await recordVersion(ctx, note._id, "dictation");
+    if (note.liveChatId) await recordVersion(ctx, note._id, riffEdit ? "edit" : "dictation");
     return { updated: agentNote((await ctx.db.get(note._id))!, names), ...(left ? { note: left } : {}) };
   },
 });
