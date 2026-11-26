@@ -305,6 +305,62 @@ try {
     assert.equal((await rows('taskHandoffs')).length, 0);
     return { task: before, steering: beforeSteers };
   });
+  await admissionJourney('originless admission failure survives a reporting failure and recovers one notice', async ({ sql, seed }) => {
+    const id = await seed('No reporting destination', { origin: undefined, status: 'running', turns: 1 });
+    sql.exec("CREATE TEMP TRIGGER reject_threads BEFORE INSERT ON doc_agentThreads BEGIN SELECT RAISE(ABORT, 'synthetic-private-reporting-reason'); END");
+    let error; try { await call('tasks:work', { id }); } catch (cause) { error = String(cause); }
+    assert.equal(error, undefined);
+    const failed = await get(id);
+    assert.equal(failed.status, 'failed'); assert.equal(failed.reported, undefined);
+    assert.equal((await rows('taskHandoffs')).length, 0);
+    const retry = sql.prepare("SELECT * FROM _scheduled WHERE name='tasks:reportOutcome'").get(); assert.ok(retry);
+    const later = await seed('Uses released slot'); await call('tasks:tick'); assert.equal((await get(later)).status, 'running');
+    sql.exec('DROP TRIGGER reject_threads');
+    await runtime.runMutation(retry.name, JSON.parse(retry.args), { internal: true, before: () => sql.prepare('DELETE FROM _scheduled WHERE id=?').run(retry.id) });
+    await call(retry.name, JSON.parse(retry.args));
+    assert.equal((await rows('taskHandoffs')).filter(item => item.taskId === id).length, 1);
+    assert.match((await get(id)).reported, /^failed:/);
+    return { task: await get(id), handoffs: await rows('taskHandoffs') };
+  });
+  await admissionJourney('saved completion survives an unavailable reporting chat', async ({ sql, seed }) => {
+    const plan = [{ title: 'Checklist left open', status: 'active' }];
+    const id = await seed('Saved before notice', { origin: undefined, status: 'running', turns: 1, plan });
+    await call('tasks:work', { id });
+    const chat = (await get(id)).conversationId, turn = (await rows('codexTurns'))[0];
+    await patch(turn._id, { status: 'done', preparing: undefined, finalizedAt: Date.now(), response: 'Preserved completed deliverable.' });
+    await patch(turn.runId, { status: 'ok', finishedAt: Date.now() }); await patch(chat, { pendingTurns: 0 });
+    sql.exec("CREATE TEMP TRIGGER reject_threads BEFORE INSERT ON doc_agentThreads BEGIN SELECT RAISE(ABORT, 'synthetic-private-reporting-reason'); END");
+    await call('tasks:afterTurn', { id, turnId: turn._id, response: 'Preserved completed deliverable.' });
+    const saved = await get(id); assert.equal(saved.status, 'blocked'); assert.ok(saved.completion);
+    assert.equal(saved.result, 'Preserved completed deliverable.'); assert.deepEqual(saved.plan, plan); assert.equal(saved.reported, undefined);
+    assert.equal((await rows('taskHandoffs')).length, 0);
+    const retry = sql.prepare("SELECT * FROM _scheduled WHERE name='tasks:reportOutcome'").get(); assert.ok(retry);
+    sql.exec('DROP TRIGGER reject_threads');
+    await runtime.runMutation(retry.name, JSON.parse(retry.args), { internal: true, before: () => sql.prepare('DELETE FROM _scheduled WHERE id=?').run(retry.id) });
+    assert.equal((await rows('taskHandoffs')).filter(item => item.taskId === id && item.outcome === 'result-ready').length, 1);
+    assert.deepEqual((await get(id)).completion, saved.completion);
+    return { task: await get(id), handoffs: await rows('taskHandoffs') };
+  });
+  await admissionJourney('persistent notice failure is recorded without restoring running state or sending stale notice', async ({ sql, seed }) => {
+    const id = await seed('Persistent report failure', { origin: undefined, status: 'running', turns: 1 });
+    sql.exec("CREATE TEMP TRIGGER reject_threads BEFORE INSERT ON doc_agentThreads BEGIN SELECT RAISE(ABORT, 'synthetic-private-reporting-reason'); END");
+    await call('tasks:afterTurn', { id, error: 'Safe startup failure.' });
+    const retry = sql.prepare("SELECT * FROM _scheduled WHERE name='tasks:reportOutcome'").get(); assert.ok(retry);
+    sql.prepare('UPDATE _scheduled SET runAt=? WHERE id=?').run(Date.now() - 1, retry.id);
+    let watchdog, resolveDone;
+    const done = new Promise((resolve, reject) => { resolveDone = resolve; watchdog = setTimeout(() => reject(Error('Report failure was not recorded')), 5000); });
+    const onChange = () => { if (sql.prepare("SELECT count(*) AS n FROM doc_scheduledFailures WHERE json_extract(doc,'$.functionName')='tasks:reportOutcome'").get().n) { void runtime.stop(); resolveDone(); } };
+    runtime.events.on('change', onChange);
+    try { runtime.start(); await done; await runtime.stop(); }
+    finally { clearTimeout(watchdog); runtime.events.off('change', onChange); await runtime.stop(); }
+    assert.equal((await get(id)).status, 'failed'); assert.equal((await get(id)).reported, undefined);
+    assert.equal((await rows('taskHandoffs')).length, 0); assert.equal(sql.prepare('SELECT state FROM _scheduled WHERE id=?').get(retry.id).state, 'failed');
+    const saved = await get(id); await patch(id, { error: 'Newer failure reason.', updatedAt: saved.updatedAt });
+    sql.exec('DROP TRIGGER reject_threads');
+    await runtime.runMutation(retry.name, JSON.parse(retry.args), { internal: true, before: () => sql.prepare('DELETE FROM _scheduled WHERE id=?').run(retry.id) });
+    assert.equal((await rows('taskHandoffs')).length, 0); assert.equal((await get(id)).reported, undefined);
+    return { task: await get(id), failures: await rows('scheduledFailures') };
+  });
   await admissionJourney('cancelled paused and dependent task holds remain holds', async ({ seed }) => {
     const cancelled = await seed('Cancelled before callback', { status: 'cancelled', turns: 1 });
     const saved = await get(cancelled); await call('tasks:work', { id: cancelled }); assert.deepEqual(await get(cancelled), saved);

@@ -561,6 +561,29 @@ try {
     assert.match(files.text, /FOLLOWING-ATTACHMENT-OK/);
   });
 
+  await check("declared worksheet rows reject nondecimal numeric syntax", async () => {
+    const invalid = ["1e2", "1.5", "0x10", "2e0"];
+    const files = await readable(invalid.map((row, index) => file(`numeric-${index}.xlsx`, sheetXlsx(`<row r="${row}"><c><v>5</v></c></row>`), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")), GUEST, { guest: true, soffice: null });
+    assert.equal(files.attachments.length, invalid.length);
+    assert.equal((files.text.match(/Automatic extraction failed/g) ?? []).length, invalid.length);
+  });
+
+  await check("worksheet coordinates preserve XML quoting and whitespace", async () => {
+    const workbook = zip({
+      "xl/workbook.xml": `<workbook><sheets><sheet name = 'Quoted &amp; cells' sheetId='1' r:id = 'rId1'/></sheets></workbook>`,
+      "xl/_rels/workbook.xml.rels": `<Relationships><Relationship Id = 'rId1' Target = 'worksheets/quoted.xml'/></Relationships>`,
+      "xl/worksheets/quoted.xml": `<worksheet xmlns:extra="urn:fixture"><sheetData><row r = '4'><c extra:note="not a coordinate r='Z4'" extra:r='X4' r = 'C4'><v>100</v></c><c r=\"D4\"><v>200</v></c><c r='E4' t = 'inlineStr'><is><t>quoted &amp; value</t></is></c></row><row><c r = 'C8'><v>300</v></c><c><v>400</v></c></row><row r=' +0009 '><c r='A9'><v>500</v></c></row><row r='&#49;0'><c r='&#67;10'><v>600</v></c></row></sheetData></worksheet>`,
+    });
+    const files = await readable([file("quoted.xlsx", workbook, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")], GUEST, { guest: true, soffice: null });
+    assert.equal(files.attachments.length, 0);
+    assert.match(files.text, /C4: 100\tD4: 200/);
+    assert.match(files.text, /## Quoted & cells/);
+    assert.match(files.text, /E4: quoted & value/);
+    assert.match(files.text, /C8: 300\tD8: 400/);
+    assert.match(files.text, /A9: 500/);
+    assert.match(files.text, /C10: 600/);
+  });
+
   await check("a broken PDF and a zip bomb go on as they came, and the turn goes on", async () => {
     const broken = file("broken.pdf", Buffer.from("this is not a PDF"), "application/pdf");
     const bomb = file("bomb.docx", zip({ "word/document.xml": Buffer.alloc(80 * 1024 * 1024) }), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");

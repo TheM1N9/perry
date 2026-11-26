@@ -19,3 +19,15 @@ Generated reports live under `node_modules/.cache/sparse-workbook-baseline` and 
 Automatic approval review rejected removal of those two report directories with `blocked by policy`. Their reports remain; no alternative deletion mechanism was attempted. The native fixture's temporary homes were removed normally, and both test processes exited.
 
 The coordinator repeated all 26 cases with the integrated candidate. Automatic review also blocked removing its `node_modules/.cache/integration-sparse-workbooks` report; the fixture home was removed and its process exited.
+
+## XML attribute review follow-up
+
+The extended native journey passes 28 cases. Before the follow-up, both added cases failed: JavaScript numeric conversion accepted exponent/hexadecimal row syntax, and valid single-quoted or spaced coordinate attributes were treated as omitted. Extraction now validates decimal row syntax before conversion and reads complete XML attribute tokens, preserving either quote style, XML character references, omitted-row inference and mixed formatting. Coordinate-like text inside another attribute and namespaced lookalikes cannot replace the unqualified coordinate.
+
+Valid leading-zero and positive-sign row forms remain supported, following the [W3C unsignedInt lexical representation](https://www.w3.org/TR/xmlschema11-2/#unsignedInt). The [XML attribute-value syntax](https://www.w3.org/TR/xml/#NT-AttValue) permits both quote styles. The checks also exercise quoted workbook names, relationship targets and inline-string type attributes. Existing row/column bounds and honest failed-attachment handling remain unchanged.
+
+```shell
+pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/guest-files/run.mjs node_modules/.cache/sheet-xml-tokenized-final
+```
+
+Automatic approval review rejected cleanup of the new `node_modules/.cache/sheet-xml-*` reports with `blocked by policy`. Their fixture homes and processes were removed normally; no alternative removal mechanism was attempted.

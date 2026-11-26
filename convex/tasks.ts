@@ -484,7 +484,7 @@ export const afterTurn = internalMutation({
         if (turn?.finalizedAt && turn.conversationId === task.conversationId && turn.status === "done" && !turn.stopped && !turn.error && run?.status === "ok") {
           await saveCompletion(ctx, task, turn, args.response);
           const saved = (await ctx.db.get(task._id))!;
-          await report(ctx, saved, "result-ready", `🧩 **${saved.title}** has a saved result. Its checklist was not confirmed; work stopped without replay.\n\n${saved.result}`);
+          await reportAfterTurn(ctx, saved, "result-ready");
           await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
           return null;
         }
@@ -499,11 +499,7 @@ export const afterTurn = internalMutation({
       }
     }
     const fresh = (await ctx.db.get(task._id))!;
-    const text = status === "blocked" ? `🧩 **${fresh.title}** needs you:\n\n${fresh.question ?? "It has a question."}\n\nAnswer here, or on the Work page, and it carries on.`
-      : status === "done" ? `🧩 **${fresh.title}** is done.\n\n${fresh.result ?? ""}`.trim()
-        : status === "failed" ? `🧩 **${fresh.title}** could not be finished.\n\n${fresh.error ?? ""}`.trim()
-          : null;
-    if (text && (status === "done" || status === "blocked" || status === "failed")) await report(ctx, fresh, status, text);
+    if (status === "done" || status === "blocked" || status === "failed") await reportAfterTurn(ctx, fresh, status);
     // Whatever happened, the next task in line may start.
     await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
     return null;
@@ -518,6 +514,40 @@ function fingerprint(text: string): string {
 }
 
 type Outcome = "done" | "blocked" | "failed" | "waiting" | "result-ready";
+
+function reportNotice(task: Doc<"tasks">, outcome: Exclude<Outcome, "waiting">): string {
+  return outcome === "result-ready" ? `🧩 **${task.title}** has a saved result. Its checklist was not confirmed; work stopped without replay.\n\n${task.result}`
+    : outcome === "blocked" ? `🧩 **${task.title}** needs you:\n\n${task.question ?? "It has a question."}\n\nAnswer here, or on the Work page, and it carries on.`
+      : outcome === "done" ? `🧩 **${task.title}** is done.\n\n${task.result ?? ""}`.trim()
+        : `🧩 **${task.title}** could not be finished.\n\n${task.error ?? ""}`.trim();
+}
+
+/** Report writes roll back independently of the outcome that released the task's slot. */
+async function reportAfterTurn(ctx: MutationCtx, task: Doc<"tasks">, outcome: Exclude<Outcome, "waiting">): Promise<void> {
+  const args = { id: task._id, updatedAt: task.updatedAt, outcome, notice: reportNotice(task, outcome) };
+  try {
+    await ctx.runMutation(internal.tasks.reportOutcome, args);
+  } catch {
+    // One durable retry; a persistent fault becomes a native scheduled failure.
+    await ctx.scheduler.runAfter(1000, internal.tasks.reportOutcome, args);
+  }
+}
+
+export const reportOutcome = internalMutation({
+  args: {
+    id: v.id("tasks"), updatedAt: v.number(), notice: v.string(),
+    outcome: v.union(v.literal("done"), v.literal("blocked"), v.literal("failed"), v.literal("result-ready")),
+  },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const task = await ctx.db.get(args.id);
+    if (!task || task.updatedAt !== args.updatedAt) return null;
+    if (args.outcome === "result-ready" ? task.status !== "blocked" || !task.completion || Boolean(task.question) : task.status !== args.outcome) return null;
+    if (reportNotice(task, args.outcome) !== args.notice) return null;
+    await report(ctx, task, args.outcome, args.notice);
+    return null;
+  },
+});
 
 /**
  * Say how a task ended, once for each outcome: a later turn in its chat (the
