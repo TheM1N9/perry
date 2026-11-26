@@ -1,5 +1,7 @@
 // Failure inventory: acp-failure-cases.md. Real subclasses and SDK/stdio, no providers.
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,6 +9,7 @@ import { join, resolve } from "node:path";
 const out = resolve(process.argv[2] ?? "node_modules/.cache/whatsapp-progress-acp");
 mkdirSync(out, { recursive: true });
 const home = mkdtempSync(join(process.env.PERRY_E2E_DIR ?? tmpdir(), "perry-progress-acp-"));
+const terminationProbe = process.argv[3];
 process.env.PERRY_HOME = home;
 const logPath = join(home, "agent.jsonl");
 globalThis.fetch = async () => { throw Error("External network is disabled in ACP progress replay"); };
@@ -16,11 +19,31 @@ const [{ GrokEngine }, { OpenCodeEngine }, { AntigravityEngine }, { TurnTrace }]
 const report = { at: new Date().toISOString(), passed: false, results: [], modelTurns: 0, externalCalls: 0, homeRemoved: false };
 const save = () => writeFileSync(join(out, "result.json"), JSON.stringify(report, null, 2));
 save();
+class TerminationUnconfirmed extends Error {}
+async function awaitExit(children, timeoutMs = 5000) {
+  const detach = [];
+  let timer;
+  try {
+    const exited = [...children].map(child => child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise(resolve => {
+      const done = () => { child.off("exit", done); child.off("error", error); resolve(); };
+      const error = () => { if (!child.pid || child.exitCode !== null || child.signalCode !== null) done(); };
+      detach.push(() => { child.off("exit", done); child.off("error", error); });
+      child.once("exit", done); child.on("error", error);
+    }));
+    await Promise.race([Promise.all(exited), new Promise((_, reject) => { timer = setTimeout(() => reject(new TerminationUnconfirmed("ACP child termination was not confirmed; replay stopped and home retained")), timeoutMs); })]);
+  } finally {
+    clearTimeout(timer);
+    for (const remove of detach) remove();
+  }
+}
 async function check(name, work, timeoutMs = 15_000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(Error("ACP replay deadline exceeded")), timeoutMs);
   try { await work(controller.signal); report.results.push({ name, passed: true }); }
-  catch (error) { report.results.push({ name, passed: false, error: String(error.stack ?? error) }); }
+  catch (error) {
+    report.results.push({ name, passed: false, error: String(error.stack ?? error) });
+    if (error instanceof TerminationUnconfirmed) { report.cleanupDeferred = true; save(); throw error; }
+  }
   finally { clearTimeout(timer); }
   save(); console.log(JSON.stringify(report.results.at(-1)));
 }
@@ -68,17 +91,29 @@ async function run(Engine, scenario, inspect, signal) {
   } finally {
     signal.removeEventListener("abort", aborted);
     stop();
-    const exited = [...children].map(child => child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise(resolve => {
-      const done = () => { child.off("exit", done); child.off("error", done); resolve(); };
-      child.once("exit", done); child.once("error", done);
-    }));
-    let timeout;
-    try { await Promise.race([Promise.all(exited), new Promise((_, reject) => { timeout = setTimeout(() => reject(Error("ACP child did not exit after kill")), 5_000); })]); }
-    finally { clearTimeout(timeout); }
+    await awaitExit(children);
+    if (terminationProbe) {
+      // The real children are gone; inject only their exit-confirmation observation.
+      report.nativeChildrenConfirmed = true;
+      const observed = Object.assign(new EventEmitter(), { pid: -1, exitCode: null, signalCode: null });
+      let confirmation;
+      const errorNotice = setTimeout(() => observed.emit("error", Error("Synthetic process error without exit")), 10);
+      if (terminationProbe === "delayed") confirmation = setTimeout(() => { report.probeConfirmationObserved = true; observed.emit("exit"); }, 40);
+      try { await awaitExit([observed], 100); }
+      finally {
+        clearTimeout(confirmation);
+        clearTimeout(errorNotice);
+        report.probeListenersRemaining = observed.listenerCount("exit") + observed.listenerCount("error");
+      }
+    }
     assert.equal(engine.children.size, 0); assert.equal(engine.conn, null);
   }
 }
 try {
+  if (terminationProbe) {
+    await check("termination confirmation gate", signal => run(GrokEngine, "final", async () => {}, signal));
+    await check("next scenario after confirmation", async () => {});
+  } else {
   for (const Engine of [GrokEngine, OpenCodeEngine, AntigravityEngine]) {
     const label = Engine.name;
     await check(`${label}: final-only chunks and reasoning never publish progress`, signal => run(Engine, "final", async ({ result, events }) => {
@@ -112,9 +147,25 @@ try {
       await assert.rejects(run(Engine, scenario, async () => assert.fail("A stuck scenario cannot complete normally"), signal), /deadline exceeded/);
     }, 1000);
   }
+  for (const mode of ["delayed", "unconfirmed"]) await check(`termination observation ${mode} gates subsequent scenarios and cleanup`, async () => {
+    const destination = join(home, `probe-${mode}`);
+    const result = spawnSync(process.execPath, [...process.execArgv, import.meta.filename, destination, mode], {
+      env: { ...process.env, PERRY_E2E_DIR: home }, encoding: "utf8", windowsHide: true, timeout: 15_000,
+    });
+    if (result.error || result.signal) throw new TerminationUnconfirmed("Nested replay did not terminate; parent home retained");
+    const probe = JSON.parse(readFileSync(join(destination, "result.json"), "utf8"));
+    assert.equal(probe.nativeChildrenConfirmed, true);
+    assert.equal(probe.probeListenersRemaining, 0);
+    assert.equal(probe.probeConfirmationObserved === true, mode === "delayed");
+    assert.equal(probe.homeRemoved, mode === "delayed");
+    assert.equal(probe.results.length, mode === "delayed" ? 2 : 1);
+    assert.equal(probe.cleanupDeferred === true, mode === "unconfirmed");
+    assert.equal(result.status, mode === "delayed" ? 0 : 1);
+  });
+  }
   report.protocol = readFileSync(logPath, "utf8").trim().split("\n").map(line => JSON.parse(line)).reduce((counts, row) => { counts[row.event] = (counts[row.event] ?? 0) + 1; return counts; }, {});
 } finally {
-  await rm(home, { recursive: true, force: true }); report.homeRemoved = true;
-  report.passed = report.results.length === 27 && report.results.every(row => row.passed); save();
+  if (!report.cleanupDeferred) { await rm(home, { recursive: true, force: true }); report.homeRemoved = true; }
+  report.passed = !report.cleanupDeferred && report.results.length === (terminationProbe ? 2 : 29) && report.results.every(row => row.passed); save();
 }
 process.exitCode = report.passed ? 0 : 1;
