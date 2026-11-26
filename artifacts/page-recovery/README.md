@@ -16,6 +16,7 @@ Failure inventory, written before the journey:
 - A transient HTTP 500/502/503/504 read failure replaces a healthy page instead of recovering within two retries; a persistent failure retries forever instead of presenting recovery controls after three total attempts.
 - Leaving the page during read backoff leaves a timer or starts another request; authentication, missing-function and configuration errors are incorrectly retried.
 - A failed mutation is replayed by read-recovery logic, creating duplicate owner data. One-off unlock queries must recover from a transient server error without retrying a wrong key.
+- Navigation cancels a response after its headers arrive; collecting its body waits forever and prevents the report and teardown. Inspect upstream response bodies before delivering them to the browser, bound upstream requests, and fail explicitly if inspection fails.
 
 The chat-history recovery scenario opens only a newly created synthetic chat.
 Its normal read receipt and the browser timezone are the only accepted browser
@@ -81,6 +82,16 @@ delay identifies that timer; the observer preserves native timer behavior and
 is removed before navigation. No further note request may occur after the
 retry deadline. This distinguishes backoff cleanup from aborting a request
 that has not yet failed. The strengthened journey passed all 26 checks again.
+
+The first hosted Windows run passed 24 checks, then reached GitHub's six-hour
+job limit while collecting response bodies from pages that had navigated away.
+Local replay also exposed Chrome discarding those bodies. The route handler
+now reads each real upstream response with Playwright's `route.fetch` before
+fulfilling the browser request, with a five-second deadline, no automatic
+retries or redirects, and response disposal after fulfillment. Inspection
+errors fail acceptance and appear in the report. The repaired journey passed
+all 26 checks with no body-inspection failures and normal home teardown.
+The hosted recovery step also has a five-minute limit.
 
 Only read queries retry server errors, with at most two additional attempts.
 Authentication, missing-function and dashboard-key configuration errors retain

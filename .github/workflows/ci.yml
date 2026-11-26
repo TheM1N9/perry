@@ -271,6 +271,7 @@ jobs:
       - name: Verify dashboard read recovery
         id: page_recovery
         if: runner.os == 'Windows'
+        timeout-minutes: 5
         run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/page-recovery/run.ts "${{ runner.temp }}/page-recovery"
         env:
           PERRY_E2E_DIR: ${{ runner.temp }}

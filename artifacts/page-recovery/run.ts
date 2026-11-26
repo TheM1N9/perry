@@ -60,6 +60,8 @@ try {
     connected = await chromium.connectOverCDP(`http://127.0.0.1:${browser.port}`);
     page = connected.contexts()[0].pages().find((item: any) => item.url().startsWith(BASE));
     assert.ok(page);
+    const pendingResponses = new Set<Promise<void>>();
+    const responseReadFailures: Array<{ path: string; error: string }> = [];
     await page.route("**/api/backend/call", async (route: any) => {
       const path = route.request().postDataJSON().path, injected = fault && fault.path === path && (fault.remaining === undefined || fault.remaining > 0) ? fault : undefined;
       requests.push({ path, ...(injected ? { fault: injected.status } : {}) });
@@ -68,18 +70,21 @@ try {
         await beforeFaultResponse?.();
         return route.fulfill({ status: injected.status, contentType: "application/json", headers: injected.retryAfter ? { "retry-after": injected.retryAfter } : {}, body: JSON.stringify({ error: injected.error }) });
       }
-      return route.continue();
-    });
-    const pendingResponses = new Set<Promise<void>>();
-    const record = (response: any) => {
-      if (!response.url().endsWith("/api/backend/call")) return;
-      const pending = response.json().then((body: any) => {
-        if (body.writes?.length) writes.push({ path: response.request().postDataJSON().path, tables: body.writes });
-      }).catch(() => {});
+      const pending = (async () => {
+        const response = await route.fetch({ timeout: 5_000, maxRetries: 0, maxRedirects: 0 });
+        try {
+          const body = await response.json();
+          if (body.writes?.length) writes.push({ path, tables: body.writes });
+          await route.fulfill({ response });
+        } finally { await response.dispose(); }
+      })().catch(async error => {
+        responseReadFailures.push({ path, error: String(error) });
+        await route.abort();
+      });
       pendingResponses.add(pending);
       void pending.finally(() => pendingResponses.delete(pending));
-    };
-    page.on("response", record);
+      return pending;
+    });
     try {
       for (const status of [500, 502, 503, 504]) {
         const before = count("notes:list");
@@ -208,6 +213,7 @@ try {
       check("failedOwnerMutationIsNeverAutomaticallyReplayed", true);
       fault = undefined;
       await Promise.all([...pendingResponses]);
+      assert.deepEqual(responseReadFailures, [], "upstream response bodies must be inspected");
       notes.responseWrites = writes;
       assert.ok(writes.every(write => write.path === "jobs:setTimezone" || write.path === "dashboard:markChatSeen"), JSON.stringify(writes));
       assert.ok(!requests.some(request => /^(?:notes:(?!list|create)|dashboard:(?:sendChat|createChat))/.test(request.path)), JSON.stringify(requests));
@@ -218,8 +224,13 @@ try {
       check("recoveryDoesNotReplayOwnerWritesOrDuplicateNotes", true);
       check("noRunnerOrModelWork", app.rows("codexTurns").length === 0 && app.rows("runners").every(row => !row.lastSeenAt));
       notes.browserErrors = browser.errors;
-      await app.shot("recovered-brain.png", "main"); completed = true;
-    } finally { page.off("response", record); await Promise.all([...pendingResponses]); }
+      await app.shot("recovered-brain.png", "main");
+    } finally {
+      await Promise.all([...pendingResponses]);
+      notes.responseReadFailures = responseReadFailures;
+    }
+    assert.deepEqual(responseReadFailures, [], "response inspection must finish without failures");
+    completed = true;
   }
 } catch (error) {
   notes.stoppedAt = String(error);
