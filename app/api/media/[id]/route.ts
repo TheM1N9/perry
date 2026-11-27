@@ -2,11 +2,11 @@ import type { NextRequest } from "next/server";
 import { dashboardKey, query, serveFile } from "../store";
 
 /**
- * Serve a local chat file from wherever it lives. Only attachments a chat
+ * Serve a chat file from local uploads or storage. Only attachments a chat
  * references are served, only to the dashboard key's holder, and only media
  * types render inline (store.ts, serveFile).
  */
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function serve(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const key = dashboardKey(request);
   if (!key) return new Response("Unlock the dashboard first.", { status: 401 });
@@ -20,3 +20,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!attachment) return new Response("Not found", { status: 404 });
   return await serveFile(request, { path: attachment.localPath, fileName: attachment.fileName, contentType: attachment.contentType }, { preview: request.nextUrl.searchParams.has("preview") });
 }
+
+export const GET = serve;
+export const HEAD = serve;

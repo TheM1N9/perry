@@ -11,6 +11,7 @@ import { HOME } from "../runner/home";
 import { APPROVAL_TTL_MS, BRAIN_TTL_MS } from "./approvals";
 import { describeStep } from "./lib/activity";
 import { vLibraryKind } from "./schema";
+import { describePath } from "./media";
 
 const scopeArgs = { key: v.string(), conversationId: v.id("conversations"), scope: v.union(v.literal("chat"), v.literal("project")) };
 type ScopeArgs = { key: string; conversationId: Id<"conversations">; scope: "chat" | "project" };
@@ -133,7 +134,7 @@ export const file = query({
     if (!found) return null;
     const { item } = found;
     const path = item.localPath ?? (item.storageId ? join(HOME, "storage", item.storageId) : null);
-    return path ? { path, name: item.name, contentType: item.contentType } : null;
+    return path ? { path, name: describePath(item.localPath ?? item.originPath ?? path, item.name).fileName, contentType: item.contentType } : null;
   },
 });
 

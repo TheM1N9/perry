@@ -283,6 +283,28 @@ try {
     check('legacy step mixed producers fail closed without changing explicit native source', await call('media:localAttachment', { key, id: legacyStep }) === null && (await call('media:localAttachment', { key, id: nativeStepRow._id })).localPath === nativeStepPath);
     const missingStep = await runtime.exclusive(() => runtime.store.insert('chatAttachments', { conversationId: nativeStep.chat, messageKey: 'steps-missing-run', localPath: nativeStepPath, fileName: 'missing-step.txt', contentType: 'text/plain', size: 0, createdAt: Date.now() }));
     check('legacy step missing producer fails closed', await call('media:localAttachment', { key, id: missingStep }) === null);
+    const labelledPath = join(home, 'labelled.txt');
+    writeFileSync(labelledPath, 'Labelled file bytes');
+    const labelledId = await call('library:add', { path: labelledPath, name: 'Download label', how: 'added', by: 'perry' });
+    const labelledTurn = await turn();
+    const labelledResult = await call('media:shareFromLibrary', { turnId: labelledTurn.id, id: labelledId });
+    const labelledRows = (await rows('chatAttachments')).filter(row => row.messageKey === `codex-${labelledTurn.id}`);
+    check('sharing a labelled Library file retains its physical format', labelledResult.fileName === 'Download label.txt' && labelledRows.length === 1 && labelledRows[0].fileName === 'Download label.txt' && labelledRows[0].contentType === 'text/plain');
+    await runtime.exclusive(() => runtime.store.patch(labelledRows[0]._id, { fileName: 'Download label' }));
+    await call('media:shareFromLibrary', { turnId: labelledTurn.id, id: labelledId });
+    const labelledFile = await call('media:localAttachment', { key, id: labelledRows[0]._id });
+    check('resharing repairs older extensionless metadata without changing bytes', labelledFile.fileName === 'Download label.txt' && readFileSync(labelledFile.localPath, 'utf8') === 'Labelled file bytes' && (await rows('chatAttachments')).filter(row => row.messageKey === `codex-${labelledTurn.id}`).length === 1);
+    await call('codex:finishTurn', { token, id: labelledTurn.id, response: 'Synthetic labelled file' });
+    await call('codex:finalizeTurn', { id: labelledTurn.id });
+    await share(await turn(), labelledPath, 'Labelled file bytes');
+    writeFileSync(labelledPath, 'Changed external original');
+    const labelledSnapshot = await call('library:file', { key, id: labelledId });
+    check('labelled stored snapshots retain source suffix and immutable bytes', labelledSnapshot.name === 'Download label.txt' && labelledSnapshot.path !== labelledPath && readFileSync(labelledSnapshot.path, 'utf8') === 'Labelled file bytes');
+    const snapshotTurn = await turn();
+    const snapshotResult = await call('media:shareFromLibrary', { turnId: snapshotTurn.id, id: labelledId });
+    check('sharing a labelled snapshot retains format without reading the changed original', snapshotResult.fileName === 'Download label.txt' && (await rows('chatAttachments')).find(row => row.messageKey === `codex-${snapshotTurn.id}`).storageId === (await get(labelledId)).storageId);
+    await call('codex:finishTurn', { token, id: snapshotTurn.id, response: 'Synthetic labelled snapshot' });
+    await call('codex:finalizeTurn', { id: snapshotTurn.id });
 }
 catch (error) {
     checks.push({ name: 'journey completion', pass: false, error: error.stack });

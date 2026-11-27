@@ -824,9 +824,9 @@ export const getChatMessages = query({
         continue;
       }
       // Local media is served by the Next.js server on the owner's machine.
-      const url = attachment.localPath
+      const url = attachment.localPath || attachment.storageId
         ? `/api/media/${attachment._id}`
-        : attachment.storageId ? await ctx.storage.getUrl(attachment.storageId) : null;
+        : null;
       if (!url) continue;
       const list = attachmentMap.get(attachment.messageKey) ?? [];
       list.push({ id: attachment._id, url, fileName: attachment.fileName, contentType: attachment.contentType });

@@ -349,6 +349,20 @@ jobs:
         run: pnpm exec bun artifacts/connector-accounts/run.ts "${{ runner.temp }}/connector-accounts" --stand-in
       - if: runner.os == 'Windows'
         run: pnpm exec bun artifacts/connector-details/run.ts "${{ runner.temp }}/connector-details"
+      - name: Verify native file downloads and formats
+        id: file_downloads
+        if: runner.os == 'Windows'
+        timeout-minutes: 4
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/file-downloads/run.mjs "${{ runner.temp }}/file-downloads"
+      - if: always() && runner.os == 'Windows' && steps.file_downloads.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: file-downloads-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/file-downloads/result.json
+            ${{ runner.temp }}/file-downloads/*.png
+          if-no-files-found: error
       - name: Verify browser verification recovery
         id: browser_verification
         if: runner.os == 'Windows'
