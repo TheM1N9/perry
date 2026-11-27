@@ -49,9 +49,10 @@ export async function serveFile(request: NextRequest, file: { path: string; file
   // Text is sent as plain text, whatever it is: it shows as words and cannot run.
   const text = options.preview && /^(text\/(plain|markdown|csv)|application\/json)$/.test(file.contentType);
   const inline = !download && (media || (options.preview && (file.contentType === "application/pdf" || text)));
+  const encodedName = encodeURIComponent(file.fileName).replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
   const headers = new Headers({
     "Content-Type": text && inline ? "text/plain; charset=utf-8" : inline ? file.contentType : "application/octet-stream",
-    "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
+    "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodedName}`,
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "private, max-age=3600",
     "Accept-Ranges": "bytes",

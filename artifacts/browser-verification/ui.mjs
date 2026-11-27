@@ -121,7 +121,24 @@ try {
   }, label);
   const click = async expression => {
     await pageUntil(`(() => { const el=${expression}; if(!el)return false; const r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)); })()`, "click target is reachable");
-    const at = await browser.evaluate(`(() => { const el=${expression}; if(!el) throw Error('Missing click target'); el.scrollIntoView({block:'nearest',behavior:'instant'}); const r=el.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
+    const center = () => browser.evaluate(`(() => { const el=${expression}; if(!el) throw Error('Missing click target'); el.scrollIntoView({block:'nearest',behavior:'instant'}); const r=el.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
+    await browser.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...await center() });
+    let at;
+    await until(async () => {
+      at = await browser.evaluate(`new Promise(resolve => requestAnimationFrame(() => {
+        const el=${expression}; if(!el) { resolve(null); return; }
+        const before=el.getBoundingClientRect();
+        requestAnimationFrame(() => {
+          const after=el.getBoundingClientRect();
+          const x=after.x+after.width/2,y=after.y+after.height/2;
+          resolve(el.isConnected&&!el.disabled&&after.width>0&&after.height>0
+            &&['x','y','width','height'].every(key=>before[key]===after[key])
+            &&el.contains(document.elementFromPoint(x,y)) ? {x,y} : null);
+        });
+      }))`);
+      return Boolean(at);
+    }, "click target is stable after hover and scrolling");
+    report.lastClick = { target: expression, ...at }; save();
     await browser.send("Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 });
     await browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
   };
@@ -129,8 +146,17 @@ try {
   const panel = "document.querySelector('[aria-label=\"Live browser\"]')";
   const screenshot = async name => { const shot = await browser.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }); writeFileSync(join(output, name), Buffer.from(shot.data, "base64")); };
   const checkVisible = async (name, expression) => check(name, await browser.evaluate(`(() => {const el=${expression};if(!el)return false;const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth&&el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()`));
+  if (process.argv.includes("--delayed-navigation")) {
+    await browser.send("Network.enable");
+    await browser.send("Network.emulateNetworkConditions", { offline: false, latency: 600, downloadThroughput: -1, uploadThroughput: -1 });
+    await browser.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    report.navigationDelayMs = 600;
+    report.cpuSlowdown = 4;
+  }
   await browser.send("Page.navigate", { url: `${base}/chat/${chat}` });
-  await pageUntil("document.querySelector('[data-chat-panel-toggle]')");
+  await pageUntil(`location.pathname===${JSON.stringify(`/chat/${chat}`)}&&document.readyState==='complete'&&document.querySelector('[data-chat-panel-toggle]')`, "requested chat document is ready");
+  await browser.evaluate("document.fonts.ready.then(()=>true)");
+  check("panel toggle belongs to the requested chat", await browser.evaluate(`location.pathname===${JSON.stringify(`/chat/${chat}`)}`));
   await click("document.querySelector('[data-chat-panel-toggle]')");
   await pageUntil("document.getElementById('chat-panel-open-browser')");
   await click("document.getElementById('chat-panel-open-browser')");
@@ -204,6 +230,7 @@ try {
   report.error = String(error.stack ?? error);
   if (browser) {
     report.page = await browser.evaluate("document.body.innerText.slice(-5000)").catch(() => "unavailable");
+    report.panelAtFailure = await browser.evaluate(`({path:location.pathname,ready:document.readyState,togglePressed:document.querySelector('[data-chat-panel-toggle]')?.getAttribute('aria-pressed'),stored:localStorage.getItem('perry.panel')})`).catch(() => "unavailable");
     try { const shot = await browser.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }); writeFileSync(join(output, "failure.png"), Buffer.from(shot.data, "base64")); } catch {}
   }
 } finally {

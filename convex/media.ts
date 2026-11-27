@@ -5,6 +5,8 @@ import type { Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
 import { index, isLocalAttachment } from "./library";
 import { authenticate } from "./runner";
+import { join } from "node:path";
+import { HOME } from "../runner/home";
 
 /**
  * Local media: chat files that stay on the owner's machine, wherever the agent
@@ -26,10 +28,16 @@ const TYPES: Record<string, string> = {
   ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
-export function describePath(path: string): { fileName: string; contentType: string } {
-  const fileName = path.split(/[\\/]/).pop() || "file";
-  const extension = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "";
-  return { fileName, contentType: TYPES[extension] ?? "application/octet-stream" };
+export function describePath(path: string, name?: string): { fileName: string; contentType: string } {
+  const original = path.split(/[\\/]/).pop() || "file";
+  const extension = original.includes(".") ? original.slice(original.lastIndexOf(".")) : "";
+  const sourceExtension = extension.slice(1).toLowerCase();
+  const contentType = Object.prototype.hasOwnProperty.call(TYPES, sourceExtension) ? TYPES[sourceExtension] : undefined;
+  const fileName = name?.trim() || original;
+  const namedExtension = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "";
+  const namedType = Object.prototype.hasOwnProperty.call(TYPES, namedExtension) ? TYPES[namedExtension] : undefined;
+  const matches = contentType ? contentType === namedType : sourceExtension === namedExtension;
+  return { fileName: extension && !matches ? fileName + extension : fileName, contentType: contentType ?? (!extension ? namedType : undefined) ?? "application/octet-stream" };
 }
 
 const attachmentShape = v.object({
@@ -101,7 +109,7 @@ export const canStoreLocally = query({
   },
 });
 
-/** Where a local attachment lives, for the local media server. */
+/** Where a chat attachment lives, for the authenticated media server. */
 export const localAttachment = query({
   args: { key: v.string(), id: v.string() },
   returns: v.union(v.null(), v.object({ localPath: v.string(), fileName: v.string(), contentType: v.string() })),
@@ -109,6 +117,7 @@ export const localAttachment = query({
     assertDashboardKey(args.key);
     const id = ctx.db.normalizeId("chatAttachments", args.id);
     const row = id ? await ctx.db.get(id) : null;
+    if (row?.storageId && !row.removedAt && await ctx.storage.getMetadata(row.storageId)) return { localPath: join(HOME, "storage", row.storageId), fileName: row.fileName, contentType: row.contentType };
     return row?.localPath && !row.removedAt && await isLocalAttachment(ctx, row) ? { localPath: row.localPath, fileName: row.fileName, contentType: row.contentType } : null;
   },
 });
@@ -160,17 +169,19 @@ export const shareFromLibrary = internalMutation({
     const item = itemId ? await ctx.db.get(itemId) : null;
     if (!item) throw new Error("There is no Library item with that id; library_find shows them.");
     if (item.conversationId && (await ctx.db.get(item.conversationId))?.contactId) throw new Error("A chat with someone else has no Library.");
+    const { fileName } = describePath(item.localPath ?? item.originPath ?? item.name, item.name);
     const mediaKey = `codex-${job._id}`;
     const existing = await ctx.db.query("chatAttachments")
       .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))
       .collect();
-    if (!existing.some((row) => row.libraryId ? row.libraryId === item._id : item.storageId ? row.storageId === item.storageId : Boolean(item.localPath && row.localPath === item.localPath))) {
+    const attached = existing.find((row) => row.libraryId ? row.libraryId === item._id : item.storageId ? row.storageId === item.storageId : Boolean(item.localPath && row.localPath === item.localPath));
+    if (!attached) {
       const attachmentId = await ctx.db.insert("chatAttachments", {
         libraryId: item._id,
         conversationId: job.conversationId,
         messageKey: mediaKey,
         ...(item.storageId ? { storageId: item.storageId } : { localPath: item.localPath }),
-        fileName: item.name,
+        fileName,
         contentType: item.contentType,
         delivery: args.delivery,
         size: item.size,
@@ -178,10 +189,9 @@ export const shareFromLibrary = internalMutation({
       });
       await index(ctx, attachmentId);
     }
-    const attached = existing.find(row => (item.localPath && row.localPath === item.localPath) || (item.storageId && row.storageId === item.storageId));
-    if (attached && args.delivery) await ctx.db.patch(attached._id, { delivery: args.delivery });
+    if (attached && (attached.fileName !== fileName || args.delivery)) await ctx.db.patch(attached._id, { fileName, ...(args.delivery ? { delivery: args.delivery } : {}) });
     await ctx.db.patch(job._id, { mediaKey });
-    return { fileName: item.name, contentType: item.contentType };
+    return { fileName, contentType: item.contentType };
   },
 });
 

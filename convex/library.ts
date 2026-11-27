@@ -217,8 +217,11 @@ export async function addLocal(ctx: MutationCtx, args: { path: string; how: Libr
     if (!previous || !member) throw new Error("The previous version must belong to this conversation.");
     if (await ctx.db.query("library").withIndex("by_version", (q) => q.eq("versionOf", previous._id)).first()) throw new Error("Register the next version from the latest result.");
   }
-  const described = describePath(args.path);
-  const name = (args.name?.trim() || described.fileName).slice(0, 200);
+  const described = describePath(args.path, args.name);
+  const label = args.name?.trim() || described.fileName;
+  const extension = label.lastIndexOf(".") > 0 ? label.slice(label.lastIndexOf(".")) : "";
+  const suffix = extension.length > 1 && extension.length < 200 ? extension : "";
+  const name = label.length > 200 && suffix ? label.slice(0, 200 - suffix.length).replace(/[\uD800-\uDBFF]$/, "") + suffix : label.slice(0, 200).replace(/[\uD800-\uDBFF]$/, "");
   const id = await ctx.db.insert("library", {
     name,
     contentType: described.contentType,
@@ -266,7 +269,18 @@ export const backfill = internalMutation({
     const before = (await ctx.db.query("library").collect()).length;
     const looks = new Set((await ctx.db.query("screenLooks").collect()).flatMap((look) => look.path ? [look.path] : []));
     for (const row of await ctx.db.query("chatAttachments").collect()) await index(ctx, row._id, {}, looks);
-    for (const item of await ctx.db.query("library").collect()) {
+    for (let item of await ctx.db.query("library").collect()) {
+      if (item.contentType === "application/octet-stream") {
+        const { contentType } = describePath(item.localPath ?? item.originPath ?? item.name, item.name);
+        if (contentType !== item.contentType) {
+          const kind = kindOf(contentType, item.name);
+          await ctx.db.patch(item._id, { contentType, kind });
+          for (const association of await ctx.db.query("workspaceFiles").withIndex("by_library", q => q.eq("libraryId", item._id)).collect()) {
+            if (association.kind !== kind) await ctx.db.patch(association._id, { kind });
+          }
+          item = { ...item, contentType, kind };
+        }
+      }
       const chat = item.conversationId ? await ctx.db.get(item.conversationId) : null;
       if (chat && item.how !== "folder") await associate(ctx, item, chat, {
         role: item.role ?? (item.how === "written" ? "working" : item.by === "owner" ? "input" : "output"),
@@ -502,7 +516,7 @@ export const file = query({
     const item = id ? await ctx.db.get(id) : null;
     if (!item || (item.conversationId && (await ctx.db.get(item.conversationId))?.contactId)) return null;
     const path = item.storageId ? join(HOME, "storage", item.storageId) : item.localPath ?? null;
-    return path ? { path, name: item.name, contentType: item.contentType } : null;
+    return path ? { path, name: describePath(item.localPath ?? item.originPath ?? path, item.name).fileName, contentType: item.contentType } : null;
   },
 });
 
