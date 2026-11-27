@@ -23,6 +23,7 @@ const save = () => writeFileSync(join(out, 'result.json'), JSON.stringify(report
 const originalFetch = globalThis.fetch;
 let runtime, sql, gate, pendingExternal, runCall, releaseExternal;
 const server = createServer(async (req, res) => {
+  res.setHeader('connection', 'close');
   try {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
