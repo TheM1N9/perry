@@ -81,10 +81,12 @@ async function call(
   method: string,
   body: object | FormData,
   signal?: AbortSignal,
+  beforeSend?: () => Promise<void>,
 ): Promise<unknown> {
   const overall = AbortSignal.any([AbortSignal.timeout(120_000), ...(signal ? [signal] : [])]);
   for (let attempt = 0; ; attempt++) {
     const attemptSignal = AbortSignal.any([overall, AbortSignal.timeout(30_000)]);
+    await beforeSend?.();
     const res = await fetch(`${api()}/bot${requireToken(token)}/${method}`, body instanceof FormData
       ? { method: "POST", body, signal: attemptSignal }
       : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: attemptSignal });
@@ -148,7 +150,7 @@ export async function sendMessage(
   token: string | null,
   chatId: string,
   text: string,
-  options: { markdown?: boolean; onSent?: (id: number, text: string) => Promise<void> } = {},
+  options: { markdown?: boolean; beforeSend?: () => Promise<void>; onSent?: (id: number, text: string) => Promise<void> } = {},
 ): Promise<void> {
   const body = text.trim();
   if (body.length === 0) return;
@@ -160,7 +162,7 @@ export async function sendMessage(
       text: html && options.markdown ? toTelegramHtml(chunk) : chunk,
       ...(html && options.markdown ? { parse_mode: "HTML" } : {}),
       link_preview_options: { is_disabled: true },
-    })) as { message_id?: number };
+    }, undefined, options.beforeSend)) as { message_id?: number };
     if (result.message_id !== undefined) await options.onSent?.(result.message_id, chunk);
   }
 }
@@ -363,7 +365,11 @@ export interface TelegramMessage {
   chat: { id: number; type: string; title?: string; username?: string };
   from?: { id: number; is_bot: boolean; first_name?: string; last_name?: string; username?: string };
   /** The message this one replies to: in a group, a reply to the bot is for it. */
-  reply_to_message?: { from?: { id: number } };
+  reply_to_message?: { message_id?: number; from?: { id: number } };
+  forward_origin?: unknown;
+  forward_from?: unknown;
+  forward_from_chat?: unknown;
+  is_automatic_forward?: boolean;
   entities?: Array<{ type: string; offset: number; length: number }>;
   caption_entities?: Array<{ type: string; offset: number; length: number }>;
 }
@@ -386,6 +392,8 @@ export interface InboundMessage {
   username?: string;
   /** Who wrote the message this one replies to. */
   replyToId?: string;
+  replyMessageId?: string;
+  controls: boolean;
   /** The @mentions in it, lowercased, without the @. */
   mentions?: string[];
 }
@@ -466,8 +474,10 @@ export function parseUpdate(update: TelegramUpdate): InboundMessage | InboundCal
     name: [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") || undefined,
     media,
     chatType: message.chat.type,
+    controls: !message.forward_origin && !message.forward_from && !message.forward_from_chat && !message.is_automatic_forward,
     ...(message.from?.username ? { username: message.from.username } : {}),
     ...(message.reply_to_message?.from ? { replyToId: String(message.reply_to_message.from.id) } : {}),
+    ...(message.reply_to_message?.message_id !== undefined ? { replyMessageId: String(message.reply_to_message.message_id) } : {}),
     ...(mentions.length ? { mentions } : {}),
   };
 }

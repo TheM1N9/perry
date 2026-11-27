@@ -81,6 +81,8 @@ export const handleTelegram = internalMutation({
       title: inbound.title,
       name: inbound.name,
       media: inbound.media,
+      controls: inbound.controls,
+      replyMessageId: inbound.replyMessageId,
       ...(inbound.chatType ? { chatType: inbound.chatType } : {}),
       ...(inbound.username ? { username: inbound.username } : {}),
       ...(inbound.replyToId ? { replyToId: inbound.replyToId } : {}),
@@ -166,6 +168,8 @@ Try:
 
 export const receive = internalMutation({
   args: {
+    controls: v.optional(v.boolean()),
+    replyMessageId: v.optional(v.string()),
     messageId: v.optional(v.number()),
     chatId: v.string(),
     senderId: v.string(),
@@ -233,7 +237,9 @@ export const receive = internalMutation({
     }
 
     if (args.messageId !== undefined) await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: args.chatId, messageId: String(args.messageId), text: args.text || "(attachment)", isPerry: false });
-    if (!args.media?.length && args.chatId === args.senderId) {
+    if (!args.media?.length && args.chatId === args.senderId && args.controls !== false) {
+      const answer: string | null = await ctx.runMutation(internal.questions.answerFromPhone, { channel: "telegram", senderId: args.senderId, text: args.text, replyTo: args.replyMessageId });
+      if (answer) { await reply(answer); return null; }
       const note: string | null = await ctx.runMutation(internal.taskDecisions.fromPhone, { channel: "telegram", senderId: args.senderId, text: args.text });
       if (note) {
         await ctx.scheduler.runAfter(0, internal.brain.sendDirect, { chatId: args.chatId, text: note });
@@ -246,6 +252,7 @@ export const receive = internalMutation({
       text: args.text,
       title: args.title,
       telegramMedia: args.media,
+      outside: args.controls === false,
     });
     return null;
   },
