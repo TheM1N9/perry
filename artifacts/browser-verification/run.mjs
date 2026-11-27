@@ -12,8 +12,10 @@ if (!process.argv[2]) throw Error("Pass a disposable output directory");
 const out = resolve(process.argv[2]);
 mkdirSync(out, { recursive: true });
 const home = mkdtempSync(join(tmpdir(), "perry-browser-verification-"));
-const baseline = process.argv.includes("--baseline");
-const baselineCommit = "e89a386f70b697fd09b34f76ad3309dd861c7d63";
+const baselineRevision = process.argv.find(arg => arg.startsWith("--baseline="))?.slice("--baseline=".length);
+const baseline = process.argv.includes("--baseline") || Boolean(baselineRevision);
+const baselineCommit = baselineRevision ?? "e89a386f70b697fd09b34f76ad3309dd861c7d63";
+if (!/^[a-f0-9]{40}$/.test(baselineCommit)) throw Error("The baseline must be a full commit SHA");
 if (baseline) {
   const originals = new Map();
   for (const path of ["convex/lib/browser.ts", "server/browser-host.ts", "lib/browser-protocol.ts", "convex/tools.ts"]) {
@@ -188,6 +190,10 @@ try {
   check("a site-provided Retry control remains usable", !retried.error && !retried.blockedAction && await evaluate(chat, "window.retries") === 1 && await evaluate(chat, "window.submits") === 0);
   const blocked = await mcp(chat, { action: "click", identity: retried.identity, ref: retried.elements.find(element => element.label === "Send code").ref });
   check("a failed verification blocks form submission before any site request", blocked.blockedAction === true && await evaluate(chat, "window.submits") === 0);
+  await evaluate(chat, "window.submits=0;document.querySelector('form').insertAdjacentHTML('beforeend','<input type=image alt=\"Send image\" style=\"width:100px;height:30px\">')");
+  const imagePage = await mcp(chat, { action: "look" });
+  const imageResult = await mcp(chat, { action: "click", identity: imagePage.identity, ref: imagePage.elements.find(element => element.label === "Send image").ref });
+  check("image submit controls cannot submit a verification-blocked form", imageResult.blockedAction === true && await evaluate(chat, "window.submits") === 0);
   await evaluate(chat, "window.submits=0");
   const current = await mcp(chat, { action: "look" });
   const phone = current.elements.find(element => element.label === "Phone number");
@@ -241,6 +247,17 @@ try {
   if (!await call("approvals:decide", { key, id: approval._id, approved: true })) throw Error("Synthetic browser approval was refused");
   const afterApproval = await waitingSubmit;
   check("submission rechecks verification after approval even when page identity is unchanged", pageUnchanged && afterApproval.blockedAction === true && afterApproval.verification?.state === "failed" && await evaluate(chat, "window.submits") === 0);
+  await open(chat, "/solved");
+  await evaluate(chat, "document.getElementById('submit').type='button'");
+  const changingPage = await mcp(chat, { action: "look" });
+  const changingSubmit = mcp(chat, { action: "click", identity: changingPage.identity, ref: changingPage.elements.find(element => element.label === "Send code").ref });
+  await until(() => rt.store.all("approvals").some(entry => entry.conversationId === chat && entry.status === "pending"));
+  const changingApproval = rt.store.all("approvals").find(entry => entry.conversationId === chat && entry.status === "pending");
+  const beforeChange = identity(chat);
+  await evaluate(chat, "document.getElementById('submit').type='submit';document.querySelector('[name=cf-turnstile-response]').value='';document.body.insertAdjacentHTML('beforeend', '<p>Browser verification failed</p><button type=button>Retry browser check</button>')");
+  if (!await call("approvals:decide", { key, id: changingApproval._id, approved: true })) throw Error("Synthetic changing-control approval was refused");
+  const afterChange = await changingSubmit;
+  check("click reclassifies a control that becomes a submit button while approval is pending", beforeChange.revision === changingPage.identity.revision && afterChange.blockedAction === true && await evaluate(chat, "window.submits") === 0);
   rt.store.patch(chat, { access: "full" });
   await call("dashboard:stopChat", { key, id: chat });
   check("a stopped turn cannot reuse its browser grant", Boolean((await mcp(chat, { action: "look" })).error));

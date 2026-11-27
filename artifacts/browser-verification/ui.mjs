@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -83,6 +84,32 @@ try {
   let state = await browserCall({ action: "start", nativeWindow: false });
   await browserCall({ action: "navigate", identity: state.identity, url: site });
   await until(async () => { state = await browserCall({ action: "status" }); return state.verification?.state === "failed"; }, "local failed verification");
+  const processes = process.platform === "win32"
+    ? spawnSync("powershell", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:PERRY_HOME) } | Select-Object -ExpandProperty CommandLine"], { encoding: "utf8", windowsHide: true })
+    : spawnSync("ps", ["-ax", "-o", "args="], { encoding: "utf8" });
+  const command = processes.stdout?.split(/\r?\n/).find(line => line.includes(home) && line.includes("--user-data-dir="));
+  const browserPort = Number(command?.match(/--remote-debugging-port=(\d+)/)?.[1]);
+  if (!browserPort) throw Error("The synthetic browser's debugging port could not be located");
+  const readField = async () => {
+    const targets = await (await fetch(`http://127.0.0.1:${browserPort}/json/list`, { signal: AbortSignal.timeout(5000) })).json();
+    const target = targets.find(target => target.id === state.identity.tabId);
+    if (!target) throw Error("Synthetic browser tab is missing");
+    const socket = new WebSocket(target.webSocketDebuggerUrl);
+    try {
+      await once(socket, "open", { signal: AbortSignal.timeout(5000) });
+      const response = once(socket, "message", { signal: AbortSignal.timeout(5000) });
+      socket.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression: "document.getElementById('phone').value", returnByValue: true } }));
+      const [event] = await response;
+      const result = JSON.parse(event.data);
+      if (result.error || result.result?.exceptionDetails) throw Error("Synthetic browser field could not be read");
+      return result.result.result.value;
+    } finally { socket.close(); }
+  };
+  const enterBeforeTakeover = async text => {
+    await browserCall({ action: "click", identity: state.identity, x: 100, y: 102 });
+    await browserCall({ action: "text", identity: state.identity, text });
+  };
+  await enterBeforeTakeover("synthetic-form");
   const generation = state.identity;
   await browserCall({ action: "resume", identity: state.identity });
   process.env.PERRY_E2E_BROWSER ??= process.platform === "linux" ? "/usr/bin/google-chrome" : process.platform === "darwin" ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "C:/Program Files/Google/Chrome/Application/chrome.exe";
@@ -114,6 +141,7 @@ try {
   await click(button("Pause & take over"));
   await pageUntil(`${panel}?.dataset.browserState==='paused'&&document.querySelector('[role=application] img')?.complete`);
   check("dashboard takeover changes browser ownership", (await browserCall({ action: "status" })).state === "paused");
+  check("desktop takeover preserves the previously entered field value", await readField() === "synthetic-form");
   check("paused guidance points to the page and Resume", await browser.evaluate(`${panel}.textContent.includes('page below')&&${panel}.textContent.includes('Resume Perry')`));
   const pageClick = async (x, y) => {
     const current = await browserCall({ action: "status" });
@@ -122,17 +150,20 @@ try {
     await browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
   };
   await pageClick(100, 102);
-  await browser.send("Input.insertText", { text: "synthetic-form-retained" });
+  for (const type of ["keyDown", "keyUp"]) await browser.send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35 });
+  await browser.send("Input.insertText", { text: "-retained" });
   await pageClick(140, 188);
   await until(() => completed.length === 1, "owner completes local button");
   check("streamed owner input and form value survive takeover", completed[0] === "synthetic-form-retained");
   await pageUntil(`!${panel}.textContent.includes('verification failed')`);
   check("verification banner clears after local completion", !(await browserCall({ action: "status" })).verification);
+  check("desktop field value is retained before Resume", await readField() === "synthetic-form-retained");
   await checkVisible("desktop Resume control is reachable", button("Resume Perry"));
   await click(button("Resume Perry"));
   await pageUntil(`${panel}.textContent.includes('Perry is browsing')`);
   state = await browserCall({ action: "status" });
   check("Resume retains the same browser session and tab", state.state === "live" && state.identity.sessionId === generation.sessionId && state.identity.tabId === generation.tabId);
+  check("desktop Resume preserves the entered field value", await readField() === "synthetic-form-retained");
 
   await browser.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await pageUntil("document.querySelector('[data-chat-panel][data-panel-mode=sheet]')");
@@ -140,6 +171,8 @@ try {
   state = await browserCall({ action: "status" });
   await browserCall({ action: "navigate", identity: state.identity, url: site });
   await until(async () => { state = await browserCall({ action: "status" }); return state.verification?.state === "failed"; }, "mobile failed verification");
+  const phoneGeneration = state.identity;
+  await enterBeforeTakeover("phone-form");
   await browserCall({ action: "resume", identity: state.identity });
   await pageUntil(`${panel}?.textContent.includes('Site verification')`);
   await checkVisible("phone takeover control is reachable", button("Pause & take over"));
@@ -147,15 +180,21 @@ try {
   await screenshot("phone-site-verification.png");
   await click(button("Pause & take over"));
   await pageUntil(`${panel}?.dataset.browserState==='paused'&&document.querySelector('[role=application] img')?.complete`);
+  check("phone takeover preserves the previously entered field value", await readField() === "phone-form");
   await pageClick(100, 102);
-  await browser.send("Input.insertText", { text: "phone-form-retained" });
+  for (const type of ["keyDown", "keyUp"]) await browser.send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35 });
+  await browser.send("Input.insertText", { text: "-retained" });
   await pageClick(140, 188);
   await until(() => completed.length === 2, "phone completes local button");
   check("phone owner input reaches the same browser page", completed[1] === "phone-form-retained");
   await pageUntil(`!${panel}.textContent.includes('verification failed')`);
+  check("phone field value is retained before Resume", await readField() === "phone-form-retained");
   await checkVisible("phone Resume control is reachable", button("Resume Perry"));
   await click(button("Resume Perry"));
   await pageUntil(`${panel}.textContent.includes('Perry is browsing')`);
+  state = await browserCall({ action: "status" });
+  check("phone Resume retains the same browser session and tab", state.state === "live" && state.identity.sessionId === phoneGeneration.sessionId && state.identity.tabId === phoneGeneration.tabId);
+  check("phone Resume preserves the entered field value", await readField() === "phone-form-retained");
   check("recovery never submits the sign-in form", submitted === 0);
   check("dashboard has no uncaught browser exceptions", browser.errors.length === 0);
   const saved = new DatabaseSync(join(home, "perry.sqlite"));

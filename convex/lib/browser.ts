@@ -758,7 +758,7 @@ export async function describe(ref: number): Promise<{ kind: string; label: stri
       submitLabel: button ? (button.innerText || button.value || button.getAttribute("aria-label") || "").trim().slice(0, 80) : undefined,
       search: type === "search" || Boolean(el.closest("[role=search]")) || /^(q|query|search|s)$/i.test(el.getAttribute("name") || ""),
       password: type === "password",
-      submits: Boolean(form && (el.tagName === "BUTTON" || el.tagName === "INPUT") && el.type === "submit"),
+      submits: Boolean(form && ((el.tagName === "BUTTON" && el.type === "submit") || (el.tagName === "INPUT" && ["submit", "image"].includes(el.type)))),
     };
   })()`);
   if (!found) throw new Error(`There is no element ${ref} on this page any more; look at the page again for the current numbers.`);

@@ -1322,7 +1322,7 @@ const browser = createTool({
           const element = await web.describe(ref);
           if (element.submits) { const blocked = await blockedSubmission(); if (blocked) return blocked; }
           if (!(await allowed(`Click “${element.label}”`, `on ${element.url}`))) return declined;
-          if (element.submits) { const blocked = await blockedSubmission(); if (blocked) return blocked; }
+          if ((await web.describe(ref)).submits) { const blocked = await blockedSubmission(); if (blocked) return blocked; }
           return await page(web.click(ref));
         }
         case "type": {

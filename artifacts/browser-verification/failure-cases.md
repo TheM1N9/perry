@@ -17,6 +17,8 @@ Written before the maintained replay and production changes. The replay uses Per
 - Saved-login sign-in bypasses the submit guard or reveals a vault secret before rejecting a failed site check.
 - Explicit saved-login `submit:false` cannot fill a failed-check form, submits it anyway, or exposes the saved password in a snapshot.
 - A page that becomes verification-failed while a submission awaits approval is submitted after approval without rechecking the live page.
+- An image input submits a blocked form because it is not classified as a native submit control.
+- A button changes from a non-submit control to a submit control while approval is pending, bypassing a stale submission classification without changing browser identity.
 - Tokens, cookie values or private entered field values leak into challenge status.
 - Host status and MCP snapshots disagree about the current verification state.
 - Owner takeover/reply completion discards the same page, entered form values or browser session.

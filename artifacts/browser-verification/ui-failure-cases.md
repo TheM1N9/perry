@@ -7,6 +7,7 @@ Written before the production dashboard replay. The replay uses a new SQLite hom
 - Pause & take over fails to change browser ownership, or Resume acts on an old browser identity.
 - The streamed browser page cannot deliver owner pointer input to a local verification control.
 - Taking control, completing the synthetic check, or resuming replaces the session/tab or loses entered form data.
+- A value entered before takeover is cleared by takeover or Resume, but the replay misses it by entering the value only after takeover or checking it only before Resume.
 - The banner remains after a new state reports verification complete.
 - A phone-sized dashboard hides recovery guidance or controls, or creates horizontal overflow.
 - The page submits a sign-in form or starts a model turn during verification recovery.

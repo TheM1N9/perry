@@ -9,6 +9,8 @@ Verified on Windows with installed Chrome on 2026-11-27. No Next.js build, model
 | Corrected implementation, expanded replay | 30/30 pass | Yes | None |
 | Corrected implementation, earlier replay | 33/33 pass | Yes | None |
 | Final implementation, including deferred execution and post-approval recheck | 41/41 pass | Yes | None |
+| Initial PR sources at `17a53d0eadba322494e78a52691099dc4682ead1`, expanded review replay | 41/43 pass; 2 expected failures | Yes | None |
+| Review fixes, including native image submission and changed button classification | 43/43 pass | Yes | None |
 
 The final baseline failed default desktop launch, idle callback protection after owner takeover, verification metadata, required/failed form-submit guards, known-iframe recognition, saved-login automatic-submit protection and the post-approval recheck. Existing launch overrides, article/hidden/solved controls, field entry, explicit saved-login filling, deferred verification submission, owner controls and stopped-turn authorization passed.
 
@@ -20,6 +22,10 @@ The native vault saves an encrypted synthetic login. Default `sign_in` is blocke
 
 The approval-wait regression starts with a solved page, requests a click in Ask mode, changes the DOM to a failed check without changing browser identity, and approves the pending request. The current implementation returns a fresh failed snapshot with `blockedAction:true`; the form counter stays zero. The baseline submits instead.
 
+The review replay adds an actual `input[type=image]` and a button changed from `type=button` to `type=submit` during an approval wait. Both submit despite failed verification on the first PR commit. The fixes classify the image control and re-read the button after approval; both return `blockedAction:true` without submitting. Retry remains usable, and all earlier controls still pass.
+
 These fixtures establish Perry's interpretation and handoff behavior. They do not prove an external site's acceptance, read cross-origin iframe copy, or cover multiple widgets and custom token-field names. A nonempty standard response can mask another pending widget; a custom response field may not clear inferred checking status.
 
 Use the commands in README.md to regenerate the machine-readable `result.json` evidence. Each replay removed its synthetic home and owned Chrome processes. Automatic approval review rejected deletion of reviewed report directories: the five under `node_modules/.cache/browser-verification`, siblings `node_modules/.cache/browser-signin-current` and `node_modules/.cache/browser-signin-baseline`, and final siblings `node_modules/.cache/browser-final-current` and `node_modules/.cache/browser-final-baseline`. Those nine directories remain. No rejected deletion was retried through another tool or delegated to another agent.
+
+For the review pass, deletion of the new `node_modules/.cache/browser-review-{baseline,fixed,ui,ui-fixed,ui-final}` report folders was also rejected as blocked by policy. They remain; none of the earlier rejected paths was included in that request.
