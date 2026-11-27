@@ -9,7 +9,7 @@ pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-re
 pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/trace-settlement/run.ts node_modules/.cache/performance-backend/fixed
 ```
 
-The baseline flag restores the previous two query shapes with a process-local module loader. It does not change source files or the schema. It exits 1 because the three performance assertions fail. All 65 other assertions pass. The current implementation passes all 68 assertions.
+The baseline flag restores the previous two query shapes with a process-local module loader. It does not change source files or the schema. It exits 1 because the three performance assertions fail. With the activity follow-up below included, all 75 other assertions pass. The current implementation passes all 78 assertions.
 
 Hydration counters observe documents yielded by the actual Store query iterator. Bytes are the UTF-8 JSON size of those hydrated documents, including their metadata, rather than an estimate of disk I/O or a wall-clock benchmark.
 
@@ -31,3 +31,16 @@ The imported-turn case also gives two turns identical queue positions and creati
 The review follow-up keeps a later retrying error with a reset wait eligible while checking that an earlier ordinary queued turn suppresses it. This distinguishes choosing the first queued turn from incorrectly choosing the first turn with waiting state. All 68 checks still pass.
 
 Generated reports and synthetic homes are disposable after their results are recorded here. Automatic approval review rejected removing `node_modules/.cache/performance-backend` with `blocked by policy`; its synthetic reports remain, with all runtime resources closed. No alternative removal mechanism was used. The maintained suite and this record remain reproducible.
+
+## Activity visibility follow-up
+
+The global pet activity query searched only the twenty most recently started runs, then looked for a running one. A native Runtime fixture reproduced it returning null for an active two-hour job behind thirty newer terminal runs. The query now uses the native `runs.by_status_started` index to find the most recently started active run directly.
+
+The extended suite passes 78 checks. It covers the long-running job, its live step, one-run hydration, multiple active runs inserted out of start order, each terminal status, an idle system and unchanged chat-specific completed activity. SQLite's query plan confirms the status/start index. These are synthetic SQLite/production-handler checks with network requests refused; no installed data or engine is used.
+
+```shell
+pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/trace-settlement/run.ts node_modules/.cache/performance-backend/activity-replay --activity-baseline
+pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/trace-settlement/run.ts node_modules/.cache/performance-backend/activity-current
+```
+
+The activity baseline flag restores only the previous global-activity query through the process-local loader, leaves source untouched, and exits 1 at the long-running visibility assertion. The ordinary baseline flag above still isolates the earlier trace/history query changes.

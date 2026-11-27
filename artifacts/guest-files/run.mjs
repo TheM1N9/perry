@@ -110,6 +110,20 @@ const xlsx = () => zip({
   "xl/sharedStrings.xml": `<sst><si><t>Item</t></si><si><t>Backdrop &amp; lights</t></si></sst>`,
   "xl/worksheets/sheet1.xml": `<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="inlineStr"><is><t>Cost</t></is></c></row><row r="2"><c r="A2" t="s"><v>1</v></c><c r="B2"><v>4200</v></c></row></sheetData></worksheet>`,
 });
+const sheetXlsx = (rows) => zip({
+  "xl/workbook.xml": `<workbook><sheets><sheet name="Sparse sales" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+  "xl/_rels/workbook.xml.rels": `<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`,
+  "xl/worksheets/sheet1.xml": `<worksheet><sheetData>${rows}</sheetData></worksheet>`,
+});
+const sparseXlsx = () => sheetXlsx(`
+  <row r="1"><c r="A1" t="inlineStr"><is><t>Name</t></is></c><c r="B1" t="inlineStr"><is><t>Country</t></is></c><c r="C1" t="inlineStr"><is><t>Price</t></is></c></row>
+  <row r="4"><c r="A4" t="inlineStr"><is><t>Alice</t></is></c><c r="C4"><v>100</v></c></row>
+  <row r="10"><c r="C10" t="inlineStr"><is><t>Explicit column</t></is></c><c><v>200</v></c></row>
+  <row><c t="inlineStr"><is><t>Implicit row and column</t></is></c><c/></row>
+  <row r="20"/>
+  <row><c t="inlineStr"><is><t>After empty row</t></is></c></row>
+  <row><c r="C25"><v>25</v></c></row>
+  <row r="1048576"><c r="XFD1048576"><v>777</v></c></row>`);
 const SET_DESIGN = pdf(["HC Podcasts set design", photo("Stage colour: TEAL-58"), "Backdrop colour: TANGERINE-41"]);
 const LONG = pdf(Array.from({ length: 26 }, (_, i) => i === 25 ? "Wrap party code: OSPREY-26" : `Run of show, page ${i + 1}`));
 const b64 = (bytes) => bytes.toString("base64");
@@ -509,7 +523,65 @@ try {
     assert.equal(files.attachments.length, 0, "a guest turn gets the text in place of paths it cannot open");
     assert.match(files.text, /Guest: Dr Rao\nTopic: monsoon & cities/);
     assert.match(files.text, /## Slide 1\n\nOpening titles\n\n## Slide 2\n\nClosing credits/);
-    assert.match(files.text, /## Budget\n\nItem\tCost\nBackdrop & lights\t4200/);
+    assert.match(files.text, /## Budget\n\nA1: Item\tB1: Cost\nA2: Backdrop & lights\tB2: 4200/);
+  });
+
+  await check("a sparse WhatsApp workbook reaches the engine with original cell coordinates", async () => {
+    await call("whatsapp:receive", { chatId: OWNER, text: "Read these sales figures", media: [{ base64: b64(sparseXlsx()), fileName: "sales.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }] });
+    const [job] = await claimAll("whatsapp", OWNER);
+    assert.ok(job?.attachments?.length);
+    const { files, input } = await asEngineGets(job);
+    const text = input.map(item => item.text ?? "").join("\n");
+    assert.match(text, /A1: Name\tB1: Country\tC1: Price/);
+    assert.match(text, /A4: Alice\tC4: 100/);
+    assert.match(text, /C10: Explicit column\tD10: 200/);
+    assert.match(text, /A11: Implicit row and column\tB11: /);
+    assert.match(text, /A21: After empty row/);
+    assert.match(text, /C25: 25/);
+    assert.match(text, /XFD1048576: 777/);
+    assert.ok(files.text.length < 1500, "sparse coordinates must not expand a blank worksheet grid");
+  });
+
+  await check("addressed workbook extraction retains its honest text budget", async () => {
+    const files = await readable([file("limited.xlsx", sparseXlsx(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")], GUEST, { guest: true, soffice: null, maxChars: 80 });
+    assert.match(files.text, /the rest of its text is left out/);
+    assert.ok(!files.text.includes("XFD1048576"));
+    assert.equal(files.attachments.length, 0);
+  });
+
+  await check("invalid spreadsheet coordinates fail honestly without losing the next attachment", async () => {
+    const files = await readable([
+      file("bad-column.xlsx", sheetXlsx(`<row r="1"><c r="ZZZ1"><v>5</v></c></row>`), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+      file("bad-row.xlsx", sheetXlsx(`<row r="1048577"><c r="A1048577"><v>5</v></c></row>`), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+      file("mismatched-row.xlsx", sheetXlsx(`<row r="2"><c r="A1"><v>5</v></c></row>`), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+      file("following.txt", Buffer.from("FOLLOWING-ATTACHMENT-OK"), "text/plain"),
+    ], GUEST, { guest: true, soffice: null });
+    assert.deepEqual(files.attachments.map(item => item.fileName), ["bad-column.xlsx", "bad-row.xlsx", "mismatched-row.xlsx"]);
+    assert.equal((files.text.match(/Automatic extraction failed/g) ?? []).length, 3);
+    assert.match(files.text, /FOLLOWING-ATTACHMENT-OK/);
+  });
+
+  await check("declared worksheet rows reject nondecimal numeric syntax", async () => {
+    const invalid = ["1e2", "1.5", "0x10", "2e0"];
+    const files = await readable(invalid.map((row, index) => file(`numeric-${index}.xlsx`, sheetXlsx(`<row r="${row}"><c><v>5</v></c></row>`), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")), GUEST, { guest: true, soffice: null });
+    assert.equal(files.attachments.length, invalid.length);
+    assert.equal((files.text.match(/Automatic extraction failed/g) ?? []).length, invalid.length);
+  });
+
+  await check("worksheet coordinates preserve XML quoting and whitespace", async () => {
+    const workbook = zip({
+      "xl/workbook.xml": `<workbook><sheets><sheet name = 'Quoted &amp; cells' sheetId='1' r:id = 'rId1'/></sheets></workbook>`,
+      "xl/_rels/workbook.xml.rels": `<Relationships><Relationship Id = 'rId1' Target = 'worksheets/quoted.xml'/></Relationships>`,
+      "xl/worksheets/quoted.xml": `<worksheet xmlns:extra="urn:fixture"><sheetData><row r = '4'><c extra:note="not a coordinate r='Z4'" extra:r='X4' r = 'C4'><v>100</v></c><c r=\"D4\"><v>200</v></c><c r='E4' t = 'inlineStr'><is><t>quoted &amp; value</t></is></c></row><row><c r = 'C8'><v>300</v></c><c><v>400</v></c></row><row r=' +0009 '><c r='A9'><v>500</v></c></row><row r='&#49;0'><c r='&#67;10'><v>600</v></c></row></sheetData></worksheet>`,
+    });
+    const files = await readable([file("quoted.xlsx", workbook, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")], GUEST, { guest: true, soffice: null });
+    assert.equal(files.attachments.length, 0);
+    assert.match(files.text, /C4: 100\tD4: 200/);
+    assert.match(files.text, /## Quoted & cells/);
+    assert.match(files.text, /E4: quoted & value/);
+    assert.match(files.text, /C8: 300\tD8: 400/);
+    assert.match(files.text, /A9: 500/);
+    assert.match(files.text, /C10: 600/);
   });
 
   await check("a broken PDF and a zip bomb go on as they came, and the turn goes on", async () => {

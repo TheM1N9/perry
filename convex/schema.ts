@@ -1466,7 +1466,8 @@ export default defineSchema({
     finishedAt: v.optional(v.number()),
   })
     .index("by_conversation", ["conversationId"])
-    .index("by_started", ["startedAt"]),
+    .index("by_started", ["startedAt"])
+    .index("by_status_started", ["status", "startedAt"]),
 
   /**
    * What Codex did inside a run, one row per item: a command, a file change,

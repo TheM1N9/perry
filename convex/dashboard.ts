@@ -613,7 +613,7 @@ export const getActivity = query({
     assertDashboardKey(args.key);
     const run = args.id
       ? await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", args.id!)).order("desc").first()
-      : (await ctx.db.query("runs").withIndex("by_started").order("desc").take(20)).find((item) => item.status === "running") ?? null;
+      : await ctx.db.query("runs").withIndex("by_status_started", (q) => q.eq("status", "running")).order("desc").first();
     if (!run) return null;
     const running = run.status === "running";
     const spans = (await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect())

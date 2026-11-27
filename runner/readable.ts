@@ -289,27 +289,52 @@ export function officeText(bytes: Buffer, extension: string): string {
   }
 }
 
-/** Each sheet of a workbook, a row a line, cells apart by tabs. */
+const xmlAttribute = (attributes: string, name: string): string | undefined => {
+  for (const attribute of attributes.matchAll(/(?:^|\s)([^\s=<>/"']+)\s*=\s*(["'])([\s\S]*?)\2/g)) {
+    if (attribute[1] === name) return unescape(attribute[3]);
+  }
+  return undefined;
+};
+
+/** Each sheet as addressed cells, so omitted empty rows and columns cannot shift values. */
 function sheets(read: (name: string) => string, names: string[]): string {
   const shared = [...read("xl/sharedStrings.xml").matchAll(/<si>([\s\S]*?)<\/si>/g)]
     .map((item) => [...item[1].matchAll(/<t(?:\s[^>]*)?>([^<]*)<\/t>/g)].map((part) => unescape(part[1])).join(""));
   const targets = new Map([...read("xl/_rels/workbook.xml.rels").matchAll(/<Relationship\b[^>]*>/g)].map((rel) => [
-    rel[0].match(/\bId="([^"]+)"/)?.[1] ?? "", `xl/${(rel[0].match(/\bTarget="([^"]+)"/)?.[1] ?? "").replace(/^\/?xl\//, "")}`,
+    xmlAttribute(rel[0], "Id") ?? "", `xl/${(xmlAttribute(rel[0], "Target") ?? "").replace(/^\/?xl\//, "")}`,
   ]));
   const listed = [...read("xl/workbook.xml").matchAll(/<sheet\b[^>]*>/g)].map((sheet) => ({
-    name: unescape(sheet[0].match(/\bname="([^"]*)"/)?.[1] ?? ""),
-    path: targets.get(sheet[0].match(/\br:id="([^"]+)"/)?.[1] ?? "") ?? "",
+    name: xmlAttribute(sheet[0], "name") ?? "",
+    path: targets.get(xmlAttribute(sheet[0], "r:id") ?? "") ?? "",
   })).filter((sheet) => names.includes(sheet.path));
   const order = listed.length ? listed : numbered(names, /^xl\/worksheets\/sheet\d+\.xml$/).map((path, index) => ({ name: `Sheet ${index + 1}`, path }));
   return order.map((sheet) => {
-    const rows = [...read(sheet.path).matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)].map((row) =>
-      [...row[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)].map((cell) => {
-        const type = cell[1].match(/\bt="([^"]+)"/)?.[1];
+    let rowNumber = 0;
+    const rows = [...read(sheet.path).matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)].map((row) => {
+      const cells = row[2] ?? "";
+      const parts = [...cells.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)];
+      const declaredRow = xmlAttribute(row[1], "r")?.trim();
+      if (declaredRow !== undefined && !/^\+?[0-9]+$/.test(declaredRow)) throw new Error("Invalid spreadsheet row coordinate.");
+      const firstCellRow = parts.map(cell => xmlAttribute(cell[1], "r")).find(value => value !== undefined)?.match(/^[A-Z]{1,3}([1-9]\d{0,6})$/i)?.[1];
+      rowNumber = declaredRow !== undefined ? Number(declaredRow) : firstCellRow !== undefined ? Number(firstCellRow) : rowNumber + 1;
+      if (!Number.isInteger(rowNumber) || rowNumber < 1 || rowNumber > 1_048_576) throw new Error("Invalid spreadsheet row coordinate.");
+      let column = 0;
+      return parts.map((cell) => {
+        const declaredCell = xmlAttribute(cell[1], "r");
+        const coordinate = declaredCell?.match(/^([A-Z]{1,3})([1-9]\d{0,6})$/i);
+        if (declaredCell !== undefined && !coordinate) throw new Error("Invalid spreadsheet cell coordinate.");
+        column = coordinate ? [...coordinate[1].toUpperCase()].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) : column + 1;
+        if (column > 16_384 || coordinate && (Number(coordinate[2]) !== rowNumber)) throw new Error("Invalid spreadsheet cell coordinate.");
+        let letters = "";
+        for (let number = column; number > 0; number = Math.floor((number - 1) / 26)) letters = String.fromCharCode(65 + (number - 1) % 26) + letters;
+        const type = xmlAttribute(cell[1], "t");
         const inner = cell[2] ?? "";
-        if (type === "inlineStr") return [...inner.matchAll(/<t(?:\s[^>]*)?>([^<]*)<\/t>/g)].map((part) => unescape(part[1])).join("");
-        const value = unescape(inner.match(/<v>([^<]*)<\/v>/)?.[1] ?? "");
-        return type === "s" ? shared[Number(value)] ?? "" : value;
-      }).join("\t").trimEnd()).filter(Boolean);
+        const raw = unescape(inner.match(/<v>([^<]*)<\/v>/)?.[1] ?? "");
+        const value = type === "inlineStr" ? [...inner.matchAll(/<t(?:\s[^>]*)?>([^<]*)<\/t>/g)].map((part) => unescape(part[1])).join("")
+          : type === "s" ? shared[Number(raw)] ?? "" : raw;
+        return `${letters}${rowNumber}: ${value}`;
+      }).join("\t");
+    }).filter(Boolean);
     return `## ${sheet.name}\n\n${rows.join("\n")}`;
   }).join("\n\n");
 }

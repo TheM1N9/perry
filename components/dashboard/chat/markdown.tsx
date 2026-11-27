@@ -51,9 +51,9 @@ function FileLink({ path, children }: { path: string; children: ReactNode }) {
 function ChatImage({ src, alt }: { src: string; alt?: string }) {
   const files = useContext(ChatFiles);
   const path = filePath(src);
-  if (path === null) return <img src={src} alt={alt ?? ""} />;
+  if (path === null) return <img src={src} alt={alt ?? ""} loading="lazy" decoding="async" />;
   const file = chatFile(files, path);
-  if (file) return <img src={file.url} alt={alt ?? ""} title={file.path} />;
+  if (file) return <img src={file.url} alt={alt ?? ""} title={file.path} loading="lazy" decoding="async" />;
   return <FileLink path={path}>{alt || path}</FileLink>;
 }
 

@@ -41,6 +41,13 @@ Making it readable
 27. Repeated short reads overrun the existing bounded text buffer, or a multibyte character at its byte limit is reported as an invalid attachment. Keep the byte cap and disclose character truncation.
 28. A file becomes shorter after its size was measured. A zero-byte read must end extraction without looping, inventing zero padding or losing handle cleanup.
 29. A later chunk read fails after earlier chunks succeeded. Close the handle, retain the original attachment and report extraction failure rather than presenting the partial text as complete.
+30. An Excel worksheet omits empty cells or rows. Extracted values must retain their cell addresses, so a value in C4 cannot move under the B column or appear to be from row 2.
+31. Valid worksheet rows or cells omit their optional coordinates. Infer their positions from preceding rows/cells, including after an explicit gap, while preserving shared strings, inline strings, cached values and explicit empty cells.
+32. A sparse sheet contains XFD1048576. Retain that coordinate without constructing millions of blank rows or columns, and continue to disclose the normal extracted-text limit.
+33. A worksheet declares malformed or out-of-range coordinates. Reject that attachment honestly without overflowing a counter, looping or preventing a following valid attachment from being read.
+34. Declared row coordinates use exponent or fractional numeric syntax. Reject them before numeric conversion rather than silently inventing a different row.
+35. Valid row and cell coordinates use single quotes, XML whitespace around the equals sign, or a mixture of quoting styles. Preserve both explicit and inferred row/column positions; only a genuinely omitted coordinate may use the fallback.
+36. Another attribute contains coordinate-like text inside its quoted value, or a namespaced attribute ends in r. Neither may be mistaken for the unqualified cell coordinate.
 
 Two runs:
 - run.mjs, in CI: the real backend on SQLite (WhatsApp in, contacts, brain, the runner's claim), the
