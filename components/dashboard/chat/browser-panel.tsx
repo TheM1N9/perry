@@ -161,6 +161,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   const open = Boolean(state?.identity);
   const status = connection !== "Connected" ? { text: connection === "Connecting" ? "Connecting…" : `${connection}…`, tone: "bg-muted-foreground/50" }
     : paused ? { text: "You're in control", tone: "bg-warning" }
+    : state?.verification ? { text: state.verification.state === "checking" ? "Checking browser" : "Site verification", tone: "bg-warning" }
     : state?.state === "live" ? { text: "Perry is browsing", tone: "bg-success motion-safe:animate-pulse" }
     : { text: "Not open", tone: "bg-muted-foreground/40" };
 
@@ -208,6 +209,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
     {connectionError && !error && <p role="status" className="border-b p-3 text-muted-foreground">{connectionError}</p>}
     {error && <p role="alert" className="border-b p-3 text-destructive">{error}</p>}
     {state?.error && <p role="alert" className="border-b p-3 text-destructive">{state.error}</p>}
+    {state?.verification && <p role="status" className="border-b bg-warning/5 p-3 text-muted-foreground">{paused ? "Complete the site's verification in the page below, then Resume Perry." : state.verification.message}</p>}
     <div className="min-h-0 flex-1 overflow-auto">
       {!open && state ? <div className="flex flex-col items-center px-6 py-14 text-center" data-browser-empty>
         <span className="grid size-11 place-items-center rounded-full bg-muted text-muted-foreground"><GlobeIcon className="size-5" /></span>

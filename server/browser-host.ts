@@ -8,7 +8,7 @@ export async function browserStatus(scope: string, importEnabled: boolean): Prom
 }
 async function statusInScope(scope: string, importEnabled: boolean): Promise<BrowserState> {
   const state = browser.browserControl(scope);
-  const result: BrowserState = { importEnabled, source: state.source, nativeWindow: state.nativeWindow ?? process.env.PERRY_BROWSER_HEADED === "1", state: state.error ? "disconnected" : "closed", identity: browser.identity(scope), viewport: browser.browserViewport(), canGoBack: false, canGoForward: false, tabs: [], loading: state.loading, error: state.error, dialog: state.dialog, upload: state.upload !== null, private: state.private, downloads: [...state.downloads.values()].slice(-30) };
+  const result: BrowserState = { importEnabled, source: state.source, nativeWindow: state.nativeWindow ?? process.env.PERRY_BROWSER_HEADED === "1", state: state.error ? "disconnected" : "closed", identity: browser.identity(scope), viewport: browser.browserViewport(), canGoBack: false, canGoForward: false, tabs: [], loading: state.loading, error: state.error, verification: null, dialog: state.dialog, upload: state.upload !== null, private: state.private, downloads: [...state.downloads.values()].slice(-30) };
   result.profileId = browser.browserProfileId(scope);
   result.profileName = browser.browserProfiles(scope).find(profile => profile.id === result.profileId)?.name;
   if (!state.current) return result;
@@ -34,6 +34,7 @@ async function statusInScope(scope: string, importEnabled: boolean): Promise<Bro
         const history = z.object({ currentIndex: z.number(), entries: z.array(z.unknown()) }).parse(await browser.hostCommand("Page.getNavigationHistory"));
         result.canGoBack = history.currentIndex > 0;
         result.canGoForward = history.currentIndex < history.entries.length - 1;
+        result.verification = await browser.verification();
       } catch {
         if (!state.current || state.current.ws.readyState !== WebSocket.OPEN) throw new Error("The browser connection closed.");
       }
