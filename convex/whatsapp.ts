@@ -10,6 +10,7 @@ import { readPersona } from "./persona";
 import type { GuestTarget } from "./reactions";
 import { vFileDelivery, vGuestMessage } from "./schema";
 import { hide, savedValues } from "./vault";
+import { phonePrompt } from "./questions";
 
 /**
  * WhatsApp, as a linked device (Baileys, the WhatsApp Web protocol), the way
@@ -232,12 +233,12 @@ async function nextOutboxTime(ctx: QueryCtx): Promise<number> {
  * Queue a message for a WhatsApp chat: Markdown turned into WhatsApp's
  * formatting and split to its length. Only the owner, or someone they allowed.
  */
-export async function queueText(ctx: MutationCtx, to: string, markdown: string, notificationId?: Id<"sent">, turnId?: Id<"codexTurns">, approvalId?: Id<"approvals">, authorizationTurnId?: Id<"codexTurns">): Promise<boolean> {
+export async function queueText(ctx: MutationCtx, to: string, markdown: string, notificationId?: Id<"sent">, turnId?: Id<"codexTurns">, approvalId?: Id<"approvals">, authorizationTurnId?: Id<"codexTurns">, question?: { id: Id<"userQuestions">; index: number; hash: string }): Promise<boolean> {
   const jid = await recipient(ctx, to, authorizationTurnId);
   if (!jid) return false;
   const now = await nextOutboxTime(ctx);
   for (const [index, text] of chunkWhatsApp(toWhatsApp(markdown)).entries()) {
-    await ctx.db.insert("whatsappOutbox", { to: jid, kind: "text", text, messageId: randomBytes(16).toString("hex").toUpperCase(), state: "pending", createdAt: now + index, attempts: 0, ...(notificationId ? { notificationId } : {}), ...(turnId ? { turnId } : {}), ...(approvalId ? { approvalId } : {}) });
+    await ctx.db.insert("whatsappOutbox", { to: jid, kind: "text", text, messageId: randomBytes(16).toString("hex").toUpperCase(), state: "pending", createdAt: now + index, attempts: 0, ...(notificationId ? { notificationId } : {}), ...(turnId ? { turnId } : {}), ...(approvalId ? { approvalId } : {}), ...(question ? { question } : {}) });
   }
   return true;
 }
@@ -286,12 +287,32 @@ export const send = internalMutation({
   handler: async (ctx, args) => await queueText(ctx, args.to, args.text, undefined, undefined, args.approvalId, args.authorizationTurnId),
 });
 
+export const sendQuestion = internalMutation({
+  args: { id: v.id("userQuestions"), index: v.number() },
+  handler: async (ctx, args): Promise<null> => {
+    const prompt = await phonePrompt(ctx, args.id, args.index);
+    const request = await ctx.db.get(args.id);
+    if (prompt?.channel !== "whatsapp" || !request?.phone || request.phone.whatsapp?.some(attempt => attempt.index === args.index)) return null;
+    await queueText(ctx, prompt.externalId, prompt.text, undefined, undefined, undefined, undefined, { ...args, hash: createHash("sha256").update(prompt.text).digest("hex") });
+    const parts = await ctx.db.query("whatsappOutbox").withIndex("by_question", q => q.eq("question.id", args.id).eq("question.index", args.index)).collect();
+    await ctx.db.patch(args.id, { phone: { ...request.phone, whatsapp: [...request.phone.whatsapp ?? [], { index: args.index, messageIds: parts.map(part => part.messageId!), sentIds: [] }] } });
+    return null;
+  },
+});
+
 export const reserveMessageId = internalMutation({
   args: { id: v.id("whatsappOutbox") },
   returns: v.union(v.string(), v.object({ messageId: v.string(), text: v.string() }), v.null()),
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row || row.state !== "pending") return null;
+    if (row.question) {
+      const prompt = await phonePrompt(ctx, row.question.id, row.question.index);
+      if (prompt?.channel !== "whatsapp" || prompt.externalId !== row.to || createHash("sha256").update(prompt.text).digest("hex") !== row.question.hash) {
+        await ctx.db.patch(row._id, { state: "failed", error: "This question is no longer waiting." });
+        return null;
+      }
+    }
     let text: string | undefined;
     if (row.progressTurnId) {
       const turn = await ctx.db.get(row.progressTurnId);
@@ -492,6 +513,10 @@ export const sent = internalMutation({
       }
     }
     else await ctx.db.patch(row._id, { attempts: row.attempts + 1, error: args.error.slice(0, 500) });
+    if (row.question && !args.error && row.messageId) {
+      const request = await ctx.db.get(row.question.id);
+      if (request?.phone?.whatsapp) await ctx.db.patch(request._id, { phone: { ...request.phone, whatsapp: request.phone.whatsapp.map(attempt => attempt.index !== row.question!.index || attempt.sentIds.includes(row.messageId!) ? attempt : { ...attempt, sentIds: [...attempt.sentIds, row.messageId!] }) } });
+    }
     if (row.notificationId) await ctx.runMutation(internal.notify.whatsappOutcome, { id: row.notificationId });
     if (row.turnId) {
       const outgoing = await ctx.db.query("whatsappOutbox").withIndex("by_turn", q => q.eq("turnId", row.turnId)).collect();
@@ -656,6 +681,11 @@ export const acceptOwner = internalMutation({
     if (args.messageId) await ctx.runMutation(internal.reactions.record, { channel: "whatsapp", externalId: chatId, messageId: args.messageId, text: args.text || "(attachment)", isPerry: false, fromMe: args.fromMe, remoteJid: args.remoteJid });
     // "1", "2" or "3" (or yes, no, always) answers an approval asked in this chat.
     if (!args.stored.length && args.controls !== false) {
+      const answer: string | null = await ctx.runMutation(internal.questions.answerFromPhone, { channel: "whatsapp", senderId: chatId, text: args.text, replyTo: args.replyTo });
+      if (answer) {
+        await ctx.runMutation(internal.whatsapp.send, { to: chatId, text: answer });
+        return null;
+      }
       const decision: string | null = await ctx.runMutation(internal.taskDecisions.fromPhone, { channel: "whatsapp", senderId: chatId, text: args.text });
       if (decision) {
         await ctx.runMutation(internal.whatsapp.send, { to: chatId, text: decision });

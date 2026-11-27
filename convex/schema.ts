@@ -873,7 +873,12 @@ export default defineSchema({
     questions: v.array(v.object({ id: v.string(), header: v.string(), question: v.string(), options: v.array(v.object({ label: v.string(), description: v.string() })), multiple: v.optional(v.boolean()) })),
     answers: v.optional(v.record(v.string(), v.array(v.string()))),
     status: v.union(v.literal("pending"), v.literal("answered")), createdAt: v.number(),
-    }).index("by_turn", ["turnId", "nativeId"]).index("by_chat", ["conversationId", "status"]).index("by_status", ["status"]),
+    phone: v.optional(v.object({
+      channel: v.union(v.literal("telegram"), v.literal("whatsapp")), externalId: v.string(), code: v.string(),
+      whatsapp: v.optional(v.array(v.object({ index: v.number(), messageIds: v.array(v.string()), sentIds: v.array(v.string()) }))),
+      telegram: v.optional(v.array(v.object({ index: v.number(), state: v.union(v.literal("sending"), v.literal("sent"), v.literal("uncertain")), messageIds: v.array(v.string()) }))),
+    })),
+    }).index("by_turn", ["turnId", "nativeId"]).index("by_chat", ["conversationId", "status"]).index("by_status", ["status"]).index("by_phone_code", ["phone.code"]).index("by_phone", ["phone.channel", "phone.externalId"]),
 
   projects: defineTable({
     runnerId: v.optional(v.id("runners")),
@@ -1674,6 +1679,7 @@ export default defineSchema({
   whatsappOutbox: defineTable({
     /** Progress is separate from final-reply delivery accounting. */
     progressTurnId: v.optional(v.id("codexTurns")),
+    question: v.optional(v.object({ id: v.id("userQuestions"), index: v.number(), hash: v.string() })),
     seenAt: v.optional(v.number()),
     approvalId: v.optional(v.id("approvals")),
     turnId: v.optional(v.id("codexTurns")),
@@ -1694,7 +1700,7 @@ export default defineSchema({
     sentAt: v.optional(v.number()),
     attempts: v.number(),
     error: v.optional(v.string()),
-  }).index("by_state", ["state", "createdAt"]).index("by_progress_turn", ["progressTurnId"]).index("by_notification", ["notificationId"]).index("by_turn", ["turnId"]).index("by_message", ["messageId"]).index("by_approval", ["approvalId"]),
+  }).index("by_state", ["state", "createdAt"]).index("by_progress_turn", ["progressTurnId"]).index("by_notification", ["notificationId"]).index("by_turn", ["turnId"]).index("by_message", ["messageId"]).index("by_approval", ["approvalId"]).index("by_question", ["question.id", "question.index"]),
 
   /** What a runner asked the owner before acting on their machine. See approvals.ts. */
   approvals: defineTable({
