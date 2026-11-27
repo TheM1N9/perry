@@ -29,3 +29,13 @@
 27. The selected active run retains its live step, approval and heartbeat behavior. A chat-specific query must still return its latest completed run and summary rather than adopting the global active-only filter.
 
 Scope: production mutation handlers + local SQLite/transaction runtime, synthetic runner/turn rows only; no network, engines, browser, scheduler start, or installed Perry data. Integrated build/E2E is the coordinator's responsibility. Each run must emit compact result.json with explicit assertions and before/after span rows.
+# Sidebar Riff exclusion
+
+Recorded before the new endpoint replay and query change:
+
+- Listing chats hydrates all ordinary or memory note bodies just to find Riff chat references.
+- An indexed descending scan omits a Riff, changes chat ordering/status, or hides an ordinary chat.
+- No notes or no Riffs causes an unbounded scan or loses the notes dependency needed for invalidation.
+- Duplicate or orphan Riff references change the visible chat result.
+- Breaking iteration leaves a SQLite reader open, blocking another connection's write or a later write on the original connection.
+- A malformed imported null reference hides a real chat or causes the endpoint to throw.
