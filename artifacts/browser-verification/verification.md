@@ -29,3 +29,13 @@ These fixtures establish Perry's interpretation and handoff behavior. They do no
 Use the commands in README.md to regenerate the machine-readable `result.json` evidence. Each replay removed its synthetic home and owned Chrome processes. Automatic approval review rejected deletion of reviewed report directories: the five under `node_modules/.cache/browser-verification`, siblings `node_modules/.cache/browser-signin-current` and `node_modules/.cache/browser-signin-baseline`, and final siblings `node_modules/.cache/browser-final-current` and `node_modules/.cache/browser-final-baseline`. Those nine directories remain. No rejected deletion was retried through another tool or delegated to another agent.
 
 For the review pass, deletion of the new `node_modules/.cache/browser-review-{baseline,fixed,ui,ui-fixed,ui-final}` report folders was also rejected as blocked by policy. They remain; none of the earlier rejected paths was included in that request.
+
+## Windows dashboard replay synchronization, PR #389
+
+Windows job `140667133454` on `0b8d2c7` timed out waiting for the browser launcher after the first panel-toggle click. Its screenshot showed a closed panel; no feature assertion had run. This was not a failed download assertion. The report did not contain the clicked page identity, coordinates or panel state, so it does not establish whether navigation or layout movement caused the missed click.
+
+A local unchanged replay with 600 ms navigation latency passed all 22 existing checks; latency alone did not reproduce the failure. The replay now waits for the exact destination chat and document readiness, waits for fonts, moves the pointer, and checks stable, reachable button bounds after hover and scrolling before dispatching one click. Failure reports retain the missing diagnostics. No production code or assertion was removed, and no dispatched action is retried.
+
+On production build `5ea42a8c-4853-4f63-8d07-9df3d0f38e2c`, the revised replay passed all 23 checks both at normal speed and with 600 ms latency and fourfold CPU slowdown. Desktop and phone screenshots were inspected; takeover controls and guidance were visible, with no phone overflow. Both sessions retained their tab and entered field value after Resume. No sign-in form was submitted, model turn started or real challenge completed. Both synthetic homes and owned processes were removed. Fresh hosted Windows CI remains necessary to confirm the original failure no longer occurs there.
+
+Automatic approval review rejected deletion of `node_modules/.cache/browser-panel-{ci-389,nav-baseline,ready-389,normal-389}` as blocked by policy. These four disposable report folders remain. No previously rejected path was included, and the deletion was not retried through another tool.

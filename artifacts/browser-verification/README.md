@@ -25,3 +25,11 @@ To reproduce the two review regressions, use `--baseline=17a53d0eadba322494e78a5
 A visible iframe with a Cloudflare hostname and no readable parent challenge copy is included. The fixture's CSP prevents loading its external URL. This proves recognition from the known iframe element, not reading or completing a real cross-origin challenge. A deferred widget produces its synthetic token only when the form submits; this confirms that checking alone can initiate legitimate verification. A separate approval-wait case verifies the live page is checked again after approval.
 
 The local verification pages exercise Perry's interpretation and recovery behavior. They do not establish that an external site's bot policy will accept automation. Cross-origin iframe copy is unreadable, so a known iframe without parent challenge text reports checking. Multiple widgets and custom token-field names are outside this replay: a standard nonempty response can mask another pending widget, and custom response fields may not clear the inferred status.
+
+The dashboard replay uses an existing production build and separate Chrome instances for the dashboard and Perry's browser:
+
+```powershell
+pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/browser-verification/ui.mjs node_modules/.cache/browser-dashboard
+```
+
+Add `--delayed-navigation` to apply 600 ms network latency and a fourfold CPU slowdown to the dashboard. Both modes use real pointer input, check desktop and phone takeover/Resume, preserve the entered form value, and write screenshots plus `result.json`. Clicks wait for the requested chat document, loaded fonts, and a reachable button whose bounds are stable across animation frames after scrolling and hover. They are not retried after dispatch. On failure the report includes the last click coordinates, current path, toggle state and saved panel state.
