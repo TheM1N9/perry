@@ -349,6 +349,26 @@ jobs:
         run: pnpm exec bun artifacts/connector-accounts/run.ts "${{ runner.temp }}/connector-accounts" --stand-in
       - if: runner.os == 'Windows'
         run: pnpm exec bun artifacts/connector-details/run.ts "${{ runner.temp }}/connector-details"
+      - name: Verify browser verification recovery
+        id: browser_verification
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/browser-verification/run.mjs "${{ runner.temp }}/browser-verification"
+      - name: Verify browser verification dashboard
+        id: browser_verification_ui
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/browser-verification/ui.mjs "${{ runner.temp }}/browser-verification-ui"
+      - if: always() && runner.os == 'Windows' && steps.browser_verification.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: browser-verification-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/browser-verification/result.json
+            ${{ runner.temp }}/browser-verification-ui/result.json
+            ${{ runner.temp }}/browser-verification-ui/*.png
+          if-no-files-found: error
       - name: Prepare browser verification driver
         if: runner.os == 'Windows'
         shell: pwsh

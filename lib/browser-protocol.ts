@@ -10,6 +10,12 @@ export const browserInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("key"), key: z.string().max(50), code: z.string().max(50), keyCode: z.number().int().min(0).max(255), modifiers: z.number().int().min(0).max(15) }),
 ]);
 export type BrowserInput = z.infer<typeof browserInput>;
+export const browserVerification = z.object({
+  state: z.enum(["checking", "required", "failed"]),
+  provider: z.enum(["Cloudflare", "website"]),
+  message: z.string(),
+});
+export type BrowserVerification = z.infer<typeof browserVerification>;
 export const browserState = z.object({
   profileId: z.string().optional(), profileName: z.string().optional(),
   importEnabled: z.boolean(),
@@ -21,6 +27,7 @@ export const browserState = z.object({
   canGoBack: z.boolean().default(false), canGoForward: z.boolean().default(false),
   tabs: z.array(z.object({ id: z.string(), title: z.string(), url: z.string() })),
   loading: z.boolean(), error: z.string().nullable(),
+  verification: browserVerification.nullable().default(null),
   dialog: z.object({ type: z.string(), message: z.string() }).nullable(),
   upload: z.boolean(), private: z.boolean(),
   downloads: z.array(z.object({ id: z.string(), name: z.string(), state: z.string() })),

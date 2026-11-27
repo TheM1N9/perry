@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { BrowserIdentity } from "../../lib/browser-protocol";
+import type { BrowserIdentity, BrowserVerification } from "../../lib/browser-protocol";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,10 +13,10 @@ import { setTimeout as delay } from "node:timers/promises";
 /**
  * Perry's own browser (issue #105): a Chrome (or Edge, or Chromium) with a
  * profile of its own in Perry's home, never the owner's, driven over the
- * DevTools protocol the way OpenClaw drives one. It runs headless in the
- * background, so it never takes over the screen, unlike Codex's computer use;
- * PERRY_BROWSER_HEADED=1 shows its window. Its cookies and sign-ins stay in
- * that profile.
+ * DevTools protocol the way OpenClaw drives one. Interactive chats use a
+ * desktop window where available; public reads and hosts without a desktop
+ * stay headless. PERRY_BROWSER_HEADED explicitly selects either mode.
+ * Cookies and sign-ins stay in that profile.
  *
  * Chat-scoped tabs, kept between calls and turns so a task can go step by step. It
  * starts when first used and closes after IDLE_MS unused. What a page shows
@@ -274,7 +274,9 @@ async function launch(): Promise<Tab> {
     state.id = randomUUID();
     const profile = profileDirectory(state.scope);
     (await import("../../server/browser-import")).recoverNativeImport(profile);
-    const path = await (await import("../../server/browser-runtime")).browserExecutable();
+    const runtime = await import("../../server/browser-runtime");
+    state.nativeWindow ??= process.env.PERRY_BROWSER_HEADED === "1" || (process.env.PERRY_BROWSER_HEADED !== "0" && state.scope !== "public-reader" && runtime.nativeBrowserAvailable());
+    const path = await runtime.browserExecutable();
     ensureCurrent();
     mkdirSync(profile, { recursive: true, mode: 0o700 });
     rmSync(join(profile, "DevToolsActivePort"), { force: true });
@@ -537,8 +539,12 @@ async function tab(): Promise<Tab> {
   const launched = await state.promise;
   const current = state.current ?? launched;
   checkLease();
-  if (current.idle) clearTimeout(current.idle);
-  if (!state.nativeWindow) current.idle = setTimeout(() => { void withBrowserView(state.scope, async () => closeBrowser()); }, IDLE_MS);
+  if (current.idle) { clearTimeout(current.idle); current.idle = null; }
+  if (!state.nativeWindow || state.controller === "agent") current.idle = setTimeout(() => {
+    current.idle = null;
+    if (state.current !== current || (state.nativeWindow && state.controller === "owner")) return;
+    void withBrowserView(state.scope, async () => closeBrowser());
+  }, IDLE_MS);
   return current;
 }
 
@@ -668,7 +674,31 @@ async function settle(open: Tab, maxMs = 15_000) {
 }
 
 export type Element = { ref: number; kind: string; label: string; href?: string };
-export type Snapshot = { url: string; title: string; text: string; elements: Element[]; identity?: BrowserIdentity };
+export type Snapshot = { url: string; title: string; text: string; elements: Element[]; identity?: BrowserIdentity; verification?: BrowserVerification | null };
+
+const VERIFICATION = `(() => {
+  const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+  const text = document.body?.innerText.slice(0, 20000) || '';
+  const tokens = [...document.querySelectorAll('input[name="cf-turnstile-response"], textarea[name="g-recaptcha-response"], input[name="h-captcha-response"]')];
+  const visibleCloudflare = [...document.querySelectorAll('iframe')].some(el => { try { return new URL(el.src).hostname === 'challenges.cloudflare.com' && visible(el); } catch { return false; } }) || [...document.querySelectorAll('.cf-turnstile')].some(visible);
+  const cloudflare = visibleCloudflare || tokens.some(el => el.name === 'cf-turnstile-response');
+  const retry = [...document.querySelectorAll('button, [role="button"], a')].some(el => visible(el) && /retry (?:the )?(?:browser|security|verification) check/i.test(el.innerText || el.getAttribute('aria-label') || ''));
+  const failed = /(?:couldn.t|could not|can.t|cannot|unable to|failed to) (?:finish )?(?:checking|verify) (?:your|the) browser|browser (?:verification|check) (?:has )?failed/i.test(text);
+  if (failed && (retry || cloudflare)) return { state: 'failed', provider: cloudflare ? 'Cloudflare' : 'website', message: "The site's browser verification failed. Keep this page open and use Pause & take over to finish the check, then Resume Perry." };
+  if (tokens.some(el => el.value.trim())) return null;
+  const fullPage = /^(?:just a moment|attention required|security check|one more step)/i.test(document.title) && /verify (?:that )?you are (?:a )?human|checking your browser|enable javascript and cookies/i.test(text);
+  if (!visibleCloudflare && !fullPage) return null;
+  const required = /verify (?:that )?you are (?:a )?human/i.test(text);
+  return { state: required ? 'required' : 'checking', provider: cloudflare ? 'Cloudflare' : 'website', message: required ? 'The site needs browser verification. Use Pause & take over to complete it, then Resume Perry.' : 'The site is checking this browser. If the check does not finish, use Pause & take over, then Resume Perry.' };
+})()`;
+
+export async function verification(): Promise<BrowserVerification | null> {
+  const current = await tab(), state = control(), revision = state.revision;
+  const result = await evaluate<BrowserVerification | null>(current, VERIFICATION);
+  checkLease();
+  if (state.current !== current || state.revision !== revision) throw new Error("The browser page changed. Look again before acting.");
+  return result;
+}
 
 const SNAPSHOT = `(() => {
   const shown = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none"; };
@@ -683,7 +713,7 @@ const SNAPSHOT = `(() => {
     return { ref: index + 1, kind, label, ...(tag === "a" ? { href: el.href.slice(0, 200) } : {}) };
   });
   const text = document.body ? document.body.innerText.replace(/\\n{3,}/g, "\\n\\n") : "";
-  return { url: location.href, title: document.title, text: text.slice(0, ${TEXT_CAP}), elements };
+  return { url: location.href, title: document.title, text: text.slice(0, ${TEXT_CAP}), elements, verification: ${VERIFICATION} };
 })()`;
 
 export async function snapshot(): Promise<Snapshot> {
@@ -701,7 +731,7 @@ export async function snapshot(): Promise<Snapshot> {
   state.revision++;
   const lease = context.getStore();
   if (lease) lease.revision = state.revision;
-  return { url: scrub(result.url), title: scrub(result.title), text: scrub(result.text), elements: result.elements.map((element) => ({ ...element, label: scrub(element.label), ...(element.href ? { href: scrub(element.href) } : {}) })), identity: identity() ?? undefined };
+  return { url: scrub(result.url), title: scrub(result.title), text: scrub(result.text), elements: result.elements.map((element) => ({ ...element, label: scrub(element.label), ...(element.href ? { href: scrub(element.href) } : {}) })), ...(result.verification ? { verification: result.verification } : {}), identity: identity() ?? undefined };
 }
 
 export async function open(url: string): Promise<Snapshot> {
@@ -715,8 +745,8 @@ export async function open(url: string): Promise<Snapshot> {
 }
 
 /** What an element is, by its number from the last look: its label and kind, the page's address, and the form's button when it is a box. */
-export async function describe(ref: number): Promise<{ kind: string; label: string; url: string; submitLabel?: string; search: boolean; password: boolean }> {
-  const found = await evaluate<{ kind: string; label: string; url: string; submitLabel?: string; search: boolean; password: boolean } | null>(await tab(), `(() => {
+export async function describe(ref: number): Promise<{ kind: string; label: string; url: string; submitLabel?: string; search: boolean; password: boolean; submits: boolean }> {
+  const found = await evaluate<{ kind: string; label: string; url: string; submitLabel?: string; search: boolean; password: boolean; submits: boolean } | null>(await tab(), `(() => {
     const el = document.querySelector('[data-perry-ref="${ref}"]');
     if (!el) return null;
     const form = el.form || el.closest("form");
@@ -728,6 +758,7 @@ export async function describe(ref: number): Promise<{ kind: string; label: stri
       submitLabel: button ? (button.innerText || button.value || button.getAttribute("aria-label") || "").trim().slice(0, 80) : undefined,
       search: type === "search" || Boolean(el.closest("[role=search]")) || /^(q|query|search|s)$/i.test(el.getAttribute("name") || ""),
       password: type === "password",
+      submits: Boolean(form && (el.tagName === "BUTTON" || el.tagName === "INPUT") && el.type === "submit"),
     };
   })()`);
   if (!found) throw new Error(`There is no element ${ref} on this page any more; look at the page again for the current numbers.`);
