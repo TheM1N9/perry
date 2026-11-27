@@ -13,6 +13,10 @@ import { saveMessages } from "./lib/agent";
 
 const question = v.object({ id: v.string(), header: v.string(), question: v.string(), options: v.array(v.object({ label: v.string(), description: v.string() })), multiple: v.optional(v.boolean()) });
 
+function answerValues(answers: Record<string, string[]> | undefined, id: string): string[] {
+  return answers && Object.prototype.hasOwnProperty.call(answers, id) ? answers[id] : [];
+}
+
 async function active(ctx: QueryCtx, request: Doc<"userQuestions">): Promise<boolean> {
   const turn = await ctx.db.get(request.turnId);
   return Boolean(turn?.status === "running" && !turn.stopRequested && !turn.guest && !turn.preparation && !turn.flush && !turn.checkpoint && turn.kind !== "compact" && !(await ctx.db.query("installation").first())?.paused);
@@ -29,7 +33,7 @@ async function phoneTarget(ctx: QueryCtx, conversationId: Id<"conversations">) {
 /** Rechecked when a queued prompt leaves the server, and again when its answer arrives. */
 export async function phonePrompt(ctx: QueryCtx, id: Id<"userQuestions">, index: number) {
   const request = await ctx.db.get(id);
-  if (!request?.phone || request.status !== "pending" || !Number.isInteger(index) || index < 0 || !request.questions[index] || request.answers?.[request.questions[index].id]?.length || !await active(ctx, request)) return null;
+  if (!request?.phone || request.status !== "pending" || !Number.isInteger(index) || index < 0 || !request.questions[index] || answerValues(request.answers, request.questions[index].id).length || !await active(ctx, request)) return null;
   const target = await phoneTarget(ctx, request.conversationId);
   if (!target || target.channel !== request.phone.channel || target.externalId !== request.phone.externalId) return null;
   const q = request.questions[index];
@@ -97,7 +101,7 @@ export const answer = mutation({
     assertDashboardKey(args.key);
     const request = await ctx.db.get(args.id), turn = request ? await ctx.db.get(request.turnId) : null;
     if (!request || request.status !== "pending" || turn?.status !== "running" || !await active(ctx, request)) throw new ArgumentError("This question is no longer waiting.");
-    if (Object.keys(args.answers).some(id => !request.questions.some(q => q.id === id)) || request.questions.some(q => !args.answers[q.id]?.length || (!q.multiple && args.answers[q.id].length > 1)) || JSON.stringify(args.answers).length > 16000) throw new ArgumentError("Answer every question before continuing.");
+    if (Object.keys(args.answers).some(id => !request.questions.some(q => q.id === id)) || request.questions.some(q => !answerValues(args.answers, q.id).length || (!q.multiple && answerValues(args.answers, q.id).length > 1)) || JSON.stringify(args.answers).length > 16000) throw new ArgumentError("Answer every question before continuing.");
     await settle(ctx, request, args.answers);
   },
 });
@@ -207,7 +211,7 @@ export const answerFromPhone = internalMutation({
     } else values = [(literal ? literal[1] : text).trim()];
     const answers = { ...request.answers, [q.id]: values };
     if (!values[0] || JSON.stringify(answers).length > 16000) return "Please send a non-empty answer under 16,000 characters.";
-    const remaining = request.questions.filter(question => !answers[question.id]?.length).length;
+    const remaining = request.questions.filter(question => !answerValues(answers, question.id).length).length;
     if (remaining) await ctx.db.patch(request._id, { answers });
     else await settle(ctx, request, answers);
     return remaining ? `Answer saved. ${remaining} ${remaining === 1 ? "question still needs" : "questions still need"} your answer.` : "Answered. I’ll continue the same work.";

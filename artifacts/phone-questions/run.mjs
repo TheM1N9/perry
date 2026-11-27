@@ -154,6 +154,26 @@ try {
       assert.deepEqual(await response(item.id), {});
     });
   } else {
+    await check("inherited-property question IDs queue prompts and remain unanswered until their own reply", async () => {
+      for (const name of ["constructor", "toString", "__proto__"]) {
+        const item = await request([choice(), free(name)]);
+        assert.equal(rows(item.id).length, 2);
+        await wa(command(item.id, "1"));
+        assert.equal(rt.store.get(item.id).status, "pending");
+        assert.deepEqual(await response(item.id), {});
+        await wa(command(item.id, `Answer for ${name}`, 1));
+        assert.deepEqual(await response(item.id), { answers: { format: ["Brief"], [name]: [`Answer for ${name}`] } });
+      }
+    });
+    await check("dashboard validation requires an own answer for inherited-property question IDs", async () => {
+      for (const name of ["constructor", "toString", "__proto__"]) {
+        const item = await request([choice(), free(name)]);
+        await assert.rejects(mutate("questions:answer", { key: KEY, id: item.id, answers: { format: ["Brief"] } }), /Answer every question/);
+        assert.equal(rt.store.get(item.id).status, "pending");
+        await mutate("questions:answer", { key: KEY, id: item.id, answers: { format: ["Brief"], [name]: ["Dashboard answer"] } });
+        assert.deepEqual(await response(item.id), { answers: { format: ["Brief"], [name]: ["Dashboard answer"] } });
+      }
+    });
     await check("native request replay keeps the same batch and exactly one prompt per question", async () => {
       const item = await request([choice(), free()]);
       assert.equal(await mutate("questions:request", { token: TOKEN, turnId: item.turn, nativeId: item.nativeId, questions: item.questions }), item.id);

@@ -147,6 +147,45 @@ try {
   const messages = await call("agentStore:listMessages", { threadId: thread, paginationOpts: { numItems: 20, cursor: null } });
   assert.equal(messages.page.filter(row => row.message.content.startsWith("Answers to Perry's questions:")).length, 1);
   report.checks.oneAnswerHistoryEntry = true;
+
+  const reviewQuestions = [
+    { id: "multi", header: "Multiple choices", question: "Which formats?", options, multiple: true },
+    { id: "hold", header: "Review context", question: "Anything else?", options: [] },
+  ];
+  const reviewId = await call("questions:request", { token, turnId: turn, nativeId: "synthetic-review-multi", questions: reviewQuestions });
+  const pending = (await call("questions:pending", { key, conversationId: chat })).find(row => row._id === reviewId);
+  await call("whatsapp:acceptOwner", { chatId: owner, text: `/answer ${pending.phone.code}.1 Custom response`, stored: [] });
+  const reviewField = `[data-native-questions] textarea[id="${reviewId}-multi"]`;
+  await until(`document.querySelector(${JSON.stringify(reviewField)})?.value === 'Custom response'`);
+  await browser.evaluate(`${button(0, "Brief")}.click()`);
+  await browser.evaluate(`${button(0, "Detailed")}.click()`);
+  report.checks.multiChoicePreservesOtherSelectedOptions = await browser.evaluate(`${button(0, "Brief")}.getAttribute('aria-pressed') === 'true' && ${button(0, "Detailed")}.getAttribute('aria-pressed') === 'true'`);
+  await browser.evaluate(`${button(0, "Brief")}.click()`);
+  report.checks.switchingCustomAnswerClearsVisibleText = await browser.evaluate(`document.querySelector(${JSON.stringify(reviewField)}).value === ''`);
+  await browser.evaluate(`document.getElementById('${reviewId}-hold').focus()`);
+  await browser.send("Input.insertText", { text: "Keep the chosen option" });
+  await browser.evaluate("document.querySelector('[data-native-questions] button[type=submit]').click()");
+  await until("!document.querySelector('[data-native-questions]')");
+  const reviewResponse = await call("questions:response", { token, id: reviewId });
+  report.checks.noHiddenCustomAnswerSubmitted = JSON.stringify(reviewResponse) === JSON.stringify({ answers: { multi: ["Detailed"], hold: ["Keep the chosen option"] } });
+
+  const namedQuestions = [
+    { id: "constructor", header: "Constructor", question: "Choose formats", options, multiple: true },
+    { id: "toString", header: "Text answer", question: "Give context", options: [] },
+    { id: "__proto__", header: "Last choices", question: "Choose more formats", options, multiple: true },
+  ];
+  const namedId = await call("questions:request", { token, turnId: turn, nativeId: "synthetic-review-prototype-names", questions: namedQuestions });
+  await until(`document.getElementById('${namedId}-constructor')`);
+  report.checks.inheritedPropertyIdsRenderAsUnanswered = await browser.evaluate(`Array.from(document.querySelectorAll('[data-native-questions] textarea')).every(input => input.value === '') && document.querySelector('[data-native-questions] button[type=submit]').disabled`);
+  await browser.evaluate(`${button(0, "Brief")}.click()`);
+  await browser.evaluate(`${button(0, "Detailed")}.click()`);
+  await browser.evaluate(`document.getElementById('${namedId}-toString').focus()`);
+  await browser.send("Input.insertText", { text: "Own text answer" });
+  await browser.evaluate(`${button(2, "Detailed")}.click()`);
+  await browser.evaluate("document.querySelector('[data-native-questions] button[type=submit]').click()");
+  await until("!document.querySelector('[data-native-questions]')");
+  assert.deepEqual(await call("questions:response", { token, id: namedId }), { answers: { constructor: ["Brief", "Detailed"], toString: ["Own text answer"], ["__proto__"]: ["Detailed"] } });
+  report.checks.inheritedPropertyIdsSubmitOwnValues = true;
   report.errors = browser.errors;
   report.checks.noUncaughtBrowserErrors = browser.errors.length === 0;
   const saved = new DatabaseSync(join(home, "perry.sqlite"));

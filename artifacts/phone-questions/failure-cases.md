@@ -47,3 +47,10 @@ Written before the native browser fixture. The browser uses the production app a
 - Mixed phone and dashboard answers create a new turn or resume the original turn before the complete batch is submitted.
 - A completed form stays pending, writes duplicate conversation history, or allows obsolete queued phone prompts to send.
 - The fixture leaves an isolated server, Chrome process/profile, SQLite home, or external connection alive.
+
+## Review regression inventory
+
+- Switching a phone-saved custom answer to a multiple-choice option leaves hidden custom text in the submitted array.
+- Toggling an option accidentally removes another legitimate selected option.
+- Provider question IDs such as `constructor`, `toString`, or `__proto__` read inherited object properties as answers, suppress a phone prompt, complete a partial batch, or crash the dashboard form.
+- A dashboard submission missing an answer for an inherited-property name bypasses required-answer validation.
