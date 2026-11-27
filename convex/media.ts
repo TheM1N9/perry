@@ -174,7 +174,8 @@ export const shareFromLibrary = internalMutation({
     const existing = await ctx.db.query("chatAttachments")
       .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))
       .collect();
-    if (!existing.some((row) => row.libraryId ? row.libraryId === item._id : item.storageId ? row.storageId === item.storageId : Boolean(item.localPath && row.localPath === item.localPath))) {
+    const attached = existing.find((row) => row.libraryId ? row.libraryId === item._id : item.storageId ? row.storageId === item.storageId : Boolean(item.localPath && row.localPath === item.localPath));
+    if (!attached) {
       const attachmentId = await ctx.db.insert("chatAttachments", {
         libraryId: item._id,
         conversationId: job.conversationId,
@@ -188,7 +189,6 @@ export const shareFromLibrary = internalMutation({
       });
       await index(ctx, attachmentId);
     }
-    const attached = existing.find(row => (item.localPath && row.localPath === item.localPath) || (item.storageId && row.storageId === item.storageId));
     if (attached && (attached.fileName !== fileName || args.delivery)) await ctx.db.patch(attached._id, { fileName, ...(args.delivery ? { delivery: args.delivery } : {}) });
     await ctx.db.patch(job._id, { mediaKey });
     return { fileName, contentType: item.contentType };

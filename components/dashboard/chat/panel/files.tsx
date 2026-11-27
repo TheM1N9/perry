@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { ArrowLeftIcon, ChevronRightIcon, DownloadIcon, EyeOffIcon, FileAudioIcon, FileIcon, FileImageIcon, FileTextIcon, FileVideoIcon, FolderOpenIcon, Grid2X2Icon, ListTreeIcon, MoreHorizontalIcon, PinIcon, PlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronRightIcon, DownloadIcon, EyeOffIcon, FileAudioIcon, FileIcon, FileImageIcon, FileTextIcon, FileVideoIcon, FolderOpenIcon, Grid2X2Icon, ListTreeIcon, MoreHorizontalIcon, PinIcon, PlusIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -13,6 +13,7 @@ import { bytes, errorText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -74,14 +75,17 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
   const [prefs, save] = useFilePrefs(filesId(scope, scopeId));
   const [hidden, setHidden] = useState(false);
   const [kind, setKind] = useState<z.infer<typeof fileKind>>("");
+  const [search, setSearch] = useState("");
+  const needle = useDeferredValue(search.trim());
+  const searchRef = useRef<HTMLInputElement>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursors, setCursors] = useState<Array<string | null>>([]);
   const [attaching, setAttaching] = useState(false);
   const [error, setError] = useState("");
   const args = { key, conversationId, scope };
-  const latest = useQuery(api.workspace.latest, args);
+  const latest = useQuery(api.workspace.latest, needle ? "skip" : args);
   // What a run writes is registered as working; it is listed too, in its own group, since often it is all a chat has.
-  const page = useQuery(api.workspace.files, { ...args, working: true, hidden, kind: kind || undefined, paginationOpts: { numItems: 50, cursor } });
+  const page = useQuery(api.workspace.files, { ...args, working: true, hidden, kind: kind || undefined, query: needle || undefined, paginationOpts: { numItems: 50, cursor } });
   const chosen = page?.page.find((item) => item.id === prefs.selected);
   const selected = useQuery(api.workspace.get, prefs.selected ? { ...args, id: prefs.selected } : "skip");
   const view = useMutation(api.workspace.setView);
@@ -92,12 +96,20 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
   if (working.length) groups.set(WORKING, working);
   const select = (item: WorkspaceFile) => save({ selected: item.id });
   const resetPage = () => { setCursor(null); setCursors([]); };
+  const changeSearch = (value: string) => { setSearch(value); resetPage(); };
   function metadata(item: WorkspaceFile, patch: { hidden?: boolean; pinned?: boolean }) {
     void view({ ...args, id: item.id, ...patch }).catch((error: unknown) => setError(errorText(error)));
   }
   return <div className="flex min-h-0 flex-1 flex-col">
     {prefs.selected ? <FilePreview item={chosen ?? selected} onBack={() => save({ selected: undefined })} /> : <>
-      {latest && <Button size="sm" variant="ghost" className="mx-3 mt-3 justify-start overflow-hidden bg-primary/5 text-primary hover:bg-primary/10" onClick={() => select(latest)}><FileIcon /><span className="truncate">Latest result: {latest.name}</span></Button>}
+      <form role="search" aria-label="Search workspace files" className="shrink-0 px-3 pt-3" onSubmit={(event) => event.preventDefault()}>
+        <InputGroup>
+          <InputGroupAddon><SearchIcon /></InputGroupAddon>
+          <InputGroupInput ref={searchRef} type="search" aria-label="Search files" placeholder="Search files" value={search} autoComplete="off" spellCheck={false} onChange={(event) => changeSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape" && search) { event.preventDefault(); event.stopPropagation(); changeSearch(""); } }} />
+          {search && <InputGroupAddon align="inline-end"><InputGroupButton size="icon-xs" aria-label="Clear file search" onClick={() => { changeSearch(""); searchRef.current?.focus(); }}><XIcon /></InputGroupButton></InputGroupAddon>}
+        </InputGroup>
+      </form>
+      {latest && !search.trim() && <Button size="sm" variant="ghost" className="mx-3 mt-3 justify-start overflow-hidden bg-primary/5 text-primary hover:bg-primary/10" onClick={() => select(latest)}><FileIcon /><span className="truncate">Latest result: {latest.name}</span></Button>}
       <div className="flex shrink-0 items-center gap-1 px-3 py-2">
         <ToggleGroup aria-label="File view" value={[prefs.mode]} spacing={0} onValueChange={(values) => { const value = values[0]; if (value === "tree" || value === "gallery") save({ mode: value }); }}>
           <ToggleGroupItem value="tree" size="sm" aria-label="Tree view" className="size-7 p-0"><ListTreeIcon className="size-4" /></ToggleGroupItem>
@@ -116,11 +128,11 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
         <Button size="icon-sm" variant="ghost" aria-label="Attach from Library" onClick={() => setAttaching(true)}><PlusIcon /></Button>
       </div>
       {error && <p role="alert" className="px-3 text-xs text-destructive">{error}</p>}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-busy={!page}>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-busy={!page || needle !== search.trim()}>
         {!page ? <p role="status" className="py-4 text-sm text-muted-foreground">Loading files…</p> : !items.length ? <div className="flex flex-col items-center px-4 py-12 text-center" data-files-empty>
             <span className="grid size-10 place-items-center rounded-full bg-muted text-muted-foreground"><FolderOpenIcon className="size-5" /></span>
-            <p className="mt-3 text-sm font-medium">{kind || hidden ? "No files match" : "No files yet"}</p>
-            <p className="mt-1 max-w-60 text-xs text-muted-foreground">{kind || hidden ? "Try another type, or clear the filters." : "Files Perry makes, and the ones you send in this chat, show up here."}</p>
+            <p className="mt-3 text-sm font-medium">{needle || kind || hidden ? "No files match" : "No files yet"}</p>
+            <p className="mt-1 max-w-60 text-xs text-muted-foreground">{needle || kind || hidden ? "Try another name, change the type, or show hidden files." : "Files Perry makes, and the ones you send in this chat, show up here."}</p>
           </div>
           : prefs.mode === "gallery" ? <div className="grid grid-cols-2 gap-x-3 gap-y-4">{items.map((item) => <div key={item.id} className={cn("group/file relative min-w-0", item.hidden && "opacity-50")}>
             <Button variant="ghost" className="block h-auto w-full overflow-hidden p-0 text-left hover:bg-transparent" onClick={() => select(item)}>
@@ -130,7 +142,7 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
             </Button>
             <div className="absolute top-1 right-1 rounded-md bg-background/90"><FileActions item={item} onChange={(patch) => metadata(item, patch)} /></div>
           </div>)}</div>
-          : [...groups].map(([group, files]) => <Collapsible key={group} open={prefs.expanded[group] ?? (group !== WORKING || !results.length)} onOpenChange={(open) => save({ expanded: { ...prefs.expanded, [group]: open } })} className="mb-2" data-file-group={group === WORKING ? "working" : "results"}>
+          : [...groups].map(([group, files]) => <Collapsible key={`${needle}:${group}`} open={needle ? undefined : prefs.expanded[group] ?? (group !== WORKING || !results.length)} defaultOpen={Boolean(needle)} onOpenChange={(open) => { if (!needle) save({ expanded: { ...prefs.expanded, [group]: open } }); }} className="mb-2" data-file-group={group === WORKING ? "working" : "results"}>
             <CollapsibleTrigger render={<Button variant="ghost" size="sm" className="group h-7 w-full justify-start gap-1 px-1 text-xs font-medium text-muted-foreground" />}><ChevronRightIcon className="size-3 transition-transform group-data-panel-open:rotate-90" /><span className="truncate">{group}</span><span className="nums ml-auto font-normal">{files.length}</span></CollapsibleTrigger>
             <CollapsibleContent className="pt-0.5">
               {[...groupFiles(files, (item) => item.versionRoot ?? item.id)].map(([root, versions]) => <div key={root} className={cn(versions.length > 1 && "ml-3 border-l pl-1")}>
@@ -144,8 +156,8 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
             </CollapsibleContent>
           </Collapsible>)}
         {page && (cursors.length > 0 || !page.isDone) && <div className="mt-3 flex items-center justify-between gap-2">
-          {cursors.length > 0 && <Button size="sm" variant="outline" onClick={() => { setCursor(cursors.at(-1) ?? null); setCursors((was) => was.slice(0, -1)); }}>Previous files</Button>}
-          {!page.isDone && <Button size="sm" variant="outline" onClick={() => { setCursors((was) => [...was, cursor]); setCursor(page.continueCursor); }}>Next files</Button>}
+          {cursors.length > 0 && <Button size="sm" variant="outline" disabled={needle !== search.trim()} onClick={() => { setCursor(cursors.at(-1) ?? null); setCursors((was) => was.slice(0, -1)); }}>Previous files</Button>}
+          {!page.isDone && <Button size="sm" variant="outline" disabled={needle !== search.trim()} onClick={() => { setCursors((was) => [...was, cursor]); setCursor(page.continueCursor); }}>Next files</Button>}
         </div>}
       </div>
     </>}

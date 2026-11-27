@@ -305,6 +305,23 @@ try {
     check('sharing a labelled snapshot retains format without reading the changed original', snapshotResult.fileName === 'Download label.txt' && (await rows('chatAttachments')).find(row => row.messageKey === `codex-${snapshotTurn.id}`).storageId === (await get(labelledId)).storageId);
     await call('codex:finishTurn', { token, id: snapshotTurn.id, response: 'Synthetic labelled snapshot' });
     await call('codex:finalizeTurn', { id: snapshotTurn.id });
+    const original = await get(labelledId);
+    const { _id, _creationTime, ...fields } = original;
+    const otherLabelled = await runtime.exclusive(() => runtime.store.insert('library', { ...fields, name: 'Other snapshot', search: 'other snapshot' }));
+    const pairTurn = await turn();
+    await call('media:shareFromLibrary', { turnId: pairTurn.id, id: labelledId });
+    await call('media:shareFromLibrary', { turnId: pairTurn.id, id: otherLabelled });
+    const pairFiles = (await rows('chatAttachments')).filter(row => row.messageKey === `codex-${pairTurn.id}`);
+    check('distinct Library identities sharing one blob retain their own filenames', pairFiles.length === 2 && pairFiles.find(row => row.libraryId === labelledId).fileName === 'Download label.txt' && pairFiles.find(row => row.libraryId === otherLabelled).fileName === 'Other snapshot.txt');
+    await call('media:shareFromLibrary', { turnId: pairTurn.id, id: otherLabelled });
+    check('resharing one blob alias cannot rename another Library item', (await rows('chatAttachments')).find(row => row.libraryId === labelledId && row.messageKey === `codex-${pairTurn.id}`).fileName === 'Download label.txt');
+    await call('codex:finishTurn', { token, id: pairTurn.id, response: 'Synthetic separate snapshots' });
+    await call('codex:finalizeTurn', { id: pairTurn.id });
+    const guid = join(home, 'long-guid');
+    writeFileSync(guid, 'print("Synthetic source file")');
+    const longId = await call('library:add', { path: guid, name: 'A'.repeat(201) + '.py', how: 'added', by: 'perry' });
+    const longItem = await get(longId);
+    check('long GUID filenames preserve unknown suffixes without inventing MIME types', longItem.name.length <= 200 && longItem.name.endsWith('.py') && longItem.contentType === 'application/octet-stream' && (await call('library:file', { key, id: longId })).name.endsWith('.py'));
 }
 catch (error) {
     checks.push({ name: 'journey completion', pass: false, error: error.stack });

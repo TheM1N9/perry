@@ -69,7 +69,7 @@ async function fileView(ctx: QueryCtx, item: Doc<"library">, association: Doc<"w
 
 /** Indexed membership pages. Filters never fall back to global Library or filesystem discovery. */
 export const files = query({
-  args: { ...scopeArgs, paginationOpts: paginationOptsValidator, working: v.boolean(), hidden: v.boolean(), kind: v.optional(vLibraryKind) },
+  args: { ...scopeArgs, paginationOpts: paginationOptsValidator, working: v.boolean(), hidden: v.boolean(), kind: v.optional(vLibraryKind), query: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ page: WorkspaceFile[]; isDone: boolean; continueCursor: string }> => {
     const { chat, key } = await scopeOf(ctx, args);
     const kind = args.kind;
@@ -80,20 +80,34 @@ export const files = query({
       : args.scope === "project"
         ? ctx.db.query("workspaceFiles").withIndex("by_project", (q) => q.eq("projectId", chat.projectId))
         : ctx.db.query("workspaceFiles").withIndex("by_conversation", (q) => q.eq("conversationId", chat._id));
-    if (!args.working) rows = rows.filter((q) => q.neq(q.field("role"), "working"));
-    const page = await rows.order("asc").paginate({ ...args.paginationOpts, numItems: Math.min(args.paginationOpts.numItems, 500) });
+    const words = (args.query ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!args.working && !words.length) rows = rows.filter((q) => q.neq(q.field("role"), "working"));
+    const limit = Math.max(1, Math.min(500, Math.floor(args.paginationOpts.numItems)));
+    const ordered = rows.order("asc");
     const files: WorkspaceFile[] = [];
     const seen = new Set<string>();
-    for (const row of page.page) {
-      if (seen.has(row.libraryId) || (!args.working && row.role === "working")) continue;
-      const item = await ctx.db.get(row.libraryId);
-      const source = await ctx.db.get(row.sourceConversationId);
-      if (!item || !source || source.contactId || !workspaceSafe(item.localPath, item.name) || (args.kind && item.kind !== args.kind)) continue;
-      seen.add(row.libraryId);
-      const file = await fileView(ctx, item, row, key, args);
-      if (!file.hidden || args.hidden) files.push(file);
-    }
-    return { ...page, page: files };
+    let cursor = args.paginationOpts.cursor;
+    let isDone = false;
+    do {
+      const batch = await ordered.paginate({ numItems: limit - files.length, cursor });
+      for (const row of batch.page) {
+        if (seen.has(row.libraryId) || (!args.working && row.role === "working")) continue;
+        const item = await ctx.db.get(row.libraryId);
+        if (!item || (args.kind && item.kind !== args.kind)) continue;
+        if (words.length) {
+          const name = describePath(item.localPath ?? item.originPath ?? item.name, item.name).fileName.toLowerCase();
+          if (words.some(word => !name.includes(word))) continue;
+        }
+        const source = await ctx.db.get(row.sourceConversationId);
+        if (!source || source.contactId || !workspaceSafe(item.localPath, item.name)) continue;
+        seen.add(row.libraryId);
+        const file = await fileView(ctx, item, row, key, args);
+        if (!file.hidden || args.hidden) files.push(file);
+      }
+      cursor = batch.continueCursor;
+      isDone = batch.isDone;
+    } while (words.length && !isDone && files.length < limit);
+    return { page: files, isDone, continueCursor: cursor ?? "" };
   },
 });
 

@@ -13,6 +13,8 @@ Recorded before changes and the native replay. Use synthetic files, a fresh SQLi
 - Correcting metadata changes, truncates, or re-encodes file bytes, including binary and large streamed files.
 - Unicode names, spaces, punctuation and compound suffixes are lost or create invalid response headers.
 - The Library's label-length limit truncates a browser-suggested filename's known extension.
+- A long browser filename with an unknown MIME suffix, such as `.py`, loses that suffix when its GUID path cannot restore it.
+- Re-sharing one of two distinct Library items with the same stored bytes renames the other item's attachment.
 - Truncating a long Unicode label splits a surrogate pair and makes response-header encoding fail.
 - Downloads expose unregistered, removed, other-runner, or unauthorized files; previewing HTML or SVG executes active content on Perry's origin.
 - Range and HEAD responses regress, or a missing file produces a saved error document masquerading as the original file.

@@ -1,8 +1,10 @@
 # Native download verification
 
-The existing native SQLite/HTTP Library lifecycle replay also passed **50/50 checks**, including four added labelled-file and stored-snapshot sharing checks. It preserves remote-runner boundaries and immutable stored bytes. Regenerate it with `pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/library/lifecycle.mjs <output-directory>`.
+The existing native SQLite/HTTP Library lifecycle replay now passes **53/53 checks**, including labelled-file and stored-snapshot sharing, distinct Library identities sharing one blob, and long filenames with unknown MIME suffixes. It preserves remote-runner boundaries and immutable stored bytes. Regenerate it with `pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/library/lifecycle.mjs <output-directory>`.
 
 Automatic approval review blocked deletion of its two reviewed output folders, `node_modules/.cache/file-downloads-lifecycle` and `node_modules/.cache/file-downloads-lifecycle-final`. They remain; deletion was not retried.
+
+After adding sidebar search and the two review fixes, the production download replay passed all 52 checks again on build `5ea42a8c-4853-4f63-8d07-9df3d0f38e2c`. A concurrent attempt passed all functional checks but failed removal of its temporary home with EPERM. A standalone repeat passed all checks and cleanup. No owned process remained for the earlier home. Automatic approval review blocked a single cleanup request for `node_modules/.cache/file-search-library-review`, `file-search-download-regression`, `file-search-download-serial`, and the retained home `W:\motionclip-storage-513\temp\perry-file-downloads-EaCWj6`; those paths remain and were not retried.
 
 Verified on Windows with installed Chrome on 2026-11-27 against production build `979bd2f8-a784-4ea6-a78c-dee0a05efff5`.
 

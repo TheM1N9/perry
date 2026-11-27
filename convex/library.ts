@@ -219,7 +219,8 @@ export async function addLocal(ctx: MutationCtx, args: { path: string; how: Libr
   }
   const described = describePath(args.path, args.name);
   const label = args.name?.trim() || described.fileName;
-  const suffix = describePath(label).contentType !== "application/octet-stream" ? label.slice(label.lastIndexOf(".")) : "";
+  const extension = label.lastIndexOf(".") > 0 ? label.slice(label.lastIndexOf(".")) : "";
+  const suffix = extension.length > 1 && extension.length < 200 ? extension : "";
   const name = label.length > 200 && suffix ? label.slice(0, 200 - suffix.length).replace(/[\uD800-\uDBFF]$/, "") + suffix : label.slice(0, 200).replace(/[\uD800-\uDBFF]$/, "");
   const id = await ctx.db.insert("library", {
     name,

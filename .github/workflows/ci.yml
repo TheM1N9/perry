@@ -349,6 +349,20 @@ jobs:
         run: pnpm exec bun artifacts/connector-accounts/run.ts "${{ runner.temp }}/connector-accounts" --stand-in
       - if: runner.os == 'Windows'
         run: pnpm exec bun artifacts/connector-details/run.ts "${{ runner.temp }}/connector-details"
+      - name: Verify sidebar file search
+        id: file_search
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/file-search/run.mjs "${{ runner.temp }}/file-search"
+      - if: always() && runner.os == 'Windows' && steps.file_search.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: file-search-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/file-search/result.json
+            ${{ runner.temp }}/file-search/*.png
+          if-no-files-found: error
       - name: Verify native file downloads and formats
         id: file_downloads
         if: runner.os == 'Windows'
