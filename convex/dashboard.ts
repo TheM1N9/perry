@@ -200,7 +200,12 @@ export const listChats = query({
       .order("desc")
       .collect()))).flat().sort((a, b) => b.lastMessageAt - a.lastMessageAt);
     // A Riff document's editing chat belongs to its document (Riff), not to the list of chats.
-    const riffChats = new Set((await ctx.db.query("notes").withIndex("by_live_chat").filter((q) => q.neq(q.field("liveChatId"), undefined)).collect()).map((note) => note.liveChatId));
+    const riffChats = new Set<Id<"conversations">>();
+    // Linked chats sort ahead of notes without one in this descending index.
+    for await (const note of ctx.db.query("notes").withIndex("by_live_chat").order("desc")) {
+      if (note.liveChatId === undefined) break;
+      riffChats.add(note.liveChatId);
+    }
     const listed = chats.filter((chat) => !riffChats.has(chat._id));
     const asking = new Set((await ctx.db.query("approvals")
       .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", Date.now() - APPROVAL_TTL_MS))

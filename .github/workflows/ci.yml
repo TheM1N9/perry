@@ -37,6 +37,20 @@ jobs:
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec tsc --noEmit -p artifacts
       - run: pnpm build
+      - name: Verify long-lived pet reminders
+        if: runner.os == 'Windows'
+        id: pet_reminders
+        timeout-minutes: 3
+        run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/pet-reminders/run.mjs "${{ runner.temp }}/pet-reminders"
+      - if: always() && runner.os == 'Windows' && steps.pet_reminders.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: pet-reminders-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/pet-reminders/result.json
+            ${{ runner.temp }}/pet-reminders/pet.png
+          if-no-files-found: error
       - name: Verify phone clarification lifecycle
         id: phone_questions
         timeout-minutes: 3

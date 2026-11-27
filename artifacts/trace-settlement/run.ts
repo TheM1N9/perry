@@ -6,7 +6,8 @@
  * SQLite Store, Runtime transactions, traceTurn, finishTurn, recovery.sweep and
  * markFinalized; only the runner and input documents are synthetic fixtures.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { registerHooks } from "node:module";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -18,9 +19,10 @@ const within = relative(scratch, out);
 if (within.startsWith("..") || isAbsolute(within)) throw new Error("Output must stay inside performance-backend scratch.");
 const baseline = process.argv.includes("--baseline");
 const activityBaseline = process.argv.includes("--activity-baseline");
+const sidebarBaseline = process.argv.includes("--sidebar-baseline");
 // The baseline runs the previous query shapes in a child process, never edits
 // project files, and keeps the same Runtime, schema, fixtures and assertions.
-if (baseline || activityBaseline) registerHooks({
+if (baseline || activityBaseline || sidebarBaseline) registerHooks({
   load(url, context, nextLoad) {
     const loaded = nextLoad(url, context);
     const replacements = !baseline ? [] : url.endsWith("/convex/lib/settle-traces.ts") ? [
@@ -33,6 +35,10 @@ if (baseline || activityBaseline) registerHooks({
     if (activityBaseline && url.endsWith("/convex/dashboard.ts")) replacements.push([
       'await ctx.db.query("runs").withIndex("by_status_started", (q) => q.eq("status", "running")).order("desc").first()',
       '(await ctx.db.query("runs").withIndex("by_started").order("desc").take(20)).find((item) => item.status === "running") ?? null',
+    ]);
+    if (sidebarBaseline && url.endsWith("/convex/dashboard.ts")) replacements.push([
+      'const riffChats = new Set<Id<"conversations">>();\n    // Linked chats sort ahead of notes without one in this descending index.\n    for await (const note of ctx.db.query("notes").withIndex("by_live_chat").order("desc")) {\n      if (note.liveChatId === undefined) break;\n      riffChats.add(note.liveChatId);\n    }',
+      'const riffChats = new Set((await ctx.db.query("notes").withIndex("by_live_chat").filter((q) => q.neq(q.field("liveChatId"), undefined)).collect()).map((note) => note.liveChatId));',
     ]);
     if (!replacements.length) return loaded;
     let source = (typeof loaded.source === "string" ? loaded.source : new TextDecoder().decode(loaded.source as Uint8Array)).replace(/\r\n/g, "\n");
@@ -95,21 +101,24 @@ const performanceCheck = (name: string, ok: boolean) => {
   checks[name] = ok;
   if (!ok && !baseline) throw new Error(name);
 };
-type Hydration = { rows: number; bytes: number; sql: string[] };
+type Hydration = { rows: number; bytes: number; queries: number; sql: string[] };
 const hydration = new Map<string, Hydration>();
 const originalRows = runtime.store.rows.bind(runtime.store);
 let measuring = false;
 runtime.store.rows = (text, parameters) => {
   const source = originalRows(text, parameters);
+  const table = /FROM "doc_(\w+)"/.exec(text)?.[1];
+  const measure = measuring && table ? hydration.get(table) ?? { rows: 0, bytes: 0, queries: 0, sql: [] } : undefined;
+  if (measure && table) {
+    measure.queries++;
+    if (!measure.sql.includes(text)) measure.sql.push(text);
+    hydration.set(table, measure);
+  }
   return (function* () {
     for (const doc of source) {
-      const table = /FROM "doc_(\w+)"/.exec(text)?.[1];
-      if (measuring && table) {
-        const measure = hydration.get(table) ?? { rows: 0, bytes: 0, sql: [] };
+      if (measure) {
         measure.rows++;
         measure.bytes += Buffer.byteLength(JSON.stringify(doc));
-        if (!measure.sql.includes(text)) measure.sql.push(text);
-        hydration.set(table, measure);
       }
       yield doc;
     }
@@ -291,7 +300,7 @@ try {
   check("performance:large-terminal-siblings-unchanged", completedIds.every((id, i) => snapshot(runtime.store.get(id)) === completedBefore[i]));
   const repeatSettlement = await measured(() => call("fixture:settle", { runId: payload.runId, endedAt: now + 1000 }));
   check("performance:repeated-settlement-changes-nothing", repeatSettlement.value === 0);
-  performanceCheck("performance:repeated-settlement-hydrates-no-spans", !repeatSettlement.hydration.runSpans);
+  performanceCheck("performance:repeated-settlement-hydrates-no-spans", !repeatSettlement.hydration.runSpans?.rows);
   evidence.settlementHydration = { first: firstSettlement.hydration.runSpans, repeat: repeatSettlement.hydration.runSpans ?? { rows: 0, bytes: 0 }, completedRows: completedIds.length };
 
   const waitingChat = fixture("waiting lookup");
@@ -367,6 +376,56 @@ try {
   const planActive = sql.prepare("EXPLAIN QUERY PLAN SELECT _id FROM doc_runs WHERE json_extract(doc,'$.status') IS ? ORDER BY json_extract(doc,'$.status') DESC, json_extract(doc,'$.startedAt') DESC, _creationTime DESC LIMIT 1").all("running") as Array<{ detail: string }>;
   check("activity:sqlite-uses-status-start-index", planActive.some(row => row.detail.includes("i_runs_by_status_started")));
   evidence.activityHydration = oldActivity.hydration.runs;
+
+  const listChats = async () => await runtime.runQuery("dashboard:listChats", { key: process.env.DASHBOARD_KEY });
+  const initialChats = await measured(listChats);
+  const originalChats = initialChats.value.value as import("../../convex/dashboard").ChatSummary[];
+  check("sidebar:empty-notes-have-no-hydration", !initialChats.hydration.notes?.rows);
+  check("sidebar:empty-notes-keep-invalidation-dependency", initialChats.value.reads.includes("notes"));
+  const addNote = (title: string, liveChatId?: Id<"conversations">) => runtime.store.insert("notes", {
+    title, content: liveChatId ? "Riff fixture" : "Ordinary note body ".repeat(1800), search: title, revision: 1, by: "owner", createdAt: now, updatedAt: now,
+    ...(liveChatId ? { liveChatId } : {}),
+  });
+  for (let index = 0; index < 120; index++) addNote(`Ordinary sidebar fixture ${index}`);
+  const ordinaryChats = await measured(listChats);
+  check("sidebar:ordinary-notes-preserve-chats", snapshot(ordinaryChats.value.value) === snapshot(originalChats));
+  checks["sidebar:no-riffs-hydrate-at-most-one-note"] = (ordinaryChats.hydration.notes?.rows ?? 0) <= 1;
+  const hidden = new Set(originalChats.slice(0, 2).map(chat => chat.id));
+  for (const id of hidden) addNote("Linked Riff", id);
+  addNote("Duplicate Riff reference", originalChats[0].id);
+  const sidebarOrphan = insert("conversations", { channel: "web", externalId: "orphan-sidebar-fixture", threadId: "orphan-sidebar-fixture", lastMessageAt: now });
+  runtime.store.delete(sidebarOrphan);
+  addNote("Orphan Riff reference", sidebarOrphan);
+  const sidebarRead = await measured(listChats);
+  check("sidebar:riff-exclusion-preserves-full-summary-and-order", snapshot(sidebarRead.value.value) === snapshot(originalChats.filter(chat => !hidden.has(chat.id))));
+  checks["sidebar:hydrates-only-riffs-and-one-boundary-note"] = sidebarRead.hydration.notes?.rows === 5;
+  checks["sidebar:does-not-read-ordinary-note-payloads"] = (sidebarRead.hydration.notes?.bytes ?? Infinity) < 40_000;
+  check("sidebar:one-notes-query", sidebarRead.hydration.notes?.queries === 1);
+  const malformed = addNote("Malformed imported null reference");
+  sql.prepare("UPDATE doc_notes SET doc=json_set(doc,'$.liveChatId',null) WHERE _id=?").run(malformed);
+  check("sidebar:malformed-null-does-not-hide-a-chat", snapshot((await listChats()).value) === snapshot(sidebarRead.value.value));
+  const sidebarPlan = sql.prepare("EXPLAIN QUERY PLAN SELECT _id, _creationTime, doc FROM doc_notes ORDER BY json_extract(doc,'$.liveChatId') DESC, _creationTime DESC").all() as Array<{ detail: string }>;
+  check("sidebar:descending-index-without-temporary-sort", sidebarPlan.some(row => row.detail.includes("i_notes_by_live_chat")) && !sidebarPlan.some(row => row.detail.includes("TEMP B-TREE")));
+  evidence.sidebarHydration = { noRiffs: ordinaryChats.hydration.notes, withRiffs: sidebarRead.hydration.notes, ordinaryNoteCount: 120, riffNoteCount: 4 };
+
+  const cursorHome = mkdtempSync(join(tmpdir(), "perry-sidebar-cursor-"));
+  let cursorSql: DatabaseSync | undefined, peer: DatabaseSync | undefined, cursorRuntime: InstanceType<typeof Runtime> | undefined;
+  try {
+    cursorSql = new DatabaseSync(join(cursorHome, "perry.sqlite"));
+    cursorSql.exec("PRAGMA journal_mode=WAL");
+    cursorRuntime = new Runtime(cursorSql, schema as never, modules, { storageDir: join(cursorHome, "storage") });
+    await cursorRuntime.stop();
+    const id = cursorRuntime.store.insert("notes", { title: "Cursor boundary", content: "", search: "", revision: 1, by: "owner", createdAt: now, updatedAt: now });
+    await cursorRuntime.runQuery("dashboard:listChats", { key: process.env.DASHBOARD_KEY });
+    peer = new DatabaseSync(join(cursorHome, "perry.sqlite"));
+    peer.prepare("UPDATE doc_notes SET doc=json_set(doc,'$.title','Peer write') WHERE _id=?").run(id);
+    cursorRuntime.store.patch(id, { title: "Original connection write" });
+    check("sidebar:early-break-releases-reader-for-peer-and-original-writes", cursorRuntime.store.get(id)?.title === "Original connection write");
+    const checkpoint = peer.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy: number };
+    check("sidebar:early-break-does-not-block-wal-checkpoint", checkpoint.busy === 0);
+  } finally {
+    await cursorRuntime?.stop(); peer?.close(); cursorSql?.close(); rmSync(cursorHome, { recursive: true, force: true });
+  }
 } catch (error) {
   checks.completed = false;
   evidence.failure = error instanceof Error ? { message: error.message, stack: error.stack } : String(error);
@@ -374,7 +433,7 @@ try {
 } finally {
   await runtime.stop();
   sql.close();
-  const result = { scope: "Backend E2E: production mutation handlers and SQLite runtime; fake data, no network, no models, no UI", baseline, activityBaseline, checks, pass: Object.values(checks).every(Boolean), evidence };
+  const result = { scope: "Backend E2E: production mutation handlers and SQLite runtime; fake data, no network, no models, no UI", baseline, activityBaseline, sidebarBaseline, checks, pass: Object.values(checks).every(Boolean), evidence };
   if (!result.pass) process.exitCode = 1;
   writeFileSync(join(out, "result.json"), JSON.stringify(result, null, 2) + "\n");
   console.log(JSON.stringify({ pass: result.pass, checks, result: join(out, "result.json") }, null, 2));

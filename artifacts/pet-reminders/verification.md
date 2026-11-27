@@ -1,0 +1,9 @@
+# Native pet reminder verification
+
+The production replay on the unchanged pet build (`256ba9d4-36e5-46d7-b786-b6ecb39973db`) reproduced retention across reschedules and completion. One heads-up todo left 26 due-time keys after its initial visit and 25 reschedules. One notification todo left 25 notification keys after 25 due times. Untiming, completion, deletion and an empty board did not remove the old entries. Notification deduplication, both dismissed heads-up thresholds, clock rollback, rescheduling, stale Hide callbacks and browser-error controls passed in that baseline.
+
+The fixed production build (`b6ed98f5-bac7-457e-8f9c-cc2b3c2d9451`) passed all 18 checks. Each repeatedly rescheduled todo retained one current entry. Completed, untimed and deleted todos left no reminder entries; pruning one todo preserved the other. Cache cleanup also ran when notification permission was denied. An unchanged due time notified once, while a new due time notified again. Both heads-up thresholds kept their independent dismissal history, and a stale Hide callback could not dismiss the new due time.
+
+The fixture uses the real pet component, native todo mutations, authenticated local backend and maintained Chrome driver. Only the browser clock, captured notifications and cache observer belong to the fixture. No real notifications, model calls or phone messages were sent. The synthetic homes, Next servers and Chrome profiles were removed after each completed run. Generated reports are separate from the maintained replay source.
+
+Rerun the command in `README.md` to produce a fresh `result.json`, build ID and pet screenshot. The observer ignores constructor initialization of temporary Maps and records only entries matching synthetic todo IDs. Cache pruning waits for actual client invalidation rather than assuming a fixed network delay.

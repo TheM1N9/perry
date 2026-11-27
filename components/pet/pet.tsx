@@ -345,8 +345,8 @@ function Pet() {
     lastBusy.current = Date.now();
     setTouched((count) => count + 1);
   }, []);
-  const headsUp = useRef(new Map<string, number>());
-  const notified = useRef(new Set<string>());
+  const headsUp = useRef(new Map<string, { dueAt: number; steps: Map<number, number> }>());
+  const notified = useRef(new Map<string, number>());
   const known = useRef<Set<string> | null>(null);
   const unseen = useRef<Set<string> | null>(null);
   const news = useRef<{ ids: string[]; until: number } | null>(null);
@@ -567,14 +567,21 @@ function Pet() {
     if (saved && saved !== reply.streamed) setReply({ ...reply, streamed: saved });
   }, [reply, chatId, newest]);
 
+  useEffect(() => {
+    if (!board) return;
+    const times = new Map(board.open.filter(todo => todo.dueAt !== undefined).map(todo => [todo.id as string, todo.dueAt]));
+    for (const [id, seen] of headsUp.current) if (times.get(id) !== seen.dueAt) headsUp.current.delete(id);
+    for (const [id, dueAt] of notified.current) if (times.get(id) !== dueAt) notified.current.delete(id);
+  }, [board]);
+
   // At its time, a notification from the system as well, once, in case he is behind a full-screen window.
   useEffect(() => {
     if (!board || typeof Notification === "undefined" || Notification.permission !== "granted") return;
     for (const todo of board.open) {
       if (todo.dueAt === undefined || todo.dueAt > now || now - todo.dueAt > 10 * 60_000) continue;
       const mark = `${todo.id}:${todo.dueAt}`;
-      if (notified.current.has(mark)) continue;
-      notified.current.add(mark);
+      if (notified.current.get(todo.id) === todo.dueAt) continue;
+      notified.current.set(todo.id, todo.dueAt);
       new Notification(todo.title, { body: `Due ${dueLabel(todo.dueAt, now)}`, tag: mark, silent: false });
     }
   }, [board, now]);
@@ -889,11 +896,13 @@ function Pet() {
     const minutes = (next.dueAt! - now) / 60_000;
     const step = [...HEADS_UP_MIN].reverse().find((mark) => minutes <= mark);
     if (step !== undefined) {
-      const mark = `${next.id}:${next.dueAt}:${step}`;
-      if (!headsUp.current.has(mark)) headsUp.current.set(mark, now);
-      if (now - headsUp.current.get(mark)! < HEADS_UP_SHOWS_MS) {
+      const previous = headsUp.current.get(next.id);
+      const seen = previous && previous.dueAt === next.dueAt ? previous : { dueAt: next.dueAt!, steps: new Map<number, number>() };
+      if (seen !== previous) headsUp.current.set(next.id, seen);
+      if (!seen.steps.has(step)) seen.steps.set(step, now);
+      if (now - seen.steps.get(step)! < HEADS_UP_SHOWS_MS) {
         ambient = true;
-        bubble = <Bubble title={`Psst: ${next.title}`} detail={`in ${Math.ceil(minutes)} min`} onClose={() => headsUp.current.set(mark, 0)} />;
+        bubble = <Bubble title={`Psst: ${next.title}`} detail={`in ${Math.ceil(minutes)} min`} onClose={() => { if (headsUp.current.get(next.id) === seen) seen.steps.set(step, 0); }} />;
       }
     }
   }
