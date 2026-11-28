@@ -152,6 +152,30 @@
   --sidebar-ring: #5fd4c8;
 }
 
+[data-kanban-column] {
+  --board-accent: var(--muted-foreground);
+  background-color: color-mix(in oklab, var(--board-accent) 6%, var(--background));
+  border: 1px solid color-mix(in oklab, var(--board-accent) 25%, var(--border));
+  border-block-start: 3px solid var(--board-accent);
+}
+
+[data-kanban-column="waiting"] { --board-accent: var(--warning); }
+[data-kanban-column="working"] { --board-accent: var(--color-blue-700); }
+[data-kanban-column="queued"] { --board-accent: var(--color-violet-700); }
+[data-kanban-column="blocked"] { --board-accent: var(--color-slate-600); }
+[data-kanban-column="failed"] { --board-accent: var(--destructive); }
+[data-kanban-column="done"] { --board-accent: var(--success); }
+
+.dark [data-kanban-column="working"] { --board-accent: var(--color-blue-300); }
+.dark [data-kanban-column="queued"] { --board-accent: var(--color-violet-300); }
+.dark [data-kanban-column="blocked"] { --board-accent: var(--color-slate-300); }
+
+[data-column-heading] { color: var(--board-accent); }
+[data-column-count] {
+  color: var(--board-accent);
+  background-color: color-mix(in oklab, var(--board-accent) 12%, var(--background));
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

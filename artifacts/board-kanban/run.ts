@@ -40,6 +40,29 @@ const shot = async (name: string) => {
   await page.screenshot({ path: join(out, `${name}.png`), fullPage: true });
 };
 const noOverflow = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Board must not create page-wide horizontal overflow");
+const columnColors = async () => {
+  const colors = await page.locator("[data-kanban-column]").evaluateAll((columns: HTMLElement[]) => {
+    const canvas = document.createElement("canvas"); canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true })!;
+    const rgb = (color: string) => {
+      context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1);
+      const channels = [...context.getImageData(0, 0, 1, 1).data];
+      if (channels[3] !== 255) throw Error("Measure colors on an opaque rendered surface");
+      return channels.slice(0, 3);
+    };
+    const luminance = (channels: number[]) => channels.map(channel => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const contrast = (foreground: number[], background: number[]) => { const a = luminance(foreground), b = luminance(background); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); };
+    return columns.map(column => {
+      const heading = column.querySelector("h2")!, badge = column.querySelector("[data-column-count]")!;
+      const foreground = rgb(getComputedStyle(heading).color), background = rgb(getComputedStyle(column).backgroundColor);
+      return { status: column.dataset.kanbanColumn, foreground, background, headingContrast: contrast(foreground, background), countContrast: contrast(rgb(getComputedStyle(badge).color), rgb(getComputedStyle(badge).backgroundColor)) };
+    });
+  });
+  assert.equal(colors.length, 6); assert.equal(new Set(colors.map((color: any) => color.foreground.join(","))).size, 6, "Each column has a distinct accent");
+  assert.equal(new Set(colors.map((color: any) => color.background.join(","))).size, 6, "Each column has its own tinted surface");
+  for (const color of colors) { assert.ok(color.headingContrast >= 4.5, `${color.status} heading contrast ${color.headingContrast}`); assert.ok(color.countContrast >= 4.5, `${color.status} count contrast ${color.countContrast}`); }
+  return colors;
+};
 const close = async () => { await pane().getByRole("link", { name: "Close", exact: true }).click(); await pane().waitFor({ state: "hidden" }); };
 const choose = async (control: string, option: string) => {
   const trigger = page.getByRole("button", { name: control, exact: true });
@@ -93,6 +116,7 @@ try {
   await verify("kanbanIsDefaultWithHonestLiveStates", async () => {
     await go({ tab: "all" }); await page.locator("[data-kanban]").waitFor();
     for (const status of ["queued", "working", "waiting", "blocked", "done", "failed"]) await column(status).waitFor();
+    notes.columnColorsLight = await columnColors();
     for (const status of ["queued", "working", "waiting", "blocked", "done", "failed"]) assert.ok(Math.abs(await column(status).evaluate((element: HTMLElement) => element.getBoundingClientRect().width) - 288) <= 1, "Desktop lanes stay 18rem wide");
     assert.match(await column("queued").locator("[data-card]").first().innerText(), /Next in line/);
     assert.ok(await page.locator("[data-kanban]").evaluate((element: HTMLElement) => element.scrollWidth > element.clientWidth), "Desktop board scrolls horizontally within its region");
@@ -277,6 +301,7 @@ try {
     await page.emulateMedia({ colorScheme: "dark" });
     await go(); await page.locator("[data-kanban]").waitFor();
     await until(() => page.evaluate(() => document.documentElement.classList.contains("dark")), "system dark theme applied");
+    notes.columnColorsDark = await columnColors();
     await noOverflow(); await shot("mobile-small-dark");
     await cardLink(`task:${fixture.failed}`).click(); await page.getByRole("dialog", { name: "Work details", exact: true }).waitFor();
     await noOverflow(); await shot("mobile-small-dark-detail");
