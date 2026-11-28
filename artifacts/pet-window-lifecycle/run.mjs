@@ -10,10 +10,10 @@ const electron = process.env.PERRY_E2E_ELECTRON || createRequire(resolve("pet/pa
 if (typeof electron !== "string" || !existsSync(electron)) throw Error("The pet's Electron executable is unavailable");
 const output = resolve(process.argv[2]);
 mkdirSync(output, { recursive: true });
-const home = mkdtempSync(join(tmpdir(), "perry-pet-window-lifecycle-"));
+const home = mkdtempSync(join(tmpdir(), "perry pet-window-lifecycle-"));
 const appDir = join(home, "app");
 mkdirSync(appDir);
-for (const name of readdirSync("pet")) if (/\.(js|cjs|png)$/.test(name)) copyFileSync(join("pet", name), join(appDir, name));
+for (const name of readdirSync("pet")) if (/\.(js|cjs|png|html)$/.test(name)) copyFileSync(join("pet", name), join(appDir, name));
 symlinkSync(resolve("node_modules"), join(home, "node_modules"), process.platform === "win32" ? "junction" : "dir");
 const baseline = process.argv.includes("--baseline");
 if (baseline) {

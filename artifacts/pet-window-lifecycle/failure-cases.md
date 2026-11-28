@@ -12,5 +12,7 @@ Written before the native Electron reproduction and implementation changes.
 - The replay modifies the owner's profile, shortcuts, clipboard, autostart, microphone, notifications or model cache.
 - Failure leaves a disposable Electron process, local HTTP server or synthetic home behind.
 - Capturing a package-manager command's stdout as an executable path includes wrapper command echoes on a hosted Windows runner, so Electron never starts.
+- Timer instrumentation matches an unencoded or aliased filesystem path against canonical file URLs in stack traces, so it reports no ticks although the native interval ran.
+- Copying JavaScript without its HTML creates a notice window whose renderer failed to load; checking the window identity alone incorrectly passes shutdown coverage.
 
 Use a local synthetic page and the real Electron main process and BrowserWindow APIs. Capture uncaught exceptions as failed evidence instead of blocking the replay on Electron's native error box. Keep the real 15-second timer. Record window identities, recovery, shutdown and cleanup in repeatable JSON, without paid model calls or live account access.

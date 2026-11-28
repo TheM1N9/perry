@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, globalShortcut, Tray, screen, powerMonitor } from "electron";
 import { env } from "@huggingface/transformers";
-import { writeFileSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -20,9 +20,13 @@ let menu;
 const setMenu = Tray.prototype.setContextMenu;
 Tray.prototype.setContextMenu = function (next) { menu = next; return setMenu.call(this, next); };
 const intervals = new Map();
+const timerSource = pathToFileURL(realpathSync(process.env.PERRY_LIFECYCLE_MAIN)).href;
+report.expectedTimerSource = timerSource;
 const nativeInterval = globalThis.setInterval, nativeClear = globalThis.clearInterval;
 globalThis.setInterval = (fn, ms, ...args) => {
-  const owned = new Error().stack.includes(process.env.PERRY_LIFECYCLE_MAIN.replaceAll("\\", "/"));
+  const stack = new Error().stack;
+  const owned = stack.includes(timerSource);
+  if (!owned && [250, 3000, 15_000].includes(ms)) report.unmatchedIntervalStack = stack;
   const timer = nativeInterval(() => { if (owned && ms === 15_000) report.topmostTicks++; fn(...args); }, ms);
   if (owned) intervals.set(timer, ms);
   return timer;
@@ -50,6 +54,7 @@ try {
   const firstId = first.id;
   const bounds = first.getBounds();
   check("one native pet starts", first.isVisible());
+  check("main interval instrumentation is active", intervals.size >= 3);
   first.close();
   screen.emit("display-metrics-changed");
   powerMonitor.emit("resume");
@@ -112,11 +117,13 @@ try {
   await until(() => BrowserWindow.getAllWindows().some(win => win.webContents.getURL().endsWith("/meeting-notice.html")), "native meeting notice");
   const notice = BrowserWindow.getAllWindows().find(win => win.webContents.getURL().endsWith("/meeting-notice.html"));
   check("native meeting notice exists before shutdown", Boolean(notice));
+  await until(() => ready(notice) && notice.webContents.executeJavaScript("document.readyState==='complete'&&document.querySelector('main')?.hidden===false&&document.querySelector('h1')?.textContent==='Synthetic shutdown notice'"), "meeting notice renderer and IPC content");
+  check("meeting notice HTML and renderer show the synthetic event", await notice.webContents.executeJavaScript("document.querySelector('h1')?.textContent==='Synthetic shutdown notice'"));
+  writeFileSync(join(process.env.PERRY_LIFECYCLE_OUTPUT, "meeting-notice.png"), (await notice.webContents.capturePage()).toPNG());
   await fetch(`${process.env.PERRY_URL}/hold-heads`);
   pets()[0].webContents.reload();
   await until(async () => Number(await (await fetch(`${process.env.PERRY_URL}/held-heads`)).text()) > 0, "pending reload request");
   const beforeQuit = report.windowsCreated;
-  check("main interval instrumentation is active", intervals.size >= 3);
   app.once("will-quit", () => {
     report.checks["meeting notice is disposed before quitting"] = notice.isDestroyed();
     report.checks["quit does not create a replacement"] = report.windowsCreated === beforeQuit;
