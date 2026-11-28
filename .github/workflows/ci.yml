@@ -33,10 +33,7 @@ jobs:
         id: pet_window_lifecycle
         if: runner.os == 'Windows'
         timeout-minutes: 3
-        shell: pwsh
-        run: |
-          $env:PERRY_E2E_ELECTRON = (pnpm --dir pet exec node -p "require('electron')").Trim()
-          pnpm exec node artifacts/pet-window-lifecycle/run.mjs "${{ runner.temp }}/pet-window-lifecycle"
+        run: pnpm exec node artifacts/pet-window-lifecycle/run.mjs "${{ runner.temp }}/pet-window-lifecycle"
       - if: always() && runner.os == 'Windows' && (steps.pet_window_lifecycle.outcome == 'success' || steps.pet_window_lifecycle.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:

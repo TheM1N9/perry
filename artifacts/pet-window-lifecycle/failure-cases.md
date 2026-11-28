@@ -11,5 +11,6 @@ Written before the native Electron reproduction and implementation changes.
 - A delayed screen capture finishes after its destination window closes and sends or focuses the wrong window.
 - The replay modifies the owner's profile, shortcuts, clipboard, autostart, microphone, notifications or model cache.
 - Failure leaves a disposable Electron process, local HTTP server or synthetic home behind.
+- Capturing a package-manager command's stdout as an executable path includes wrapper command echoes on a hosted Windows runner, so Electron never starts.
 
 Use a local synthetic page and the real Electron main process and BrowserWindow APIs. Capture uncaught exceptions as failed evidence instead of blocking the replay on Electron's native error box. Keep the real 15-second timer. Record window identities, recovery, shutdown and cleanup in repeatable JSON, without paid model calls or live account access.

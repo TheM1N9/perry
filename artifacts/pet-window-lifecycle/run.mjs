@@ -3,8 +3,11 @@ import { createServer } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, copyFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
 
-if (!process.argv[2] || !process.env.PERRY_E2E_ELECTRON) throw Error("Pass an output directory and set PERRY_E2E_ELECTRON to an installed Electron executable");
+if (!process.argv[2]) throw Error("Pass a disposable output directory");
+const electron = process.env.PERRY_E2E_ELECTRON || createRequire(resolve("pet/package.json"))("electron");
+if (typeof electron !== "string" || !existsSync(electron)) throw Error("The pet's Electron executable is unavailable");
 const output = resolve(process.argv[2]);
 mkdirSync(output, { recursive: true });
 const home = mkdtempSync(join(tmpdir(), "perry-pet-window-lifecycle-"));
@@ -39,7 +42,7 @@ await new Promise(resolve => site.listen(0, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${site.address().port}`;
 const env = { ...process.env, PERRY_HOME: home, PERRY_URL: base, DASHBOARD_KEY: "synthetic-lifecycle-key", PERRY_PET_FAKE_KEYS: "1", PERRY_LIFECYCLE_MAIN: join(appDir, "main.js"), PERRY_LIFECYCLE_OUTPUT: output, PERRY_LIFECYCLE_BASELINE: baseline ? "1" : "", PERRY_MODELS_DIR: join(home, "models") };
 delete env.ELECTRON_RUN_AS_NODE;
-const child = spawn(process.env.PERRY_E2E_ELECTRON, [resolve("artifacts/pet-window-lifecycle/entry.mjs")], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+const child = spawn(electron, [resolve("artifacts/pet-window-lifecycle/entry.mjs")], { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
 let log = "";
 for (const stream of [child.stdout, child.stderr]) stream.on("data", chunk => { log = (log + chunk).slice(-8000); writeFileSync(join(output, "electron.log"), log); });
 const exit = await new Promise(resolve => {
