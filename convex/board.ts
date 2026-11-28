@@ -450,7 +450,9 @@ function loader(ctx: QueryCtx, now: number) {
 
   async function agentThread(conversation: Doc<"conversations">, parent: string): Promise<BoardThread> {
     const agent = conversation.providerAgent!;
-    const state: { status: BoardStatus; label: string } = agent.status === "running" ? { status: "working", label: "Running" }
+    const asking = (await pending()).some(item => item.conversationId === conversation._id)
+      || (await nativeQuestions()).some(item => item.conversationId === conversation._id);
+    const state: { status: BoardStatus; label: string } = asking ? { status: "waiting", label: "Needs you" } : agent.status === "running" ? { status: "working", label: "Running" }
       : agent.status === "failed" ? { status: "failed", label: "Failed" } : agent.status === "cancelled" ? { status: "done", label: "Stopped" } : { status: "done", label: "Done" };
     const machine = conversation.codexRunnerId ? (await allRunners()).get(conversation.codexRunnerId)?.name : undefined;
     const lines = (agent.text ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
@@ -470,6 +472,7 @@ function loader(ctx: QueryCtx, now: number) {
       now: step?.label ?? firstLine(agent.status === "done" || agent.status === "cancelled" ? lines[0] : lines.at(-1)),
       ...(step && step.at > (agent.updatedAt ?? 0) ? { updatedAt: step.at } : {}),
       parent,
+      chatId: conversation._id,
       ...(conversation.projectId ? { projectId: conversation.projectId } : {}),
       href: boardLink({ thread: `agent:${conversation._id}` }),
     };
@@ -544,7 +547,7 @@ export const get = query({
     for (const approval of await load.pending()) keep(await load.latestRun(approval.conversationId));
     for (const run of runs) {
       const conversation = await load.chat(run.conversationId);
-      const own = !conversation?.taskId && !conversation?.jobId;
+      const own = !conversation?.taskId && !conversation?.jobId && !conversation?.providerAgent;
       const thread = own ? await load.runThread(run) : null;
       if (thread) threads.push(thread);
       const id = thread?.id ?? await load.threadIdOf(run.conversationId, run._id);
@@ -565,15 +568,16 @@ export const get = query({
 
     const waiting: BoardWaiting[] = [];
     for (const question of await load.nativeQuestions()) {
-      const thread = await load.threadIdOf(question.conversationId), chat = await load.chat(question.conversationId);
-      waiting.push({ id: `native-question:${question._id}`, kind: "question", text: question.questions.map(item => item.question).join("\n"), where: chat?.title, ...(thread ? { thread } : {}), href: thread ? boardLink({ thread }) : `/chat/${question.conversationId}`, at: question.createdAt });
+      const chat = await load.chat(question.conversationId);
+      const thread = chat?.providerAgent ? `agent:${chat._id}` : await load.threadIdOf(question.conversationId);
+      waiting.push({ id: `native-question:${question._id}`, kind: "question", text: question.questions.map(item => item.question).join("\n"), where: chat?.title, ...(thread ? { thread } : {}), href: `/chat/${question.conversationId}`, at: question.createdAt });
     }
     for (const task of active) {
       if (task.status === "blocked" && task.question && (task.decision?.snoozedUntil ?? 0) <= now) waiting.push({ id: `question:${task._id}`, kind: "question", text: task.question, where: task.title, thread: `task:${task._id}`, href: boardLink({ channel: "tasks", thread: `task:${task._id}` }), at: task.updatedAt });
     }
     for (const approval of await load.pending()) {
-      const thread = await load.threadIdOf(approval.conversationId);
       const chat = await load.chat(approval.conversationId);
+      const thread = chat?.providerAgent ? `agent:${chat._id}` : await load.threadIdOf(approval.conversationId);
       waiting.push({
         id: `approval:${approval._id}`, kind: "approval", text: approval.title, ...(chat?.title ? { where: chat.title } : {}), ...(thread ? { thread } : {}),
         href: boardLink({ thread: thread ?? `approval:${approval._id}` }), at: approval.createdAt, ...(approval.kind === "command" ? { command: true } : {}),
@@ -732,6 +736,7 @@ export const thread = query({
       const parentId = await load.threadIdOf(conversation.parentConversationId, conversation.providerAgent.runId);
       if (!parentId) return null;
       const agent = await load.agentThread(conversation, parentId);
+      await approvalsIn(conversation._id);
       const [parentKind, parentRaw] = [parentId.slice(0, parentId.indexOf(":")), parentId.slice(parentId.indexOf(":") + 1)];
       const parentDoc = parentKind === "task" ? await ctx.db.get(parentRaw as Id<"tasks">) : parentKind === "job" ? await ctx.db.get(parentRaw as Id<"jobs">) : await ctx.db.get(parentRaw as Id<"runs">);
       const parentThread = !parentDoc ? undefined : parentKind === "task" ? await load.taskThread(parentDoc as Doc<"tasks">)

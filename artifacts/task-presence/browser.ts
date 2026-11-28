@@ -18,7 +18,12 @@ let connected: any, page: any, browser: Awaited<ReturnType<typeof p.openBrowser>
 const token = "synthetic-browser-presence-runner";
 const task = (id: string) => p.rows("tasks").find(row => row._id === id)!;
 const board = () => call<any>("board:get", { key: KEY });
-const open = async (id: string) => { await page.goto(BASE + boardLink({ channel: "tasks", tab: "all", thread: `task:${id}` })); await page.locator(`[data-pane="task:${id}"]`).waitFor(); };
+const open = async (id: string) => {
+  const address = new URL(boardLink({ channel: "tasks", tab: "all", thread: `task:${id}` }), BASE);
+  address.searchParams.set("layout", "list");
+  await page.goto(address.href);
+  await page.locator(`[data-pane="task:${id}"]`).waitFor();
+};
 const pane = () => page.locator("[data-pane]");
 const update = () => pane().getByRole("textbox", { name: "Update instructions", exact: true });
 const row = (id: string) => page.locator(`[data-row="task:${id}"]`);
