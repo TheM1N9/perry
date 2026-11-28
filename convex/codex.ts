@@ -153,7 +153,7 @@ function isSteering(policy: "steer" | "queue" | undefined, running: Doc<"codexTu
 
 /** Reserve the turn before asynchronous recall, routing or media preparation. */
 export const prepareTurn = internalMutation({
-  args: { conversationId: v.id("conversations"), prompt: v.string(), queue: v.optional(v.boolean()) },
+  args: { conversationId: v.id("conversations"), prompt: v.string(), queue: v.optional(v.boolean()), hidden: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<Id<"codexTurns">> => {
     const chat = await ctx.db.get(args.conversationId);
     if (!chat) throw new Error("This chat was deleted.");
@@ -167,6 +167,7 @@ export const prepareTurn = internalMutation({
     return await ctx.db.insert("codexTurns", {
       conversationId: chat._id, runId, prompt: args.prompt, instructions: "", engine: engine ?? undefined,
       preparing: true, status: "queued", createdAt,
+      ...(args.hidden ? { hidden: true } : {}),
       ...(!args.queue && engine && isSteering("steer", running, engine) ? { steerTarget: running._id } : {}),
     });
   },
@@ -276,7 +277,7 @@ export const enqueueTurn = internalMutation({
       projectDigest: args.projectDigest,
       ...(args.flush ? { flush: true } : {}),
       ...(args.checkpoint ? { checkpoint: true } : {}),
-      ...(args.hidden ? { hidden: true } : {}),
+      ...(args.hidden || preparing?.hidden ? { hidden: true } : {}),
       // Every turn in a chat with someone else is one, whoever queued it.
       ...(args.guest || conversation.contactId ? { guest: true } : {}),
       ...(conversation.contactId && args.guestMessage ? { guestMessage: args.guestMessage } : {}),

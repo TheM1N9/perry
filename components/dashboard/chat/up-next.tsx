@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AttachmentList, type Attachment } from "./attachments";
 
 /** A message waiting its turn: the server's (`queued`), or one just sent with Queue that it has not listed yet. */
-export type UpNextItem = { key: string; text: string; attachments: Attachment[]; queued?: QueuedTurn };
+export type UpNextItem = { key: string; text: string; attachments: Attachment[]; queued?: QueuedTurn; sent?: boolean };
 
 /** A longer queue shows its first messages and a way to show the rest. */
 const VISIBLE = 3;
@@ -154,7 +154,7 @@ export function UpNext({ items, editing, onEdit, onCancelEdit }: {
                     <GripVerticalIcon className="opacity-0 transition-opacity group-hover/queued:opacity-100 group-focus-visible/grip:opacity-100 [@media(hover:none)]:opacity-100" />
                   </Button>
                 ) : null}
-                {!own ? <span className="px-1" role="status">Sending…</span> : isEditing ? <>
+                {!own ? <span className="px-1" role="status">{item.sent ? "Received · Queued" : "Sending…"}</span> : isEditing ? <>
                   <span className="px-1 text-foreground">Editing in the composer</span>
                   <span aria-hidden>·</span>
                   <Button type="button" size="xs" variant="ghost" aria-label="Cancel editing the queued message" onClick={onCancelEdit}>Cancel</Button>

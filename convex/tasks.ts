@@ -630,7 +630,7 @@ export const handOff = internalMutation({
     if (!ready.length) return null;
     const prompt = prompts.join("\n\n");
     const label = ready.length === 1 ? ready[0].label : `🧩 ${ready.length} task results`;
-    const preparingId: Id<"codexTurns"> = await ctx.runMutation(internal.codex.prepareTurn, { conversationId: parent._id, prompt });
+    const preparingId: Id<"codexTurns"> = await ctx.runMutation(internal.codex.prepareTurn, { conversationId: parent._id, prompt, hidden: true });
     const reservation = (await ctx.db.get(preparingId))!;
     await ctx.db.patch(reservation.runId, { prompt: label });
     for (const item of ready) await ctx.db.patch(item._id, { runId: reservation.runId, tries: item.tries + 1, triedAt: Date.now() });

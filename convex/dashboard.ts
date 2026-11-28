@@ -71,6 +71,8 @@ export type ChatMessage = {
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
   queued?: QueuedTurn;
+  /** The active reply this message is being prepared for, awaiting, or has joined. */
+  steer?: { runId: Id<"runs">; status: "preparing" | "pending" | "applied" };
   /** The memories a reply said it relied on (codex.finishTurn). */
   memories?: Array<{ id: string; text: string }>;
   reactions?: { owner?: string; perry?: string };
@@ -901,6 +903,8 @@ export const getChatMessages = query({
         createdAt: entry.at,
         attachments: marker?.[1] ? attachmentMap.get(marker[1].trim()) ?? [] : [],
         pending: true,
+        ...(entry.runId ? { runId: entry.runId } : {}),
+        ...(entry.steer ? { steer: entry.steer } : {}),
         ...(entry.reaction ? { reactions: { perry: entry.reaction } } : {}),
         ...(entry.queued ? { queued: entry.queued } : {}),
       }];
@@ -909,7 +913,7 @@ export const getChatMessages = query({
   },
 });
 
-type InFlight = { prompt: string; text: string; at: number; reaction?: string; queued?: QueuedTurn };
+type InFlight = { prompt: string; text: string; at: number; reaction?: string; queued?: QueuedTurn; runId?: Id<"runs">; steer?: ChatMessage["steer"] };
 
 /** The live turns' steers that joined them, and those still waiting to. */
 async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<"codexSteers">[]> {
@@ -931,12 +935,13 @@ async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<
 function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[], steers: Doc<"codexSteers">[]): InFlight[] {
   const entry = (prompt: string, at: number): InFlight => ({ prompt, at, text: questionAnswerText(prompt.replace(ATTACHMENTS_MARKER, "").trimEnd()) });
   const running = turns.find((turn) => turn.status === "running") ?? null;
+  const byId = new Map(turns.map((turn) => [turn._id, turn]));
   const next = running ? undefined : turns.filter((turn) => turn.status === "queued" && !turn.waiting && turn.finalizedAt === undefined).sort(byQueuePosition)[0];
   const queued = (turn: Doc<"codexTurns">): QueuedTurn => ({
     id: turn._id, conversationId: turn.conversationId, position: queuePosition(turn),
     action: turn.engine && steerable(running, turn.engine) ? "steer" : "send",
     ...(turn.preparing ? { preparing: true as const } : {}),
-    ...((turn.preparing && turn.steerTarget) || turn === next ? { now: true as const } : {}),
+    ...((turn.preparing && running && turn.steerTarget === running._id) || turn === next ? { now: true as const } : {}),
     ...(turn.retryOf ? { retry: true as const } : {}),
     ...(turn.waiting ? { held: true as const } : {}),
   });
@@ -945,8 +950,18 @@ function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[]
     ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint && !turn.hidden
       // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
       && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && (turn.waiting || turn.createdAt > Date.now() - OUTBOX_TTL_MS))))
-      .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.webReaction ? { reaction: turn.webReaction } : {}), ...(turn.status === "queued" ? { queued: queued(turn) } : {}) })),
-    ...steers.map((steer) => entry(steer.prompt, steer.createdAt)),
+      .map((turn) => {
+        const intended = turn.preparing && turn.steerTarget ? byId.get(turn.steerTarget) : undefined;
+        const target = intended?.status === "running" ? intended : undefined;
+        return { ...entry(turn.prompt, turn.createdAt), runId: turn.runId,
+          ...(target ? { steer: { runId: target.runId, status: "preparing" as const } } : {}),
+          ...(turn.webReaction ? { reaction: turn.webReaction } : {}), ...(turn.status === "queued" ? { queued: queued(turn) } : {}) };
+      }),
+    ...steers.filter((steer) => !steer.hidden).map((steer) => {
+      const target = byId.get(steer.turnId);
+      return { ...entry(steer.prompt, steer.createdAt), runId: steer.runId,
+        ...(target ? { steer: { runId: target.runId, status: steer.status === "applied" ? "applied" as const : "pending" as const } } : {}) };
+    }),
   ];
   return items.sort((a, b) => a.at - b.at);
 }

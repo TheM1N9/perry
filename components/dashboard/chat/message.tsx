@@ -3,7 +3,7 @@
 import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
 import { Fragment, memo, type ReactNode } from "react";
-import type { ChatAgent, QueuedTurn } from "@/convex/dashboard";
+import type { ChatAgent, ChatMessage as ServerMessage, QueuedTurn } from "@/convex/dashboard";
 import { STARTING } from "@/convex/lib/activity";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ import { QueueRemoveButton } from "./queue-remove-button";
 import { LiveWork, Spinner, WorkSummary, type Turn } from "./work";
 import { ReactionBadges, ReactionPicker } from "./reactions";
 
-export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedTurn; memories?: Array<{ id: string; text: string }>; reactions?: { owner?: string; perry?: string } };
+export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedTurn; steer?: ServerMessage["steer"]; memories?: Array<{ id: string; text: string }>; reactions?: { owner?: string; perry?: string } };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -85,6 +85,11 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
             {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
           </div>
         )}
+        {mine && message.pending && <MessageFooter className="px-0 font-normal" role="status" data-delivery={message.steer?.status ?? "received"}>
+          {message.steer?.status === "applied" ? "Added to current reply"
+            : message.steer ? "Received · Waiting to join current reply"
+            : message.queued?.preparing ? "Received · Preparing reply…" : "Received"}
+        </MessageFooter>}
         {/* Waiting in the queue it is under Up next (up-next.tsx); here only while it waits behind nothing (dashboard.QueuedTurn, now). */}
         {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
         <MessageFooter className="flex-wrap gap-x-2 gap-y-1 px-0 font-normal">
@@ -152,7 +157,7 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
             <AttachmentList attachments={attachments} align="end" />
           </BubbleContent>
         </Bubble>
-        {!sent && <MessageFooter className="px-0 font-normal" role="status">Sending…</MessageFooter>}
+        <MessageFooter className="px-0 font-normal" role="status" data-delivery={sent ? "received" : "sending"}>{sent ? "Received" : "Sending…"}</MessageFooter>
       </MessageContent>
     </Message>
   );
