@@ -630,10 +630,14 @@ export function ChatScreen() {
       }
       setUploading(null);
       submission.controller.signal.throwIfAborted();
+      const current = !fresh && sending.length && mode !== "queue"
+        ? (await backendClient.call<NonNullable<typeof chat>>(api.dashboard.getChat, { key: dashboardKey, id }, { signal: submission.controller.signal })).value
+        : null;
+      submission.controller.signal.throwIfAborted();
       const entry: Pending = {
         id, requestId, text: message, attachments: uploaded,
         baselineCount: fresh ? 0 : messages.filter((item) => item.role === "user" && item.text === message).length,
-        duringReply: !fresh && replying, ...(mode === "queue" ? { queued: true } : {}),
+        duringReply: !fresh && (current ? current.isRunning && !current.waiting : replying), ...(mode === "queue" ? { queued: true } : {}),
       };
       setPending((items) => [...items, entry]);
       // A new chat takes what was picked before it existed; an existing one already has its own.

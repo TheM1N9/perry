@@ -59,3 +59,11 @@ The revised interface was verified on production build `1211af7a-ba10-4896-9a67-
 - The 390px chat fitted the viewport. Browser and transport-harness error lists were empty. Native cleanup confirmed removal of the temporary home, browser profile and processes.
 
 Synthetic desktop/mobile chat, identity and note screenshots, the failure inventory and machine-readable result were delivered separately. The protocol uses real dashboard mutations; interception only delays or rejects synthetic transport and never replaces query data. Existing project tests were preserved.
+
+## Reply state after attachment upload
+
+The post-upload placement now reads the originating chat's current state after all files are stored and registered, rather than using the render that began submission. The read uses the existing cancellable backend call and is skipped for new chats and explicit Queue. Stop cancels it before a new request can be admitted.
+
+Production build `350c47e7-00bf-462c-ac71-7080f9a7f879` passed compilation and TypeScript. A focused production browser/real media upload/Runtime/SQLite replay passed seven checks: the old reply finishing, remaining active, a newer reply starting, navigation to another chat during upload, upload rejection, Stop during the fresh state read, and absence of browser/transport errors. Accepted requests and their attachment survived finalization and reload exactly once. The continuing reply retained its streaming DOM node.
+
+To repeat, hold a synthetic POST to `/api/media` before admission. Finish or retain the original fake-runner turn, release the upload, then hold `dashboard:sendChat` before admission and inspect the optimistic message relative to the live reply. Repeat after a newer turn starts and after client navigation to another chat. Reject a separate upload to verify draft/file recovery. Finally hold the fresh state read after the Uploading indicator disappears, press Stop, and verify recovery before releasing that read. Record screenshots and a result file, then stop the disposable runtime/browser and remove its home/profile. The successful replay confirmed native cleanup; its temporary source tooling was removed and evidence delivered separately.
