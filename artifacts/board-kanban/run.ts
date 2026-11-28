@@ -17,7 +17,7 @@ const p = await perry({ name: "board-kanban", outDir: out, engine: "codex", runn
 } });
 const { BASE, KEY, notes, check, call, until } = p;
 let page: any, connected: any, browser: Awaited<ReturnType<typeof p.openBrowser>> | undefined;
-let fixture: { queued: string[]; done: string[]; project: string; token: string; blocked: string; tracked: string; waiting: string; failed: string; live: string; turn: string; child: string; questionTurn: string; remoteThread: string; approval: string; doneParent: string; waitingChild: string; childTurn: string; childRun: string; childApproval: string };
+let fixture: { queued: string[]; done: string[]; project: string; token: string; blocked: string; tracked: string; waiting: string; failed: string; live: string; turn: string; child: string; questionTurn: string; remoteThread: string; approval: string; doneParent: string; waitingChild: string; childTurn: string; childRun: string; childApproval: string; mixedFirst: string; mixedSecond: string; mixedChat: string; questionRun: string; childSpan: string; finishedChild: string; finishedRun: string };
 const errors: string[] = [];
 const verify = async (name: string, run: () => Promise<void>) => {
   try { await call("runner:checkIn", { token: fixture.token, activeTurnIds: [fixture.turn, fixture.childTurn, fixture.questionTurn] }); await run(); check(name, true); }
@@ -41,7 +41,11 @@ const shot = async (name: string) => {
 };
 const noOverflow = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Board must not create page-wide horizontal overflow");
 const close = async () => { await pane().getByRole("link", { name: "Close", exact: true }).click(); await pane().waitFor({ state: "hidden" }); };
-const choose = async (control: string, option: string) => { await page.getByRole("button", { name: control, exact: true }).click(); await page.getByRole("menuitemradio", { name: option, exact: true }).click(); };
+const choose = async (control: string, option: string) => {
+  const trigger = page.getByRole("button", { name: control, exact: true });
+  await trigger.click(); await page.getByRole("menuitemradio", { name: option, exact: true }).click();
+  if (control !== "Sort board") await trigger.getByText(option, { exact: true }).waitFor();
+};
 const returnedTo = async (target: any) => until(() => target.evaluate((element: HTMLElement) => document.activeElement === element), "focus returned to source card");
 let ok = false;
 try {
@@ -59,11 +63,38 @@ try {
   assert.ok(page);
   page.on("pageerror", (error: Error) => errors.push(String(error)));
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await verify("mixedQueueOrdersTasksConsistentlyAroundQueuedChats", async () => {
+    await go({ q: "Mixed queue" }); await card(`task:${fixture.mixedFirst}`).waitFor();
+    const expected = [`task:${fixture.mixedFirst}`, `task:${fixture.mixedSecond}`, fixture.mixedChat];
+    assert.deepEqual(await column("queued").locator("[data-card]").evaluateAll((elements: HTMLElement[]) => elements.map(element => element.dataset.card)), expected);
+    await shot("mixed-queue");
+    await page.getByRole("navigation", { name: "Board views" }).getByRole("link", { name: "List", exact: true }).click();
+    await page.locator(`[data-row="task:${fixture.mixedFirst}"]`).waitFor();
+    assert.deepEqual(await page.locator("[data-rows] > [data-row]").evaluateAll((elements: HTMLElement[]) => elements.map(element => element.dataset.row)), expected);
+  });
+  await verify("providerAgentFollowUpsKeepStartedPostedAndFinishedActivity", async () => {
+    const view = await call<{ events: Array<{ id: string; thread?: string; verb: string; text?: string }> }>("board:get", { key: KEY });
+    for (const [id, thread, verb] of [
+      [`run:${fixture.questionRun}:started`, `agent:${fixture.child}`, "started"],
+      [`span:${fixture.childSpan}`, `agent:${fixture.waitingChild}`, "posted"],
+      [`run:${fixture.finishedRun}:finished`, `agent:${fixture.finishedChild}`, "finished"],
+    ]) {
+      const event = view.events.find(event => event.id === id);
+      assert.ok(event, `${verb} follow-up event must remain on the Board`);
+      assert.equal(event.thread, thread); assert.equal(event.verb, verb);
+    }
+    assert.equal(view.events.find(event => event.id === `run:${fixture.finishedRun}:finished`)?.text, "Follow-up result delivered.");
+    await go({ view: "activity", q: "Security sign-off child" });
+    await page.locator(`[data-entry="agent:${fixture.waitingChild}"]`).filter({ hasText: "Security follow-up is ready for review." }).waitFor();
+    await go({ view: "activity", q: "Completed follow-up agent" });
+    await page.locator(`[data-entry="agent:${fixture.finishedChild}"]`).filter({ hasText: "Follow-up result delivered." }).waitFor();
+    await shot("provider-agent-activity");
+  });
   await verify("kanbanIsDefaultWithHonestLiveStates", async () => {
     await go({ tab: "all" }); await page.locator("[data-kanban]").waitFor();
     for (const status of ["queued", "working", "waiting", "blocked", "done", "failed"]) await column(status).waitFor();
     for (const status of ["queued", "working", "waiting", "blocked", "done", "failed"]) assert.ok(Math.abs(await column(status).evaluate((element: HTMLElement) => element.getBoundingClientRect().width) - 288) <= 1, "Desktop lanes stay 18rem wide");
-    await column("queued").locator("[data-card]").first().getByText("Next in line", { exact: true }).waitFor();
+    assert.match(await column("queued").locator("[data-card]").first().innerText(), /Next in line/);
     assert.ok(await page.locator("[data-kanban]").evaluate((element: HTMLElement) => element.scrollWidth > element.clientWidth), "Desktop board scrolls horizontally within its region");
     for (const [id, status] of [[fixture.live, "working"], [fixture.waiting, "waiting"], [fixture.blocked, "blocked"], [fixture.failed, "failed"]]) assert.equal(await card(`task:${id}`).locator("xpath=ancestor::*[@data-kanban-column]").getAttribute("data-kanban-column"), status);
     await card(`task:${fixture.waiting}`).getByText("Answer question", { exact: true }).waitFor();
@@ -135,8 +166,11 @@ try {
     const search = page.getByRole("searchbox", { name: "Search board", exact: true });
     await search.fill("Research accessibility child");
     await card(`task:${fixture.live}`).waitFor();
+    await until(async () => await page.locator("[data-card]").count() === 1, "child search rendered its matching parent");
     assert.equal(await page.locator("[data-card]").count(), 1);
     assert.equal(await card(`agent:${fixture.child}`).count(), 0);
+    assert.equal(await card(`task:${fixture.live}`).getAttribute("data-status"), "working");
+    assert.equal(await card(`task:${fixture.live}`).locator("xpath=ancestor::*[@data-kanban-column]").getAttribute("data-kanban-column"), "waiting");
     const child = page.locator(`[data-agent][data-row="agent:${fixture.child}"] > a`);
     await child.waitFor();
     assert.equal(await child.count(), 1);
@@ -173,10 +207,12 @@ try {
     const parent = card(`task:${fixture.doneParent}`);
     await parent.waitFor();
     assert.equal(await parent.getAttribute("data-status"), "done");
+    assert.equal(await parent.locator("xpath=ancestor::*[@data-kanban-column]").getAttribute("data-kanban-column"), "waiting");
     assert.equal(await column("done").locator("[data-card]").count(), 10);
     assert.equal(await card(`agent:${fixture.waitingChild}`).count(), 0);
     assert.equal(await card(`run:${fixture.childRun}`).count(), 0, "An agent's own run must not become another root card");
     await go({ tab: "needs you" }); await parent.waitFor();
+    assert.equal(await parent.locator("xpath=ancestor::*[@data-kanban-column]").getAttribute("data-kanban-column"), "waiting");
     const child = page.locator(`[data-agent][data-row="agent:${fixture.waitingChild}"] > a`);
     if (!await child.isVisible()) await parent.locator("[data-agents-toggle]").click();
     await child.waitFor();

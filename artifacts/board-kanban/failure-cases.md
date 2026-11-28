@@ -2,6 +2,12 @@
 
 Written before implementing the native production-dashboard replay.
 
+Review regressions to reproduce through the same native browser replay:
+
+- A queued chat between tasks with queue positions makes the comparator non-transitive, leaving a later task ahead of the next one.
+- A working or completed parent with a waiting child appears outside Needs you, making that column disagree with its attention count. Keep one parent card, its real execution state and the actionable child.
+- Started, commentary and finished events from runs in provider-agent conversations refer to an unlisted run thread and disappear from Activity. Preserve those events on the existing agent thread without adding duplicate root cards.
+
 - The default layout does not expose Kanban, or changing layouts loses search, source, computer, status, sort or the selected thread.
 - A card appears in the wrong live state, or an informational update or passive waiting item is presented as a decision needing the owner.
 - Live task progress leaves duplicate cards, loses the card between states, or requires a page reload to reflect the native backend state.

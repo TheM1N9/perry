@@ -395,9 +395,13 @@ function Tasks({ board, place, channel, waitingFor, loose, noticeFor, updates, u
   const scoped = (board?.threads ?? []).filter(thread => !thread.parent && (!channel || channel.has(thread)));
   const needsOwner = (thread: BoardThread) => standing(thread, waitingFor.get(thread.id)) === "waiting"
     || Boolean(agentsOf.get(thread.id)?.some(agent => standing(agent, waitingFor.get(agent.id)) === "waiting"));
+  const priority: Record<BoardStatus, number> = { waiting: 0, working: 1, blocked: 2, queued: 3, failed: 4, done: 4 };
   const threads = scoped.filter(thread => matches(thread) || Boolean(agentsOf.get(thread.id)?.some(agent => matches(agent))))
     // What needs the owner leads, whatever the order its threads came in.
-    .sort((a, b) => place.sort === "updated" ? b.updatedAt - a.updatedAt : place.sort === "oldest" ? a.startedAt - b.startedAt : Number(needsOwner(b)) - Number(needsOwner(a)) || (a.inLine && b.inLine ? a.inLine - b.inLine : 0));
+    .sort((a, b) => place.sort === "updated" ? b.updatedAt - a.updatedAt : place.sort === "oldest" ? a.startedAt - b.startedAt
+      : Number(needsOwner(b)) - Number(needsOwner(a))
+        || priority[standing(a, waitingFor.get(a.id))] - priority[standing(b, waitingFor.get(b.id))]
+        || (a.inLine ?? Number.MAX_SAFE_INTEGER) - (b.inLine ?? Number.MAX_SAFE_INTEGER));
   const matchingLoose = !channel && !place.computer ? loose.filter(item => searchText(place.q, `${item.text} ${item.where ?? ""}`)) : [];
 
   const looseShown = place.tab === "open" || place.tab === "needs you" || place.tab === "all" ? matchingLoose : [];
@@ -463,7 +467,9 @@ function Kanban({ board, threads, loose, place, waitingFor, noticeFor, agentsOf,
 }) {
   const [shown, setShown] = useState<Partial<Record<BoardStatus, number>>>({});
   useEffect(() => setShown({}), [place.channel, place.tab, place.computer, place.q, place.sort]);
-  const groups = COLUMNS.map(column => ({ ...column, threads: threads.filter(thread => standing(thread, waitingFor.get(thread.id)) === column.status) }));
+  const requestAgentOf = (thread: BoardThread) => agentsOf.get(thread.id)?.find(agent => matches(agent) && standing(agent, waitingFor.get(agent.id)) === "waiting");
+  const columnOf = (thread: BoardThread) => requestAgentOf(thread) ? "waiting" : standing(thread, waitingFor.get(thread.id));
+  const groups = COLUMNS.map(column => ({ ...column, threads: threads.filter(thread => columnOf(thread) === column.status) }));
   const empty = board && threads.length + loose.length === 0;
   const filtered = Boolean(place.q?.trim() || place.channel || place.computer);
   const columns = groups.filter(column => !filtered && place.tab === "all" || column.threads.length > 0 || column.status === "waiting" && loose.length > 0 || column.status === TAB_STATUS[place.tab]);
@@ -502,7 +508,7 @@ function Kanban({ board, threads, loose, place, waitingFor, noticeFor, agentsOf,
               </li>)}
               {column.threads.slice(0, Math.max(0, limit - requests.length)).map(thread => <WorkCard key={thread.id} thread={thread} place={place} waiting={waitingFor.get(thread.id)} notice={noticeFor.get(thread.id)}
                 channel={channelName(thread, board.projects)} agents={agentsOf.get(thread.id) ?? []} expanded={expanded(thread)} toggle={() => toggle(thread)}
-                matches={matches} waitingFor={waitingFor} changed={unseen(thread)} fresh={fresh(thread.id)} />)}
+                matches={matches} waitingFor={waitingFor} requestAgent={requestAgentOf(thread)} changed={unseen(thread)} fresh={fresh(thread.id)} />)}
             </ul>
             {count === 0 && <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">Nothing here</p>}
             {count > limit && <button type="button" className="mt-2 flex min-h-11 w-full items-center justify-center rounded-lg text-sm font-medium text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
@@ -517,10 +523,11 @@ function Kanban({ board, threads, loose, place, waitingFor, noticeFor, agentsOf,
 
 const CARD = "block min-w-0 rounded-lg border bg-background p-4 text-foreground shadow-xs outline-none transition-[border-color,box-shadow] hover:border-foreground/25 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none";
 
-function WorkCard({ thread, place, waiting, notice, channel, agents, expanded, toggle, matches, waitingFor, changed, fresh }: {
+function WorkCard({ thread, place, waiting, notice, channel, agents, expanded, toggle, matches, waitingFor, requestAgent, changed, fresh }: {
   thread: BoardThread; place: ReturnType<typeof useAddress>; waiting?: BoardWaiting; notice?: Notice; channel: string;
   agents: BoardThread[]; expanded: boolean; toggle: () => void; matches: (thread: BoardThread) => boolean;
   waitingFor: Map<string, BoardWaiting>; changed: boolean; fresh: boolean;
+  requestAgent?: BoardThread;
 }) {
   const status = standing(thread, waiting);
   const relevantAgents = agents.filter(agent => matches(agent) || agent.id === place.thread);
@@ -535,6 +542,7 @@ function WorkCard({ thread, place, waiting, notice, channel, agents, expanded, t
     <Link href={place.href({ thread: thread.id })} scroll={false} aria-current={place.thread === thread.id ? "true" : undefined} className={cn(CARD, place.thread === thread.id && "ring-2 ring-ring")}>
       <div className="flex items-center justify-between gap-2 text-xs"><span className="min-w-0 truncate text-muted-foreground">{channel}</span>{changed && <span className="shrink-0 font-medium">New activity</span>}</div>
       <h3 className="mt-2 line-clamp-2 text-sm font-semibold leading-5 [overflow-wrap:anywhere]">{thread.title}</h3>
+      {requestAgent && <p className="mt-2 text-xs font-medium text-warning [overflow-wrap:anywhere]">Decision needed by {requestAgent.title}</p>}
       <p className={cn("mt-2 line-clamp-3 min-h-5 text-sm text-muted-foreground [overflow-wrap:anywhere]", waiting?.command && "font-mono text-xs")} title={summary} data-line>{summary}</p>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <State status={status} label={waiting ? undefined : thread.label} live={!ongoing(thread)} />
@@ -556,6 +564,7 @@ function WorkCard({ thread, place, waiting, notice, channel, agents, expanded, t
         {relevantAgents.slice(0, agentLimit).map(agent => <li key={agent.id} data-agent data-row={agent.id}>
           <Link href={place.href({ thread: agent.id })} scroll={false} aria-current={place.thread === agent.id ? "true" : undefined} className="flex min-h-11 flex-col gap-1 rounded-md border-t px-1 py-2 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring">
             <span className="line-clamp-2 text-sm font-medium [overflow-wrap:anywhere]">{agent.title}</span><State status={standing(agent, waitingFor.get(agent.id))} label={waitingFor.has(agent.id) ? undefined : agent.label} className="text-xs" />
+            {waitingFor.has(agent.id) && <span className="text-xs font-medium">{waitingFor.get(agent.id)?.kind === "approval" ? "Review approval" : "Answer question"}</span>}
           </Link>
         </li>)}
         {relevantAgents.length > agentLimit && <li><button type="button" className="min-h-11 text-xs underline" onClick={() => setAgentLimit(current => current + CARD_PAGE)}>Show more agents</button></li>}
@@ -773,7 +782,7 @@ function Activity({ board, place, channel }: { board?: BoardView; place: ReturnT
           // What it says now: the approval's command, else its thread's line, else what the event said.
           // A sub-agent's event says which agent and what it did; anything else, what its thread says now.
           const detail = event.agent ? `agent ${event.agent.title} ${event.verb === "started" ? "started" : event.verb}`
-            : event.verb === "approval" ? event.text : thread?.now ?? (event.text !== thread?.title ? event.text : undefined);
+            : event.verb === "approval" || thread?.kind === "agent" && event.text ? event.text : thread?.now ?? (event.text !== thread?.title ? event.text : undefined);
           return (
             <li key={event.id} data-entry={event.thread ?? event.id} data-event={event.verb} className={cn(fresh(event.id) && "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 motion-safe:ease-out")}>
               {(event === entries[0] || dayOf(entries[entries.indexOf(event) - 1].at) !== dayOf(event.at)) && <Divider>{dayOf(event.at)}</Divider>}

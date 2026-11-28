@@ -547,12 +547,13 @@ export const get = query({
     for (const approval of await load.pending()) keep(await load.latestRun(approval.conversationId));
     for (const run of runs) {
       const conversation = await load.chat(run.conversationId);
-      const own = !conversation?.taskId && !conversation?.jobId && !conversation?.providerAgent;
+      const chatRun = !conversation?.taskId && !conversation?.jobId;
+      const own = chatRun && !conversation?.providerAgent;
       const thread = own ? await load.runThread(run) : null;
       if (thread) threads.push(thread);
-      const id = thread?.id ?? await load.threadIdOf(run.conversationId, run._id);
+      const id = conversation?.providerAgent ? `agent:${conversation._id}` : thread?.id ?? await load.threadIdOf(run.conversationId, run._id);
       const machine = await machineOf(run);
-      events.push({ id: `run:${run._id}:started`, thread: id, at: run.startedAt, verb: "started", text: own ? firstLine(run.prompt, 120) : undefined, ...(machine ? { machine } : {}) });
+      events.push({ id: `run:${run._id}:started`, thread: id, at: run.startedAt, verb: "started", text: chatRun ? firstLine(run.prompt, 120) : undefined, ...(machine ? { machine } : {}) });
       if (run.status === "running") {
         const said = await ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", run._id)).order("desc")
           .filter((q) => q.eq(q.field("kind"), "commentary")).first();
@@ -562,7 +563,7 @@ export const get = query({
         // A task says how it ended once, from the task; each turn of a chat or run of a schedule says it here.
         const state = await load.runState(run);
         const verb: BoardVerb = state.label === "Stopped" ? "stopped" : state.status === "failed" ? "failed" : "finished";
-        events.push({ id: `run:${run._id}:${verb}`, thread: id, at: run.finishedAt, verb, status: verb === "failed" ? "failed" : "done", text: verb === "failed" ? firstLine(run.error) : verb === "finished" && own ? await load.replyOf(run) : undefined, ...(machine ? { machine } : {}) });
+        events.push({ id: `run:${run._id}:${verb}`, thread: id, at: run.finishedAt, verb, status: verb === "failed" ? "failed" : "done", text: verb === "failed" ? firstLine(run.error) : verb === "finished" && chatRun ? await load.replyOf(run) : undefined, ...(machine ? { machine } : {}) });
       }
     }
 

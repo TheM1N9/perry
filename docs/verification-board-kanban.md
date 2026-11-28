@@ -4,7 +4,7 @@ The Board opens in Kanban, with List, Updates and Activity available in the same
 
 Cards show a readable title, the actual question or current step, the source and computer, and a specific next action. The six columns use the existing backend states. Needs you contains questions and approvals; saved plans, dependency waits and results awaiting review retain their own Waiting labels. Stopped and cancelled work remain distinguishable from successful results.
 
-The duplicate Board sidebar is replaced by source and project filters. Desktop columns scroll within the workspace; phone layouts stack vertically. Each column initially mounts at most ten cards and expands independently. Child agents remain nested under their parent. A matching child keeps its parent discoverable without changing the parent's own state, and outstanding child requests are prioritized ahead of older finished work.
+The duplicate Board sidebar is replaced by source and project filters. Desktop columns scroll within the workspace; phone layouts stack vertically. Each column initially mounts at most ten cards and expands independently. Child agents remain nested under their parent. A matching child keeps its parent discoverable. Parents with a matching child decision appear in Needs you while their own execution badges remain accurate; the child stays nested with an explicit answer or approval action.
 
 Details use the existing Sheet primitive for keyboard focus containment and Escape dismissal. Closing returns focus to the source card when it is still present, or to Board search if a live transition removed it from the current filter.
 
@@ -25,7 +25,7 @@ pnpm build
 pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/board-kanban/run.ts node_modules/.cache/board-kanban-review
 ```
 
-The replay writes a JSON assertion record and synthetic desktop, phone and dark-mode screenshots. Its disposable server, database and Chrome profile are cleaned by the harness. Run outputs are inspected and removed after verification; maintained replay sources remain in the repository.
+The replay writes a JSON assertion record and synthetic desktop, phone and dark-mode screenshots. Its disposable server, database and Chrome profile are cleaned by the harness. Run outputs are disposable verification artifacts; maintained replay sources remain in the repository, and requested UI images are saved separately.
 
 The existing native browser regressions were adapted to select List explicitly and to use the new status filter, without removing their behavioral checks. Their Node runs passed 42 assertions: owner controls (31), scoped search recovery (5), and task presence (6). These cover failed saves and retained drafts, prerequisite cycles, stale edits, cancellation, source links and actual worker presence. All three reported no browser exceptions and removed their disposable Perry homes.
 
@@ -33,7 +33,7 @@ The question-form check in the Kanban replay verifies the real native request, c
 
 ## Verified result
 
-The final settled production replay passed all 13 journeys on build `50959010-17f7-43ff-82e3-e90d2539a9fb`:
+The final settled production replay passed all 15 journeys on build `f6d5a8fd-c37e-4794-aa71-81f12f2a2bf0`:
 
 - All six source states, explicit next actions, and no duplicate agent cards.
 - Independent ten-card column expansion, fixed desktop card widths, internal scrolling and oldest-ready-first queue order.
@@ -42,7 +42,7 @@ The final settled production replay passed all 13 journeys on build `50959010-17
 - Child search, native question controls, and a completed parent retaining its child's approval ahead of pagination.
 - Questions and approvals separated from informational updates and passive waits.
 - Native task transitions moving one card without a page reload.
-- List, Activity and existing status/thread deep links.
+- List, Activity and existing status/thread deep links. Provider-agent follow-up runs retain started, commentary and finished events on their agent thread, including follow-up reply text.
 - 390px and 320px layouts without page-wide overflow, usable full-width details and dark mode.
 - Search focus recovery when another action resolves and removes the originating card.
 - No uncaught browser errors and no engine process.
@@ -50,3 +50,5 @@ The final settled production replay passed all 13 journeys on build `50959010-17
 The final replay reported `passed: true`, `tempHomeRemoved: true` and an empty browser-error list. Screenshots were inspected after finite UI transitions settled. The earlier browser replay exposed filter menus that stayed open; native `closeOnClick` now closes these single-choice menus. It also exposed squeezed columns and misleading queue order, both corrected before this final run. Node is required for the replay because Bun stalled at Playwright's Chrome websocket handshake in this environment.
 
 `pnpm build`, the application/Convex TypeScript checks and `pnpm exec tsc --noEmit -p artifacts` passed. Existing backend history limits remain unchanged; this change does not introduce unrestricted historical queries or pretend that execution status can be edited by dragging a card.
+
+The review regression replay reproduced all three reported defects on build `50959010-17f7-43ff-82e3-e90d2539a9fb`: mixed queued tasks/chats, child decisions outside Needs you, and dropped provider-agent follow-up events. The corrected build passed the same scenarios. It verifies mixed queue order in both Kanban and List, working/completed parent badges within Needs you, and native Activity event IDs, thread associations and displayed follow-up text. Search and filter assertions wait for the actual rendered selection/results before checking their strict expected values.
