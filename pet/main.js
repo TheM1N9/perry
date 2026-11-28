@@ -19,7 +19,7 @@
  */
 
 import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, powerMonitor, screen, shell } from "electron";
-import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unwatchFile, watchFile, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -191,6 +191,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
 } else {
   let win = null;
   let tray = null;
+  let quitting = false;
   const healthStartedAt = Date.now();
   let healthLabel = "Starting Perry…";
   const refreshHealth = () => {
@@ -247,6 +248,13 @@ if (!app.requestSingleInstanceLock({ argv })) {
   let armed = false;
   let dragFrom = null;
   let body = null;
+  const clearDrag = () => {
+    dragging = false;
+    armed = false;
+    dragFrom = null;
+    body = null;
+    if (dismiss && !dismiss.isDestroyed()) void dismiss.webContents.executeJavaScript("arm(false); shown(false)").catch(() => {});
+  };
   /** Whether the owner wants him on screen; the tray's Hide says no. */
   let wanted = true;
   /**
@@ -312,11 +320,13 @@ if (!app.requestSingleInstanceLock({ argv })) {
 
   /** A picture of the window the owner is in and of the screen, into his chat to ask about; he comes up, ready for the question. */
   const lookNow = async () => {
-    if (!win) return;
+    const target = win;
+    if (!target || target.isDestroyed()) return;
     const shot = await shoot(true);
+    if (quitting || win !== target || target.isDestroyed()) return;
     show();
-    win.webContents.send("pet:look", shot);
-    win.focus();
+    target.webContents.send("pet:look", shot);
+    target.focus();
   };
 
   /**
@@ -331,6 +341,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
   function makeWindow() {
     const old = win;
     solid = false;
+    clearDrag();
     const self = new BrowserWindow({
       ...framed.bounds,
       title: "Perry",
@@ -362,6 +373,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
 
     // He appears once his page is there, without taking the focus from what the owner is doing.
     self.webContents.on("did-finish-load", () => {
+      if (quitting || win !== self || self.isDestroyed()) return;
       if (wanted && !self.isVisible()) self.showInactive();
       applyMouse();
     });
@@ -372,6 +384,13 @@ if (!app.requestSingleInstanceLock({ argv })) {
       loadLater(3000);
     });
     self.webContents.on("render-process-gone", () => { if (win === self) loadLater(1000); });
+    self.on("closed", () => {
+      if (win !== self) return;
+      win = null;
+      solid = false;
+      clearDrag();
+      if (!quitting) loadLater(1000);
+    });
     // His page loaded again in this window (it reloaded itself): it goes into a new one, as above.
     let pages = 0;
     self.webContents.on("did-navigate", () => { if (++pages > 1 && win === self) void load(); });
@@ -386,12 +405,13 @@ if (!app.requestSingleInstanceLock({ argv })) {
         if (/^https?:/.test(url)) void shell.openExternal(url);
       }
     });
-    old?.destroy();
+    if (old && !old.isDestroyed()) old.destroy();
   }
 
   let loads = 0;
   let loadTimer = null;
-  const loadLater = (ms) => { clearTimeout(loadTimer); loadTimer = setTimeout(load, ms); };
+  let loadRequest = null;
+  const loadLater = (ms) => { clearTimeout(loadTimer); if (!quitting) loadTimer = setTimeout(load, ms); };
   /**
    * His page, in a new window, once Perry's server answers: at login he may
    * start before it, and an update restarts it. Until then nothing is loaded,
@@ -399,10 +419,15 @@ if (!app.requestSingleInstanceLock({ argv })) {
    */
   async function load() {
     clearTimeout(loadTimer);
+    if (quitting) return;
     const ask = ++loads;
-    const up = await net.fetch(`${BASE}/pet`, { method: "HEAD", signal: AbortSignal.timeout(10_000) }).then((response) => response.ok, () => false);
-    if (ask !== loads) return;
+    loadRequest?.abort();
+    const request = loadRequest = new AbortController();
+    const up = await net.fetch(`${BASE}/pet`, { method: "HEAD", signal: AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]) }).then((response) => response.ok, () => false);
+    if (loadRequest === request) loadRequest = null;
+    if (quitting || ask !== loads) return;
     if (!up) return loadLater(3000);
+    clearTimeout(loadTimer);
     makeWindow();
     win.loadURL(`${BASE}/pet#key=${encodeURIComponent(KEY)}`).catch(() => {});
   }
@@ -416,7 +441,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     void shell.openExternal(PAIRED ? `${BASE}${page}` : `${BASE}${page}#key=${encodeURIComponent(KEY)}`);
   };
 
-  const show = () => { wanted = true; if (win && !win.isVisible()) { win.showInactive(); applyMouse(); } refreshMenu(); };
+  const show = () => { wanted = true; if (!win || win.isDestroyed()) void load(); else if (!win.isVisible()) { win.showInactive(); applyMouse(); } refreshMenu(); };
   const hide = () => { wanted = false; win?.hide(); refreshMenu(); };
 
   function dismissWindow() {
@@ -505,8 +530,8 @@ if (!app.requestSingleInstanceLock({ argv })) {
     spot = startingPlace();
     framed = frame(spot);
     // Other windows asking to be on top do not push him under for long.
-    setInterval(() => {
-      if (!win?.isVisible()) return;
+    const topTimer = setInterval(() => {
+      if (!win || win.isDestroyed() || !win.isVisible()) return;
       win.setAlwaysOnTop(true, "floating");
       win.moveTop();
     }, 15_000);
@@ -518,7 +543,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     // Where the hook that brings him the pointer may have gone (applyMouse), it is put back: after this process
     // was too busy to answer it (a gap in these ticks: the voice model loading, a sleep), and on waking or unlocking.
     let tick = Date.now();
-    setInterval(() => {
+    const pointerTimer = setInterval(() => {
       const now = Date.now();
       if (now - tick > 500) applyMouse();
       tick = now;
@@ -668,7 +693,6 @@ if (!app.requestSingleInstanceLock({ argv })) {
       meetings.callActive(call.active);
       win?.webContents.send("pet:call-active", call.active);
     });
-    app.once("will-quit", () => { stopNoticing?.(); meetingPrompt.dispose(); meetings.dispose(); });
     // Looking at the screen: his chat's button and Perry's look_at_screen ask for the picture; the Look hotkey sends it to the page.
     ipcMain.handle("pet:look", async (_event, byOwner) => await shoot(byOwner === true));
     look = lookKey(() => void lookNow());
@@ -690,7 +714,26 @@ if (!app.requestSingleInstanceLock({ argv })) {
     refreshMenu();
 
     refreshHealth();
-    setInterval(refreshHealth, 3000);
+    const healthTimer = setInterval(refreshHealth, 3000);
+    app.once("before-quit", () => {
+      quitting = true;
+      ++loads;
+      loadRequest?.abort();
+      clearTimeout(loadTimer);
+      clearTimeout(saveTimer);
+      clearInterval(topTimer);
+      clearInterval(pointerTimer);
+      clearInterval(healthTimer);
+      unwatchFile(STATE, applyTheme);
+      screen.off("display-added", applyMouse);
+      screen.off("display-removed", restand);
+      screen.off("display-metrics-changed", restand);
+      powerMonitor.off("resume", applyMouse);
+      powerMonitor.off("unlock-screen", applyMouse);
+      stopNoticing?.();
+      meetingPrompt.dispose();
+      meetings.dispose();
+    });
     void load();
   });
 

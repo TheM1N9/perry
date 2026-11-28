@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
-import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { NextRequest } from 'next/server.js';
 import { FILE_TRANSFER_LIMIT } from '../../lib/media-limits.ts';
 
-const out = resolve(import.meta.dirname);
+const out = resolve(process.argv[2] ?? import.meta.dirname);
+mkdirSync(out, { recursive: true });
 const scratch = mkdtempSync(join(tmpdir(), 'perry-security-audit-'));
 const home = join(scratch, 'home'); mkdirSync(home);
 const key = 'synthetic-audit-owner-key';
@@ -61,12 +61,13 @@ const server = createServer(async (incoming, outgoing) => {
     else if (url.pathname === '/api/backend/storage/upload') response = await uploadRoute.POST(request);
     else if (url.pathname.startsWith('/api/backend/storage/')) response = await storageRoute.GET(request, { params: Promise.resolve({ id: url.pathname.split('/').at(-1) }) });
     else if (url.pathname === '/seed') response = new Response(`<script>localStorage.setItem('perry.dashboard.key','${key}');location.href='${storedHtmlUrl}'</script>`, { headers: { 'content-type': 'text/html' } });
+    else if (url.pathname === '/inline-control') response = new Response(inlineControlHtml, { headers: { 'content-type': 'text/html' } });
     else response = new Response('Not found', { status: 404 });
     outgoing.writeHead(response.status, Object.fromEntries(response.headers));
     if (response.body) Readable.fromWeb(response.body).pipe(outgoing); else outgoing.end();
   } catch { outgoing.writeHead(500); outgoing.end('Fixture adapter failure'); }
 });
-let base; let storedHtmlUrl;
+let base; let storedHtmlUrl; let inlineControlHtml;
 await new Promise(done => server.listen(0, '127.0.0.1', done));
 base = `http://127.0.0.1:${server.address().port}`;
 const post = async (path, args = {}, admin = false, headerKey = key) => {
@@ -145,6 +146,7 @@ try {
   });
   await check('Stored HTML downloads without dashboard-origin script execution', async () => {
     const html = `<html><body><script>document.body.innerHTML=localStorage.getItem('perry.dashboard.key')==='${key}'?'<h1 id="audit-proof">origin-key-readable</h1>':'<h1>no-key</h1>'</script></body></html>`;
+    inlineControlHtml = html;
     const id = await rt.storeFile(new Blob([html], { type: 'text/html' })); storedHtmlUrl = rt.urlFor(id);
     const response = await fetch(base + storedHtmlUrl);
     const headers = Object.fromEntries(response.headers);
@@ -154,20 +156,49 @@ try {
     assert.equal(headers['x-content-type-options'], 'nosniff');
     const chrome = process.env.PERRY_E2E_BROWSER || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
     let browserExecuted = null;
+    let downloadCompleted = null;
+    let inlineControlExecuted = null;
     if (existsSync(chrome)) {
-      const profile = join(scratch, 'chrome');
-      const result = await new Promise((done, reject) => {
-        browserChild = spawn(chrome, ['--headless=new', '--no-first-run', '--disable-background-networking', '--disable-sync',
-          `--user-data-dir=${profile}`, '--dump-dom', '--timeout=10000', '--virtual-time-budget=2000', base + '/seed'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-        let stdout = ''; browserChild.stdout.on('data', chunk => { stdout += chunk; });
-        const timeout = setTimeout(() => { browserChild.kill(); reject(Error('Disposable Chrome timed out')); }, 20000);
-        browserChild.on('error', error => { clearTimeout(timeout); reject(error); });
-        browserChild.on('exit', () => { clearTimeout(timeout); done(stdout); });
-      });
-      browserExecuted = result.includes('<h1 id="audit-proof">origin-key-readable</h1>');
-      assert.equal(browserExecuted, false);
+      const browser = await import('../../convex/lib/browser.ts');
+      const { browserDownloadPath } = await import('../../server/browser-files.ts');
+      const scope = 'public-reader';
+      const previousPath = process.env.PERRY_BROWSER_PATH;
+      process.env.PERRY_BROWSER_PATH = chrome;
+      const until = async (work, label) => {
+        const end = Date.now() + 20000;
+        while (!await work()) { if (Date.now() >= end) throw Error(`Timed out: ${label}`); await new Promise(done => setTimeout(done, 80)); }
+      };
+      try {
+        await browser.withOwnerBrowser(scope, async () => {
+          const state = browser.browserControl(scope);
+          state.nativeWindow = false;
+          state.controller = 'owner';
+          const evaluate = async expression => {
+            const result = await browser.hostCommand('Runtime.evaluate', { expression, returnByValue: true });
+            assert.equal(result.exceptionDetails, undefined);
+            return result.result.value;
+          };
+          await browser.hostCommand('Page.enable');
+          browserChild = state.current.child;
+          await browser.hostCommand('Page.navigate', { url: base + '/seed' });
+          await until(() => [...state.downloads.values()].some(item => item.state === 'completed'), 'native HTML download completion');
+          const download = [...state.downloads.values()].find(item => item.state === 'completed');
+          assert.equal(readFileSync(browserDownloadPath(scope, download.id), 'utf8'), html);
+          downloadCompleted = true;
+          assert.equal(await evaluate(`localStorage.getItem('perry.dashboard.key')===${JSON.stringify(key)}`), true);
+          browserExecuted = await evaluate(`document.querySelector('#audit-proof')?.textContent==='origin-key-readable'`);
+          assert.equal(browserExecuted, false);
+          await browser.hostCommand('Page.navigate', { url: base + '/inline-control' });
+          await until(() => evaluate(`document.querySelector('#audit-proof')?.textContent==='origin-key-readable'`), 'inline execution positive control');
+          inlineControlExecuted = true;
+        });
+      } finally {
+        await browser.withOwnerBrowser(scope, () => browser.closeBrowser());
+        if (browserChild) await until(() => browserChild.exitCode !== null || browserChild.signalCode !== null, 'disposable browser shutdown');
+        if (previousPath === undefined) delete process.env.PERRY_BROWSER_PATH; else process.env.PERRY_BROWSER_PATH = previousPath;
+      }
     }
-    return { protectionPassed: true, anonymousStatus: response.status, headers, syntheticKeyReadableInChrome: browserExecuted };
+    return { protectionPassed: true, anonymousStatus: response.status, headers, syntheticKeyReadableInChrome: browserExecuted, downloadCompleted, inlineControlExecuted };
   });
   await check('Active MIME variants download while media retains byte-range support', async () => {
     for (const type of ['image/svg+xml; charset=utf-8', 'application/xhtml+xml', 'application/xml', 'text/xml']) {

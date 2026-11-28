@@ -23,6 +23,27 @@ jobs:
           cache: pnpm
       - uses: oven-sh/setup-bun@v2
       - run: pnpm install --frozen-lockfile
+      - name: Prepare native pet runtime
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: |
+          pnpm install --dir pet --frozen-lockfile
+          pnpm --dir pet exec node node_modules/electron/install.js
+      - name: Verify native pet window recovery
+        id: pet_window_lifecycle
+        if: runner.os == 'Windows'
+        timeout-minutes: 3
+        run: pnpm exec node artifacts/pet-window-lifecycle/run.mjs "${{ runner.temp }}/pet-window-lifecycle"
+      - if: always() && runner.os == 'Windows' && (steps.pet_window_lifecycle.outcome == 'success' || steps.pet_window_lifecycle.outcome == 'failure')
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: pet-window-lifecycle-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/pet-window-lifecycle/result.json
+            ${{ runner.temp }}/pet-window-lifecycle/*.png
+            ${{ runner.temp }}/pet-window-lifecycle/electron.log
+          if-no-files-found: error
       - run: pnpm codegen
       - run: git diff --exit-code -- convex/_generated/api.d.ts server/modules.ts
       - run: pnpm exec node artifacts/macos-git-preflight/run.mjs
