@@ -1,0 +1,135 @@
+import { app, BrowserWindow, dialog, globalShortcut, Tray, screen, powerMonitor } from "electron";
+import { env } from "@huggingface/transformers";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+// The window lifecycle runs natively. Hardware, downloads and key ownership are outside this replay.
+env.allowRemoteModels = false;
+env.allowLocalModels = false;
+globalShortcut.register = () => true;
+globalShortcut.unregister = () => {};
+globalShortcut.unregisterAll = () => {};
+const report = { checks: {}, errors: [], windowsCreated: 0, topmostTicks: 0, modelsStarted: 0 };
+const save = () => writeFileSync(join(process.env.PERRY_LIFECYCLE_OUTPUT, "result.json"), JSON.stringify(report, null, 2) + "\n");
+const check = (name, value) => { report.checks[name] = Boolean(value); save(); if (!value) throw Error(name); };
+process.on("uncaughtException", error => { report.errors.push(String(error.stack ?? error)); save(); });
+process.on("unhandledRejection", error => { report.errors.push(String(error?.stack ?? error)); save(); });
+dialog.showErrorBox = (title, content) => { report.errors.push(`${title}: ${content}`); save(); };
+let menu;
+const setMenu = Tray.prototype.setContextMenu;
+Tray.prototype.setContextMenu = function (next) { menu = next; return setMenu.call(this, next); };
+const intervals = new Map();
+const nativeInterval = globalThis.setInterval, nativeClear = globalThis.clearInterval;
+globalThis.setInterval = (fn, ms, ...args) => {
+  const owned = new Error().stack.includes(process.env.PERRY_LIFECYCLE_MAIN.replaceAll("\\", "/"));
+  const timer = nativeInterval(() => { if (owned && ms === 15_000) report.topmostTicks++; fn(...args); }, ms);
+  if (owned) intervals.set(timer, ms);
+  return timer;
+};
+globalThis.clearInterval = timer => { intervals.delete(timer); return nativeClear(timer); };
+app.on("browser-window-created", () => report.windowsCreated++);
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const until = async (fn, label, timeout = 12_000) => {
+  const deadline = Date.now() + timeout;
+  while (!await fn()) { if (Date.now() > deadline) throw Error(`Timed out: ${label}`); await sleep(50); }
+};
+const pets = () => BrowserWindow.getAllWindows().filter(win => !win.isDestroyed() && win.webContents.getURL().startsWith(`${process.env.PERRY_URL}/pet`));
+const ready = win => win && !win.isDestroyed() && !win.webContents.isLoadingMainFrame();
+const command = label => { const item = menu.items.find(item => item.label === label); if (!item) throw Error(`Missing tray command: ${label}`); item.click(undefined, undefined, {}); };
+save();
+async function run() {
+try {
+  report.phase = "importing pet"; save();
+  await import(pathToFileURL(process.env.PERRY_LIFECYCLE_MAIN).href);
+  report.phase = "waiting for Electron ready"; save();
+  await app.whenReady();
+  report.phase = "waiting for pet window"; save();
+  await until(() => pets().length === 1 && ready(pets()[0]), "initial pet");
+  const first = pets()[0];
+  const firstId = first.id;
+  const bounds = first.getBounds();
+  check("one native pet starts", first.isVisible());
+  first.close();
+  screen.emit("display-metrics-changed");
+  powerMonitor.emit("resume");
+  await sleep(16_000);
+  check("real keep-on-top timer ran", report.topmostTicks >= 1);
+  check("closed window causes no uncaught native-object errors", report.errors.length === 0);
+  check("closing the pet creates exactly one replacement", pets().length === 1 && pets()[0].id !== firstId && ready(pets()[0]));
+  check("recovery preserves the pet position", JSON.stringify(pets()[0].getBounds()) === JSON.stringify(bounds));
+  const created = report.windowsCreated;
+  for (let n = 0; n < 3; n++) {
+    const old = pets()[0];
+    const oldId = old.id;
+    old.webContents.reload();
+    await until(() => pets().length === 1 && pets()[0].id !== oldId && ready(pets()[0]), "reload replacement");
+  }
+  await sleep(1200);
+  check("three reloads produce only three replacements", report.windowsCreated === created + 3 && pets().length === 1);
+  const drop = BrowserWindow.getAllWindows().find(win => win.getTitle() === "Perry: drop here to hide");
+  const dropShown = () => drop.webContents.executeJavaScript("document.getElementById('all').style.opacity==='1'");
+  await pets()[0].webContents.executeJavaScript("window.perryPet.dragStart(336,551)");
+  await until(dropShown, "native drag target");
+  check("native drag shows its drop target", await dropShown());
+  const draggingId = pets()[0].id;
+  pets()[0].webContents.reload();
+  await until(() => pets().length === 1 && pets()[0].id !== draggingId && ready(pets()[0]), "mid-drag reload");
+  check("reload clears the previous renderer drag target", !await dropShown());
+  await pets()[0].webContents.executeJavaScript("window.perryPet.dragStart(336,551)");
+  await until(dropShown, "second native drag target");
+  const dragCloseId = pets()[0].id;
+  pets()[0].close();
+  await until(() => pets().length === 1 && pets()[0].id !== dragCloseId && ready(pets()[0]), "mid-drag close");
+  check("closing mid-drag clears the target and recovers", !await dropShown());
+  command("Hide");
+  check("tray Hide hides the window", !pets()[0].isVisible());
+  const hidden = pets()[0];
+  const hiddenId = hidden.id;
+  hidden.destroy();
+  await until(() => pets().length === 1 && pets()[0].id !== hiddenId && ready(pets()[0]), "hidden replacement");
+  check("hidden pet stays hidden after destruction", !pets()[0].isVisible());
+  command("Show");
+  check("tray Show restores the replacement", pets()[0].isVisible());
+  const crashed = pets()[0];
+  const crashedId = crashed.id;
+  crashed.webContents.forcefullyCrashRenderer();
+  await until(() => pets().length === 1 && pets()[0].id !== crashedId && ready(pets()[0]), "crashed renderer replacement");
+  check("renderer crash recovers in one window", pets().length === 1 && pets()[0].isVisible());
+  await fetch(`${process.env.PERRY_URL}/hold-heads`);
+  const pendingId = pets()[0].id;
+  pets()[0].webContents.reload();
+  await until(async () => Number(await (await fetch(`${process.env.PERRY_URL}/held-heads`)).text()) > 0, "delayed reload HEAD");
+  pets()[0].close();
+  await fetch(`${process.env.PERRY_URL}/release-heads`);
+  await until(() => pets().length === 1 && pets()[0].id !== pendingId && ready(pets()[0]), "pending load recovers closed window");
+  const recoveredId = pets()[0].id;
+  await pets()[0].webContents.executeJavaScript("window.recoveryMarker='preserved'");
+  await sleep(1400);
+  check("successful pending load cancels redundant close retry", pets().length === 1 && pets()[0].id === recoveredId && await pets()[0].webContents.executeJavaScript("window.recoveryMarker==='preserved'"));
+  writeFileSync(join(process.env.PERRY_LIFECYCLE_OUTPUT, "recovered.png"), (await pets()[0].webContents.capturePage()).toPNG());
+  await pets()[0].webContents.executeJavaScript(`window.perryPet.setMeetingSuggestions({headsUp:true,notice:true,upcoming:[{eventId:'synthetic-notice',title:'Synthetic shutdown notice',startsAt:Date.now()+60000,endsAt:Date.now()+3600000}]})`);
+  await until(() => BrowserWindow.getAllWindows().some(win => win.webContents.getURL().endsWith("/meeting-notice.html")), "native meeting notice");
+  const notice = BrowserWindow.getAllWindows().find(win => win.webContents.getURL().endsWith("/meeting-notice.html"));
+  check("native meeting notice exists before shutdown", Boolean(notice));
+  await fetch(`${process.env.PERRY_URL}/hold-heads`);
+  pets()[0].webContents.reload();
+  await until(async () => Number(await (await fetch(`${process.env.PERRY_URL}/held-heads`)).text()) > 0, "pending reload request");
+  const beforeQuit = report.windowsCreated;
+  check("main interval instrumentation is active", intervals.size >= 3);
+  app.once("will-quit", () => {
+    report.checks["meeting notice is disposed before quitting"] = notice.isDestroyed();
+    report.checks["quit does not create a replacement"] = report.windowsCreated === beforeQuit;
+    report.checks["main-process intervals are cleared on quit"] = intervals.size === 0;
+    report.checks["all lifecycle scenarios have no uncaught errors"] = report.errors.length === 0;
+    report.remainingMainIntervals = Array.from(intervals.values());
+    save();
+  });
+  app.quit();
+} catch (error) {
+  report.error = String(error.stack ?? error);
+  save();
+  app.exit(1);
+}
+}
+void run();
