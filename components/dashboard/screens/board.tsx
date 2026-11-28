@@ -491,10 +491,10 @@ function Kanban({ board, threads, loose, place, waitingFor, noticeFor, agentsOf,
           const limit = shown[column.status] ?? CARD_PAGE;
           const Glyph = GLYPH[column.status];
           return <section key={column.status} aria-label={column.label} data-kanban-column={column.status}
-            className={cn("flex min-w-0 shrink-0 flex-col rounded-xl border bg-muted/35 p-2 @min-[48rem]:h-full @min-[48rem]:w-72", count === 0 && "@min-[48rem]:w-44")}>
-            <div className="flex items-center gap-2 px-2 pt-2">
-              <Glyph aria-hidden className={cn("size-4", TONE[column.status] ?? "text-muted-foreground")} />
-              <h2 className="flex-1 font-semibold">{column.label}</h2><span className="rounded-md bg-background px-2 py-0.5 text-xs tabular-nums text-muted-foreground" data-column-count>{count}</span>
+            className={cn("flex min-w-0 shrink-0 flex-col rounded-xl p-2 @min-[48rem]:h-full @min-[48rem]:w-72", count === 0 && "@min-[48rem]:w-44")}>
+            <div className="flex items-center gap-2 px-2 pt-2" data-column-heading>
+              <Glyph aria-hidden className="size-4" />
+              <h2 className="flex-1 font-semibold">{column.label}</h2><span className="rounded-md px-2 py-0.5 text-xs tabular-nums" data-column-count>{count}</span>
             </div>
             <p className="mb-3 mt-1 px-2 text-xs text-muted-foreground">{column.hint}</p>
             <ul className="space-y-2 @min-[48rem]:min-h-0 @min-[48rem]:flex-1 @min-[48rem]:overflow-y-auto" aria-label={`${column.label} work`}>
