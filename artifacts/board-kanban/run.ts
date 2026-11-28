@@ -86,6 +86,7 @@ try {
   assert.ok(page);
   page.on("pageerror", (error: Error) => errors.push(String(error)));
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ colorScheme: "light" });
   await verify("mixedQueueOrdersTasksConsistentlyAroundQueuedChats", async () => {
     await go({ q: "Mixed queue" }); await card(`task:${fixture.mixedFirst}`).waitFor();
     const expected = [`task:${fixture.mixedFirst}`, `task:${fixture.mixedSecond}`, fixture.mixedChat];
@@ -116,6 +117,7 @@ try {
   await verify("kanbanIsDefaultWithHonestLiveStates", async () => {
     await go({ tab: "all" }); await page.locator("[data-kanban]").waitFor();
     for (const status of ["queued", "working", "waiting", "blocked", "done", "failed"]) await column(status).waitFor();
+    await until(() => page.evaluate(() => document.documentElement.classList.contains("light")), "explicit light theme applied");
     notes.columnColorsLight = await columnColors();
     for (const status of ["queued", "working", "waiting", "blocked", "done", "failed"]) assert.ok(Math.abs(await column(status).evaluate((element: HTMLElement) => element.getBoundingClientRect().width) - 288) <= 1, "Desktop lanes stay 18rem wide");
     assert.match(await column("queued").locator("[data-card]").first().innerText(), /Next in line/);
@@ -301,6 +303,7 @@ try {
     await page.emulateMedia({ colorScheme: "dark" });
     await go(); await page.locator("[data-kanban]").waitFor();
     await until(() => page.evaluate(() => document.documentElement.classList.contains("dark")), "system dark theme applied");
+    for (const status of ["queued", "working", "waiting", "blocked", "done", "failed"]) await column(status).waitFor();
     notes.columnColorsDark = await columnColors();
     await noOverflow(); await shot("mobile-small-dark");
     await cardLink(`task:${fixture.failed}`).click(); await page.getByRole("dialog", { name: "Work details", exact: true }).waitFor();

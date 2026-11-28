@@ -4,6 +4,8 @@ Written before implementing the native production-dashboard replay.
 
 Column color verification: all six headers must remain distinguishable in each theme; heading/count text must meet 4.5:1 contrast on its rendered surface; labels and status icons must remain present; tinting must not obscure card text, focus indicators or mobile controls.
 
+Theme measurements must explicitly select and confirm their theme rather than inherit the host preference. Both measurements must wait for all six loaded columns, since the Board container also exists during its loading skeleton.
+
 Review regressions to reproduce through the same native browser replay:
 
 - A queued chat between tasks with queue positions makes the comparator non-transitive, leaving a later task ahead of the next one.

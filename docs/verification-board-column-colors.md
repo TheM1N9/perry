@@ -33,6 +33,8 @@ Each state-specific `--board-accent` declaration was previously absent:
 
 The existing native production replay passed all 15 journeys on build `632d3101-dfed-45ea-a211-fd55276f65f8`. It now measures actual browser-computed colors against the opaque surfaces they paint on, verifies six distinct accents/tints, and checks heading and count contrast in each theme. It uses Chrome's canvas color conversion before applying WCAG 2 luminance calculations.
 
+The replay explicitly emulates light and dark preferences, confirms the applied theme class and waits for all six loaded columns before recording either measurement. Evidence therefore does not depend on the host's theme or the Board skeleton's load timing.
+
 | Column | Light heading | Light count | Dark heading | Dark count |
 | --- | ---: | ---: | ---: | ---: |
 | Needs you | 5.37:1 | 4.95:1 | 9.89:1 | 9.03:1 |
