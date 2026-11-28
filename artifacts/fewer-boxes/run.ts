@@ -354,7 +354,7 @@ try {
     await typeText("Warm, plain words. Quote prices in euros.");
     const saved = await soon(async () => (await projectInstructions()) === "Warm, plain words. Quote prices in euros.", 6);
     const shown = await status(`${instructions}.closest("[data-slot=field]").querySelector("[data-save]")`);
-    check("instructionsSaveThemselves", saved && shown?.state === "saved" && shown.text === "Saved" && (await buttonsNamed("Save")) === 0, { saved, shown, value: await projectInstructions() });
+    check("instructionsSaveThemselves", saved && shown?.text === "Saves as you type." && (await buttonsNamed("Save")) === 0, { saved, shown, value: await projectInstructions() });
     await shot("autosave-saved");
     // Typed, then away by a link at once, well inside the pause.
     await focus(instructions);
@@ -398,7 +398,7 @@ try {
     await typeText("Pip");
     const named = await soon(async () => (await persona()).name === "Pip", 6);
     const identityStatus = await status(`document.querySelector("#identity-personality").closest("section").querySelector("[data-save]")`);
-    check("nameAndPersonalitySaveThemselves", personality && named && identityStatus?.text === "Saved" && (await buttonsNamed("Save")) === 0, { personality, named, identityStatus, persona: await persona() });
+    check("nameAndPersonalitySaveThemselves", personality && named && identityStatus === null && (await buttonsNamed("Save")) === 0, { personality, named, identityStatus, persona: await persona() });
     // About me is USER.md, written in the page editor: it saves as it is typed, a sitting as one version.
     await go("/about", "coffee black");
     const before = (await call<unknown[]>("dashboard:personaHistory", { key: KEY, kind: "user" })).length;
@@ -415,7 +415,7 @@ try {
     const userStatus = await status(`document.querySelector("[data-save]")`);
     const versions = (await call<unknown[]>("dashboard:personaHistory", { key: KEY, kind: "user" })).length;
     await shot("autosave-user-md");
-    check("userMdSavesItselfAsOneVersion", userSaved && userStatus?.text === "Saved" && versions === before + 1 && (await buttonsNamed("Save")) === 0, { userSaved, userStatus, before, versions });
+    check("userMdSavesItselfAsOneVersion", userSaved && userStatus === null && versions === before + 1 && (await buttonsNamed("Save")) === 0, { userSaved, userStatus, before, versions });
     // Leaving by a link keeps what was typed: a fresh visit shows it.
     await go("/brain", "Things to remember");
     await go("/about", "Call him Sam.");
@@ -432,7 +432,7 @@ try {
     const briefed = await soon(async () => (await brief()) === "He can know my gym times.", 6);
     const briefStatus = await status(`document.querySelector('textarea[aria-label^="What Perry may share with Datta"]').parentElement.querySelector("[data-save]")`);
     await shot("autosave-brief");
-    check("briefSavesItself", briefed && briefStatus?.text === "Saved" && (await buttonsNamed("Save")) === 0, { briefed, briefStatus });
+    check("briefSavesItself", briefed && briefStatus?.text === "Saves as you type." && (await buttonsNamed("Save")) === 0, { briefed, briefStatus });
     await collectErrors("autosave-brief");
 
     // --- Secrets: never half typed; Enter, or the quiet Save inside the field (the Gemini key, by its engines) ----

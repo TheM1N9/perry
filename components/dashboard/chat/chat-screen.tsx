@@ -71,11 +71,10 @@ const workKey = (work: Turn) => work.runId;
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
 /**
- * A message you sent, shown before the server has it: `sent` once sendChat
- * returns, after which the server lists it as pending until its reply saves it.
+ * A message shown immediately, until the server lists it in preparation or history.
  * `queued`: sent with Queue, so it waits under Up next, not in the conversation.
  */
-type Pending = { id: ChatId; requestId: string; text: string; attachments: Attachment[]; baselineCount: number; duringReply: boolean; sent: boolean; queued?: boolean };
+type Pending = { id: ChatId; requestId: string; text: string; attachments: Attachment[]; baselineCount: number; duringReply: boolean; queued?: boolean };
 /** A queued message being edited in the composer, and the draft the composer had before, given back after. */
 type QueueEdit = { id: Id<"codexTurns">; conversationId: ChatId; stash: string };
 
@@ -315,7 +314,7 @@ export function ChatScreen() {
   const upNext = useMemo((): UpNextItem[] => [
     ...messages.flatMap((message) => message.queued && !message.queued.now ? [{ key: message.queued.id, text: message.text, attachments: message.attachments, queued: message.queued }] : [])
       .sort((a, b) => a.queued.position - b.queued.position),
-    ...shownPending.flatMap((item) => item.queued ? [{ key: `sending-${item.requestId}`, text: item.text, attachments: item.attachments, sent: item.sent }] : []),
+    ...shownPending.flatMap((item) => item.queued ? [{ key: `sending-${item.requestId}`, text: item.text, attachments: item.attachments }] : []),
   ], [messages, shownPending]);
   const conversation = useMemo(() => messages.filter((message) => !message.queued || message.queued.now), [messages]);
   // A queued message edited in the composer that started meanwhile: the words stay in the composer, unsaved.
@@ -558,7 +557,7 @@ export function ChatScreen() {
     if (command === "/reset") {
       setDraft("");
       if (!selectedId) { setNotice("Nothing to reset yet."); return true; }
-      setNotice("Saving this chat to memory and starting it afresh…");
+      setNotice("Starting a fresh chat…");
       try { setNotice(await resetChat({ key: dashboardKey, id: selectedId })); } catch (cause) { setNotice(""); fail(cause); }
       return true;
     }
@@ -634,7 +633,7 @@ export function ChatScreen() {
       const entry: Pending = {
         id, requestId, text: message, attachments: uploaded,
         baselineCount: fresh ? 0 : messages.filter((item) => item.role === "user" && item.text === message).length,
-        duringReply: !fresh && replying, sent: false, ...(mode === "queue" ? { queued: true } : {}),
+        duringReply: !fresh && replying, ...(mode === "queue" ? { queued: true } : {}),
       };
       setPending((items) => [...items, entry]);
       // A new chat takes what was picked before it existed; an existing one already has its own.
@@ -659,7 +658,6 @@ export function ChatScreen() {
       if (!paramId && window.location.pathname === "/chat" && new URL(window.location.href).searchParams.get("project") === inProject) router.replace(`/chat/${id}`);
       // A send already crossing the network must acknowledge before Stop can cover it.
       if (submission.controller.signal.reason === "stop") await stopChat({ key: dashboardKey, id }).catch(fail);
-      setPending((items) => items.map((item) => item.requestId === entry.requestId ? { ...item, sent: true } : item));
       // Full access is chosen for a chat, never carried into the next new one.
       if (fresh && draftControl.current?.storageKey === storageKey) setDraftAccess(undefined);
     } catch (cause) {
@@ -697,7 +695,7 @@ export function ChatScreen() {
     setBusy(true); setError("");
     // The copy being replaced is removed before the new one is listed, so it is not part of the baseline.
     const entry: Pending = {
-      id: selectedId, requestId: randomUUID(), text: shown, attachments: source?.attachments ?? [], duringReply: false, sent: true,
+      id: selectedId, requestId: randomUUID(), text: shown, attachments: source?.attachments ?? [], duringReply: false,
       baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length - (source?.text === shown ? 1 : 0),
     };
     try {
@@ -908,7 +906,7 @@ export function ChatScreen() {
                   {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
                 </Fragment>;
                 if ("artifact" in entry) return <InteractiveAnswer key={entry.key} artifact={entry.artifact} />;
-                if ("pending" in entry) return <PendingRow key={entry.key} text={entry.pending.text} attachments={entry.pending.attachments} sent={entry.pending.sent} skills={skillNames} />;
+                if ("pending" in entry) return <PendingRow key={entry.key} text={entry.pending.text} attachments={entry.pending.attachments} skills={skillNames} />;
                 const { message } = entry;
                 return <Fragment key={entry.key}>
                 <MessageRow

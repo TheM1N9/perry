@@ -9,7 +9,10 @@ Written before implementation and isolation code, after root's direct Chrome wal
 - Pointer submit and Enter produce different titles/dates or duplicate a task; an empty form dispatches anything.
 - Acknowledging one submitted draft clears newer typing; a failed request replaces newer text or reports success.
 - Two overlapping failed additions retain only the first restored draft and silently lose the second submitted title; each failed title needs visible recovery.
-- A native read-only pending input still admits edits/Enter/double-click submissions, loses focus, clears its draft before acknowledgement, or leaves controls locked after a refusal. A single pending operation is the chosen recovery policy; keyboard focus must allow immediate typing once acknowledged.
+- An addition waits for admission before showing its row, advertises Saving, blocks typing, or clears newer typing on acknowledgment. Add remains guarded while pending; the entry stays editable. Provisional row controls must never send a fabricated id to the server.
+- An addition begins before the board query is loaded, then the first snapshot arrives after the real write committed. The late snapshot must not gain a duplicate provisional row.
+- Overlapping optimistic board mutations erase each other when an earlier write settles. A later completion must remain visible while an earlier add is acknowledged.
+- Optimistic completion/removal/repeat changes fail to roll back or show an error; a repeat failure must never be swallowed.
 - Completion feedback appears before the server confirms the write, or a failed completion offers an undo for an operation that never happened.
 - Undo completes again, restores another task, duplicates records, or hides its own failure.
 - The pet's existing success callbacks receive duplicate notifications, run on failed writes, or lose their behavior.

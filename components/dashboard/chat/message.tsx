@@ -85,11 +85,6 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
             {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
           </div>
         )}
-        {mine && message.pending && <MessageFooter className="px-0 font-normal" role="status" data-delivery={message.steer?.status ?? "received"}>
-          {message.steer?.status === "applied" ? "Added to current reply"
-            : message.steer ? "Received · Waiting to join current reply"
-            : message.queued?.preparing ? "Received · Preparing reply…" : "Received"}
-        </MessageFooter>}
         {/* Waiting in the queue it is under Up next (up-next.tsx); here only while it waits behind nothing (dashboard.QueuedTurn, now). */}
         {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
         <MessageFooter className="flex-wrap gap-x-2 gap-y-1 px-0 font-normal">
@@ -146,18 +141,17 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
   );
 }
 
-/** A message you sent, before the server lists it; "Sending…" until the server has taken it. */
-export function PendingRow({ text, attachments, sent, skills }: { text: string; attachments: Attachment[]; sent: boolean; skills?: ReadonlySet<string> }) {
+/** Show the message immediately while admission and preparation run in the background. */
+export function PendingRow({ text, attachments, skills }: { text: string; attachments: Attachment[]; skills?: ReadonlySet<string> }) {
   return (
     <Message align="end" data-role="user" data-pending>
       <MessageContent className="gap-1">
-        <Bubble align="end" variant="muted" className={cn("max-w-[85%]", !sent && "opacity-70")}>
+        <Bubble align="end" variant="muted" className="max-w-[85%]">
           <BubbleContent className="rounded-3xl px-4 py-2.5 text-md [overflow-wrap:anywhere]">
             <Markdown text={text} skills={skills} />
             <AttachmentList attachments={attachments} align="end" />
           </BubbleContent>
         </Bubble>
-        <MessageFooter className="px-0 font-normal" role="status" data-delivery={sent ? "received" : "sending"}>{sent ? "Received" : "Sending…"}</MessageFooter>
       </MessageContent>
     </Message>
   );

@@ -248,7 +248,7 @@ function MeetingNotes({ note }: { note: NoteView }) {
   const content = state.draft?.content ?? note.content;
   const source = !useMemo(() => inspectMarkdown(note.content), [note.content]).supported;
   return <div>
-    <p role="status" className="mb-2 text-xs text-muted-foreground">{state.status === "saved" ? "Saved" : state.status === "saving" ? "Saving…" : state.status === "dirty" ? "Unsaved changes" : state.error}</p>
+    {(state.status === "error" || state.status === "conflict") && <p role="alert" className="mb-2 text-xs text-destructive">{state.error ?? "These notes changed elsewhere. Choose which version to keep."}</p>}
     {state.status === "conflict" && <div className="mb-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => controller.keepMine()}>Keep my notes</Button><Button size="sm" variant="ghost" onClick={() => controller.useLatest()}>Load saved notes</Button></div>}
     {state.status === "error" && <Button size="sm" variant="outline" onClick={() => void controller.flush(true)}>Retry save</Button>}
     {source ? <Textarea aria-label="Meeting notes in Markdown" value={content} onChange={(event) => controller.edit({ content: event.target.value })} onBlur={() => void controller.flush()} className="min-h-72 text-base" />
