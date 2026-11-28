@@ -210,7 +210,6 @@ try {
   const shot = async (name: string) => writeFileSync(join(outDir, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).data, "base64"));
   const go = async (path: string) => { await send("Page.navigate", { url: `${p.BASE}${path}` }); await sleep(1_500); };
   const path = () => evaluate("location.pathname") as Promise<string>;
-  const savedState = () => evaluate(`document.querySelector("[data-save]")?.getAttribute("data-save") ?? ""`) as Promise<string>;
 
   // Light first (headless Chrome reports a dark system theme); dark at the end.
   await evaluate(`localStorage.setItem("perry.theme", "light"); true`);
@@ -242,7 +241,7 @@ try {
   await enter();
   await typeText("Sunscreen");
   await until(async () => String(noteRow(lisbon)?.content ?? "").includes("Sunscreen") && noteRow(lisbon)?.title === "Lisbon trip", "the note to save itself", 20);
-  await waitFor(`document.querySelector('[data-save="saved"]')`, "Saved under the title", 10_000).catch(() => {});
+  check("noteAutosaveStaysQuiet", await evaluate(`![...document.querySelectorAll('[data-save]')].some(el => /^(Saving|Saved)/.test(el.textContent.trim()))`));
   const first = noteRow(lisbon)!;
   notes.firstSave = { title: first.title, content: first.content, revision: first.revision };
   await shot("note-editor.png");

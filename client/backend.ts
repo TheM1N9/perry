@@ -54,6 +54,13 @@ type Subscription = {
   retainedBytes?: number;
   /** A value shown before the server confirms it (withOptimisticUpdate). */
   override?: { value: unknown };
+  optimisticBase?: { value: unknown };
+};
+
+type OptimisticUpdate = {
+  update: (store: ReturnType<BackendClient["optimisticStore"]>) => void;
+  queries: Set<Subscription>;
+  pending: boolean;
 };
 
 export const functionName = (ref: AnyFunction | string) => typeof ref === "string" ? ref : getFunctionName(ref);
@@ -61,6 +68,7 @@ const keyOf = (name: string, args: unknown) => `${name}\u0000${JSON.stringify(ar
 
 export class BackendClient {
   private subscriptions = new Map<string, Subscription>();
+  private optimisticUpdates = new Set<OptimisticUpdate>();
   private stream: AbortController | null = null;
   private closed = false;
   private readonly lifetime = new AbortController();
@@ -295,6 +303,7 @@ export class BackendClient {
   clearChatCache(error?: Error) {
     this.chatCacheGeneration++;
     clearTimeout(this.hoverTimer);
+    const optimistic = this.discardOptimisticUpdates();
     for (const [key, sub] of this.subscriptions) {
       if (!isChatPayload(sub.name)) continue;
       clearTimeout(sub.expiry);
@@ -314,6 +323,7 @@ export class BackendClient {
       if (!sub.listeners.size) this.subscriptions.delete(key);
       else this.notify(sub);
     }
+    for (const sub of optimistic) if (!isChatPayload(sub.name)) this.notify(sub);
   }
 
   /** Like Convex's onUpdate: call back with every new result until unsubscribed. */
@@ -380,7 +390,8 @@ export class BackendClient {
           sub.loaded = true;
           if (changed) sub.value = result.value;
           sub.retainedBytes = retainedChatBytes(sub.name, sub.args, result.value);
-          if (changed) this.notify(sub);
+          const optimistic = this.replayOptimisticUpdates();
+          if (changed && !optimistic.has(sub)) this.notify(sub);
         } catch (error) {
           if (revision !== sub.revision || this.closed) continue;
           if (controller.signal.aborted) continue;
@@ -420,6 +431,7 @@ export class BackendClient {
     // Inactive history is disposable. A write/reconnect must not resurrect a deleted,
     // rewound or newly redacted message; active ordinary updates keep their paint.
     const sensitive = wanted?.has("vault") || wanted?.has("secrets");
+    const optimistic = sensitive ? this.discardOptimisticUpdates() : [];
     if (sensitive) this.chatCacheGeneration++;
     for (const [key, sub] of this.subscriptions) {
       if (!(isChatHistory(sub.name) || (sensitive && isChatPayload(sub.name))) || (wanted && sub.reads !== null && !readsChanged(sub.reads, wanted) && !sensitive)) continue;
@@ -435,6 +447,7 @@ export class BackendClient {
         this.notify(sub);
       }
     }
+    for (const sub of optimistic) if (!isChatPayload(sub.name)) this.notify(sub);
     if (this.closed) return Promise.resolve();
     const due = [...this.subscriptions.values()].filter(sub => sub.listeners.size > 0
       && (!wanted || sub.reads === null || readsChanged(sub.reads, wanted) || (sensitive && isChatPayload(sub.name))));
@@ -453,26 +466,79 @@ export class BackendClient {
     return promise;
   }
 
-  /** For withOptimisticUpdate: read and replace a live query's value until the server answers. */
-  optimisticStore(overrides: Subscription[]) {
+  /** Overlapping writes replay against one frozen query value until that query's batch settles. */
+  beginOptimisticUpdate(update: OptimisticUpdate["update"]) {
+    const operation: OptimisticUpdate = { update, queries: new Set(), pending: true };
+    this.optimisticUpdates.add(operation);
+    try { this.replayOptimisticUpdates(); }
+    catch (error) { this.optimisticUpdates.delete(operation); this.replayOptimisticUpdates(); throw error; }
+    return (succeeded: boolean) => {
+      operation.pending = false;
+      if (!succeeded) this.optimisticUpdates.delete(operation);
+      this.replayOptimisticUpdates();
+    };
+  }
+
+  optimisticStore(operation: OptimisticUpdate) {
     return {
       getQuery: <Q extends FunctionReference<"query", any>>(ref: Q, args: FunctionArgs<Q>): FunctionReturnType<Q> | undefined =>
         this.snapshot(functionName(ref as AnyFunction), args).value as FunctionReturnType<Q> | undefined,
       setQuery: <Q extends FunctionReference<"query", any>>(ref: Q, args: FunctionArgs<Q>, value: FunctionReturnType<Q> | undefined) => {
         const sub = this.subscriptions.get(keyOf(functionName(ref as AnyFunction), args));
-        if (!sub) return;
+        if (!sub || (!operation.pending && !sub.optimisticBase)) return;
+        sub.optimisticBase ??= { value: sub.value };
         sub.override = { value };
-        overrides.push(sub);
-        this.notify(sub);
+        operation.queries.add(sub);
       },
     };
   }
 
-  clearOverrides(overrides: Subscription[]) {
-    for (const sub of overrides) {
-      delete sub.override;
-      this.notify(sub);
+  private replayOptimisticUpdates() {
+    const before = new Map([...this.subscriptions.values()].map(sub => [sub, {
+      value: sub.override ? sub.override.value : sub.value,
+      loaded: sub.override ? true : sub.loaded,
+      error: sub.override ? undefined : sub.error,
+      override: sub.override,
+    }]));
+    const touched = new Set<Subscription>();
+    for (const sub of this.subscriptions.values()) {
+      if (!sub.optimisticBase) continue;
+      touched.add(sub);
+      const pending = [...this.optimisticUpdates].some(operation => operation.pending && operation.queries.has(sub));
+      if (pending) sub.override = { value: sub.optimisticBase.value };
+      else { delete sub.optimisticBase; delete sub.override; }
     }
+    for (const operation of this.optimisticUpdates) {
+      if (!operation.pending && ![...operation.queries].some(sub => sub.optimisticBase && this.subscriptions.get(keyOf(sub.name, sub.args)) === sub)) {
+        this.optimisticUpdates.delete(operation);
+        continue;
+      }
+      operation.update(this.optimisticStore(operation));
+      for (const sub of operation.queries) if (this.subscriptions.get(keyOf(sub.name, sub.args)) === sub) touched.add(sub);
+    }
+    const changed = new Set<Subscription>();
+    for (const sub of touched) {
+      const previous = before.get(sub)!;
+      const value = sub.override ? sub.override.value : sub.value;
+      if (previous.loaded === (sub.override ? true : sub.loaded) && previous.error === (sub.override ? undefined : sub.error)
+        && JSON.stringify(previous.value) === JSON.stringify(value)) {
+        if (sub.override) sub.override = previous.override ?? { value: previous.value };
+      } else changed.add(sub);
+    }
+    for (const sub of changed) this.notify(sub);
+    return touched;
+  }
+
+  private discardOptimisticUpdates() {
+    this.optimisticUpdates.clear();
+    const changed: Subscription[] = [];
+    for (const sub of this.subscriptions.values()) {
+      if (!sub.optimisticBase) continue;
+      delete sub.optimisticBase;
+      delete sub.override;
+      changed.push(sub);
+    }
+    return changed;
   }
 
   // --- The change stream --------------------------------------------------------------
@@ -547,6 +613,7 @@ export class BackendClient {
     for (const sub of this.subscriptions.values()) { clearTimeout(sub.expiry); clearTimeout(sub.retry); }
     this.stream?.abort();
     this.stream = null;
+    this.optimisticUpdates.clear();
     this.subscriptions.clear();
   }
 }

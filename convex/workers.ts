@@ -73,7 +73,7 @@ export const accept = internalMutation({
       `----- worker result -----\n${input.text}\n----- end of worker result -----`,
     ].join("\n\n");
     await ctx.db.patch(chat._id, { lastMessageAt: Date.now(), ...(channel === "web" ? { pendingTurns: (chat.pendingTurns ?? 0) + 1 } : {}) });
-    const turnId = await ctx.runMutation(internal.codex.prepareTurn, { conversationId: chat._id, prompt });
+    const turnId = await ctx.runMutation(internal.codex.prepareTurn, { conversationId: chat._id, prompt, hidden: true });
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel, externalId: chat.externalId, text: prompt,
       preparingId: turnId, hidden: true, outside: true, policy: "steer", label: `Worker finished: ${input.name}` });
     await ctx.db.insert("workerEvents", { eventId: input.eventId, fingerprint, name: input.name, result: input.result,

@@ -14,13 +14,13 @@ const p = await perry({ name: "todo-feedback", outDir: output, engine: "codex", 
 } });
 const { BASE, KEY, check, notes, until } = p;
 let connected: any, page: any, browser: Awaited<ReturnType<typeof p.openBrowser>> | undefined;
-type Gate = { path: string; fail: boolean; entered: boolean; release: () => void; ready: Promise<void> };
+type Gate = { path: string; fail: boolean; before: boolean; entered: boolean; release: () => void; ready: Promise<void> };
 const gates: Gate[] = [], allGates: Gate[] = [];
 const calls: Array<{ path: string; args: Record<string, any> }> = [];
-const gate = (path: string, fail = false) => {
+const gate = (path: string, fail = false, before = false) => {
   let release!: () => void;
   const ready = new Promise<void>(done => { release = done; });
-  const item = { path, fail, entered: false, release, ready };
+  const item = { path, fail, before, entered: false, release, ready };
   gates.push(item); allGates.push(item); return item;
 };
 const input = () => page.getByRole("textbox", { name: "Add a to-do", exact: true });
@@ -32,7 +32,11 @@ const completed = (title: string) => success(`Completed “${title}”`);
 const todos = () => p.rows("todos");
 const byTitle = (title: string) => todos().filter(row => row.title === title);
 const one = (title: string) => { const found = byTitle(title); assert.equal(found.length, 1, title); return found[0]; };
-const response = (path: string) => page.waitForResponse((reply: any) => reply.url().endsWith("/api/backend/call") && reply.request().postDataJSON()?.path === path);
+const response = (path: string) => {
+  const pending = page.waitForResponse((reply: any) => reply.url().endsWith("/api/backend/call") && reply.request().postDataJSON()?.path === path);
+  void pending.catch(() => {});
+  return pending;
+};
 const enter = async (text: string) => { await input().fill(text); await input().press("Enter"); };
 const add = async (text: string, title = text, pointer = true) => {
   await input().fill(text); const reply = response("todos:add");
@@ -62,20 +66,29 @@ try {
     const index = gates.findIndex(item => item.path === body.path);
     if (index < 0) return route.continue();
     const item = gates.splice(index, 1)[0];
-    const reply = item.fail ? null : await route.fetch();
-    item.entered = true;
     const timer = setTimeout(item.release, 20_000);
-    try { await item.ready; } finally { clearTimeout(timer); }
+    let reply: any;
+    try {
+      if (item.before) { item.entered = true; await item.ready; }
+      reply = item.fail ? null : await route.fetch();
+      item.entered = true;
+      if (!item.before) await item.ready;
+    } finally { clearTimeout(timer); }
     return reply ? route.fulfill({ response: reply }) : route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Synthetic save failure. Retry your to-do." }) });
   });
+  const initialBoard = overlapOnly ? undefined : gate("todos:board", false, true);
   await page.goto(`${BASE}/todos`); await input().waitFor();
   notes.build = readFileSync(join(REPO, ".next/BUILD_ID"), "utf8").trim();
 
   const overlap = async () => {
     const a = gate("todos:add", true), b = gate("todos:add", true);
     await enter("Unsent alpha draft"); await until(() => a.entered, "first held addition");
-    await enter("Unsent beta draft"); await until(() => b.entered, "second held addition");
+    await input().fill("Unsent beta draft"); await input().press("Enter");
+    assert.equal(b.entered, false, "one admission at a time while newer typing stays available");
     const ra = response("todos:add"); a.release(); await ra;
+    await until(async () => !await form().getAttribute("aria-busy"), "first failed addition settled");
+    assert.equal(await input().inputValue(), "Unsent beta draft");
+    await input().press("Enter"); await until(() => b.entered, "second failed addition");
     const rb = response("todos:add"); b.release(); await rb;
     await until(async () => !await form().getAttribute("aria-busy"), "failed additions settled");
     const text = await page.locator("body").innerText(), draft = await input().inputValue();
@@ -83,9 +96,22 @@ try {
     assert.ok(`${draft}\n${text}`.includes("Unsent alpha draft") && `${draft}\n${text}`.includes("Unsent beta draft"), "both failed submissions must remain visible for recovery");
     assert.equal(byTitle("Unsent alpha draft").length + byTitle("Unsent beta draft").length, 0);
     check("bothOverlappingFailedDraftsHaveVisibleRecovery", true);
+    await form().getByRole("button", { name: "Dismiss failed to-do “Unsent alpha draft”", exact: true }).click();
+    assert.equal(await form().getByRole("alert").filter({ hasText: "Unsent alpha draft" }).count(), 0);
+    assert.equal(await form().getByRole("alert").filter({ hasText: "Unsent beta draft" }).count(), 1);
+    assert.equal(await input().inputValue(), "Unsent beta draft");
+    check("failedCapturesHaveExplicitDismissalWithoutErasingOtherDrafts", true);
   };
   if (overlapOnly) await overlap();
   else {
+    await until(() => initialBoard!.entered, "initial board query held before admission");
+    const initialAdd = gate("todos:add");
+    await enter("Capture while board loads"); await until(() => initialAdd.entered, "add committed before initial board query");
+    initialBoard!.release(); await doneBox("Capture while board loads").waitFor();
+    assert.equal(await doneBox("Capture while board loads").count(), 1, "late initial snapshot must not receive a second provisional row");
+    const initialReply = response("todos:add"); initialAdd.release(); await initialReply; await added("Capture while board loads").waitFor();
+    assert.equal(byTitle("Capture while board loads").length, 1);
+    check("addBeforeInitialBoardLoadsDoesNotDuplicateServerRow", true);
     assert.equal(await addButton().isDisabled(), true);
     const startAdds = calls.filter(call => call.path === "todos:add").length;
     await input().press("Enter");
@@ -120,42 +146,57 @@ try {
     const pending = gate("todos:add");
     await enter("Pending appointment tomorrow 9am"); await until(() => pending.entered, "committed addition with held acknowledgement");
     const pendingCalls = calls.filter(call => call.path === "todos:add").length;
-    assert.equal(await input().inputValue(), "Pending appointment tomorrow 9am");
-    assert.equal(await input().evaluate((element: HTMLInputElement) => element.readOnly), true);
+    assert.equal(await input().inputValue(), "");
+    assert.equal(await input().evaluate((element: HTMLInputElement) => element.readOnly), false);
     assert.equal(await input().evaluate((element: HTMLInputElement) => document.activeElement === element), true);
     assert.equal(await addButton().isDisabled(), true);
-    assert.equal(await form().getByRole("button", { name: "Use text only", exact: true }).isDisabled(), true);
-    await form().locator('[aria-live="polite"]').getByText("Saving…", { exact: true }).waitFor();
-    await page.keyboard.type("should not alter pending draft"); await page.keyboard.press("Enter");
-    assert.equal(await input().inputValue(), "Pending appointment tomorrow 9am");
+    assert.equal(await form().getByText("Saving…", { exact: true }).count(), 0);
+    await doneBox("Pending appointment").waitFor();
+    assert.equal(await doneBox("Pending appointment").isDisabled(), true, "provisional ids cannot be sent to server actions");
+    await page.keyboard.type("Follow-up capture"); await page.keyboard.press("Enter");
+    assert.equal(await input().inputValue(), "Follow-up capture");
     assert.equal(await input().evaluate((element: HTMLInputElement) => document.activeElement === element), true);
     assert.equal(calls.filter(call => call.path === "todos:add").length, pendingCalls);
     assert.equal(await added("Pending appointment").count(), 0);
-    check("heldAddKeepsDraftAndLocksNativeControlsAgainstOverlap", true);
+    check("heldAddAppearsImmediatelyAndKeepsNewTypingWithoutSavingLabel", true);
     reply = response("todos:add"); pending.release(); await reply; await added("Pending appointment").waitFor();
-    await until(async () => await input().inputValue() === "" && !await input().evaluate((element: HTMLInputElement) => element.readOnly), "addition acknowledged");
+    await until(async () => !await form().getAttribute("aria-busy"), "addition acknowledged");
     assert.equal(await input().evaluate((element: HTMLInputElement) => document.activeElement === element), true);
-    await page.keyboard.type("Follow-up capture"); assert.equal(await input().inputValue(), "Follow-up capture");
+    assert.equal(await input().inputValue(), "Follow-up capture");
+    assert.equal(await doneBox("Pending appointment").isEnabled(), true);
     assert.equal(byTitle("Pending appointment").length, 1);
-    check("confirmedAddClearsDraftAndUnlocksExactlyOnce", true);
+    check("confirmedAddKeepsNewerDraftAndReplacesProvisionalIdExactlyOnce", true);
 
     const failedLiteral = "Failed audit tomorrow 9am";
     await input().fill(failedLiteral); await form().getByRole("button", { name: "Use text only", exact: true }).click();
     const failedAdd = gate("todos:add", true); await addButton().click(); await until(() => failedAdd.entered, "failed add held");
     reply = response("todos:add"); failedAdd.release(); assert.equal((await reply).status(), 503);
-    await form().getByText("Synthetic save failure. Retry your to-do.", { exact: true }).waitFor();
+    await form().getByRole("alert").filter({ hasText: "Synthetic save failure. Retry your to-do." }).waitFor();
     assert.equal(await input().inputValue(), failedLiteral); assert.equal(await input().isEnabled(), true);
     assert.equal(byTitle(failedLiteral).length, 0); assert.equal(await added(failedLiteral).count(), 0);
     reply = response("todos:add"); await addButton().click(); await reply; await added(failedLiteral).waitFor();
     assert.equal(one(failedLiteral).dueAt, undefined); assert.equal(one(failedLiteral).repeat, undefined);
     check("failedAddKeepsExactLiteralDraftAndRetryChoice", true);
 
+    const overlapAdd = gate("todos:add"), overlapDone = gate("todos:setDone");
+    await enter("Overlapping board update"); await until(() => overlapAdd.entered, "held add before another mutation");
+    await doneBox(timed.title).click(); await until(() => overlapDone.entered, "held completion beside add");
+    const putBack = page.getByRole("checkbox", { name: `Put back “${timed.title}”`, exact: true });
+    await putBack.waitFor(); assert.equal(await putBack.isChecked(), true);
+    reply = response("todos:add"); overlapAdd.release(); await reply; await added("Overlapping board update").waitFor();
+    assert.equal(await putBack.isChecked(), true, "settling the earlier add must retain the later completion");
+    reply = response("todos:setDone"); overlapDone.release(); await reply; await completed(timed.title).waitFor();
+    assert.equal(byTitle("Overlapping board update").length, 1); assert.ok(one(timed.title).doneAt);
+    check("overlappingBoardMutationsRetainLaterOptimisticUpdate", true);
+
     const failedDone = gate("todos:setDone", true);
     await doneBox(ordinary.title).click(); await until(() => failedDone.entered, "failed completion held");
+    await page.getByRole("checkbox", { name: `Put back “${ordinary.title}”`, exact: true }).waitFor();
     assert.equal(await completed(ordinary.title).count(), 0);
     reply = response("todos:setDone"); failedDone.release(); assert.equal((await reply).status(), 503);
     await page.locator('[data-sonner-toast][data-type="error"]').filter({ hasText: "Synthetic save failure" }).waitFor();
     assert.equal(one(ordinary.title).doneAt, undefined); assert.equal(await completed(ordinary.title).count(), 0);
+    await doneBox(ordinary.title).waitFor();
     check("failedCompletionReportsErrorWithoutSuccessOrUndo", true);
 
     const heldDone = gate("todos:setDone");
@@ -166,6 +207,24 @@ try {
     reply = response("todos:setDone"); await completed(ordinary.title).getByRole("button", { name: "Undo", exact: true }).click(); await reply;
     await doneBox(ordinary.title).waitFor(); assert.equal(one(ordinary.title)._id, ordinary._id); assert.equal(one(ordinary.title).doneAt, undefined);
     check("ordinaryCompletionUndoRestoresSameTodo", true);
+
+    const failedRemove = gate("todos:remove", true);
+    await page.getByRole("button", { name: `Remove “${literalRepeat}”`, exact: true }).click(); await until(() => failedRemove.entered, "failed removal held");
+    assert.equal(await doneBox(literalRepeat).count(), 0);
+    reply = response("todos:remove"); failedRemove.release(); await reply; await doneBox(literalRepeat).waitFor();
+    assert.equal(byTitle(literalRepeat).length, 1);
+    check("optimisticRemovalRollsBackWithoutLosingTodo", true);
+
+    const failedRepeat = gate("todos:setRepeat", true);
+    await page.getByRole("button", { name: `Make “${ordinary.title}” repeat`, exact: true }).click();
+    await page.getByRole("menuitemradio", { name: "Every day", exact: true }).click(); await until(() => failedRepeat.entered, "failed repeat held");
+    await doneBox(ordinary.title).locator("xpath=ancestor::li").getByRole("button", { name: /Repeats daily: change/i }).waitFor();
+    reply = response("todos:setRepeat"); failedRepeat.release(); await reply;
+    await page.getByRole("button", { name: `Make “${ordinary.title}” repeat`, exact: true }).waitFor();
+    await page.locator('[data-sonner-toast][data-type="error"]').filter({ hasText: "Couldn't change the repeat" }).waitFor();
+    assert.equal(one(ordinary.title).repeat, undefined);
+    await page.keyboard.press("Escape");
+    check("optimisticRepeatRollsBackAndReportsFailure", true);
 
     reply = response("todos:setDone"); await doneBox(recurring.title).click(); await reply; await completed(recurring.title).waitFor();
     await completed(recurring.title).getByText("Its next occurrence is on your list.", { exact: true }).waitFor();
@@ -218,7 +277,7 @@ try {
     await openPet(); await input().waitFor();
     const petFailedAdd = gate("todos:add", true); await enter("Pet unsaved draft"); await until(() => petFailedAdd.entered, "pet add failure held");
     reply = response("todos:add"); petFailedAdd.release(); await reply;
-    await form().getByText("Synthetic save failure. Retry your to-do.", { exact: true }).waitFor();
+    await form().getByRole("alert").filter({ hasText: "Synthetic save failure. Retry your to-do." }).waitFor();
     assert.equal(await input().inputValue(), "Pet unsaved draft"); assert.equal(byTitle("Pet unsaved draft").length, 0);
     assert.equal(await page.getByText("Got it: Pet unsaved draft", { exact: true }).count(), 0);
     await noOverflow(); notes.petViewport = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth }));

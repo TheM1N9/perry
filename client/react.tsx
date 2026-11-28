@@ -65,12 +65,14 @@ export function useMutation<M extends Mutation>(mutation: M) {
   return useMemo(() => {
     const make = (optimistic?: (store: OptimisticStore, args: FunctionArgs<M>) => void) => {
       const run = async (args: FunctionArgs<M>): Promise<FunctionReturnType<M>> => {
-        const overrides: Parameters<BackendClient["optimisticStore"]>[0] = [];
-        if (optimistic) optimistic(client.optimisticStore(overrides), args);
+        const settle = optimistic ? client.beginOptimisticUpdate(store => optimistic(store, args)) : undefined;
+        let succeeded = false;
         try {
-          return await client.mutation(name as unknown as M, args);
+          const result = await client.mutation(name as unknown as M, args);
+          succeeded = true;
+          return result;
         } finally {
-          client.clearOverrides(overrides);
+          settle?.(succeeded);
         }
       };
       return Object.assign(run, {

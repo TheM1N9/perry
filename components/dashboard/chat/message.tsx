@@ -3,7 +3,7 @@
 import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
 import { Fragment, memo, type ReactNode } from "react";
-import type { ChatAgent, QueuedTurn } from "@/convex/dashboard";
+import type { ChatAgent, ChatMessage as ServerMessage, QueuedTurn } from "@/convex/dashboard";
 import { STARTING } from "@/convex/lib/activity";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ import { QueueRemoveButton } from "./queue-remove-button";
 import { LiveWork, Spinner, WorkSummary, type Turn } from "./work";
 import { ReactionBadges, ReactionPicker } from "./reactions";
 
-export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedTurn; memories?: Array<{ id: string; text: string }>; reactions?: { owner?: string; perry?: string } };
+export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedTurn; steer?: ServerMessage["steer"]; memories?: Array<{ id: string; text: string }>; reactions?: { owner?: string; perry?: string } };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -141,18 +141,17 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
   );
 }
 
-/** A message you sent, before the server lists it; "Sending…" until the server has taken it. */
-export function PendingRow({ text, attachments, sent, skills }: { text: string; attachments: Attachment[]; sent: boolean; skills?: ReadonlySet<string> }) {
+/** Show the message immediately while admission and preparation run in the background. */
+export function PendingRow({ text, attachments, skills }: { text: string; attachments: Attachment[]; skills?: ReadonlySet<string> }) {
   return (
     <Message align="end" data-role="user" data-pending>
       <MessageContent className="gap-1">
-        <Bubble align="end" variant="muted" className={cn("max-w-[85%]", !sent && "opacity-70")}>
+        <Bubble align="end" variant="muted" className="max-w-[85%]">
           <BubbleContent className="rounded-3xl px-4 py-2.5 text-md [overflow-wrap:anywhere]">
             <Markdown text={text} skills={skills} />
             <AttachmentList attachments={attachments} align="end" />
           </BubbleContent>
         </Bubble>
-        {!sent && <MessageFooter className="px-0 font-normal" role="status">Sending…</MessageFooter>}
       </MessageContent>
     </Message>
   );

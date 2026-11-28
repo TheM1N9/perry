@@ -19,6 +19,12 @@ calling a paid engine. Each run writes result.json to its supplied output folder
   and the same event can be retried once admission succeeds.
 - Queued preparation survives restart; completion includes the result's actual
   text, its path, worker name and reporting question with outside provenance.
+- Hidden worker and task-result prompts must never appear as owner messages in
+  dashboard history, including reserved preparation, pending/applied steering,
+  engine-declined queue fallback, and a durable handoff missing its hidden flag.
+  Ordinary owner requests must remain visible, with their own run id, and owner
+  updates must identify their target reply and distinguish preparation, waiting
+  for the runner and an acknowledged steer.
 - Shell quotes/spaces/metacharacters survive the generated last-step command.
 - Receipt reads can fail after HTTP headers; retry the same accepted event.
 - Mixed job/task origins and cycles must reach an owner destination. Commands

@@ -153,17 +153,18 @@ export function useAutosave({ draftKey, saved, save, pause = PAUSE }: { draftKey
   };
 }
 
-/** The quiet line under a field that saves itself: Saving…, Saved, or what went wrong and a way to try again. */
+/** Autosaves are quiet; show only guidance, recovered drafts or a failure that needs attention. */
 export function SaveStatus({ state, onRetry, className, idle }: { state: SaveState; onRetry: () => void; className?: string; idle?: string }) {
-  const words = state.status === "saving" ? "Saving…" : state.status === "saved" ? "Saved" : state.status === "idle" ? idle : undefined;
+  const attention = state.status === "recovered" || state.status === "error";
+  if (!attention && !idle) return null;
   return (
-    <p className={cn("min-h-5 text-xs text-muted-foreground", state.status === "error" && "text-destructive", className)} role="status" aria-live="polite" data-save={state.status}>
+    <p className={cn("min-h-5 text-xs text-muted-foreground", state.status === "error" && "text-destructive", className)} role={attention ? "status" : undefined} aria-live={attention ? "polite" : undefined} data-save={state.status}>
       {state.status === "recovered" ? <>Recovered an unsaved draft. <button type="button" className="font-medium underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50" onClick={onRetry}>Save draft</button></> : state.status === "error" ? (
         <>
           Couldn&apos;t save: {state.error}{" "}
           <button type="button" className="font-medium underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50" onClick={onRetry}>Try again</button>
         </>
-      ) : words}
+      ) : idle}
     </p>
   );
 }

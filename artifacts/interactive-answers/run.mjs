@@ -307,11 +307,11 @@ try {
       release();
       await until(async () => (await list())[0].values.usage === newer && await usage.inputValue() === String(newer), `newer typing retained after ${operation} response`);
     } finally { release(); await page.unroute("**/api/backend/call"); }
-    await card.getByText("Saved draft", { exact: true }).waitFor();
+    assert.equal(await card.getByText("Saved draft", { exact: true }).count(), 0);
   }
   await usage.fill("32");
   await until(async () => (await list())[0].values.usage === 32, "restore selected input after Undo race");
-  await card.getByText("Saved draft", { exact: true }).waitFor();
+  assert.equal(await card.getByText("Saved draft", { exact: true }).count(), 0);
   const downloadEvent = page.waitForEvent("download");
   await card.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menuitem", { name: "Export CSV", exact: true }).click();

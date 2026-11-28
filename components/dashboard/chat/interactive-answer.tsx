@@ -131,7 +131,7 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
   const report = useMutation(api.interactive.report);
   const [base, setBase] = useState(artifact);
   const [values, setValues] = useState(artifact.values);
-  const [notice, setNotice] = useState("Saved draft");
+  const [notice, setNotice] = useState("");
   const [conflict, setConflict] = useState(false);
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
@@ -181,7 +181,7 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
   }, [artifact, base.revision, dirty]);
   async function persist(operation: "save" | "reset" | "undo") {
     if (saving.current || conflict || sending || base.lifecycle === "answered") return;
-    saving.current = true; setSaveBusy(true); setNotice("Saving draft…");
+    saving.current = true; setSaveBusy(true); setNotice("");
     const sent = values;
     try {
       const result = await save({ key, id: base.id, conversationId: base.conversationId, expectedRevision: base.revision, requestId: randomUUID(), operation, values: JSON.stringify(sent) });
@@ -190,7 +190,7 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
         const unchanged = same(currentValues.current, sent);
         setBase(result.artifact);
         if (unchanged) setValues(result.artifact.values);
-        setNotice(unchanged ? "Saved draft" : "Unsaved changes");
+        setNotice("");
       }
     } catch (error) { setNotice(`Save failed: ${error instanceof Error ? error.message : String(error)}. Your inputs are still here.`); }
     finally { saving.current = false; setSaveBusy(false); }
@@ -228,7 +228,7 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
             </RadioGroup>
           </div> : <Control key={input.id} scope={artifact.id} input={input} value={values[input.id]} onChange={(value) => change(input.id, value)} />)}
         </fieldset>
-        <p className={`text-xs ${conflict || notice.includes("failed") ? "text-destructive" : "text-muted-foreground"}`} role={conflict || notice.includes("failed") ? "alert" : "status"}>{notice}</p>
+        {notice && <p className={`text-xs ${conflict || notice.includes("failed") ? "text-destructive" : "text-muted-foreground"}`} role={conflict || notice.includes("failed") ? "alert" : "status"}>{notice}</p>}
         {conflict && <Button type="button" variant="outline" size="sm" onClick={() => { setBase(artifact); setValues(artifact.values); setConflict(false); setNotice("Loaded latest question"); }}>Load latest question</Button>}
         <Button type="submit" className="min-h-11" disabled={!hasAnswer || sending || saveBusy || conflict} aria-busy={sending || undefined}>{sending && <Spinner />}{sending ? "Sending…" : "Send answer"}</Button>
       </form>}
@@ -253,9 +253,9 @@ export function InteractiveAnswer({ artifact }: { artifact: Artifact }) {
       </Collapsible>
     </div>
     <div className="flex items-center justify-between gap-3 border-t pt-3">
-      <p className={`text-xs ${conflict || notice.includes("failed") ? "text-destructive" : "text-muted-foreground"}`} role="status">{notice}</p>
+      {notice && <p className={`text-xs ${conflict || notice.includes("failed") ? "text-destructive" : "text-muted-foreground"}`} role={conflict || notice.includes("failed") ? "alert" : "status"}>{notice}</p>}
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${def.title}`} />}><MoreHorizontal /></DropdownMenuTrigger>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="ml-auto" aria-label={`Actions for ${def.title}`} />}><MoreHorizontal /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-40">
           <DropdownMenuItem disabled={conflict || saveBusy} onClick={() => void persist("save")}>Save draft</DropdownMenuItem>
           <DropdownMenuItem disabled={conflict || saveBusy} onClick={() => void persist("reset")}>Reset</DropdownMenuItem>

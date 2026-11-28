@@ -163,8 +163,6 @@ try {
   const shot = async (name: string) => writeFileSync(join(outDir, name), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).data, "base64"));
   const go = async (path: string) => { await send("Page.navigate", { url: `${p.BASE}${path}` }); await sleep(1_500); };
   const path = () => evaluate("location.pathname") as Promise<string>;
-  /** The instructions save as they are typed (#183): the line under them says Saved once they have. */
-  const saved = (what: string) => waitFor(`[...document.querySelectorAll('[data-save="saved"]')].some((el) => el.textContent.trim() === "Saved")`, what, 20_000);
 
   await click('[data-sidebar="group-action"]', "New project");
   await waitFor(`document.querySelector('[aria-label="Project name"]')`, "the new project dialog");
@@ -174,9 +172,9 @@ try {
   const project = (await path()).split("/").pop()!;
   await waitFor(`document.querySelector("#project-instructions")`, "the instructions editor");
   await type("#project-instructions", "Scripts for the Hackonomics YouTube channel. Short punchy sentences. Sign off every script with STAYCURIOUS-7.");
-  await saved("the instructions to say Saved");
   await until(async () => (await call<{ instructions: string } | null>("projects:get", { key: KEY, id: project }))?.instructions.includes("STAYCURIOUS-7") ?? false, "the instructions to save", 20);
   const made = await call<{ name: string; instructions: string }>("projects:get", { key: KEY, id: project });
+  check("instructionsSaveQuietly", await evaluate(`![...document.querySelectorAll('[data-save]')].some(el => /^(Saving|Saved)/.test(el.textContent.trim()))`));
   check("projectMadeFromSidebar", made.name === "Hackonomics scripts" && made.instructions.includes("STAYCURIOUS-7"), { name: made.name, instructions: made.instructions });
 
   // --- 2. A new chat inside the project, from its page -----------------------------------------------------------
@@ -214,7 +212,6 @@ try {
   await go(`/projects/${project}`);
   await waitFor(`document.querySelector("#project-instructions")`, "the instructions editor again");
   await type("#project-instructions", "Scripts for the Hackonomics YouTube channel. Short punchy sentences. Sign off every script with STAYBOLD-9.");
-  await saved("the edit to say Saved");
   await until(async () => (await call<{ instructions: string }>("projects:get", { key: KEY, id: project })).instructions.includes("STAYBOLD-9"), "the edit to save", 20);
   await exchange(chatA, "Now write the outro");
   const edited = contextOf("Now write the outro");
@@ -372,7 +369,6 @@ try {
   await go(`/projects/${project}`);
   await waitFor(`document.querySelector("#project-instructions")`, "the instructions editor, a third time");
   await type("#project-instructions", "Scripts for the Hackonomics YouTube channel. Short punchy sentences. Sign off every script with STAYBOLD-9. Keep it under ten minutes.");
-  await saved("the edited instructions to say Saved");
   check("instructionsStillAutosave", await until(async () => (await call<{ instructions: string } | null>("projects:get", { key: KEY, id: project }))?.instructions.includes("under ten minutes") ?? false, "the instructions to save again", 20).then(() => true, () => false));
   // Light and dark, the project's page and Brain, with this computer's name masked.
   const machine = hostname();

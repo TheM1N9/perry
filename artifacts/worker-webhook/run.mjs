@@ -35,6 +35,10 @@ try {
   const insert = (table, doc) => runtime.exclusive(() => runtime.store.insert(table, doc));
   const patch = (id, doc) => runtime.exclusive(() => runtime.store.patch(id, doc));
   const rows = table => runtime.exclusive(() => runtime.store.query(table).collect());
+  const messages = async conversationId => (await call("dashboard:getChatMessages", {
+    key: process.env.DASHBOARD_KEY, id: conversationId, paginationOpts: { cursor: null, numItems: 100 },
+  })).page;
+  const noWorkerMessage = async () => assert.ok(!(await messages(chat)).some(message => message.text.includes("----- worker result -----")), "internal worker prompt must never be a user message");
   let dropNextReply = false;
   let truncateNextReply = false;
   server = createServer(async (req, res) => {
@@ -122,6 +126,8 @@ try {
     const turns = await rows("codexTurns");
     assert.equal(turns.length, 1);
     assert.ok(turns[0].preparing);
+    assert.equal(turns[0].hidden, true);
+    await noWorkerMessage();
     assert.ok(turns[0].prompt.includes(readFileSync(result, "utf8")));
     assert.ok(turns[0].prompt.includes(JSON.stringify(result)));
     const handoff = sql.prepare("SELECT args FROM _scheduled WHERE name = 'brain:handleTurn'").all();
@@ -139,6 +145,7 @@ try {
     assert.equal((await post(request, registration.token)).body.duplicate, true);
     assert.equal((await post({ ...request, text: "changed" }, registration.token)).status, 409);
     assert.equal((await rows("codexTurns")).length, 1);
+    await noWorkerMessage();
     assert.equal(sql.prepare("SELECT count(*) AS n FROM _scheduled WHERE name = 'brain:handleTurn'").get().n, 1);
   });
   await check("missing and oversized files fail CLI without posting", async () => {
@@ -177,6 +184,7 @@ try {
     const turn = (await rows("codexTurns")).find(item => item._id === first.preparingId);
     assert.equal(turn.preparing, undefined);
     assert.ok(turn.outsideAt);
+    await noWorkerMessage();
     const claimed = await call("codex:claimTurn", { token: runnerToken, id: turn._id });
     assert.ok(claimed, "completion should be claimable by real runner");
     assert.ok(claimed.prompt.includes(readFileSync(result, "utf8")));
@@ -185,12 +193,16 @@ try {
     assert.equal(busy.status, 200);
     const queued = (await rows("codexTurns")).find(item => item._id === busy.body.turnId);
     assert.equal(queued.steerTarget, turn._id, "worker should join the busy parent");
+    assert.equal(queued.hidden, true);
+    await noWorkerMessage();
     assert.equal((await call("codex:claimTurn", { token: runnerToken, id: queued._id })), null);
     const busyArgs = sql.prepare("SELECT args FROM _scheduled WHERE name = 'brain:handleTurn'").all().map(row => JSON.parse(row.args)).find(args => args.preparingId === queued._id);
     await call("brain:handleTurn", busyArgs);
     const steer = (await rows("codexSteers")).find(item => item.runId === queued.runId);
     assert.ok(steer.hidden && steer.outsideAt);
+    await noWorkerMessage();
     await call("codex:ackSteer", { token: runnerToken, id: steer._id, applied: true });
+    await noWorkerMessage();
     assert.equal(await call("codex:outwardAllowed", { turnId: turn._id }), false);
     assert.equal((await call("codex:getTurn", { id: turn._id })).steers.length, 0, "worker report must not become an owner message");
     const fallback = await post({ ...body, eventId: "steer-fallback", chat }, null, { "x-perry-key": process.env.DASHBOARD_KEY });
@@ -201,6 +213,27 @@ try {
     await call("codex:ackSteer", { token: runnerToken, id: fallbackSteer._id, applied: false, error: "Engine cannot steer" });
     const queuedAgain = (await rows("codexTurns")).find(item => item.runId === fallbackTurn.runId);
     assert.ok(queuedAgain.hidden && queuedAgain.outsideAt, "queued fallback must keep provenance");
+    await noWorkerMessage();
+  });
+  await check("owner message delivery metadata follows real preparation and runner acknowledgement", async () => {
+    const current = (await rows("codexTurns")).find(item => item.conversationId === chat && item.status === "running");
+    const own = await call("codex:prepareTurn", { conversationId: chat, prompt: "An owner update" });
+    const reservation = (await rows("codexTurns")).find(item => item._id === own);
+    const projected = async () => (await messages(chat)).find(message => message.text === "An owner update");
+    assert.equal((await projected()).runId, reservation.runId);
+    assert.deepEqual((await projected()).steer, { runId: current.runId, status: "preparing" });
+    const id = await call("codex:enqueueTurn", { conversationId: chat, runId: reservation.runId, prompt: reservation.prompt,
+      instructions: "Synthetic owner update", engine: "codex", policy: "steer", preparingId: own });
+    assert.deepEqual((await projected()).steer, { runId: current.runId, status: "pending" });
+    await call("codex:ackSteer", { token: "synthetic-worker-runner", id, applied: true });
+    assert.deepEqual((await projected()).steer, { runId: current.runId, status: "applied" });
+    const hidden = await call("codex:prepareTurn", { conversationId: chat, prompt: "Quiet task result", hidden: true });
+    const reserved = (await rows("codexTurns")).find(item => item._id === hidden);
+    assert.ok(!(await messages(chat)).some(message => message.text === reserved.prompt));
+    const handedOff = await call("codex:enqueueTurn", { conversationId: chat, runId: reserved.runId, prompt: reserved.prompt,
+      instructions: "Synthetic task report", engine: "codex", policy: "steer", preparingId: hidden });
+    assert.equal((await rows("codexSteers")).find(item => item._id === handedOff).hidden, true, "reservation owns the hidden provenance");
+    assert.ok(!(await messages(chat)).some(message => message.text === reserved.prompt));
   });
   await check("deleted origin falls back to owner's main channel", async () => {
     await patch(installation, { claimedAt: Date.now(), ownerChannel: "telegram", ownerExternalId: "12345" });

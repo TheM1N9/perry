@@ -71,11 +71,10 @@ const workKey = (work: Turn) => work.runId;
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
 /**
- * A message you sent, shown before the server has it: `sent` once sendChat
- * returns, after which the server lists it as pending until its reply saves it.
+ * A message shown immediately, until the server lists it in preparation or history.
  * `queued`: sent with Queue, so it waits under Up next, not in the conversation.
  */
-type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean; sent: boolean; queued?: boolean };
+type Pending = { id: ChatId; requestId: string; text: string; attachments: Attachment[]; baselineCount: number; duringReply: boolean; queued?: boolean };
 /** A queued message being edited in the composer, and the draft the composer had before, given back after. */
 type QueueEdit = { id: Id<"codexTurns">; conversationId: ChatId; stash: string };
 
@@ -269,29 +268,28 @@ export function ChatScreen() {
     if (selectedId && chat && !chat.isRunning) void markSeen({ key: dashboardKey, id: selectedId }).catch(() => {});
   }, [selectedId, Boolean(chat), chat?.isRunning, dashboardKey, markSeen]);
 
-  // A message you sent stops being shown from here once the server lists it (as pending, or in the history),
-  // or once the reply it started or joined has come and gone.
+  // A message you sent stops being shown from here once the server lists it (as pending, or in the history).
+  // Delivery is reconciled against the server's messages, never just a change in the running flag.
   useEffect(() => {
     setPending((items) => {
-      const next = items.filter((item) => item.id !== selectedId
-        || messages.filter((message) => message.role === "user" && message.text === item.text).length <= item.baselineCount);
-      return next.length === items.length ? items : next;
-    });
-  }, [messages, selectedId]);
-  useEffect(() => {
-    const running = chat?.isRunning;
-    if (running === undefined) return;
-    setPending((items) => {
+      const counts = new Map<string, number>();
+      for (const message of messages) if (message.role === "user") counts.set(message.text, (counts.get(message.text) ?? 0) + 1);
+      const consumed = new Map<string, number>();
       let changed = false;
       const next = items.flatMap((item) => {
         if (item.id !== selectedId) return [item];
-        if (running && !item.seenRunning) { changed = true; return [{ ...item, seenRunning: true }]; }
-        if (item.seenRunning && !running) { changed = true; return []; }
+        const baselineCount = Math.max(item.baselineCount, consumed.get(item.text) ?? 0);
+        if ((counts.get(item.text) ?? 0) > baselineCount) {
+          consumed.set(item.text, baselineCount + 1);
+          changed = true;
+          return [];
+        }
+        if (baselineCount !== item.baselineCount) { changed = true; return [{ ...item, baselineCount }]; }
         return [item];
       });
       return changed ? next : items;
     });
-  }, [chat?.isRunning, selectedId]);
+  }, [messages, selectedId]);
   // Blob previews of a just-sent message are memory; each is freed the moment its
   // row stops being shown, and the rest when the screen goes.
   const previews = useRef<Set<string>>(new Set());
@@ -316,7 +314,7 @@ export function ChatScreen() {
   const upNext = useMemo((): UpNextItem[] => [
     ...messages.flatMap((message) => message.queued && !message.queued.now ? [{ key: message.queued.id, text: message.text, attachments: message.attachments, queued: message.queued }] : [])
       .sort((a, b) => a.queued.position - b.queued.position),
-    ...shownPending.flatMap((item, index) => item.queued ? [{ key: `sending-${index}`, text: item.text, attachments: item.attachments }] : []),
+    ...shownPending.flatMap((item) => item.queued ? [{ key: `sending-${item.requestId}`, text: item.text, attachments: item.attachments }] : []),
   ], [messages, shownPending]);
   const conversation = useMemo(() => messages.filter((message) => !message.queued || message.queued.now), [messages]);
   // A queued message edited in the composer that started meanwhile: the words stay in the composer, unsaved.
@@ -378,6 +376,7 @@ export function ChatScreen() {
   const timeline = useMemo(() => {
     const anchors = new Map<string, string>();
     for (const message of conversation) {
+      if (message.pending) continue;
       if (message.runId) anchors.set(message.runId, message.id);
       for (const runId of rowWork.get(message.id)?.runIds ?? []) anchors.set(runId, message.id);
     }
@@ -390,15 +389,25 @@ export function ChatScreen() {
       else if (live.has(artifact.runId)) current.push(artifact);
     }
     // Cards keep the same sibling key as a live run becomes a saved reply, preserving unsaved inputs.
-    const entries: Array<{ key: string; message: typeof conversation[number] } | { key: string; pending: Pending } | { key: string; artifact: Artifact }> = [];
+    const entries: Array<{ key: string; message: typeof conversation[number] } | { key: string; pending: Pending } | { key: string; artifact: Artifact } | { key: string; live: true }> = [];
+    const insertReply = () => {
+      if (replying && !entries.some((entry) => "live" in entry)) entries.push({ key: `live:${selectedId}`, live: true });
+    };
     for (const message of conversation) {
+      // A follow-up belongs after the reply it interrupts. The original prompt stays before it.
+      if (message.steer && (!liveWork || liveWork.runIds.includes(message.steer.runId))) insertReply();
       entries.push({ key: message.id, message });
       for (const artifact of byMessage.get(message.id) ?? []) entries.push({ key: `interactive:${artifact.id}`, artifact });
     }
-    shownPending.forEach((pending, index) => { if (!pending.queued) entries.push({ key: `pending:${index}`, pending }); });
+    for (const pending of shownPending) {
+      if (pending.queued) continue;
+      if (pending.duringReply) insertReply();
+      entries.push({ key: `pending:${pending.requestId}`, pending });
+    }
+    insertReply();
     for (const artifact of current) entries.push({ key: `interactive:${artifact.id}`, artifact });
     return entries;
-  }, [conversation, rowWork, artifacts, shownPending, liveWork, failedWork]);
+  }, [conversation, rowWork, artifacts, shownPending, liveWork, failedWork, replying, selectedId]);
 
   const { scroller, atBottom, onScroll, followLiveReply, jumpToLatest, release: releaseScroll, readerRevision, beginPagination, restorePagination } = useChatScroll(selectedId);
   // Text commits stay in the live leaf; structural changes only follow while
@@ -548,7 +557,7 @@ export function ChatScreen() {
     if (command === "/reset") {
       setDraft("");
       if (!selectedId) { setNotice("Nothing to reset yet."); return true; }
-      setNotice("Saving this chat to memory and starting it afresh…");
+      setNotice("Starting a fresh chat…");
       try { setNotice(await resetChat({ key: dashboardKey, id: selectedId })); } catch (cause) { setNotice(""); fail(cause); }
       return true;
     }
@@ -601,7 +610,6 @@ export function ChatScreen() {
     if (retry) id = retry.id;
     const requestId = retry?.requestId ?? randomUUID();
     let cleared = false;
-    let sent: Pending | undefined;
     const uploaded: PendingAttachment[] = [];
     setBusy(true);
     setDraft(""); draftControl.current?.writeCitations([]); setFiles([]); setError(""); setNotice("");
@@ -622,12 +630,15 @@ export function ChatScreen() {
       }
       setUploading(null);
       submission.controller.signal.throwIfAborted();
-      sent = {
-        id, text: message, attachments: uploaded,
+      const current = !fresh && sending.length && mode !== "queue"
+        ? (await backendClient.call<NonNullable<typeof chat>>(api.dashboard.getChat, { key: dashboardKey, id }, { signal: submission.controller.signal })).value
+        : null;
+      submission.controller.signal.throwIfAborted();
+      const entry: Pending = {
+        id, requestId, text: message, attachments: uploaded,
         baselineCount: fresh ? 0 : messages.filter((item) => item.role === "user" && item.text === message).length,
-        seenRunning: !fresh && Boolean(chat?.isRunning), sent: false, ...(mode === "queue" ? { queued: true } : {}),
+        duringReply: !fresh && (current ? current.isRunning && !current.waiting : replying), ...(mode === "queue" ? { queued: true } : {}),
       };
-      const entry = sent;
       setPending((items) => [...items, entry]);
       // A new chat takes what was picked before it existed; an existing one already has its own.
       const args = retry ?? {
@@ -651,12 +662,11 @@ export function ChatScreen() {
       if (!paramId && window.location.pathname === "/chat" && new URL(window.location.href).searchParams.get("project") === inProject) router.replace(`/chat/${id}`);
       // A send already crossing the network must acknowledge before Stop can cover it.
       if (submission.controller.signal.reason === "stop") await stopChat({ key: dashboardKey, id }).catch(fail);
-      setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
       // Full access is chosen for a chat, never carried into the next new one.
       if (fresh && draftControl.current?.storageKey === storageKey) setDraftAccess(undefined);
     } catch (cause) {
       setUploading(null);
-      setPending((items) => items.filter((item) => item !== sent));
+      setPending((items) => items.filter((item) => item.requestId !== requestId));
       for (const attachment of uploaded) URL.revokeObjectURL(attachment.url);
       if (cleared) {
         setFiles(items => [...sending, ...items]);
@@ -689,14 +699,14 @@ export function ChatScreen() {
     setBusy(true); setError("");
     // The copy being replaced is removed before the new one is listed, so it is not part of the baseline.
     const entry: Pending = {
-      id: selectedId, text: shown, attachments: source?.attachments ?? [], seenRunning: false, sent: true,
+      id: selectedId, requestId: randomUUID(), text: shown, attachments: source?.attachments ?? [], duringReply: false,
       baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length - (source?.text === shown ? 1 : 0),
     };
     try {
       if (!edit) setPending((items) => [...items, entry]);
       await rewindChat({ key: dashboardKey, id: selectedId, messageId, ...edit });
     } catch (cause) {
-      setPending((items) => items.filter((item) => item !== entry));
+      setPending((items) => items.filter((item) => item.requestId !== entry.requestId));
       if (edit) throw cause;
       fail(cause);
     } finally {
@@ -893,8 +903,14 @@ export function ChatScreen() {
               )}
               {messageStatus === "LoadingMore" && <p className="text-center text-sm text-muted-foreground" role="status">Loading earlier messages…</p>}
               {timeline.map((entry) => {
+                if ("live" in entry) return <Fragment key={entry.key}>
+                  {chat?.taskPlan && chat.taskPlan.plan.length > 0 && <PlanChecklist steps={chat.taskPlan.plan} active={["queued", "running", "blocked"].includes(chat.taskPlan.status)} running={chat.isRunning && chat.taskPlan.status === "running"} />}
+                  <LiveReply conversationId={selectedId} onContentChange={followLiveReply}
+                    work={liveWork} agents={agentsForWork(agents, liveWork)} approving={here.length > 0} unresponsive={chat?.unresponsive} />
+                  {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
+                </Fragment>;
                 if ("artifact" in entry) return <InteractiveAnswer key={entry.key} artifact={entry.artifact} />;
-                if ("pending" in entry) return <PendingRow key={entry.key} text={entry.pending.text} attachments={entry.pending.attachments} sent={entry.pending.sent} skills={skillNames} />;
+                if ("pending" in entry) return <PendingRow key={entry.key} text={entry.pending.text} attachments={entry.pending.attachments} skills={skillNames} />;
                 const { message } = entry;
                 return <Fragment key={entry.key}>
                 <MessageRow
@@ -925,10 +941,8 @@ export function ChatScreen() {
                 />}
                 </Fragment>
               })}
-              {chat?.taskPlan && chat.taskPlan.plan.length > 0 && <PlanChecklist steps={chat.taskPlan.plan} active={["queued", "running", "blocked"].includes(chat.taskPlan.status)} running={chat.isRunning && chat.taskPlan.status === "running"} />}
-              {replying && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
-                work={liveWork} agents={agentsForWork(agents, liveWork)} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
-              {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
+              {!replying && chat?.taskPlan && chat.taskPlan.plan.length > 0 && <PlanChecklist steps={chat.taskPlan.plan} active={["queued", "running", "blocked"].includes(chat.taskPlan.status)} running={chat.isRunning && chat.taskPlan.status === "running"} />}
+              {!replying && here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
               {failedWork && (failedWork.stepCount > 0 || !failedWork.stopped) && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed"><AgentRows agents={agentsForWork(agents, failedWork) ?? []} /></WorkSummary></div>}
               {chat?.lastError === "Stopped before it finished." && !chat.isRunning && !waiting && !messages.some((message) => message.role === "assistant" && message.failure?.error === chat.lastError && message.runId === chat.lastErrorRunId) && <Interrupted detail={failedWork?.stepCount ? undefined : "Stopped before any work finished"} />}
               {chat?.lastError && chat.lastError !== "Stopped before it finished." && !chat.isRunning && !waiting && !messages.some((message) => message.failure && message.runId === chat.lastErrorRunId) && (

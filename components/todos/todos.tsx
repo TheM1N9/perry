@@ -2,7 +2,7 @@
 
 import { toast } from "sonner";
 import { AlarmClockIcon, FlameIcon, PlusIcon, RepeatIcon, SparklesIcon, XIcon } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useMutation } from "@/client/react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,10 +11,12 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StatusBadge, TextTip } from "@/components/dashboard/common";
 import { api } from "@/convex/_generated/api";
-import type { TodoView } from "@/convex/todos";
+import type { Board, TodoView } from "@/convex/todos";
+import type { Id } from "@/convex/_generated/dataModel";
 import { errorText } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { randomUUID } from "@/lib/uuid";
 import { cronFor, describeSchedule, dueLabel, readTodo, REPEAT_NAMES, REPEATS, repeatLabel, repeatOf, type Repeat } from "@/lib/when";
 
 /**
@@ -22,30 +24,51 @@ import { cronFor, describeSchedule, dueLabel, readTodo, REPEAT_NAMES, REPEATS, r
  * dashboard's To-dos page: the box you type into, and the rows.
  */
 
+type TodoDraft = { text: string; literal: boolean };
+type TodoFailure = { id: string; draft: TodoDraft; error: string };
+const PENDING_TODO = "pending-todo:";
+const pendingTodo = (todo: Omit<TodoView, "id" | "createdAt">): TodoView => ({ ...todo, id: `${PENDING_TODO}${randomUUID()}` as Id<"todos">, createdAt: Date.now() });
+const byDue = (a: TodoView, b: TodoView) => (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) || a.createdAt - b.createdAt;
+const withTodo = (board: Board, todo: TodoView): Board => todo.doneAt
+  ? { ...board, doneToday: [...board.doneToday, todo].sort((a, b) => b.doneAt! - a.doneAt!) }
+  : { ...board, open: [...board.open, todo].sort(byDue) };
+
 /** Type a to-do the way you would say it; what the time, and any repeat, was read as shows before it is added. */
 export function QuickAdd({ onAdded, autoFocus, className }: { onAdded?: (title: string, dueAt?: number) => void; autoFocus?: boolean; className?: string }) {
   const key = useDashboardKey();
   const add = useMutation(api.todos.add);
-  const [draft, setDraft] = useState({ text: "", literal: false });
+  const [draft, setDraft] = useState<TodoDraft>({ text: "", literal: false });
   const { text, literal } = draft;
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [failures, setFailures] = useState<TodoFailure[]>([]);
+  const flight = useRef(false);
   const read: ReturnType<typeof readTodo> | null = text.trim() ? literal ? { title: text.trim() } : readTodo(text) : null;
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!read || saving) return;
+  const submitDraft = async (submitted: TodoDraft, retry?: TodoFailure) => {
+    const read = submitted.text.trim() ? submitted.literal ? { title: submitted.text.trim() } : readTodo(submitted.text) : null;
+    if (!read || flight.current) return;
+    flight.current = true;
     setSaving(true);
-    setError("");
+    setDraft((current) => current === submitted ? { text: "", literal: false } : current);
+    const todo = pendingTodo({ title: read.title.replace(/\s+/g, " ").trim().slice(0, 200), by: "owner", dueAt: read.dueAt, repeat: read.repeat });
+    const failureId = (retry ?? failures.find((failure) => failure.draft === submitted))?.id ?? todo.id;
+    let loaded: boolean | undefined;
     try {
-      await add({ key, title: read.title, ...(read.dueAt ? { dueAt: read.dueAt } : {}), ...(read.repeat ? { repeat: read.repeat } : {}) });
-      setDraft({ text: "", literal: false });
+      await add.withOptimisticUpdate((store, args) => {
+        const board = store.getQuery(api.todos.board, { key: args.key });
+        loaded ??= board !== undefined;
+        if (!loaded || !board) return;
+        store.setQuery(api.todos.board, { key: args.key }, withTodo(board, todo));
+      })({ key, title: read.title, ...(read.dueAt ? { dueAt: read.dueAt } : {}), ...(read.repeat ? { repeat: read.repeat } : {}) });
+      setFailures((current) => current.filter((failure) => failure.id !== failureId));
       if (onAdded) onAdded(read.title, read.dueAt);
       else toast.success(`Added “${read.title}”`);
     } catch (cause) {
-      setError(errorText(cause));
-    } finally { setSaving(false); }
+      setFailures((current) => [...current.filter((failure) => failure.id !== failureId), { id: failureId, draft: submitted, error: errorText(cause) }]);
+      setDraft((current) => current.text.trim() ? current : submitted);
+    } finally { flight.current = false; setSaving(false); }
   };
+  const submit = (event: FormEvent) => { event.preventDefault(); void submitDraft(draft); };
 
   return (
     <form onSubmit={(event) => void submit(event)} className={className} aria-busy={saving || undefined}>
@@ -53,20 +76,18 @@ export function QuickAdd({ onAdded, autoFocus, className }: { onAdded?: (title: 
         <InputGroupAddon><PlusIcon aria-hidden /></InputGroupAddon>
         <InputGroupInput
           value={text}
-          readOnly={saving}
-          onChange={(event) => { setDraft({ text: event.target.value, literal: false }); setError(""); }}
+          onChange={(event) => setDraft({ text: event.target.value, literal: false })}
           autoFocus={autoFocus}
           aria-label="Add a to-do"
           placeholder="Add a to-do: “call Sam 2pm”"
           className="md:text-sm"
         />
         <InputGroupAddon align="inline-end">
-          <InputGroupButton type="submit" size="sm" variant="secondary" disabled={!read || saving} aria-label="Add to-do" className="min-w-11 pointer-coarse:min-h-11">{saving ? "Saving…" : "Add"}</InputGroupButton>
+          <InputGroupButton type="submit" size="sm" variant="secondary" disabled={!read || saving} aria-label="Add to-do" className="min-w-11 pointer-coarse:min-h-11">Add</InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
       <div className="mt-1.5 flex min-h-5 flex-wrap items-center gap-x-1.5 gap-y-1 px-0.5 text-xs text-muted-foreground" aria-live="polite">
-        {error ? <span className="text-destructive">{error}</span>
-          : read?.repeatName ? (
+        {read?.repeatName ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 font-medium text-foreground">
               <RepeatIcon className="size-3" aria-hidden />{read.repeatName}
             </span>
@@ -76,9 +97,9 @@ export function QuickAdd({ onAdded, autoFocus, className }: { onAdded?: (title: 
             </span>
           ) : read ? <span>{literal ? "Text only" : "No time"} · Enter to add</span> : null}
         {read?.dueAt && <span className="truncate">“{read.title}”</span>}
-        {read?.dueAt && <Button type="button" variant="ghost" size="xs" disabled={saving} className="shrink-0 text-muted-foreground pointer-coarse:min-h-11" onClick={() => { setDraft((now) => ({ ...now, literal: true })); setError(""); }}>Use text only</Button>}
-        {saving && <span className="ml-auto">Saving…</span>}
+        {read?.dueAt && <Button type="button" variant="ghost" size="xs" className="shrink-0 text-muted-foreground pointer-coarse:min-h-11" onClick={() => setDraft((now) => ({ ...now, literal: true }))}>Use text only</Button>}
       </div>
+      {failures.map((failure) => <p key={failure.id} role="alert" className="mt-2 text-sm text-destructive [overflow-wrap:anywhere]">Couldn&apos;t add “{failure.draft.text}”: {failure.error}{" "}<Button type="button" variant="link" size="xs" aria-label={`Try again to add “${failure.draft.text}”`} disabled={saving} onClick={() => void submitDraft(failure.draft, failure)}>Try again</Button><Button type="button" variant="ghost" size="icon-xs" aria-label={`Dismiss failed to-do “${failure.draft.text}”`} onClick={() => setFailures((current) => current.filter((item) => item.id !== failure.id))}><XIcon /></Button></p>)}
     </form>
   );
 }
@@ -101,17 +122,40 @@ export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: 
 }) {
   const key = useDashboardKey();
   const setDone = useMutation(api.todos.setDone);
-  const remove = useMutation(api.todos.remove);
+  const remove = useMutation(api.todos.remove).withOptimisticUpdate((store, args) => {
+    const board = store.getQuery(api.todos.board, { key: args.key });
+    if (board) store.setQuery(api.todos.board, { key: args.key }, { ...board, open: board.open.filter((row) => row.id !== args.id), doneToday: board.doneToday.filter((row) => row.id !== args.id) });
+  });
   const restore = useMutation(api.todos.restore);
   const fail = (cause: unknown) => { if (onProblem) onProblem(errorText(cause)); else toast.error(errorText(cause)); };
+  const changeDone = (id: TodoView["id"], done: boolean) => {
+    const doneAt = Date.now();
+    return setDone.withOptimisticUpdate((store, args) => {
+      const board = store.getQuery(api.todos.board, { key: args.key });
+      const todo = board && [...board.open, ...board.doneToday].find((row) => row.id === args.id);
+      if (!board || !todo) return;
+      const next = { ...board, open: board.open.filter((row) => row.id !== args.id), doneToday: board.doneToday.filter((row) => row.id !== args.id) };
+      store.setQuery(api.todos.board, { key: args.key }, withTodo(next, { ...todo, doneAt: args.done ? todo.doneAt ?? doneAt : undefined }));
+    })({ key, id, done });
+  };
   const removeTodo = (todo: TodoView) => void remove({ key, id: todo.id }).then(() => {
-    const undo = () => void restore({ key, title: todo.title, by: todo.by, ...(todo.dueAt !== undefined ? { dueAt: todo.dueAt } : {}), ...(todo.repeat ? { repeat: todo.repeat } : {}), ...(todo.doneAt ? { doneAt: todo.doneAt } : {}) }).catch(fail);
+    const undo = () => {
+      const restored = pendingTodo({ title: todo.title, by: todo.by, dueAt: todo.dueAt, repeat: todo.repeat, doneAt: todo.doneAt });
+      let loaded: boolean | undefined;
+      void restore.withOptimisticUpdate((store, args) => {
+        const board = store.getQuery(api.todos.board, { key: args.key });
+        loaded ??= board !== undefined;
+        if (!loaded || !board) return;
+        store.setQuery(api.todos.board, { key: args.key }, withTodo(board, restored));
+      })({ key, title: todo.title, by: todo.by, ...(todo.dueAt !== undefined ? { dueAt: todo.dueAt } : {}), ...(todo.repeat ? { repeat: todo.repeat } : {}), ...(todo.doneAt ? { doneAt: todo.doneAt } : {}) }).catch(fail);
+    };
     if (onRemoved) onRemoved(todo, undo);
     else toast(`Removed “${todo.title}”`, { action: { label: "Undo", onClick: undo } });
   }, fail);
   return (
     <ul className="flex flex-col" aria-label="To-dos">
       {todos.map((todo) => {
+        const pending = todo.id.startsWith(PENDING_TODO);
         const done = Boolean(todo.doneAt);
         const late = !done && todo.dueAt !== undefined && todo.dueAt <= now;
         const soon = !done && todo.dueAt !== undefined && !late && todo.dueAt - now < 3_600_000;
@@ -120,15 +164,17 @@ export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: 
             {/* Perry's checkbox, kept round: a to-do ticked off, not a setting. */}
             <Checkbox
               checked={done}
+              disabled={pending}
               aria-label={done ? `Put back “${todo.title}”` : `Done: “${todo.title}”`}
               onCheckedChange={() => {
-                void setDone({ key, id: todo.id, done: !done }).then(() => {
+                if (pending) return;
+                void changeDone(todo.id, !done).then(() => {
                   if (done) return;
                   if (onDone) onDone(todo);
                   else toast.success(`Completed “${todo.title}”`, {
                     id: `todo-completed:${todo.id}`,
                     ...(todo.repeat ? { description: "Its next occurrence is on your list." } : {
-                      action: { label: "Undo", onClick: () => { void setDone({ key, id: todo.id, done: false }).catch(fail); } },
+                      action: { label: "Undo", onClick: () => { void changeDone(todo.id, false).catch(fail); } },
                     }),
                   });
                 }).catch(fail);
@@ -139,14 +185,14 @@ export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: 
               {todo.title}
             </span>
             {todo.by === "assistant" && <SparklesIcon className="size-3.5 shrink-0 text-primary" aria-label="Perry added this" />}
-            {!done && <RepeatMenu todo={todo} />}
-            {done && todo.repeat && <RepeatIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Repeats" />}
+            {!done && !pending && <RepeatMenu todo={todo} />}
+            {(done || pending) && todo.repeat && <RepeatIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Repeats" />}
             {todo.dueAt !== undefined && !done && (
               <span className={cn("shrink-0 text-xs nums", late ? "font-semibold text-destructive" : soon ? "font-medium text-warning" : "text-muted-foreground")}>
                 {dueLabel(todo.dueAt, now)}
               </span>
             )}
-            <Button variant="ghost" size="icon-xs" aria-label={`Remove “${todo.title}”`} onClick={() => removeTodo(todo)}
+            <Button variant="ghost" size="icon-xs" disabled={pending} aria-label={`Remove “${todo.title}”`} onClick={() => { if (!pending) removeTodo(todo); }}
               className="text-muted-foreground opacity-0 pointer-coarse:opacity-100 focus-visible:opacity-100 group-hover:opacity-100">
               <XIcon className="size-3.5" />
             </Button>
@@ -165,11 +211,16 @@ export function TodoRows({ todos, now, compact, onDone, onRemoved, onProblem }: 
  */
 function RepeatMenu({ todo }: { todo: TodoView }) {
   const key = useDashboardKey();
-  const setRepeat = useMutation(api.todos.setRepeat);
+  const setRepeat = useMutation(api.todos.setRepeat).withOptimisticUpdate((store, args) => {
+    const board = store.getQuery(api.todos.board, { key: args.key });
+    if (!board) return;
+    const change = (row: TodoView) => row.id === args.id ? { ...row, repeat: args.repeat ?? undefined } : row;
+    store.setQuery(api.todos.board, { key: args.key }, { ...board, open: board.open.map(change), doneToday: board.doneToday.map(change) });
+  });
   const current = repeatOf(todo.repeat);
   const change = (value: string) => {
     const at = todo.dueAt ? new Date(todo.dueAt) : new Date(new Date().setHours(9, 0, 0, 0));
-    void setRepeat({ key, id: todo.id, repeat: value === "none" ? null : cronFor(value as Repeat, at) }).catch(() => {});
+    void setRepeat({ key, id: todo.id, repeat: value === "none" ? null : cronFor(value as Repeat, at) }).catch((cause) => toast.error(`Couldn't change the repeat: ${errorText(cause)}`));
   };
   return (
     <DropdownMenu>
