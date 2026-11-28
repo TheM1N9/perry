@@ -47,6 +47,7 @@ browser errors so a selector failure cannot be mistaken for a passing app.
 
 ## Review follow-up failure inventory
 
+- A headless `--dump-dom` process can remain alive during an attachment navigation, so process exit does not establish whether the HTML was downloaded or executed. Observe native download completion and DOM state directly, and prove the execution detector with a deliberately inline synthetic control. All browser profiles, commands and shutdown waits must remain bounded and disposable.
 - An active query deadline can leave the initial page unloaded forever without
   a change-stream event. Retry with bounded backoff, cancelling retries on
   unsubscribe, cache invalidation and close. Intentional cancellation must not retry.

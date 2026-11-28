@@ -18,6 +18,14 @@ available. They do not use owner accounts or a real model. Live outputs are
 Current inventories use ignored `function-inventory-result.json` and
 `indexes-result.json`; the original committed inventories remain unchanged.
 
+`run.mjs` also accepts an output directory as its first argument, so local
+verification can preserve earlier ignored results. The active-HTML case uses
+Perry's existing headless browser driver in the disposable `public-reader`
+profile. It requires download completion and matching bytes, verifies the
+downloaded document did not run its script, then serves that synthetic payload
+deliberately inline to prove the execution detector works. It does not depend
+on a `--dump-dom` process exiting after a download navigation.
+
 Review follow-ups cover transactional action deletion, fair cleanup retries,
 serialized file imports, UNC scope, actual filesystem links, and query retry
 teardown. Writes that lose their transport acknowledgement raise
